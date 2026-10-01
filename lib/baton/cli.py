@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from . import config, gate, githooks, labels, run, scan
+from . import config, gate, githooks, labels, merge, run, scan
 
 
 def cmd_config(args):
@@ -75,12 +75,39 @@ def cmd_set_status(args):
     return 0
 
 
+def cmd_merge_pr(args):
+    if len(args) != 1 or not args[0].isdigit():
+        print("usage: baton merge-pr <pull-request-number>", file=sys.stderr)
+        return 64
+
+    def tolerant(argv, cwd=None):
+        cleanup = argv[:3] in (["git", "branch", "-D"], ["git", "push", "origin"],
+                               ["git", "worktree", "remove"])
+        try:
+            return run.run(argv, cwd)
+        except run.RunError as error:
+            if not cleanup:
+                raise
+            print(f"baton: cleanup skipped: {error}", file=sys.stderr)
+            return ""
+
+    problems = merge.merge(int(args[0]), _require_config(), tolerant)
+    if problems:
+        print(f"Baton refused to merge #{args[0]}:", file=sys.stderr)
+        for problem in problems:
+            print(f"- {problem}", file=sys.stderr)
+        return 1
+    print(f"merged #{args[0]}")
+    return 0
+
+
 COMMANDS = {
     "config": cmd_config,
     "gate": cmd_gate,
     "git-hook": cmd_git_hook,
     "install-hooks": cmd_install_hooks,
     "labels": cmd_labels,
+    "merge-pr": cmd_merge_pr,
     "set-status": cmd_set_status,
 }
 
