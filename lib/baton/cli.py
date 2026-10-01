@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from . import config
+from . import config, gate
 
 
 def cmd_config(args):
@@ -14,7 +14,11 @@ def cmd_config(args):
     return 0
 
 
-COMMANDS = {"config": cmd_config}
+def cmd_gate(args):
+    return gate.main(sys.stdin.read())
+
+
+COMMANDS = {"config": cmd_config, "gate": cmd_gate}
 
 
 def main(argv):
