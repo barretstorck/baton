@@ -38,6 +38,17 @@ class FrontmatterTest(unittest.TestCase):
         self.assertEqual(data["fixtures_paths"], [])
         self.assertEqual(data["budgets"], {})
 
+    def test_empty_front_matter(self):
+        self.assertEqual(frontmatter.split("---\n---\nbody\n"), ("", "body\n"))
+
+    def test_unterminated_front_matter_raises(self):
+        with self.assertRaises(ValueError):
+            frontmatter.split("---\nprivacy_allow: []\n# no closing line\n")
+
+    def test_tab_indentation_raises(self):
+        with self.assertRaises(ValueError):
+            frontmatter.parse("labels:\n\tauto_create: false\n")
+
     def test_parse_rejects_garbage(self):
         with self.assertRaises(ValueError):
             frontmatter.parse("this is not a mapping")

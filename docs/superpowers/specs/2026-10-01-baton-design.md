@@ -214,7 +214,8 @@ nothing can be dispatched, then exits.
 
    Pass: `merge-pr`, then `status:verification`. Fail: back to `status:in-dev` with a comment.
    Merges are one at a time; remaining pull requests are updated and re-tested afterwards.
-6. **Verify.** When the default branch is green after a merge, set `status:complete` and close.
+6. **Verify.** When the default branch is green after a merge, set `status:complete`. The issue
+   itself was already closed by the merge.
 7. **File follow-ups.** Developer suggestions become new issues in `status:refinement`. They join
    the sprint only if they serve the sprint goal.
 8. **Dispatch.** Fill free slots, up to the parallel limit, with `status:ready` deliverables in
@@ -292,12 +293,14 @@ Forge content is not reliably recallable (edit history, caches), so the check ru
 publication.
 
 - A `PreToolUse` hook intercepts every publishing command: `gh issue|pr create|comment|edit`,
-  `gh api` writes, `git commit`, `git push`. It scans the text or diff and blocks on a match.
+  `gh api`, `git commit`, `git push`. It scans the text the command would publish and blocks on a
+  match. Text it cannot see (stdin, a variable, command substitution, a missing file) is refused.
+- Git `pre-commit` and `pre-push` hooks scan the added lines, new file names and commit messages.
+  The `PreToolUse` hook refuses any attempt to skip them.
 - Generic patterns ship with the plugin: private IP ranges, email addresses, absolute host paths,
   internal domain suffixes.
 - Maintainer-specific terms (names, hostnames, folder names) live in
   `~/.baton/private-terms.txt`, outside every repository. The plugin never copies or logs matches.
-- A git `pre-push` hook repeats the scan on commit messages and diffs.
 - New image files are blocked outside `fixtures_paths`.
 - Commits use the forge's no-reply author address.
 - Known limit: a deny-list catches only known strings. Briefs must also tell agents to use
@@ -313,8 +316,9 @@ publication.
   `may_mark_ready` says.
 - Text from any other author (comments, pull request text, fetched pages, tool output such as OCR)
   is passed to agents quoted and labelled as untrusted data.
-- Developers cannot merge. `merge-pr` refuses a pull request that touches `protected_paths`
-  unless the maintainer has approved it on the pull request.
+- Developers cannot merge: the gate refuses `gh pr merge`. `merge-pr` refuses a pull request that
+  touches `protected_paths` unless the maintainer has commented `/baton approve <head commit sha>`
+  on it.
 - Agents work only on branches they created; they never check out or run code from forks.
 - Skills are never edited in place by a sprint; changes to Baton arrive as pull requests.
 - Scheduled runs take the stricter path: anything flagged gets `needs-maintainer` and waits.

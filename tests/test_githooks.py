@@ -34,13 +34,11 @@ def write(repo, name, content):
 
 
 class AddedTextTest(unittest.TestCase):
-    def test_keeps_added_and_message_lines_drops_removed_and_context(self):
-        patch = "msg line\n--- a/x\n+++ b/x\n-removed 192.168.7.7\n context\n+added\n"
-        text = githooks.added_text(patch)
-        self.assertIn("msg line", text)
-        self.assertIn("+added", text)
-        self.assertNotIn("removed", text)
-        self.assertNotIn("context", text)
+    def test_keeps_only_added_lines(self):
+        patch = ("diff --git a/Zebrowski.txt b/Zebrowski.txt\n--- a/x\n+++ b/x\n"
+                 "@@ -5 +5 @@ def connect(host=\"192.168.7.7\"):\n"
+                 "-removed 192.168.7.7\n context\n+added\n")
+        self.assertEqual(githooks.added_text(patch), "added")
 
 
 class PreCommitTest(unittest.TestCase):
@@ -64,6 +62,36 @@ class PreCommitTest(unittest.TestCase):
         write(repo, "a.txt", "hello\n")
         git(repo, "add", "-A")
         self.assertEqual(githooks.pre_commit(repo, TERMS), [])
+
+    def test_removing_a_file_with_a_private_name_passes(self):
+        repo = make_repo()
+        write(repo, "Zebrowski.txt", "x\n")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", "leak")
+        git(repo, "rm", "-q", "Zebrowski.txt")
+        self.assertEqual(githooks.pre_commit(repo, TERMS), [])
+
+    def test_adding_a_file_with_a_private_name_blocks(self):
+        repo = make_repo()
+        write(repo, "scans/Zebrowski.txt", "x\n")
+        git(repo, "add", "-A")
+        self.assertTrue(any("private-term" in p for p in githooks.pre_commit(repo, TERMS)))
+
+    def test_edit_below_a_private_line_passes(self):
+        repo = make_repo()
+        body = 'def connect(host="192.168.7.7"):\n' + "".join(f"    step{i}()\n" for i in range(8))
+        write(repo, "net.py", body)
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", "leak")
+        write(repo, "net.py", body.replace("step6()", "step6(retry=True)"))
+        git(repo, "add", "-A")
+        self.assertEqual(githooks.pre_commit(repo, TERMS), [])
+
+    def test_hooks_follow_core_hookspath(self):
+        repo = make_repo()
+        git(repo, "config", "core.hooksPath", ".husky")
+        written = githooks.install(repo, "/opt/baton/bin/baton")
+        self.assertTrue(all("/.husky/" in path for path in written))
 
     def test_new_image_outside_fixtures_blocks(self):
         repo = make_repo()

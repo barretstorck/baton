@@ -28,6 +28,13 @@ class ScanTest(unittest.TestCase):
                 "1+someone@users.noreply.github.com\nuser@example.com")
         self.assertEqual(kinds(text), [])
 
+    def test_package_versions_and_git_remotes_are_not_emails(self):
+        text = "uses: actions/checkout@v4.1.0\npnpm@9.1.0\ngit@github.com:owner/repo.git"
+        self.assertEqual(kinds(text), [])
+
+    def test_attribute_access_is_not_a_domain(self):
+        self.assertEqual(kinds("self.local = x; this.internal"), [])
+
     def test_host_path(self):
         self.assertEqual(kinds("stored in /mnt/tank/photos"), ["host-path"])
         self.assertEqual(kinds("see /home/someone/.config"), ["host-path"])

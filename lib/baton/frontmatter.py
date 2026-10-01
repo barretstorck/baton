@@ -8,14 +8,16 @@ import re
 _LINE = re.compile(r"""^("[^"]+"|'[^']+'|.+?):(?:\s+(.*))?$""")
 
 
+_FRONT = re.compile(r"\A---\n(.*?)^---[ \t]*\n?", re.S | re.M)
+
+
 def split(text):
     if not text.startswith("---\n"):
         return "", text
-    end = text.find("\n---", 4)
-    if end == -1:
-        return "", text
-    body = text[end + 4:]
-    return text[4:end + 1], body.lstrip("\n")
+    match = _FRONT.match(text)
+    if not match:
+        raise ValueError("front matter has no closing --- line")
+    return match.group(1), text[match.end():].lstrip("\n")
 
 
 def _strip_comment(line):
@@ -55,6 +57,8 @@ def parse(meta):
         if not line.strip():
             continue
         indent = len(line) - len(line.lstrip(" "))
+        if line[indent:indent + 1] == "\t":
+            raise ValueError("front matter must be indented with spaces, not tabs")
         match = _LINE.match(line.strip())
         if not match:
             raise ValueError(f"cannot parse front matter line: {raw.strip()!r}")

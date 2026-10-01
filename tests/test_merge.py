@@ -23,15 +23,15 @@ def make_pr(**overrides):
         "statusCheckRollup": [{"__typename": "CheckRun", "name": "test",
                                "status": "COMPLETED", "conclusion": "SUCCESS"}],
         "closingIssuesReferences": [{"number": 4}],
-        "commits": [{"oid": "abc123", "committedDate": "2026-10-01T10:00:00Z"}],
-        "comments": [],
+        "commits": [{"oid": "abc123", "messageHeadline": "Add the flag", "messageBody": ""}],
+        "comments": [], "isCrossRepository": False, "baseRefName": "main", "changedFiles": 1,
     }
     pr.update(overrides)
     return pr
 
 
 def problems(**overrides):
-    return merge.check(make_pr(**overrides), make_config(), OWNER)
+    return merge.check(make_pr(**overrides), make_config(), OWNER, "main")
 
 
 class CheckTest(unittest.TestCase):
@@ -49,7 +49,7 @@ class CheckTest(unittest.TestCase):
 
     def test_no_checks_allowed_when_configured(self):
         cfg = make_config(merge={"allow_no_ci": True})
-        self.assertEqual(merge.check(make_pr(statusCheckRollup=[]), cfg, OWNER), [])
+        self.assertEqual(merge.check(make_pr(statusCheckRollup=[]), cfg, OWNER, "main"), [])
 
     def test_pending_and_failed_checks_are_refused(self):
         pending = [{"__typename": "CheckRun", "name": "test", "status": "IN_PROGRESS", "conclusion": ""}]
@@ -77,26 +77,43 @@ class CheckTest(unittest.TestCase):
         files = [{"path": ".github/workflows/ci.yml"}]
         self.assertTrue(any("protected" in p for p in problems(files=files)))
 
-    def test_owner_approval_after_head_commit_unlocks(self):
+    def test_owner_approval_naming_the_head_commit_unlocks(self):
         files = [{"path": ".github/workflows/ci.yml"}]
-        ok = [{"author": {"login": OWNER}, "body": "/baton approve", "createdAt": "2026-10-01T11:00:00Z"}]
-        self.assertEqual(problems(files=files, comments=ok), [])
+        ok = [{"author": {"login": OWNER}, "body": "/baton approve abc1234"}]
+        self.assertEqual(problems(files=files, comments=ok, headRefOid="abc1234def"), [])
 
-    def test_stale_marked_or_foreign_approval_does_not_unlock(self):
+    def test_other_approvals_do_not_unlock(self):
         files = [{"path": ".baton/brief.md"}]
-        stale = [{"author": {"login": OWNER}, "body": "/baton approve", "createdAt": "2026-10-01T09:00:00Z"}]
-        marked = [{"author": {"login": OWNER}, "createdAt": "2026-10-01T11:00:00Z",
-                   "body": "<!-- baton:developer:status -->\n/baton approve"}]
-        foreign = [{"author": {"login": "mallory"}, "body": "/baton approve", "createdAt": "2026-10-01T11:00:00Z"}]
-        for comments in (stale, marked, foreign):
-            with self.subTest(comments=comments):
-                self.assertTrue(any("protected" in p for p in problems(files=files, comments=comments)))
+        cases = {
+            "no sha": [{"author": {"login": OWNER}, "body": "/baton approve"}],
+            "old sha": [{"author": {"login": OWNER}, "body": "/baton approve 9999999"}],
+            "short sha": [{"author": {"login": OWNER}, "body": "/baton approve abc"}],
+            "marked": [{"author": {"login": OWNER},
+                        "body": "<!-- baton:developer:status -->\n/baton approve abc1234"}],
+            "foreign": [{"author": {"login": "mallory"}, "body": "/baton approve abc1234"}],
+        }
+        for name, comments in cases.items():
+            with self.subTest(name=name):
+                found = problems(files=files, comments=comments, headRefOid="abc1234def")
+                self.assertTrue(any("protected" in p for p in found))
+
+    def test_fork_and_wrong_base_are_refused(self):
+        self.assertTrue(any("fork" in p for p in problems(isCrossRepository=True)))
+        self.assertTrue(any("default branch" in p for p in problems(baseRefName="release")))
+
+    def test_closing_keyword_in_a_commit_message_is_refused(self):
+        commits = [{"oid": "abc123", "messageHeadline": "Tidy", "messageBody": "fixes #99"}]
+        self.assertTrue(any("#99" in p for p in problems(commits=commits)))
+
+    def test_truncated_file_list_is_refused(self):
+        self.assertTrue(any("file list" in p for p in problems(changedFiles=150)))
 
 
 class MergeTest(unittest.TestCase):
     def replies(self, pr, issue_state="OPEN"):
         return {
-            "gh repo view": json.dumps({"owner": {"login": OWNER}}),
+            "gh repo view": json.dumps({"owner": {"login": OWNER},
+                                        "defaultBranchRef": {"name": "main"}}),
             "gh pr view 9": json.dumps(pr),
             "gh issue view 4 --json state": json.dumps({"state": issue_state}),
             "gh issue view 4 --json labels": json.dumps({"labels": [{"name": "status:in-review"}]}),
@@ -125,3 +142,24 @@ class MergeTest(unittest.TestCase):
         runner = FakeRunner(self.replies(make_pr(), issue_state="CLOSED"))
         merge.merge(9, make_config(), runner)
         self.assertNotIn("gh issue close 4", runner.lines())
+
+    def test_already_merged_pr_finishes_the_follow_up_steps(self):
+        runner = FakeRunner(self.replies(make_pr(state="MERGED", mergeable="UNKNOWN")))
+        self.assertEqual(merge.merge(9, make_config(), runner), [])
+        lines = runner.lines()
+        self.assertFalse(any(line.startswith("gh pr merge") for line in lines))
+        self.assertIn("gh issue close 4", lines)
+        self.assertIn("git branch -D issue-4-flag", lines)
+
+    def test_failure_after_merge_says_the_merge_happened(self):
+        class Failing(FakeRunner):
+            def __call__(self, argv, cwd=None):
+                if argv[:3] == ["gh", "issue", "close"]:
+                    raise RuntimeError("network down")
+                return super().__call__(argv, cwd)
+
+        runner = Failing(self.replies(make_pr()))
+        with self.assertRaises(merge.PostMergeError) as caught:
+            merge.merge(9, make_config(), runner)
+        self.assertIn("merged", str(caught.exception))
+        self.assertIn("baton merge-pr 9", str(caught.exception))

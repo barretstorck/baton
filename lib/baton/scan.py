@@ -11,11 +11,12 @@ _PATTERNS = [
     ("private-ip", re.compile(
         r"(?<![\d.])(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))"
         r"\.\d{1,3}\.\d{1,3}(?![\d.])")),
-    ("email", re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")),
+    ("email", re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}\b")),
     ("host-path", re.compile(
         r"(?<![\w.])/(?:home|mnt|Users|root|srv|media|volume\d*)/[^\s\"'`)]+")),
     ("internal-domain", re.compile(
-        r"\b[\w-]+(?:\.[\w-]+)*\.(?:local|lan|internal|corp|home\.arpa)\b(?![\w.(-])")),
+        r"\b(?!(?:self|this|cls)\.)[\w-]+(?:\.[\w-]+)*"
+        r"\.(?:local|lan|internal|corp|home\.arpa)\b(?![\w.(-])")),
 ]
 _EMAIL_OK = re.compile(
     r"@(?:users\.noreply\.github\.com|anthropic\.com|example\.(?:com|org|net))$")
@@ -42,7 +43,7 @@ def load_terms(path=None):
 def _matches(kind, pattern, line):
     for match in pattern.finditer(line):
         text = match.group(0)
-        if kind == "email" and _EMAIL_OK.search(text):
+        if kind == "email" and (_EMAIL_OK.search(text) or text.startswith("git@")):
             continue
         yield text
 

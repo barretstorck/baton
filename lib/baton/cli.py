@@ -91,7 +91,11 @@ def cmd_merge_pr(args):
             print(f"baton: cleanup skipped: {error}", file=sys.stderr)
             return ""
 
-    problems = merge.merge(int(args[0]), _require_config(), tolerant)
+    try:
+        problems = merge.merge(int(args[0]), _require_config(), tolerant)
+    except merge.PostMergeError as error:
+        print(f"baton: {error}", file=sys.stderr)
+        return 1
     if problems:
         print(f"Baton refused to merge #{args[0]}:", file=sys.stderr)
         for problem in problems:

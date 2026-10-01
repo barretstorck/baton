@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-01-baton-design.md` (sections 2, 3, 6 "Check finished work", 8, 9, 10).
 
+**Executed 2026-10-01.** The final review changed the gate (now word-based, not regex over the raw command), the approval rule (`/baton approve <sha>`) and several checks; the code and README are authoritative where they differ from the task text below.
+
 **This is plan 1 of 4.** Later plans: (2) `develop` and `refine` skills plus the `baton-developer` subagent; (3) `sprint-plan` and `sprint` skills; (4) scheduled runs and the pilot sprint.
 
 ## Global Constraints

@@ -38,6 +38,18 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaises(config.ConfigError):
             config.load(str(make_repo("---\nnot a mapping\n---\n")))
 
+    def test_unterminated_front_matter_raises(self):
+        with self.assertRaises(config.ConfigError):
+            config.load(str(make_repo("---\nprivacy_allow: []\n")))
+
+    def test_wrong_types_raise(self):
+        for meta in ('privacy_allow: 5', 'privacy_allow: "0123456789."',
+                     'labels:\n  auto_create: "no"', 'protected_paths: [1, 2]',
+                     'labels:\n  map:\n    stretch: 5', 'merge: []'):
+            with self.subTest(meta=meta):
+                with self.assertRaises(config.ConfigError):
+                    config.load(str(make_repo(f"---\n{meta}\n---\n")))
+
     def test_load_from_subdirectory(self):
         root = make_repo("x\n")
         (root / "src").mkdir()
