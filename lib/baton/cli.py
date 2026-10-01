@@ -156,6 +156,28 @@ def cmd_sprint_status(args):
     return 0
 
 
+def cmd_lock(args):
+    ttl = 6.0
+    if "--ttl-hours" in args:
+        ttl = float(args[args.index("--ttl-hours") + 1])
+    cfg = _require_config()
+    common = run.run(["git", "-C", str(cfg.root), "rev-parse", "--git-common-dir"]).strip()
+    path = os.path.join(str(cfg.root), common, "baton-sprint.lock")
+    action = args[0] if args else ""
+    if action == "acquire":
+        if sprint.lock_acquire(path, f"pid {os.getppid()}", ttl):
+            print("lock acquired")
+            return 0
+        print("another sprint run holds the lock", file=sys.stderr)
+        return 1
+    if action == "release":
+        sprint.lock_release(path)
+        print("lock released")
+        return 0
+    print("usage: baton lock <acquire|release> [--ttl-hours N]", file=sys.stderr)
+    return 64
+
+
 COMMANDS = {
     "answers": cmd_answers,
     "comment": cmd_comment,
@@ -165,6 +187,7 @@ COMMANDS = {
     "git-hook": cmd_git_hook,
     "install-hooks": cmd_install_hooks,
     "labels": cmd_labels,
+    "lock": cmd_lock,
     "merge-pr": cmd_merge_pr,
     "set-status": cmd_set_status,
     "sprint-status": cmd_sprint_status,

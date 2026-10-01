@@ -13,8 +13,24 @@ The workflow is adapted from the GitLab handbook's
 
 ## Status
 
-Foundation only: `/baton:init`, the privacy publish gate, git hooks, label setup and `baton merge-pr`.
-The `develop`, `refine`, `sprint-plan` and `sprint` skills come in later plans.
+All skills and helpers are written and unit-tested. No sprint has been run with them on a real
+repository yet; the first pilot sprint is the next step.
+
+## Skills
+
+| Skill | Purpose |
+|---|---|
+| `/baton:init` | Set a repository up: brief, labels, private files, git hooks |
+| `/baton:refine <issue>` | Bring an issue up to the definition of ready |
+| `/baton:sprint-plan` | Plan a sprint with the maintainer and create its milestone |
+| `/baton:sprint` | Work a sprint: dispatch developers, collect answers, check and merge, retrospective |
+| `/baton:develop <issue>` | Take one issue to one pull request (used by the `baton-developer` subagent) |
+
+Typical use:
+
+    /baton:sprint Pick issues that can be completed within 1 day. Use up to 4 parallel subagents.
+
+Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 
 ## Commands
 
@@ -25,6 +41,11 @@ The `develop`, `refine`, `sprint-plan` and `sprint` skills come in later plans.
 | `baton set-status <issue> <status:name>` | Switch an issue's status label |
 | `baton install-hooks` | Install the `pre-commit` and `pre-push` privacy hooks |
 | `baton merge-pr <number>` | Run the acceptance checks and merge |
+| `baton comment <issue\|pr> <number> <role> <kind> <file>` | Scan, stamp and post an agent comment |
+| `baton answers <issue>` | The latest agent question and the maintainer's replies |
+| `baton ready-check <issue>` | The mechanical half of the definition of ready |
+| `baton sprint-status [milestone]` | The sprint's state and what may be dispatched now, as JSON |
+| `baton lock <acquire\|release>` | Stop two scheduled runs overlapping |
 
 ## Rules the gate enforces in a Baton repository
 

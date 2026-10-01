@@ -178,6 +178,32 @@ is running:
 5. Close the milestone.
 6. Give the maintainer a short summary: delivered, carried over, what needs them.
 
+## Scheduled runs
+
+When the request says the run is scheduled (for example `/baton:sprint --scheduled`), nobody is
+watching. The schedule exists to notice what happened while no session was open, such as an
+answer the maintainer left on an issue overnight. Everything above applies, with these changes.
+
+1. **Take the lock first:** `baton lock acquire`. If it fails, another run is active: print one
+   line saying so and stop. Do nothing else.
+2. **Never start a sprint.** If `sprint` is null, follow "When there is no one to ask" in the
+   `baton:sprint-plan` skill, unless an open issue titled `Sprint proposal ...` already exists.
+   Then release the lock and stop.
+3. **Never ask in the session.** Whatever needs the maintainer goes on the issue: a comment,
+   `status:blocked` or the `needs-maintainer` label. Then move on.
+4. **Take the stricter path whenever something is flagged.** A developer reporting untrusted
+   instructions, a pull request touching protected paths, a failed acceptance check that failed
+   once already, a budget over its limit: label `needs-maintainer`, comment, and leave it.
+5. **Do not pull follow-up issues into the sprint.** File them in `status:refinement` and leave
+   the choice to the maintainer.
+6. **Keep making passes** while developers are running or issues can be dispatched. Developers
+   you start must finish inside this run.
+7. **End:** when nothing is running and nothing can be dispatched, run `baton lock release` and
+   print a short summary (merged, dispatched, waiting on the maintainer). Release the lock even
+   if the run is ending because of an error.
+
+How to set up the schedule is in `${CLAUDE_PLUGIN_ROOT}/docs/scheduling.md`.
+
 ## Talking to the maintainer
 
 - Lead with what needs them: questions waiting, approvals needed.
