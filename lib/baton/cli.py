@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from . import config, gate, githooks, scan
+from . import config, gate, githooks, labels, run, scan
 
 
 def cmd_config(args):
@@ -49,11 +49,39 @@ def cmd_install_hooks(args):
     return 0
 
 
+def _require_config():
+    cfg = config.load(os.getcwd())
+    if cfg is None:
+        raise config.ConfigError("not a Baton repository: .baton/brief.md not found")
+    return cfg
+
+
+def cmd_labels(args):
+    cfg = _require_config()
+    create = cfg.data["labels"]["auto_create"] or "--create" in args
+    created, still = labels.ensure(cfg, run.run, create=create)
+    for name in created:
+        print(f"created {name}")
+    for name in still:
+        print(f"missing {name}", file=sys.stderr)
+    return 1 if still else 0
+
+
+def cmd_set_status(args):
+    if len(args) != 2:
+        print("usage: baton set-status <issue-number> <status:name>", file=sys.stderr)
+        return 64
+    labels.set_status(_require_config(), run.run, int(args[0]), args[1])
+    return 0
+
+
 COMMANDS = {
     "config": cmd_config,
     "gate": cmd_gate,
     "git-hook": cmd_git_hook,
     "install-hooks": cmd_install_hooks,
+    "labels": cmd_labels,
+    "set-status": cmd_set_status,
 }
 
 
@@ -63,6 +91,6 @@ def main(argv):
         return 64
     try:
         return COMMANDS[argv[0]](argv[1:])
-    except config.ConfigError as error:
+    except (config.ConfigError, run.RunError, ValueError) as error:
         print(f"baton: {error}", file=sys.stderr)
         return 2
