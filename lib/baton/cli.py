@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from . import comment, config, gate, githooks, issue, labels, merge, run, scan
+from . import comment, config, gate, githooks, issue, labels, merge, run, scan, sprint
 
 
 def cmd_config(args):
@@ -150,6 +150,12 @@ def cmd_ready_check(args):
     return 1 if problems else 0
 
 
+def cmd_sprint_status(args):
+    cfg = _require_config()
+    print(json.dumps(sprint.snapshot(cfg, run.run, args[0] if args else None), indent=2))
+    return 0
+
+
 COMMANDS = {
     "answers": cmd_answers,
     "comment": cmd_comment,
@@ -161,6 +167,7 @@ COMMANDS = {
     "labels": cmd_labels,
     "merge-pr": cmd_merge_pr,
     "set-status": cmd_set_status,
+    "sprint-status": cmd_sprint_status,
 }
 
 
