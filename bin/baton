@@ -1,0 +1,3 @@
+#!/bin/sh
+here="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHONPATH="$here/lib${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m baton "$@"
