@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from . import config, gate, githooks, labels, merge, run, scan
+from . import comment, config, gate, githooks, issue, labels, merge, run, scan
 
 
 def cmd_config(args):
@@ -105,7 +105,55 @@ def cmd_merge_pr(args):
     return 0
 
 
+def _owner():
+    return json.loads(run.run(["gh", "repo", "view", "--json", "owner"]))["owner"]["login"]
+
+
+def cmd_comment(args):
+    if len(args) != 5:
+        print("usage: baton comment <issue|pr> <number> <role> <kind> <body-file>",
+              file=sys.stderr)
+        return 64
+    target, number, role, kind, path = args
+    with open(path) as handle:
+        body = handle.read()
+    try:
+        print(comment.post(_require_config(), run.run, target, int(number), role, kind,
+                           body, scan.load_terms()))
+    except comment.CommentError as error:
+        print(f"baton: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_answers(args):
+    if len(args) != 1 or not args[0].isdigit():
+        print("usage: baton answers <issue-number>", file=sys.stderr)
+        return 64
+    _require_config()
+    data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "comments"]))
+    print(json.dumps(comment.pending_answers(data, _owner()), indent=2))
+    return 0
+
+
+def cmd_ready_check(args):
+    if len(args) != 1 or not args[0].isdigit():
+        print("usage: baton ready-check <issue-number>", file=sys.stderr)
+        return 64
+    cfg = _require_config()
+    data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "author,body,labels"]))
+    problems = issue.ready_problems(data, cfg, _owner())
+    for problem in problems:
+        print(f"- {problem}")
+    if not problems:
+        print("ready")
+    return 1 if problems else 0
+
+
 COMMANDS = {
+    "answers": cmd_answers,
+    "comment": cmd_comment,
+    "ready-check": cmd_ready_check,
     "config": cmd_config,
     "gate": cmd_gate,
     "git-hook": cmd_git_hook,
@@ -122,6 +170,6 @@ def main(argv):
         return 64
     try:
         return COMMANDS[argv[0]](argv[1:])
-    except (config.ConfigError, run.RunError, ValueError) as error:
+    except (config.ConfigError, run.RunError, ValueError, OSError) as error:
         print(f"baton: {error}", file=sys.stderr)
         return 2

@@ -24,7 +24,7 @@ class LabelsTest(unittest.TestCase):
         self.assertNotIn("In Progress", missing)
         self.assertNotIn("status:in-dev", missing)
         self.assertIn("status:blocked", missing)
-        self.assertEqual(len(missing), 10)
+        self.assertEqual(len(missing), 13)
 
     def test_ensure_creates_missing_labels(self):
         cfg = make_config()
@@ -39,7 +39,7 @@ class LabelsTest(unittest.TestCase):
         runner = FakeRunner({"gh label list": label_list([])})
         created, still = labels.ensure(cfg, runner, create=False)
         self.assertEqual(created, [])
-        self.assertEqual(len(still), 12)
+        self.assertEqual(len(still), 15)
         self.assertFalse(any("label create" in line for line in runner.lines()))
 
     def test_set_status_swaps_only_present_status_labels(self):

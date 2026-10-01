@@ -9,7 +9,7 @@ STATUSES = [
     "status:in-review", "status:verification", "status:complete",
 ]
 OTHER_LABELS = [
-    "type:spike", "deliverable", "stretch", "broken-default-branch",
+    "type:feature", "type:bug", "type:maintenance", "type:spike", "deliverable", "stretch", "broken-default-branch",
     "needs-maintainer",
 ]
 DEFAULTS = {
