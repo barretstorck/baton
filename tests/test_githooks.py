@@ -1,0 +1,139 @@
+import pathlib
+import subprocess
+import tempfile
+import unittest
+from baton import gate, githooks
+
+TERMS = ["Zebrowski"]
+ZEROS = "0" * 40
+
+
+def git(repo, *args):
+    return subprocess.run(["git", "-C", repo, *args], check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def make_repo(brief='---\nfixtures_paths: ["tests/fixtures/"]\n---\n'):
+    repo = tempfile.mkdtemp()
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.email", "dev@example.com")
+    git(repo, "config", "user.name", "Dev")
+    if brief is not None:
+        pathlib.Path(repo, ".baton").mkdir()
+        pathlib.Path(repo, ".baton", "brief.md").write_text(brief)
+    pathlib.Path(repo, "a.txt").write_text("hello\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "base")
+    return repo
+
+
+def write(repo, name, content):
+    path = pathlib.Path(repo, name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content if isinstance(content, bytes) else content.encode())
+
+
+class AddedTextTest(unittest.TestCase):
+    def test_keeps_added_and_message_lines_drops_removed_and_context(self):
+        patch = "msg line\n--- a/x\n+++ b/x\n-removed 192.168.7.7\n context\n+added\n"
+        text = githooks.added_text(patch)
+        self.assertIn("msg line", text)
+        self.assertIn("+added", text)
+        self.assertNotIn("removed", text)
+        self.assertNotIn("context", text)
+
+
+class PreCommitTest(unittest.TestCase):
+    def test_clean_change_passes(self):
+        repo = make_repo()
+        write(repo, "a.txt", "hello\nworld\n")
+        git(repo, "add", "-A")
+        self.assertEqual(githooks.pre_commit(repo, TERMS), [])
+
+    def test_added_private_term_blocks(self):
+        repo = make_repo()
+        write(repo, "a.txt", "hello\nZebrowski\n")
+        git(repo, "add", "-A")
+        self.assertTrue(any("private-term" in p for p in githooks.pre_commit(repo, TERMS)))
+
+    def test_removing_private_text_passes(self):
+        repo = make_repo()
+        write(repo, "a.txt", "hello\nhost 192.168.7.7\n")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", "leak")
+        write(repo, "a.txt", "hello\n")
+        git(repo, "add", "-A")
+        self.assertEqual(githooks.pre_commit(repo, TERMS), [])
+
+    def test_new_image_outside_fixtures_blocks(self):
+        repo = make_repo()
+        write(repo, "docs/face.JPG", b"\xff\xd8")
+        git(repo, "add", "-A")
+        self.assertTrue(any("image" in p for p in githooks.pre_commit(repo, TERMS)))
+
+    def test_new_image_in_fixtures_passes(self):
+        repo = make_repo()
+        write(repo, "tests/fixtures/chart.png", b"\x89PNG")
+        git(repo, "add", "-A")
+        self.assertEqual(githooks.pre_commit(repo, TERMS), [])
+
+    def test_non_baton_repo_is_ignored(self):
+        repo = make_repo(brief=None)
+        write(repo, "a.txt", "Zebrowski\n")
+        git(repo, "add", "-A")
+        self.assertEqual(githooks.pre_commit(repo, TERMS), [])
+
+
+class PrePushTest(unittest.TestCase):
+    def test_new_branch_scans_commits_not_on_remote(self):
+        repo = make_repo()
+        write(repo, "a.txt", "hello\nmail alice@corp-mail.test\n")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", "add contact")
+        head = git(repo, "rev-parse", "HEAD")
+        line = f"refs/heads/main {head} refs/heads/main {ZEROS}\n"
+        self.assertTrue(any("email" in p for p in githooks.pre_push(repo, line, TERMS)))
+
+    def test_commit_message_is_scanned(self):
+        repo = make_repo()
+        base = git(repo, "rev-parse", "HEAD")
+        write(repo, "a.txt", "hello\nmore\n")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", "import scans\n\n- the Zebrowski set")
+        head = git(repo, "rev-parse", "HEAD")
+        line = f"refs/heads/main {head} refs/heads/main {base}\n"
+        self.assertTrue(any("private-term" in p for p in githooks.pre_push(repo, line, TERMS)))
+
+    def test_clean_range_and_branch_delete_pass(self):
+        repo = make_repo()
+        base = git(repo, "rev-parse", "HEAD")
+        write(repo, "a.txt", "hello\nmore\n")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", "more")
+        head = git(repo, "rev-parse", "HEAD")
+        self.assertEqual(githooks.pre_push(repo, f"refs/heads/main {head} refs/heads/main {base}\n", TERMS), [])
+        self.assertEqual(githooks.pre_push(repo, f"(delete) {ZEROS} refs/heads/x {base}\n", TERMS), [])
+
+
+class InstallTest(unittest.TestCase):
+    def test_install_writes_tagged_executable_shims(self):
+        repo = make_repo()
+        written = githooks.install(repo, "/opt/baton/bin/baton")
+        self.assertEqual(len(written), 2)
+        for path in written:
+            content = pathlib.Path(path).read_text()
+            self.assertIn(gate.HOOK_TAG, content)
+            self.assertIn("/opt/baton/bin/baton", content)
+            self.assertTrue(pathlib.Path(path).stat().st_mode & 0o111)
+
+    def test_install_is_repeatable(self):
+        repo = make_repo()
+        githooks.install(repo, "/opt/baton/bin/baton")
+        githooks.install(repo, "/other/bin/baton")
+        self.assertIn("/other/bin/baton", pathlib.Path(repo, ".git/hooks/pre-push").read_text())
+
+    def test_install_refuses_foreign_hook(self):
+        repo = make_repo()
+        pathlib.Path(repo, ".git/hooks/pre-commit").write_text("#!/bin/sh\necho mine\n")
+        with self.assertRaises(githooks.HookError):
+            githooks.install(repo, "/opt/baton/bin/baton")
