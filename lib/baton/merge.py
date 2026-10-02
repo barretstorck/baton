@@ -37,6 +37,10 @@ def _check_ci(pr, cfg):
             problems.append(f"check {name!r} has not finished")
         elif result not in _PASSING:
             problems.append(f"check {name!r} concluded {result}")
+    if not problems and all(
+            (item.get("conclusion") or item.get("state")) == "SKIPPED" for item in rollup):
+        problems.append("every check was skipped on the head commit (a draft run?); "
+                        "wait for the run after the pull request was marked ready")
     return problems
 
 

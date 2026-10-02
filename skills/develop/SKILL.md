@@ -36,7 +36,8 @@ you start.
 2. **Claim, or resume.**
    - Look for an existing branch `issue-<N>-*` and a pull request that closes the issue.
    - *None:* `baton set-status <N> status:in-dev`; create branch `issue-<N>-<short-slug>` from the
-     up-to-date default branch; make one small first commit; push; open a **draft** pull request
+     up-to-date default branch; make one small first commit; push; open a **draft** pull request (drafts may not run CI, which
+     saves minutes while you work)
      whose body has `Closes #<N>` on its own line.
    - *Found:* check that branch out, read its commits and the pull request, read
      `baton answers <N>`, and continue from where it stopped. Do not start over.
@@ -64,7 +65,10 @@ you start.
 
 8. **Hand over.** Update the pull request body: what changed, how it was verified (paste the
    passing summary line), anything the reviewer should look at, and `Closes #<N>` once. Push once.
-   Wait for CI on your head commit; if it fails, fix it. Then `gh pr ready <PR>` and
+   Then mark it ready with `gh pr ready <PR>`. Many repositories run CI only on pull requests that
+   are ready for review, so do not wait for CI while it is a draft. Wait for CI on your head
+   commit after marking it ready (`gh pr checks <PR> --watch`). A check that was skipped while it
+   was a draft does not count. If CI fails, fix it and push. When it passes,
    `baton set-status <N> status:in-review`.
 
 9. **Return** (see below).

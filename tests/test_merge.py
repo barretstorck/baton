@@ -59,6 +59,10 @@ class CheckTest(unittest.TestCase):
             with self.subTest(rollup=rollup):
                 self.assertTrue(any("check" in p for p in problems(statusCheckRollup=rollup)))
 
+    def test_all_skipped_checks_are_refused(self):
+        rollup = [{"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SKIPPED"}]
+        self.assertTrue(any("skipped" in p for p in problems(statusCheckRollup=rollup)))
+
     def test_skipped_check_and_success_status_pass(self):
         rollup = [{"__typename": "CheckRun", "name": "a", "status": "COMPLETED", "conclusion": "SKIPPED"},
                   {"__typename": "StatusContext", "context": "ext", "state": "SUCCESS"}]
