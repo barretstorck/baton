@@ -59,6 +59,24 @@ class CheckTest(unittest.TestCase):
             with self.subTest(rollup=rollup):
                 self.assertTrue(any("check" in p for p in problems(statusCheckRollup=rollup)))
 
+    def test_only_the_latest_run_of_each_check_counts(self):
+        def check(conclusion, started):
+            return {"__typename": "CheckRun", "name": "test", "workflowName": "test",
+                    "status": "COMPLETED", "conclusion": conclusion, "startedAt": started}
+        cancelled_then_passed = [check("CANCELLED", "2026-10-02T10:00:00Z"),
+                                 check("SUCCESS", "2026-10-02T11:00:00Z")]
+        self.assertEqual(problems(statusCheckRollup=cancelled_then_passed), [])
+        passed_then_failed = [check("SUCCESS", "2026-10-02T10:00:00Z"),
+                              check("FAILURE", "2026-10-02T11:00:00Z")]
+        self.assertTrue(any("FAILURE" in p for p in problems(statusCheckRollup=passed_then_failed)))
+
+    def test_skipped_draft_run_then_success_passes(self):
+        rollup = [{"__typename": "CheckRun", "name": "test", "workflowName": "test", "status": "COMPLETED",
+                   "conclusion": "SKIPPED", "startedAt": "2026-10-02T10:00:00Z"},
+                  {"__typename": "CheckRun", "name": "test", "workflowName": "test", "status": "COMPLETED",
+                   "conclusion": "SUCCESS", "startedAt": "2026-10-02T11:00:00Z"}]
+        self.assertEqual(problems(statusCheckRollup=rollup), [])
+
     def test_all_skipped_checks_are_refused(self):
         rollup = [{"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SKIPPED"}]
         self.assertTrue(any("skipped" in p for p in problems(statusCheckRollup=rollup)))

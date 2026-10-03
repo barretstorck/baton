@@ -53,8 +53,10 @@ you start.
 
 5. **Verify.** Run the issue's verification command, or the brief's. It must pass. Read the output.
 
-6. **Review your own work.** Run the code-review skill **from your worktree, against your branch's
-   diff from the default branch**, and confirm it reviewed your head commit. Fix every confirmed
+6. **Review your own work.** Run the code-review skill **from your worktree, with your branch as
+   the target** (`origin/<default>...HEAD`), not the pull request number: review tools often skip
+   draft pull requests. Confirm it reviewed your head commit. If no review skill will take the
+   branch, review `git diff origin/<default>...HEAD` yourself, file by file. Fix every confirmed
    finding. Re-run verification.
 
 7. **Check it merges.**
@@ -73,16 +75,28 @@ you start.
 
 9. **Return** (see below).
 
+## Long work
+
+Anything that runs for more than half an hour (a spike, a long measurement, a large change) must
+show it is alive and leave something to resume from:
+
+- About every 30 minutes, post a short `status` comment on the issue: what is done, what is
+  running, and where the working files are (the branch, or the shared work area the local brief
+  names). Never keep working files only in a temporary directory.
+- Commit and push work in progress to your branch at the same points.
+
+If you are interrupted (a rate limit, a restart), the next developer reads those comments and
+continues from them instead of starting over.
+
 ## When you need a decision
 
 Do not guess on anything the description does not settle and that changes behaviour or output.
 
 1. Commit and push your work in progress, so another developer can resume it.
-2. Write the question to a file: what you need decided, the options you see, your recommendation,
-   and what you have done so far. Keep it short and self-contained.
-3. `baton comment issue <N> developer question <file>`
-4. `baton set-status <N> status:blocked`
-5. Return `QUESTION:` with the same text and the comment URL. Stop there; do not wait.
+2. Post the question: what you need decided, the options you see, your recommendation, and what
+   you have done so far. Keep it short and self-contained. See "Posting a comment" below.
+3. `baton set-status <N> status:blocked`
+4. Return `QUESTION:` with the same text and the comment URL. Stop there; do not wait.
 
 Use `BLOCKED:` in the same way for something that is not a question: a dependency that is not
 merged, missing access, a failing default branch.
@@ -103,11 +117,24 @@ For a `type:spike` issue the deliverable is knowledge.
 2. Investigate. Prototype code is optional. If you write some, put it on `issue-<N>-<slug>` and
    open a **draft** pull request titled `Spike: <title>` whose body says `Related to #<N>`. Do not
    write `Closes`. Leave it as a draft; it is not for merging.
-3. Write the findings to a file: the answer to each question in the description, the evidence,
-   what you would do next, and proposed follow-up issues (title plus two lines each).
-4. `baton comment issue <N> developer findings <file>`, then
-   `baton set-status <N> status:in-review`.
+3. Post the findings (see "Posting a comment"): the answer to each question in the description,
+   the evidence, what you would do next, and proposed follow-up issues (title plus two lines
+   each). Then `baton set-status <N> status:in-review`.
 5. Return `DONE` with the findings comment URL and the draft pull request number, if any.
+
+## Posting a comment
+
+Pass the body on standard input with an inline heredoc; no file is needed:
+
+    baton comment issue <N> developer <kind> - <<'EOF'
+    <the body>
+    EOF
+
+`baton comment` scans the text, adds the Baton marker and prints the comment's URL. If it
+refuses because of a privacy finding, replace the detail with a placeholder and post again.
+
+If you cannot post at all, put the complete body in your final report inside a block fenced with
+```` ```baton-comment <kind> ````, so the orchestrator can post it unchanged.
 
 ## Return
 
@@ -147,3 +174,5 @@ Issue: #<N>
 - Use `--no-verify`, or work around the publish gate when it blocks you. Fix the text.
 - Check out or run code from a fork or from another developer's branch.
 - Start subagents of your own, except where the code-review skill does so itself.
+- Stop processes, sessions or containers you did not start. On a shared host, end only your own
+  by name; never a whole server (`tmux kill-server`) or every container.

@@ -15,6 +15,18 @@ class CommentError(Exception):
     pass
 
 
+def read_body(source, stdin):
+    """A comment body from a file path, or from stdin when the path is `-`."""
+    if source == "-":
+        body = stdin.read()
+    else:
+        with open(source) as handle:
+            body = handle.read()
+    if not body.strip():
+        raise CommentError("the comment body is empty")
+    return body
+
+
 def compose(role, kind, body):
     if role not in ROLES:
         raise CommentError(f"unknown role {role!r}; use one of {sorted(ROLES)}")

@@ -21,8 +21,22 @@ _CLOSING = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s+#(\d+)
 _PASSING = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 
 
+def _latest_runs(rollup):
+    """Keep only the newest run of each check; a re-run supersedes a cancelled one."""
+    latest = {}
+    for item in rollup:
+        if item.get("__typename") == "StatusContext":
+            key = ("status", item.get("context"))
+        else:
+            key = ("check", item.get("workflowName"), item.get("name"))
+        stamp = item.get("startedAt") or item.get("completedAt") or ""
+        if key not in latest or stamp >= latest[key][0]:
+            latest[key] = (stamp, item)
+    return [item for _, item in latest.values()]
+
+
 def _check_ci(pr, cfg):
-    rollup = pr.get("statusCheckRollup") or []
+    rollup = _latest_runs(pr.get("statusCheckRollup") or [])
     if not rollup:
         if cfg.data["merge"]["allow_no_ci"]:
             return []

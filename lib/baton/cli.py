@@ -111,13 +111,12 @@ def _owner():
 
 def cmd_comment(args):
     if len(args) != 5:
-        print("usage: baton comment <issue|pr> <number> <role> <kind> <body-file>",
+        print("usage: baton comment <issue|pr> <number> <role> <kind> <body-file | ->",
               file=sys.stderr)
         return 64
     target, number, role, kind, path = args
-    with open(path) as handle:
-        body = handle.read()
     try:
+        body = comment.read_body(path, sys.stdin)
         print(comment.post(_require_config(), run.run, target, int(number), role, kind,
                            body, scan.load_terms()))
     except comment.CommentError as error:

@@ -62,6 +62,23 @@ class PostTest(unittest.TestCase):
             comment.post(cfg(), FakeRunner(), "release", 7, "developer", "status", "x", [])
 
 
+class BodyArgumentTest(unittest.TestCase):
+    def test_dash_reads_the_body_from_stdin(self):
+        import io
+        self.assertEqual(comment.read_body("-", io.StringIO("from stdin\n")), "from stdin\n")
+
+    def test_path_reads_the_file(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as handle:
+            handle.write("from a file")
+        self.assertEqual(comment.read_body(handle.name, None), "from a file")
+
+    def test_empty_body_is_refused(self):
+        import io
+        with self.assertRaises(comment.CommentError):
+            comment.read_body("-", io.StringIO("  \n"))
+
+
 class AnswersTest(unittest.TestCase):
     def test_no_question_means_nothing_pending(self):
         result = comment.pending_answers({"comments": [c(OWNER, "hello", 1)]}, OWNER)

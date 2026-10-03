@@ -21,7 +21,7 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 |---|---|
 | Set an issue's status | `baton set-status <N> status:<name>` (removes the previous status) |
 | Add or remove another label | `gh issue edit <N> --add-label <label>` / `--remove-label <label>`; use the names from `labels.map` in `baton config` |
-| Post a comment | Write the body to a file with the Write tool, then `baton comment <issue\|pr> <N> <role> <kind> <file>`. It scans the text, adds the Baton marker and prints the comment URL. |
+| Post a comment | `baton comment <issue\|pr> <N> <role> <kind> -` with the body as an inline heredoc on standard input, or a file path in place of `-`. It scans the text, adds the Baton marker and prints the comment URL. |
 | Edit an issue description | Write the full new description to a file, then `gh issue edit <N> --body-file <file>` |
 | Create an issue | Write the description to a file, then `gh issue create --title "<title>" --body-file <file> --label <labels>` |
 | Open a draft pull request | `gh pr create --draft --title "<title>" --body-file <file>` with `Closes #<N>` on its own line in the body |
@@ -30,6 +30,9 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 
 Roles: `orchestrator`, `developer`, `refine`. Kinds: `question`, `status`, `decision`, `plan`,
 `review`, `findings`.
+
+Where a row says "write ... to a file", an inline heredoc works too and needs no file:
+`--body "$(cat <<'EOF'` on one line, the text, then `EOF` and `)"` on the last two lines.
 
 ## Rules the publish gate enforces
 
