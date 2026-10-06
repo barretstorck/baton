@@ -53,11 +53,13 @@ you start.
 
 5. **Verify.** Run the issue's verification command, or the brief's. It must pass. Read the output.
 
-6. **Review your own work.** Run the code-review skill **from your worktree, with your branch as
-   the target** (`origin/<default>...HEAD`), not the pull request number: review tools often skip
-   draft pull requests. Confirm it reviewed your head commit. If no review skill will take the
-   branch, review `git diff origin/<default>...HEAD` yourself, file by file. Fix every confirmed
-   finding. Re-run verification.
+6. **Review your own work.** Push, then mark the pull request ready with `gh pr ready <PR>`
+   **before** running the code-review skill: review tools decline draft pull requests. Run the
+   code-review skill from your worktree on the pull request, and confirm it reviewed your head
+   commit. If no review skill will take it, review `git diff origin/<default>...HEAD` yourself,
+   file by file, and say so in the pull request body. Fix every confirmed finding, push, and
+   re-run verification. Keep the status `status:in-dev` until step 8: a ready pull request is
+   not yet handed over.
 
 7. **Check it merges.**
    - Fetch and merge the default branch into your branch. Resolve conflicts; re-run verification.
@@ -67,10 +69,10 @@ you start.
 
 8. **Hand over.** Update the pull request body: what changed, how it was verified (paste the
    passing summary line), anything the reviewer should look at, and `Closes #<N>` once. Push once.
-   Then mark it ready with `gh pr ready <PR>`. Many repositories run CI only on pull requests that
-   are ready for review, so do not wait for CI while it is a draft. Wait for CI on your head
-   commit after marking it ready (`gh pr checks <PR> --watch`). A check that was skipped while it
-   was a draft does not count. If CI fails, fix it and push. When it passes,
+   The pull request is already ready for review (step 6); if it is still a draft, run
+   `gh pr ready <PR>` now. Many repositories run CI only on pull requests that are ready for
+   review, so wait for CI on your head commit (`gh pr checks <PR> --watch`). A check that was
+   skipped while it was a draft does not count. If CI fails, fix it and push. When it passes,
    `baton set-status <N> status:in-review`.
 
 9. **Return** (see below).

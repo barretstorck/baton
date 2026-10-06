@@ -1,5 +1,5 @@
 {
   "name": "baton",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Run software sprints on a forge repository with an orchestrator and parallel developer agents."
 }
