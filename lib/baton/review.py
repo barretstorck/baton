@@ -15,7 +15,7 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 _REVIEW = re.compile(
     r"^<!-- baton:reviewer:review verdict=(approve|changes) commit=([0-9a-f]{40}) -->")
 _REPLY = f"{gate.MARKER}developer:reply -->"
-_CHANGE_LINE = re.compile(r"^(?:diff --git |\+|-)")
+_HUNK = re.compile(r"^@@ [^@]* @@.*$")
 
 
 class ReviewError(Exception):
@@ -51,26 +51,43 @@ def history(comments, owner):
 
 
 def state(comments, owner, max_rounds):
-    """none, changes, replied, approved or escalate; the rounds so far; the last review."""
+    """none, changes, replied, approved or escalate; the rounds so far; the last review.
+
+    Rounds count the requests for changes since the last approval: an approval
+    that went stale starts the count again.
+    """
     events = history(comments, owner)
     reviews = [event for event in events if event["kind"] == "review"]
     if not reviews:
         return {"state": "none", "rounds": 0, "review": None}
     last = reviews[-1]
+    rounds = 0
+    for event in reversed(reviews):
+        if event["verdict"] == "approve":
+            break
+        rounds += 1
     if events[-1]["kind"] == "reply":
         name = "replied"
     elif last["verdict"] == "approve":
         name = "approved"
-    elif len(reviews) >= max_rounds:
+    elif rounds >= max_rounds:
         name = "escalate"
     else:
         name = "changes"
-    return {"state": name, "rounds": len(reviews), "review": last}
+    return {"state": name, "rounds": rounds, "review": last}
 
 
 def fingerprint(diff_text):
-    """A diff's identity without line positions, context lines or blob ids."""
-    lines = [line for line in diff_text.splitlines() if _CHANGE_LINE.match(line)]
+    """A diff's identity without line positions or blob ids.
+
+    Context lines, mode changes and binary data stay in, so a line moved
+    elsewhere in a file, a chmod or a changed binary file is a different change.
+    """
+    lines = []
+    for line in diff_text.splitlines():
+        if line.startswith("index "):
+            continue
+        lines.append("@@" if _HUNK.match(line) else line)
     return hashlib.sha256("\n".join(lines).encode()).hexdigest()
 
 
@@ -78,7 +95,7 @@ def _change_id(runner, base_ref, commit, paths):
     base = runner(["git", "merge-base", base_ref, commit]).strip()
     if not base:
         raise run.RunError(f"no merge base for {commit[:7]}")
-    argv = ["git", "diff", base, commit] + (["--", *paths] if paths else [])
+    argv = ["git", "diff", "--binary", base, commit] + (["--", *paths] if paths else [])
     return fingerprint(runner(argv))
 
 

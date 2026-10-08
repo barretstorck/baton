@@ -137,7 +137,7 @@ class CheckTest(unittest.TestCase):
         old = "d" * 40
         runner = FakeRunner({f"git merge-base origin/main {old}": "b1\n",
                              f"git merge-base origin/main {HEAD}": "b2\n",
-                             f"git diff b1 {old}": "+a\n", f"git diff b2 {HEAD}": "+a\n+b\n"})
+                             f"git diff --binary b1 {old}": "+a\n", f"git diff --binary b2 {HEAD}": "+a\n+b\n"})
         pr = make_pr(comments=[approval(old)])
         found = merge.check(pr, make_config(), OWNER, "main", runner)
         self.assertTrue(any("stale" in p for p in found))
@@ -147,8 +147,8 @@ class CheckTest(unittest.TestCase):
         files = [{"path": ".github/workflows/ci.yml"}]
         runner = FakeRunner({f"git merge-base origin/main {old[:7]}": "b1\n",
                              f"git merge-base origin/main {HEAD}": "b2\n",
-                             f"git diff b1 {old[:7]} -- .github/workflows/ci.yml": "+on: push\n",
-                             f"git diff b2 {HEAD} -- .github/workflows/ci.yml": "+on: push\n"})
+                             f"git diff --binary b1 {old[:7]} -- .github/workflows/ci.yml": "+on: push\n",
+                             f"git diff --binary b2 {HEAD} -- .github/workflows/ci.yml": "+on: push\n"})
         comments = [approval(), {"author": {"login": OWNER}, "body": f"/baton approve {old[:7]}"}]
         pr = make_pr(files=files, comments=comments)
         self.assertEqual(merge.check(pr, make_config(), OWNER, "main", runner), [])
@@ -159,8 +159,8 @@ class CheckTest(unittest.TestCase):
         files = [{"path": ".github/workflows/ci.yml"}]
         runner = FakeRunner({f"git merge-base origin/main {old[:7]}": "b1\n",
                              f"git merge-base origin/main {HEAD}": "b2\n",
-                             f"git diff b1 {old[:7]} -- .github/workflows/ci.yml": "+on: push\n",
-                             f"git diff b2 {HEAD} -- .github/workflows/ci.yml": "+on: [push]\n"})
+                             f"git diff --binary b1 {old[:7]} -- .github/workflows/ci.yml": "+on: push\n",
+                             f"git diff --binary b2 {HEAD} -- .github/workflows/ci.yml": "+on: [push]\n"})
         comments = [approval(), {"author": {"login": OWNER}, "body": f"/baton approve {old[:7]}"}]
         found = merge.check(make_pr(files=files, comments=comments), make_config(), OWNER, "main", runner)
         self.assertTrue(any("protected" in p for p in found))

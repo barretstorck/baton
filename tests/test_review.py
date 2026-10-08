@@ -32,8 +32,8 @@ def diff_runner(old_diff, new_diff):
     return FakeRunner({
         f"git merge-base origin/main {OLD}": "base1\n",
         f"git merge-base origin/main {NEW}": "base2\n",
-        f"git diff base1 {OLD}": old_diff,
-        f"git diff base2 {NEW}": new_diff,
+        f"git diff --binary base1 {OLD}": old_diff,
+        f"git diff --binary base2 {NEW}": new_diff,
     })
 
 
@@ -56,7 +56,7 @@ class StateTest(unittest.TestCase):
         self.assertEqual(review.state([rev("changes")], OWNER, 2)["state"], "changes")
         self.assertEqual(review.state([rev("changes"), reply()], OWNER, 2)["state"], "replied")
         done = review.state([rev("changes"), reply(), rev("approve")], OWNER, 2)
-        self.assertEqual((done["state"], done["rounds"]), ("approved", 2))
+        self.assertEqual((done["state"], done["rounds"]), ("approved", 0))
 
     def test_rounds_used_up_escalates(self):
         found = review.state([rev("changes"), reply(), rev("changes")], OWNER, 2)
@@ -64,6 +64,11 @@ class StateTest(unittest.TestCase):
         # The maintainer settled it and the developer replied: review again.
         found = review.state([rev("changes"), reply(), rev("changes"), reply()], OWNER, 2)
         self.assertEqual(found["state"], "replied")
+
+    def test_rounds_restart_after_an_approval(self):
+        # Approved, then a CI fix made it stale; the next request for changes is round 1.
+        found = review.state([rev("approve", OLD), rev("changes")], OWNER, 2)
+        self.assertEqual((found["state"], found["rounds"]), ("changes", 1))
 
     def test_reply_after_approval_asks_for_another_review(self):
         self.assertEqual(review.state([rev("approve"), reply()], OWNER, 2)["state"], "replied")
@@ -78,12 +83,22 @@ class StateTest(unittest.TestCase):
 
 
 class SameChangeTest(unittest.TestCase):
-    def test_fingerprint_ignores_positions_and_context(self):
-        moved = (DIFF.replace("index 1..2", "index 7..8")
-                 .replace("@@ -1,3 +1,3 @@", "@@ -9,3 +9,3 @@").replace(" ctx", " other"))
-        self.assertEqual(review.fingerprint(DIFF), review.fingerprint(moved))
+    def test_fingerprint_ignores_positions_and_blob_ids(self):
+        shifted = (DIFF.replace("index 1..2", "index 7..8")
+                   .replace("@@ -1,3 +1,3 @@", "@@ -9,3 +9,3 @@ def f():"))
+        self.assertEqual(review.fingerprint(DIFF), review.fingerprint(shifted))
         self.assertNotEqual(review.fingerprint(DIFF),
                             review.fingerprint(DIFF.replace("+new", "+newer")))
+
+    def test_moved_lines_modes_and_binaries_are_different_changes(self):
+        moved = DIFF.replace(" ctx", " other")
+        chmod = DIFF.replace("index 1..2 100644", "old mode 100644\nnew mode 100755\nindex 1..2")
+        binary = "diff --git a/b.bin b/b.bin\nindex 1..2 100644\nGIT binary patch\nliteral 4\nLcmZ?d00001\n"
+        for other in (moved, chmod):
+            with self.subTest(other=other):
+                self.assertNotEqual(review.fingerprint(DIFF), review.fingerprint(other))
+        self.assertNotEqual(review.fingerprint(binary),
+                            review.fingerprint(binary.replace("LcmZ?d00001", "LcmZ?d00002")))
 
     def test_same_and_different_changes(self):
         self.assertTrue(review.same_change(diff_runner(DIFF, DIFF), "origin/main", OLD, NEW))
@@ -98,7 +113,7 @@ class SameChangeTest(unittest.TestCase):
     def test_paths_limit_the_diff(self):
         runner = diff_runner(DIFF, DIFF)
         review.same_change(runner, "origin/main", OLD, NEW, (".github/",))
-        self.assertIn(f"git diff base1 {OLD} -- .github/", runner.lines())
+        self.assertIn(f"git diff --binary base1 {OLD} -- .github/", runner.lines())
 
     def test_unreachable_commit_is_not_the_same_change(self):
         class Failing(FakeRunner):

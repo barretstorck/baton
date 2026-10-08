@@ -34,10 +34,19 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
    `git fetch origin <default> <branch>`, then `git checkout --detach origin/<branch>`. Note the
    full head sha (`git rev-parse HEAD`); your review names it. Never commit, push or change labels.
 
-3. **Read the change.** Round 1: `git diff $(git merge-base origin/<default> HEAD) HEAD`, every
-   file. A later round: `git diff <last reviewed commit> HEAD` for what changed, and check that
-   each earlier fix-here finding was fixed, or answered with a reason you accept. If the diff is
-   too big for one pass, review it in passes yourself and say so. Never start a subagent.
+3. **Read the change**: the pull request's own change, never what arrived from the default
+   branch. Round 1: `git diff $(git merge-base origin/<default> HEAD) HEAD`, every file. A later
+   round: compare the change you reviewed with the change now, so commits merged in from the
+   default branch drop out:
+
+       git diff $(git merge-base origin/<default> <last reviewed commit>) <last reviewed commit> > /tmp/before.diff
+       git diff $(git merge-base origin/<default> HEAD) HEAD > /tmp/after.diff
+       diff -u /tmp/before.diff /tmp/after.diff
+
+   (use your worktree or scratch directory in place of `/tmp`). Then check that each earlier
+   fix-here finding was fixed, or answered with a reason you accept. Code that came from the
+   default branch is not part of this review. If the change is too big for one pass, review it in
+   passes yourself and say so. Never start a subagent.
 
 4. **Run the verification command** from the issue or the brief, unless the brief says reviewers
    must not (a long or resource-heavy suite). Read the result.

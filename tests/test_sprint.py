@@ -133,7 +133,7 @@ class SnapshotTest(unittest.TestCase):
         result = snap([issue(1, "in-review", "deliverable")], prs=prs)
         self.assertEqual(result["in_review"], [{"number": 1, "pr": 30, "draft": False,
                                                 "ci": "green", "mergeable": "MERGEABLE",
-                                                "review": "approved", "rounds": 1}])
+                                                "review": "approved", "rounds": 0}])
 
     def test_review_state_none_and_not_required(self):
         pr = {"number": 20, "headRefName": "issue-1-x", "headRefOid": "f" * 40, "isDraft": True,
