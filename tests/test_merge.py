@@ -2,10 +2,15 @@ import copy
 import json
 import pathlib
 import unittest
-from baton import config, merge
+from baton import config, merge, review
 from tests.fakes import FakeRunner
 
 OWNER = "octo"
+HEAD = "abc1234" + "0" * 33
+
+
+def approval(commit=HEAD):
+    return {"author": {"login": OWNER}, "body": review.compose("approve", commit, "Round 1.")}
 
 
 def make_config(**overrides):
@@ -17,21 +22,21 @@ def make_config(**overrides):
 def make_pr(**overrides):
     pr = {
         "number": 9, "state": "OPEN", "isDraft": False, "mergeable": "MERGEABLE",
-        "headRefOid": "abc123", "headRefName": "issue-4-flag",
+        "headRefOid": HEAD, "headRefName": "issue-4-flag",
         "body": "Adds the flag.\n\nCloses #4",
         "files": [{"path": "src/tool.py"}],
         "statusCheckRollup": [{"__typename": "CheckRun", "name": "test",
                                "status": "COMPLETED", "conclusion": "SUCCESS"}],
         "closingIssuesReferences": [{"number": 4}],
-        "commits": [{"oid": "abc123", "messageHeadline": "Add the flag", "messageBody": ""}],
-        "comments": [], "isCrossRepository": False, "baseRefName": "main", "changedFiles": 1,
+        "commits": [{"oid": HEAD, "messageHeadline": "Add the flag", "messageBody": ""}],
+        "comments": [approval()], "isCrossRepository": False, "baseRefName": "main", "changedFiles": 1,
     }
     pr.update(overrides)
     return pr
 
 
 def problems(**overrides):
-    return merge.check(make_pr(**overrides), make_config(), OWNER, "main")
+    return merge.check(make_pr(**overrides), make_config(), OWNER, "main", FakeRunner())
 
 
 class CheckTest(unittest.TestCase):
@@ -49,7 +54,7 @@ class CheckTest(unittest.TestCase):
 
     def test_no_checks_allowed_when_configured(self):
         cfg = make_config(merge={"allow_no_ci": True})
-        self.assertEqual(merge.check(make_pr(statusCheckRollup=[]), cfg, OWNER, "main"), [])
+        self.assertEqual(merge.check(make_pr(statusCheckRollup=[]), cfg, OWNER, "main", FakeRunner()), [])
 
     def test_pending_and_failed_checks_are_refused(self):
         pending = [{"__typename": "CheckRun", "name": "test", "status": "IN_PROGRESS", "conclusion": ""}]
@@ -101,8 +106,8 @@ class CheckTest(unittest.TestCase):
 
     def test_owner_approval_naming_the_head_commit_unlocks(self):
         files = [{"path": ".github/workflows/ci.yml"}]
-        ok = [{"author": {"login": OWNER}, "body": "/baton approve abc1234"}]
-        self.assertEqual(problems(files=files, comments=ok, headRefOid="abc1234def"), [])
+        ok = [approval(), {"author": {"login": OWNER}, "body": "/baton approve abc1234"}]
+        self.assertEqual(problems(files=files, comments=ok), [])
 
     def test_other_approvals_do_not_unlock(self):
         files = [{"path": ".baton/brief.md"}]
@@ -116,8 +121,49 @@ class CheckTest(unittest.TestCase):
         }
         for name, comments in cases.items():
             with self.subTest(name=name):
-                found = problems(files=files, comments=comments, headRefOid="abc1234def")
+                found = problems(files=files, comments=[approval()] + comments)
                 self.assertTrue(any("protected" in p for p in found))
+
+    def test_review_is_required(self):
+        self.assertTrue(any("reviewer approval" in p for p in problems(comments=[])))
+        changes = [{"author": {"login": OWNER}, "body": review.compose("changes", HEAD, "x")}]
+        self.assertTrue(any("reviewer approval" in p for p in problems(comments=changes)))
+
+    def test_review_not_required_when_configured(self):
+        cfg = make_config(review={"required": False, "max_rounds": 2})
+        self.assertEqual(merge.check(make_pr(comments=[]), cfg, OWNER, "main", FakeRunner()), [])
+
+    def test_stale_review_is_refused(self):
+        old = "d" * 40
+        runner = FakeRunner({f"git merge-base origin/main {old}": "b1\n",
+                             f"git merge-base origin/main {HEAD}": "b2\n",
+                             f"git diff b1 {old}": "+a\n", f"git diff b2 {HEAD}": "+a\n+b\n"})
+        pr = make_pr(comments=[approval(old)])
+        found = merge.check(pr, make_config(), OWNER, "main", runner)
+        self.assertTrue(any("stale" in p for p in found))
+
+    def test_protected_approval_of_an_earlier_identical_change_unlocks(self):
+        old = "e" * 40
+        files = [{"path": ".github/workflows/ci.yml"}]
+        runner = FakeRunner({f"git merge-base origin/main {old[:7]}": "b1\n",
+                             f"git merge-base origin/main {HEAD}": "b2\n",
+                             f"git diff b1 {old[:7]} -- .github/workflows/ci.yml": "+on: push\n",
+                             f"git diff b2 {HEAD} -- .github/workflows/ci.yml": "+on: push\n"})
+        comments = [approval(), {"author": {"login": OWNER}, "body": f"/baton approve {old[:7]}"}]
+        pr = make_pr(files=files, comments=comments)
+        self.assertEqual(merge.check(pr, make_config(), OWNER, "main", runner), [])
+        self.assertIn("git fetch --quiet origin main issue-4-flag", runner.lines())
+
+    def test_protected_approval_of_a_different_change_does_not_unlock(self):
+        old = "e" * 40
+        files = [{"path": ".github/workflows/ci.yml"}]
+        runner = FakeRunner({f"git merge-base origin/main {old[:7]}": "b1\n",
+                             f"git merge-base origin/main {HEAD}": "b2\n",
+                             f"git diff b1 {old[:7]} -- .github/workflows/ci.yml": "+on: push\n",
+                             f"git diff b2 {HEAD} -- .github/workflows/ci.yml": "+on: [push]\n"})
+        comments = [approval(), {"author": {"login": OWNER}, "body": f"/baton approve {old[:7]}"}]
+        found = merge.check(make_pr(files=files, comments=comments), make_config(), OWNER, "main", runner)
+        self.assertTrue(any("protected" in p for p in found))
 
     def test_fork_and_wrong_base_are_refused(self):
         self.assertTrue(any("fork" in p for p in problems(isCrossRepository=True)))
@@ -152,7 +198,7 @@ class MergeTest(unittest.TestCase):
         runner = FakeRunner(self.replies(make_pr()))
         self.assertEqual(merge.merge(9, make_config(), runner), [])
         lines = runner.lines()
-        self.assertIn("gh pr merge 9 --merge --match-head-commit abc123", lines)
+        self.assertIn(f"gh pr merge 9 --merge --match-head-commit {HEAD}", lines)
         self.assertIn("gh issue close 4", lines)
         self.assertIn("gh issue edit 4 --add-label status:verification --remove-label status:in-review", lines)
         self.assertIn("git worktree remove --force /wt/issue-4", lines)
@@ -172,6 +218,23 @@ class MergeTest(unittest.TestCase):
         self.assertFalse(any(line.startswith("gh pr merge") for line in lines))
         self.assertIn("gh issue close 4", lines)
         self.assertIn("git branch -D issue-4-flag", lines)
+
+    def test_locked_clean_worktree_is_removed(self):
+        replies = self.replies(make_pr())
+        replies["git worktree list"] += "locked agent\n"
+        runner = FakeRunner(replies)
+        merge.merge(9, make_config(), runner)
+        self.assertIn("git worktree remove --force --force /wt/issue-4", runner.lines())
+
+    def test_dirty_worktree_is_kept_with_a_note(self):
+        replies = self.replies(make_pr())
+        replies["git -C /wt/issue-4 status --porcelain"] = " M src/tool.py\n"
+        runner, notes = FakeRunner(replies), []
+        self.assertEqual(merge.merge(9, make_config(), runner, notes), [])
+        self.assertFalse(any("worktree remove" in line for line in runner.lines()))
+        self.assertFalse(any(line.startswith("git branch -D") for line in runner.lines()))
+        self.assertIn("git push origin --delete issue-4-flag", runner.lines())
+        self.assertTrue(any("/wt/issue-4" in note for note in notes))
 
     def test_failure_after_merge_says_the_merge_happened(self):
         class Failing(FakeRunner):

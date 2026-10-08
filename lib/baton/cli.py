@@ -81,8 +81,8 @@ def cmd_merge_pr(args):
         return 64
 
     def tolerant(argv, cwd=None):
-        cleanup = argv[:3] in (["git", "branch", "-D"], ["git", "push", "origin"],
-                               ["git", "worktree", "remove"])
+        cleanup = (argv[:3] in (["git", "branch", "-D"], ["git", "push", "origin"],
+                                ["git", "worktree", "remove"]) or argv[:2] == ["git", "-C"])
         try:
             return run.run(argv, cwd)
         except run.RunError as error:
@@ -91,8 +91,9 @@ def cmd_merge_pr(args):
             print(f"baton: cleanup skipped: {error}", file=sys.stderr)
             return ""
 
+    notes = []
     try:
-        problems = merge.merge(int(args[0]), _require_config(), tolerant)
+        problems = merge.merge(int(args[0]), _require_config(), tolerant, notes)
     except merge.PostMergeError as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
@@ -102,6 +103,8 @@ def cmd_merge_pr(args):
             print(f"- {problem}", file=sys.stderr)
         return 1
     print(f"merged #{args[0]}")
+    for note in notes:
+        print(f"baton: {note}", file=sys.stderr)
     return 0
 
 

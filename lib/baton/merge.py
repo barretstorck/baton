@@ -7,7 +7,7 @@ the head commit.
 import json
 import re
 
-from . import gate, labels
+from . import gate, labels, review
 
 PR_FIELDS = ("number,state,isDraft,mergeable,headRefOid,headRefName,baseRefName,"
              "isCrossRepository,body,files,changedFiles,statusCheckRollup,"
@@ -58,19 +58,25 @@ def _check_ci(pr, cfg):
     return problems
 
 
-def _approved(pr, owner):
-    """True when the owner approved exactly this head commit: `/baton approve <sha>`."""
+def _approved(pr, owner, runner, default_branch, touched):
+    """The owner approved the head commit, or an earlier one with the same protected changes:
+    `/baton approve <sha>`."""
+    head, fetched = pr.get("headRefOid", ""), False
     for comment in pr.get("comments") or []:
         body = comment.get("body", "")
         match = _APPROVE.match(body.strip())
-        if (match and gate.MARKER not in body
-                and comment.get("author", {}).get("login") == owner
-                and pr.get("headRefOid", "").startswith(match.group(1))):
+        if not match or gate.MARKER in body or comment.get("author", {}).get("login") != owner:
+            continue
+        sha = match.group(1)
+        if not head.startswith(sha) and not fetched:
+            review.fetch(runner, default_branch, pr["headRefName"])
+            fetched = True
+        if review.same_change(runner, f"origin/{default_branch}", sha, head, touched):
             return True
     return False
 
 
-def check(pr, cfg, owner, default_branch):
+def check(pr, cfg, owner, default_branch, runner):
     problems = []
     if pr.get("isCrossRepository"):
         problems.append("pull request comes from a fork; Baton only merges its own branches")
@@ -99,25 +105,36 @@ def check(pr, cfg, owner, default_branch):
     if pr.get("changedFiles", len(files)) != len(files):
         problems.append("file list is incomplete (too many changed files to verify)")
 
+    if cfg.data["review"]["required"]:
+        found = review.current(pr, owner, cfg, runner, default_branch)
+        if found["state"] != "approved":
+            problems.append("no reviewer approval of the change at the head commit "
+                            f"(review state: {found['state']})")
+
     protected = tuple(cfg.data["protected_paths"])
     touched = [f["path"] for f in files if protected and f["path"].startswith(protected)]
-    if touched and not _approved(pr, owner):
+    if touched and not _approved(pr, owner, runner, default_branch, touched):
         problems.append("protected paths changed without maintainer approval "
                         f"(comment `/baton approve <head commit sha>`): {', '.join(touched)}")
     return problems
 
 
 def _worktree_for(branch, runner):
-    path = None
-    for line in runner(["git", "worktree", "list", "--porcelain"]).splitlines():
+    """(path, locked) of the worktree that has the branch checked out, or (None, False)."""
+    path, locked, found = None, False, None
+    for line in runner(["git", "worktree", "list", "--porcelain"]).splitlines() + [""]:
         if line.startswith("worktree "):
-            path = line[len("worktree "):]
+            path, locked = line[len("worktree "):], False
+        elif line.startswith("locked"):
+            locked = True
         elif line == f"branch refs/heads/{branch}":
-            return path
-    return None
+            found = path
+        elif line == "" and found:
+            return found, locked
+    return None, False
 
 
-def _after_merge(pr, cfg, runner):
+def _after_merge(pr, cfg, runner, notes):
     for ref in pr.get("closingIssuesReferences") or []:
         issue = ref["number"]
         state = json.loads(runner(["gh", "issue", "view", str(issue), "--json", "state"]))["state"]
@@ -126,24 +143,33 @@ def _after_merge(pr, cfg, runner):
         labels.set_status(cfg, runner, issue, "status:verification")
 
     branch = pr["headRefName"]
-    worktree = _worktree_for(branch, runner)
+    worktree, locked = _worktree_for(branch, runner)
+    keep = False
     if worktree:
-        runner(["git", "worktree", "remove", "--force", worktree])
-    runner(["git", "branch", "-D", branch])
+        if runner(["git", "-C", worktree, "status", "--porcelain"]).strip():
+            keep = True
+            notes.append(f"kept worktree {worktree} and branch {branch}: "
+                         "it has uncommitted changes")
+        else:
+            force = ["--force", "--force"] if locked else ["--force"]
+            runner(["git", "worktree", "remove", *force, worktree])
+    if not keep:
+        runner(["git", "branch", "-D", branch])
     runner(["git", "push", "origin", "--delete", branch])
 
 
-def merge(number, cfg, runner):
+def merge(number, cfg, runner, notes=None):
+    notes = [] if notes is None else notes
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,defaultBranchRef"]))
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", PR_FIELDS]))
     if pr.get("state") != "MERGED":
-        problems = check(pr, cfg, repo["owner"]["login"], repo["defaultBranchRef"]["name"])
+        problems = check(pr, cfg, repo["owner"]["login"], repo["defaultBranchRef"]["name"], runner)
         if problems:
             return problems
         runner(["gh", "pr", "merge", str(number), "--merge",
                 "--match-head-commit", pr["headRefOid"]])
     try:
-        _after_merge(pr, cfg, runner)
+        _after_merge(pr, cfg, runner, notes)
     except Exception as error:
         raise PostMergeError(
             f"#{number} is merged, but a follow-up step failed ({error}); "

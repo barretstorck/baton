@@ -76,6 +76,8 @@ def fingerprint(diff_text):
 
 def _change_id(runner, base_ref, commit, paths):
     base = runner(["git", "merge-base", base_ref, commit]).strip()
+    if not base:
+        raise run.RunError(f"no merge base for {commit[:7]}")
     argv = ["git", "diff", base, commit] + (["--", *paths] if paths else [])
     return fingerprint(runner(argv))
 
