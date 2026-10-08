@@ -2,6 +2,7 @@
 name: baton-developer
 description: Use to implement one forge issue as one pull request during a Baton sprint. Give it the repository and the issue number. It works alone in its own git worktree, posts questions on the issue, never merges, and returns DONE, QUESTION or BLOCKED.
 model: sonnet
+effort: medium
 isolation: worktree
 skills:
   - baton:develop
