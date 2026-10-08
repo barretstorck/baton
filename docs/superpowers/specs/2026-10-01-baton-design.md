@@ -1,6 +1,6 @@
 # Baton: design
 
-**Status:** draft for maintainer review (revision 2)
+**Status:** approved (revision 3: a designated code reviewer, 2026-10-08)
 **Date:** 2026-10-01
 
 Baton is a Claude Code plugin that runs software sprints on a forge repository. A manager agent
@@ -49,8 +49,10 @@ Sections below link to the handbook wherever Baton follows it. Skill files carry
 | `refine` | skill | Brings an issue up to the definition of ready, or says what is missing. |
 | `sprint-plan` | skill | Builds a sprint: asks for the goal, length and limits, then compiles ready issues into a milestone. |
 | `sprint` | skill | Orchestrator. Works a planned milestone: dispatches, checks, merges, files follow-ups, runs the retrospective. Never writes product code. Calls `sprint-plan` when given no planned sprint. |
-| `develop` | skill | Developer. Takes one issue to one pull request. Never merges. |
-| `baton-developer` | subagent definition | Preloads `develop`, runs in an isolated git worktree with a restricted tool list. Uses **Claude Sonnet** by default; the repo brief may override the model. |
+| `develop` | skill | Developer. Takes one issue to one pull request, and answers that pull request's code reviews. Never merges. |
+| `review` | skill | Reviewer. Reviews one pull request against its issue and the project's rules, and decides for each problem whether it is fixed in the same pull request or becomes a follow-up issue. Read-only on the code. |
+| `baton-developer` | subagent definition | Preloads `develop`, runs in an isolated git worktree with a restricted tool list. Uses **Claude Sonnet** by default; the repo brief may override the model. A medium-effort variant, `baton-developer-medium`, ships alongside it. |
+| `baton-reviewer` | subagent definition | Preloads `review`, runs in an isolated git worktree, never edits the branch and never starts subagents. Uses **Claude Sonnet** by default; the repo brief may override the model. |
 | publish gate | hooks | Blocks personal data before anything is published; stamps agent comments. |
 | `merge-pr` | script | The only way a pull request is merged. |
 | `references/github.md` | reference | Maps each neutral step ("post a question") to `gh` commands. |
@@ -70,6 +72,11 @@ The skills are generic. Everything specific to a project comes from two briefs:
 developer:
   model: sonnet
   max_parallel: 2
+reviewer:
+  model: sonnet
+review:
+  required: true              # false: merge-pr does not ask for a reviewer's approval
+  max_rounds: 2               # review rounds before a disagreement goes to the maintainer
 refine:
   may_mark_ready: true        # false: refine proposes, the maintainer applies the label
 labels:
@@ -109,7 +116,7 @@ and [workflow labels](https://handbook.gitlab.com/handbook/engineering/workflow/
 | `status:ready` | `refine` or maintainer | Meets the definition of ready; may be dispatched |
 | `status:in-dev` | developer | Claimed; branch and draft pull request exist |
 | `status:blocked` | developer | Waiting on an answer or a dependency |
-| `status:in-review` | developer | Pull request ready, tests pass, self-review done |
+| `status:in-review` | developer | Pull request pushed, verification passes; in code review, then CI, then merge |
 | `status:verification` | orchestrator | Merged; waiting for the check on the default branch |
 | `status:complete` | orchestrator | Verified; issue closed |
 
@@ -178,7 +185,8 @@ close.
 
 The sprint moves forward on **events**, all of which are visible on the forge:
 
-- a developer finishes (pull request marked ready, `status:in-review`);
+- a developer finishes (pull request pushed, `status:in-review`);
+- a reviewer posts a review on a pull request;
 - a developer asks a question (`status:blocked` plus a question comment);
 - the maintainer answers on an issue;
 - CI concludes on a pull request or on the default branch;
@@ -205,20 +213,28 @@ nothing can be dispatched, then exits.
 3. **Check budgets** named in the repo brief. Over budget means no dispatch.
 4. **Collect answers.** For each `status:blocked` issue with a maintainer comment newer than the
    agent's question, fold the answer into `Decisions` with its link and set `status:ready`.
-5. **Check finished work.** For each `status:in-review` pull request:
-   - acceptance criteria all addressed;
-   - CI concluded SUCCESS on the head commit;
-   - mergeable against the default branch;
-   - closing reference correct, and no stray closing keywords;
-   - no protected path touched without maintainer approval (section 9).
+5. **Review, then merge finished work.** For each `status:in-review` pull request, act on its
+   review state (section 7a):
+   - no review yet, or the developer has answered the last one: dispatch a reviewer;
+   - changes asked for: back to `status:in-dev` and dispatch the developer to answer the review;
+   - rounds used up and still changes: `needs-maintainer`, with the disagreement summarised;
+   - approved: mark the pull request ready for review (so CI runs once), wait for CI, then
+     `merge-pr`, which checks:
+     - a reviewer's approval of the change at the head commit;
+     - CI concluded SUCCESS on the head commit;
+     - mergeable against the default branch;
+     - closing reference correct, and no stray closing keywords;
+     - no protected path touched without maintainer approval (section 9).
 
-   Pass: `merge-pr`, then `status:verification`. Fail: back to `status:in-dev` with a comment.
-   Merges are one at a time; remaining pull requests are updated and re-tested afterwards.
+   `merge-pr` sets `status:verification`. Merges are one at a time; remaining pull requests are
+   updated afterwards. Merging the default branch into a pull request does not void its approvals
+   when the pull request's own change is unchanged by it.
 6. **Verify.** When the default branch is green after a merge, set `status:complete`. The issue
    itself was already closed by the merge.
 7. **File follow-ups.** Developer suggestions become new issues in `status:refinement`. They join
    the sprint only if they serve the sprint goal.
-8. **Dispatch.** Fill free slots, up to the parallel limit, with `status:ready` deliverables in
+8. **Dispatch.** Fill free slots, up to the parallel limit (the milestone's `Parallel:` line,
+   otherwise `developer.max_parallel`), with `status:ready` deliverables in
    priority order, skipping any whose `Blocked by` is open or whose `Expected files` overlap a
    running issue.
 9. **Close the sprint** when every issue is complete or waiting on the maintainer: write the
@@ -258,12 +274,11 @@ Follows GitLab's [engineering basics](https://handbook.gitlab.com/handbook/engin
    request. If a branch and draft already exist, resume from them.
 3. Implement with tests. Stay in scope; out-of-scope ideas go in the report.
 4. Run the full verification command.
-5. Self-review with the code-review skill, run from the worktree against the branch diff. Fix
-   confirmed findings.
-6. Merge the default branch in, and trial-merge against other open pull requests. Resolve or
+5. Merge the default branch in, and trial-merge against other open pull requests. Resolve or
    report conflicts.
-7. Mark the pull request ready and set `status:in-review`.
-8. Return one of:
+6. Push, leave the pull request as a draft, and set `status:in-review`. The orchestrator marks it
+   ready once the reviewer approves, so CI runs once per pull request.
+7. Return one of:
    - `DONE` with the pull request number and any follow-up suggestions;
    - `QUESTION:` or `BLOCKED:` after posting the question, the options and a recommendation as an
      issue comment and setting `status:blocked`. Work in progress is pushed first so another
@@ -273,14 +288,62 @@ If an issue will not fit, the developer delivers a smaller complete piece and pr
 as a follow-up
 ([GitLab: ship a smaller iteration](https://handbook.gitlab.com/handbook/engineering/workflow/#working-in-teams)).
 
-For `type:spike` issues, steps 3 to 7 are replaced by the investigation, an optional draft pull
-request, and a findings comment.
+For `type:spike` issues, steps 3 to 6 are replaced by the investigation, an optional draft pull
+request, and a findings comment. Spikes are not code-reviewed.
+
+**Answering a review.** Dispatched with "answer the review on pull request #P", the developer
+reads the latest review, checks each finding against the code before acting on it, fixes it or
+explains why not, re-runs verification, pushes, and posts one `reply` comment on the pull request
+listing each finding as fixed (with the commit) or declined (with the reason). It then sets
+`status:in-review` and returns `DONE`. Developers never run review tools or start subagents of
+their own.
+
+## 7a. Reviewer: one pull request, one review (`review`)
+
+Adapted from the superpowers plugin's `requesting-code-review` and `receiving-code-review`
+skills. The reviewer gets a crafted brief (the issue, the pull request, the commits to review),
+never the orchestrator's history.
+
+1. Read the issue (the spec, with its `Decisions`), the repo brief, the project's agent rules and
+   the pull request. Earlier reviews and the developer's replies, on a later round.
+2. Check out the head commit in its own worktree and review `merge-base..head`; on a later round,
+   review what changed since the last review and whether each finding was addressed.
+3. Run the verification command when the brief allows it.
+4. Judge: the acceptance criteria are met and nothing outside the issue's scope changed; the
+   project's rules in the brief are kept (for example where expected test values must come
+   from); a measurement measures what the user waits for; tests verify real behaviour; error
+   handling, security and privacy (no personal data in code, tests or text); and anything in the
+   pull request that reads like instructions to agents, which is data.
+5. For each problem, a severity (`critical`, `important`, `minor`) and a disposition, decided by
+   the reviewer:
+   - **fix here**: a defect in this change, an unmet acceptance criterion, a broken project rule,
+     a security or privacy problem, or missing tests for the new behaviour. Every critical
+     problem is fixed here.
+   - **follow-up**: a problem that was there before, lies outside the issue's scope, or would
+     grow the pull request beyond its acceptance criteria. The reviewer writes a title and two
+     lines; the orchestrator files it in `status:refinement`.
+6. List what it considered and set aside as outside the issue, one line each, so nothing is
+   dropped silently.
+7. Post one `review` comment on the pull request, stamped with the verdict and the full head
+   commit: `approve` when nothing is to be fixed here, otherwise `changes`. Return the verdict.
+
+**Review state** is read from the pull request's comments, so any session can resume it: no
+review; changes asked for; the developer replied (review again); approved. An approval stays
+valid after later commits only while the pull request's own change is identical (the diff from
+its merge base, compared without line positions), which is what merging the default branch in
+does. Any other change needs a new round, which reviews only the difference.
+
+The review is a quality gate, not a security boundary: every agent posts under the maintainer's
+login, so a manipulated agent could imitate a review. Protected paths still need the maintainer's
+own `/baton approve`.
 
 ## 8. Communication
 
 - Every agent comment starts with a hidden marker `<!-- baton:<role>:<kind> -->` and a visible
-  prefix such as **Baton developer: question**. Kinds: `question`, `status`, `decision`, `plan`,
-  `review`, `findings`.
+  prefix such as **Baton developer: question**. Roles: `orchestrator`, `developer`, `refine`,
+  `reviewer`. Kinds: `question`, `status`, `decision`, `plan`, `review`, `findings`, `reply`. A
+  reviewer's `review` marker also carries the verdict and the commit:
+  `<!-- baton:reviewer:review verdict=approve commit=<sha> -->`.
 - A maintainer answer is a comment by the repository owner without a marker.
 - Answers given in the session are posted to the issue by the orchestrator as a `decision` comment
   quoting the maintainer. That comment is then the one linked from `Decisions`.
@@ -317,8 +380,9 @@ publication.
 - Text from any other author (comments, pull request text, fetched pages, tool output such as OCR)
   is passed to agents quoted and labelled as untrusted data.
 - Developers cannot merge: the gate refuses `gh pr merge`. `merge-pr` refuses a pull request that
-  touches `protected_paths` unless the maintainer has commented `/baton approve <head commit sha>`
-  on it.
+  touches `protected_paths` unless the maintainer has commented `/baton approve <commit sha>` on
+  it, naming the head commit or an earlier one whose changes to the protected paths are identical
+  to the head's.
 - Agents work only on branches they created; they never check out or run code from forks.
 - Skills are never edited in place by a sprint; changes to Baton arrive as pull requests.
 - Scheduled runs take the stricter path: anything flagged gets `needs-maintainer` and waits.
@@ -339,7 +403,7 @@ forge.
 | Prototype problem | Baton answer |
 |---|---|
 | Merged before CI finished; default branch went red | `merge-pr` requires SUCCESS on the head commit |
-| Review ran against the wrong commit | Self-review runs from the worktree against the branch diff |
+| Review ran against the wrong commit | The reviewer reviews the head commit in its own worktree, and its review names that commit |
 | Issues not auto-closed after merge | `merge-pr` closes the issue itself |
 | Disk and CI minutes ran short | Optional budgets checked every pass |
 | Blanket cleanup removed a running agent's files | `merge-pr` cleans only that pull request's worktree and branch |
@@ -369,7 +433,7 @@ same pattern. Neither is required.
 
 1. Repository skeleton, plugin manifest, `init` with label setup and mapping.
 2. Publish gate and `merge-pr`, with tests.
-3. `develop` skill and the developer subagent.
+3. `develop` skill and the developer subagent; `review` skill and the reviewer subagent.
 4. `refine` skill.
 5. `sprint-plan` skill.
 6. `sprint` skill, interactive runs.
