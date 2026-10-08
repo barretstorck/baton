@@ -2,7 +2,7 @@ import copy
 import json
 import pathlib
 import unittest
-from baton import config, sprint
+from baton import config, review, sprint
 from tests.fakes import FakeRunner
 
 OWNER = "octo"
@@ -123,13 +123,39 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(result["waiting_on_maintainer"], [2])
 
     def test_pull_requests_are_attached_to_their_issue(self):
+        head = "f" * 40
+        approved = {"author": {"login": OWNER}, "body": review.compose("approve", head, "ok")}
         prs = [{"number": 30, "headRefName": "issue-1-x", "isDraft": False, "mergeable": "MERGEABLE",
+                "headRefOid": head, "comments": [approved],
                 "closingIssuesReferences": [{"number": 1}],
                 "statusCheckRollup": [{"__typename": "CheckRun", "name": "t",
                                        "status": "COMPLETED", "conclusion": "SUCCESS"}]}]
         result = snap([issue(1, "in-review", "deliverable")], prs=prs)
         self.assertEqual(result["in_review"], [{"number": 1, "pr": 30, "draft": False,
-                                                "ci": "green", "mergeable": "MERGEABLE"}])
+                                                "ci": "green", "mergeable": "MERGEABLE",
+                                                "review": "approved", "rounds": 1}])
+
+    def test_review_state_none_and_not_required(self):
+        pr = {"number": 20, "headRefName": "issue-1-x", "headRefOid": "f" * 40, "isDraft": True,
+              "mergeable": "MERGEABLE", "statusCheckRollup": [], "comments": [],
+              "closingIssuesReferences": [{"number": 1}]}
+        entry = snap([issue(1, "in-review")], prs=[pr])["in_review"][0]
+        self.assertEqual((entry["review"], entry["rounds"]), ("none", 0))
+        off = cfg()
+        off.data["review"]["required"] = False
+        entry = snap([issue(1, "in-review")], config_=off, prs=[pr])["in_review"][0]
+        self.assertEqual(entry["review"], "not-required")
+
+    def test_parallel_line_sets_the_slots(self):
+        ms = [{"number": 3, "title": "Sprint 2026-10-01-1", "description": "Goal: x\nParallel: 1",
+               "due_on": None}]
+        result = snap([issue(1, "ready"), issue(2, "ready")], milestones=ms)
+        self.assertEqual((result["parallel"], result["free_slots"]), (1, 1))
+        self.assertEqual(result["dispatchable"], [1])
+
+    def test_without_a_parallel_line_the_brief_sets_the_slots(self):
+        result = snap([issue(1, "ready"), issue(2, "ready"), issue(3, "ready")])
+        self.assertEqual((result["parallel"], result["free_slots"]), (2, 2))
 
     def test_red_default_branch_only_lets_the_repair_issue_through(self):
         result = snap([issue(1, "ready", "deliverable", files="a.py"),

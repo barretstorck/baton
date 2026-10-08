@@ -9,12 +9,14 @@ import os
 import re
 import time
 
-from . import comment, config, issue as issue_fields, merge
+from . import comment, config, issue as issue_fields, merge, review
 
 _FAILED = {"failure", "timed_out", "startup_failure", "action_required"}
 _ORDER = re.compile(r"^\s*Order:(.*)$", re.M | re.I)
+_PARALLEL = re.compile(r"^\s*Parallel:\s*(\d+)\s*$", re.M | re.I)
 ISSUE_FIELDS = "number,title,state,labels,body,author,comments"
-PR_FIELDS = "number,headRefName,isDraft,mergeable,closingIssuesReferences,statusCheckRollup"
+PR_FIELDS = ("number,headRefName,headRefOid,isDraft,mergeable,closingIssuesReferences,"
+             "statusCheckRollup,comments")
 
 
 def branch_state(runs):
@@ -75,7 +77,7 @@ def snapshot(cfg, runner, milestone=None):
     result = {
         "sprint": None, "open_sprints": open_sprints,
         "default_branch": {"name": branch, "state": branch_state(runs)},
-        "repair_issue": None, "free_slots": 0, "in_dev": [], "in_review": [],
+        "repair_issue": None, "parallel": 0, "free_slots": 0, "in_dev": [], "in_review": [],
         "verification": [], "answered": [], "waiting_on_maintainer": [],
         "dispatchable": [], "held": [], "finished": False, "issues": [],
     }
@@ -94,6 +96,9 @@ def snapshot(cfg, runner, milestone=None):
     repair_label = cfg.label("broken-default-branch")
     order = [int(n) for line in _ORDER.findall(result["sprint"]["description"])
              for n in re.findall(r"#(\d+)", line)]
+    parallel = _PARALLEL.search(result["sprint"]["description"])
+    result["parallel"] = (int(parallel.group(1)) if parallel
+                          else cfg.data["developer"]["max_parallel"])
 
     ready, busy_files, waiting = [], [], set()
     for item in sorted(issues, key=lambda entry: entry["number"]):
@@ -115,11 +120,17 @@ def snapshot(cfg, runner, milestone=None):
             busy_files.append(files)
         elif status == "status:in-review":
             pr = pr_for.get(number)
+            if pr and cfg.data["review"]["required"]:
+                found = review.current(pr, owner, cfg, runner, branch)
+                review_state, rounds = found["state"], found["rounds"]
+            else:
+                review_state, rounds = "not-required", 0
             result["in_review"].append({
                 "number": number, "pr": pr["number"] if pr else None,
                 "draft": pr["isDraft"] if pr else None,
                 "ci": _pr_ci(pr, cfg) if pr else "none",
-                "mergeable": pr["mergeable"] if pr else None})
+                "mergeable": pr["mergeable"] if pr else None,
+                "review": review_state, "rounds": rounds})
             busy_files.append(files)
         elif status == "status:verification":
             result["verification"].append(number)
@@ -139,7 +150,7 @@ def snapshot(cfg, runner, milestone=None):
                 order.index(number) if number in order else len(order), number)
 
     red = result["default_branch"]["state"] == "red"
-    slots = max(cfg.data["developer"]["max_parallel"] - len(result["in_dev"]), 0)
+    slots = max(result["parallel"] - len(result["in_dev"]), 0)
     result["free_slots"] = slots
     for item, tier, files, repair in sorted(ready, key=rank):
         number = item["number"]

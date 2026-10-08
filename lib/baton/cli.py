@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from . import comment, config, gate, githooks, issue, labels, merge, run, scan, sprint
+from . import comment, config, gate, githooks, issue, labels, merge, review, run, scan, sprint
 
 
 def cmd_config(args):
@@ -128,6 +128,30 @@ def cmd_comment(args):
     return 0
 
 
+def cmd_review(args):
+    if len(args) == 2 and args[0] == "state" and args[1].isdigit():
+        cfg = _require_config()
+        repo = json.loads(run.run(["gh", "repo", "view", "--json", "owner,defaultBranchRef"]))
+        pr = json.loads(run.run(["gh", "pr", "view", args[1], "--json",
+                                 "number,headRefName,headRefOid,comments"]))
+        print(json.dumps(review.current(pr, repo["owner"]["login"], cfg, run.run,
+                                        repo["defaultBranchRef"]["name"]), indent=2))
+        return 0
+    if len(args) == 5 and args[0] == "post" and args[1].isdigit():
+        _, number, verdict, commit, path = args
+        try:
+            body = comment.read_body(path, sys.stdin)
+            print(review.post(_require_config(), run.run, int(number), verdict, commit, body,
+                              scan.load_terms()))
+        except (comment.CommentError, review.ReviewError) as error:
+            print(f"baton: {error}", file=sys.stderr)
+            return 1
+        return 0
+    print("usage: baton review state <pr> | baton review post <pr> <approve|changes> "
+          "<full commit sha> <body-file | ->", file=sys.stderr)
+    return 64
+
+
 def cmd_answers(args):
     if len(args) != 1 or not args[0].isdigit():
         print("usage: baton answers <issue-number>", file=sys.stderr)
@@ -191,6 +215,7 @@ COMMANDS = {
     "labels": cmd_labels,
     "lock": cmd_lock,
     "merge-pr": cmd_merge_pr,
+    "review": cmd_review,
     "set-status": cmd_set_status,
     "sprint-status": cmd_sprint_status,
 }
