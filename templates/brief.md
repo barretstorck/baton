@@ -2,6 +2,11 @@
 developer:
   model: sonnet
   max_parallel: 2
+reviewer:
+  model: sonnet
+review:
+  required: true              # false: merge-pr does not ask for a reviewer's approval
+  max_rounds: 2               # review rounds before a disagreement goes to the maintainer
 refine:
   may_mark_ready: true        # false: refine proposes, the maintainer applies the label
 labels:

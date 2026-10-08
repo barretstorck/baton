@@ -14,6 +14,8 @@ OTHER_LABELS = [
 ]
 DEFAULTS = {
     "developer": {"model": "sonnet", "max_parallel": 2},
+    "reviewer": {"model": "sonnet"},
+    "review": {"required": True, "max_rounds": 2},
     "refine": {"may_mark_ready": True},
     "labels": {
         "auto_create": True,
@@ -97,4 +99,6 @@ def load(path):
         raise ConfigError(f".baton/brief.md: {error}") from error
     merged = _merge(copy.deepcopy(DEFAULTS), data)
     _validate(merged, DEFAULTS)
+    if merged["review"]["max_rounds"] < 1:
+        raise ConfigError(".baton/brief.md: review.max_rounds must be at least 1")
     return Config(root=root, data=merged)

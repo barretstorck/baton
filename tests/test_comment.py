@@ -33,6 +33,11 @@ class ComposeTest(unittest.TestCase):
 
 
 class PostTest(unittest.TestCase):
+    def test_reviewer_role_and_reply_kind(self):
+        text = comment.compose("developer", "reply", "1. Fixed in abc1234.")
+        self.assertTrue(text.startswith("<!-- baton:developer:reply -->"))
+        self.assertIn("reviewer", comment.ROLES)
+
     def test_posts_stamped_body_and_returns_url(self):
         seen = {}
 

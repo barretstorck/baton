@@ -353,6 +353,8 @@ def decide(command, cwd, terms):
             if is_body:
                 bodies.append(text)
         texts.extend(item.texts)
+        if any(not body.strip() for body in bodies):
+            problems.append("the body is empty; write the full text first")
         if item.comment and not (bodies and all(
                 body.lstrip().startswith(MARKER) for body in bodies)):
             problems.append("agent comments need a body that starts with the Baton marker "

@@ -50,6 +50,14 @@ class ConfigTest(unittest.TestCase):
                 with self.assertRaises(config.ConfigError):
                     config.load(str(make_repo(f"---\n{meta}\n---\n")))
 
+    def test_reviewer_and_review_defaults(self):
+        self.assertEqual(config.DEFAULTS["reviewer"], {"model": "sonnet"})
+        self.assertEqual(config.DEFAULTS["review"], {"required": True, "max_rounds": 2})
+
+    def test_review_rounds_must_be_positive(self):
+        with self.assertRaises(config.ConfigError):
+            config.load(str(make_repo("---\nreview:\n  max_rounds: 0\n---\n")))
+
     def test_load_from_subdirectory(self):
         root = make_repo("x\n")
         (root / "src").mkdir()

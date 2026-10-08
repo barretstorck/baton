@@ -163,6 +163,15 @@ class GateTest(unittest.TestCase):
         cmd = "gh api repos/o/r/issues/5/comments -f body='<!-- baton:developer:status -->\nok'"
         self.assertEqual(gate.decide(cmd, make_repo(), TERMS), [])
 
+    def test_empty_body_is_refused(self):
+        repo = make_repo()
+        empty = pathlib.Path(repo) / "empty.md"
+        empty.write_text("  \n")
+        problems = gate.decide(f"gh issue edit 5 --body-file {empty}", repo, TERMS)
+        self.assertTrue(any("empty" in p for p in problems))
+        self.assertTrue(any("empty" in p for p in gate.decide('gh pr edit 5 --body ""', repo, TERMS)))
+        self.assertEqual(gate.decide("gh issue edit 5 --add-label status:ready", repo, TERMS), [])
+
     def test_direct_merge_is_refused(self):
         for cmd in ("gh pr merge 5 --merge --admin", "gh api -X PUT repos/o/r/pulls/5/merge"):
             with self.subTest(cmd=cmd):

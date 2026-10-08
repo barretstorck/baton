@@ -4,8 +4,8 @@ import tempfile
 
 from . import gate, scan
 
-ROLES = {"orchestrator", "developer", "refine"}
-KINDS = {"question", "status", "decision", "plan", "review", "findings"}
+ROLES = {"orchestrator", "developer", "refine", "reviewer"}
+KINDS = {"question", "status", "decision", "plan", "review", "findings", "reply"}
 TARGETS = {"issue", "pr"}
 _QUESTION = ":question -->"
 _DECISION = ":decision -->"
@@ -35,11 +35,10 @@ def compose(role, kind, body):
     return f"{gate.MARKER}{role}:{kind} -->\n**Baton {role}: {kind}**\n\n{body.strip()}\n"
 
 
-def post(cfg, runner, target, number, role, kind, body, terms):
-    """Scan, stamp and post a comment. Returns the comment's URL."""
+def publish(cfg, runner, target, number, text, terms):
+    """Scan an already stamped comment and post it. Returns the comment's URL."""
     if target not in TARGETS:
         raise CommentError(f"unknown target {target!r}; use issue or pr")
-    text = compose(role, kind, body)
     findings = scan.scan_text(text, terms, cfg.data["privacy_allow"])
     if findings:
         raise CommentError("comment not posted; privacy scan found: "
@@ -51,6 +50,13 @@ def post(cfg, runner, target, number, role, kind, body, terms):
         return runner(["gh", target, "comment", str(number), "--body-file", path]).strip()
     finally:
         os.unlink(path)
+
+
+def post(cfg, runner, target, number, role, kind, body, terms):
+    """Scan, stamp and post a comment. Returns the comment's URL."""
+    if target not in TARGETS:
+        raise CommentError(f"unknown target {target!r}; use issue or pr")
+    return publish(cfg, runner, target, number, compose(role, kind, body), terms)
 
 
 def _first_line(body):
