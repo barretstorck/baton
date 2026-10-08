@@ -51,8 +51,8 @@ Sections below link to the handbook wherever Baton follows it. Skill files carry
 | `sprint` | skill | Orchestrator. Works a planned milestone: dispatches, checks, merges, files follow-ups, runs the retrospective. Never writes product code. Calls `sprint-plan` when given no planned sprint. |
 | `develop` | skill | Developer. Takes one issue to one pull request, and answers that pull request's code reviews. Never merges. |
 | `review` | skill | Reviewer. Reviews one pull request against its issue and the project's rules, and decides for each problem whether it is fixed in the same pull request or becomes a follow-up issue. Read-only on the code. |
-| `baton-developer` | subagent definition | Preloads `develop`, runs in an isolated git worktree with a restricted tool list. Uses **Claude Sonnet** by default; the repo brief may override the model. A medium-effort variant, `baton-developer-medium`, ships alongside it. |
-| `baton-reviewer` | subagent definition | Preloads `review`, runs in an isolated git worktree, never edits the branch and never starts subagents. Uses **Claude Sonnet** by default; the repo brief may override the model. |
+| `baton-developer` | subagent definition | Preloads `develop`, runs in an isolated git worktree with a restricted tool list. Uses **Claude Sonnet** at medium effort by default; the repo brief may override the model. |
+| `baton-reviewer` | subagent definition | Preloads `review`, runs in an isolated git worktree, never edits the branch and never starts subagents. Uses **Claude Sonnet** at medium effort by default; the repo brief may override the model. |
 | publish gate | hooks | Blocks personal data before anything is published; stamps agent comments. |
 | `merge-pr` | script | The only way a pull request is merged. |
 | `references/github.md` | reference | Maps each neutral step ("post a question") to `gh` commands. |

@@ -15,6 +15,10 @@ positions). `merge-pr` requires the approval; `sprint-status` reports each pull 
 state. The same "same change" comparison lets a protected-path `/baton approve` survive merging
 the default branch in.
 
+**As built (2026-10-08):** the maintainer chose to start with medium effort only: both agents set
+`effort: medium` in their front matter, and there is no `developer.agent` / `reviewer.agent` /
+`baton-developer-medium`. Review posting (`review.post`) landed in Task 2.
+
 **Tech Stack:** Python 3 standard library only, `unittest`, `gh` and `git` through the injected
 `runner`; Claude Code plugin skills and agents (Markdown).
 

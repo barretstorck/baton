@@ -39,7 +39,10 @@ The description template is `${CLAUDE_PLUGIN_ROOT}/templates/issue.md`.
    your report.
 
 2. **Investigate the code.** Find the files the work will touch, the existing pattern to copy and
-   the test command. Check that every file and command you will name exists.
+   the test command. Check that every file and command you will name exists. If the issue
+   defines a measurement (a timing, a benchmark, a size, a count), check that it measures what the
+   user waits for, for example a whole run's wall time rather than one step's internal timer, and
+   say in the acceptance criteria exactly how it is measured.
 
 3. **Decide what it is.**
    - *One clear outcome:* go on.
@@ -51,8 +54,11 @@ The description template is `${CLAUDE_PLUGIN_ROOT}/templates/issue.md`.
    - *Needs a product or design decision:* go to "Questions".
 
 4. **Rewrite the description** to the template. Keep the author's intent and wording where it is
-   clear, and keep every existing entry under `## Decisions` with its link. Write the full new
-   description to a file and update the issue. Do not put private details in it.
+   clear, and keep every existing entry under `## Decisions` with its link. Write the
+   **complete** new description to a file, read the file back, then
+   `gh issue edit <N> --body-file <file>`. Never edit a description in place with `sed` or a
+   partial body. Afterwards read the issue back and check nothing was lost. Do not put private
+   details in it.
 
 5. **Check.** Run `baton ready-check <N>`, then go through the judgment column yourself.
 

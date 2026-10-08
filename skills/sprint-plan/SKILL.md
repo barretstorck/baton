@@ -21,7 +21,8 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
    only for what is missing:
    - the **goal**, in one or two sentences;
    - how **long** it should run (this becomes the milestone's due date);
-   - the **parallel limit** (default: `developer.max_parallel` from the brief).
+   - the **parallel limit** (default: `developer.max_parallel` from the brief). It goes into the
+     milestone as `Parallel: <n>`, which `baton sprint-status` uses for the free slots.
 
 3. **Read the backlog.** List open issues with `status:ready`, and separately those in
    `status:refinement`. Read the last two files in `docs/retros/` if they exist and apply their
