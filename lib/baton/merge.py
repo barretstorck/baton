@@ -7,7 +7,7 @@ the head commit.
 import json
 import re
 
-from . import gate, labels, review
+from . import gate, labels, review, run
 
 PR_FIELDS = ("number,state,isDraft,mergeable,headRefOid,headRefName,baseRefName,"
              "isCrossRepository,body,files,changedFiles,statusCheckRollup,"
@@ -134,6 +134,32 @@ def _worktree_for(branch, runner):
     return None, False
 
 
+def _task_worktrees(head, runner):
+    """(path, locked) of detached worktrees whose commit is part of `head`'s history.
+
+    Each task's developer works on a detached checkout of the branch, so these are
+    the worktrees a pull request's tasks left behind.
+    """
+    found, path, sha, locked, detached = [], None, None, False, False
+    for line in runner(["git", "worktree", "list", "--porcelain"]).splitlines() + [""]:
+        if line.startswith("worktree "):
+            path, sha, locked, detached = line[len("worktree "):], None, False, False
+        elif line.startswith("HEAD "):
+            sha = line[len("HEAD "):]
+        elif line == "detached":
+            detached = True
+        elif line.startswith("locked"):
+            locked = True
+        elif line == "" and path and detached and sha:
+            try:
+                runner(["git", "merge-base", "--is-ancestor", sha, head])
+                found.append((path, locked))
+            except run.RunError:
+                pass
+            path = None
+    return found
+
+
 def _after_merge(pr, cfg, runner, notes):
     for ref in pr.get("closingIssuesReferences") or []:
         issue = ref["number"]
@@ -153,6 +179,12 @@ def _after_merge(pr, cfg, runner, notes):
         else:
             force = ["--force", "--force"] if locked else ["--force"]
             runner(["git", "worktree", "remove", *force, worktree])
+    for path, locked in _task_worktrees(pr["headRefOid"], runner):
+        if runner(["git", "-C", path, "status", "--porcelain"]).strip():
+            notes.append(f"kept task worktree {path}: it has uncommitted changes")
+            continue
+        force = ["--force", "--force"] if locked else ["--force"]
+        runner(["git", "worktree", "remove", *force, path])
     if not keep:
         runner(["git", "branch", "-D", branch])
     runner(["git", "push", "origin", "--delete", branch])

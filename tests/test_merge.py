@@ -2,7 +2,7 @@ import copy
 import json
 import pathlib
 import unittest
-from baton import config, merge, review
+from baton import config, merge, review, run
 from tests.fakes import FakeRunner
 
 OWNER = "octo"
@@ -235,6 +235,38 @@ class MergeTest(unittest.TestCase):
         self.assertFalse(any(line.startswith("git branch -D") for line in runner.lines()))
         self.assertIn("git push origin --delete issue-4-flag", runner.lines())
         self.assertTrue(any("/wt/issue-4" in note for note in notes))
+
+    TASK_TREES = ("worktree /wt/agent-a\nHEAD 2222\ndetached\nlocked agent\n\n"
+                  "worktree /wt/agent-b\nHEAD 3333\ndetached\n\n")
+
+    def task_runner(self, dirty=False):
+        replies = self.replies(make_pr())
+        replies["git worktree list"] += "\n" + self.TASK_TREES
+        if dirty:
+            replies["git -C /wt/agent-a status --porcelain"] = "?? scratch.txt\n"
+        fake = FakeRunner(replies)
+
+        def runner(argv, cwd=None):
+            if argv[:4] == ["git", "merge-base", "--is-ancestor", "3333"]:
+                fake.calls.append(argv)
+                raise run.RunError("not an ancestor")
+            return fake(argv, cwd)
+        return runner, fake
+
+    def test_detached_task_worktrees_on_the_branch_are_removed(self):
+        runner, fake = self.task_runner()
+        self.assertEqual(merge.merge(9, make_config(), runner), [])
+        lines = fake.lines()
+        self.assertIn(f"git merge-base --is-ancestor 2222 {HEAD}", lines)
+        self.assertIn("git worktree remove --force --force /wt/agent-a", lines)
+        self.assertFalse(any("remove" in line and "/wt/agent-b" in line for line in lines))
+
+    def test_dirty_task_worktree_is_kept_with_a_note(self):
+        runner, fake = self.task_runner(dirty=True)
+        notes = []
+        self.assertEqual(merge.merge(9, make_config(), runner, notes), [])
+        self.assertFalse(any("remove" in line and "/wt/agent-a" in line for line in fake.lines()))
+        self.assertTrue(any("/wt/agent-a" in note for note in notes))
 
     def test_failure_after_merge_says_the_merge_happened(self):
         class Failing(FakeRunner):
