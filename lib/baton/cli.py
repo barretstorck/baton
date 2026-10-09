@@ -142,8 +142,8 @@ def cmd_review(args):
         try:
             body = comment.read_body(path, sys.stdin)
             print(review.post(_require_config(), run.run, int(number), verdict, commit, body,
-                              scan.load_terms()))
-        except (comment.CommentError, review.ReviewError) as error:
+                              scan.load_terms(), _owner()))
+        except (comment.CommentError, review.ReviewError, checklist.TaskError) as error:
             print(f"baton: {error}", file=sys.stderr)
             return 1
         return 0
@@ -269,7 +269,7 @@ def main(argv):
         return 64
     try:
         return COMMANDS[argv[0]](argv[1:])
-    except (checklist.TaskError, comment.CommentError) as error:
+    except (checklist.TaskError, comment.CommentError, review.ReviewError) as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
     except (config.ConfigError, run.RunError, ValueError, OSError) as error:

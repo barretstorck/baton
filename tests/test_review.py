@@ -144,15 +144,85 @@ class CurrentTest(unittest.TestCase):
         self.assertEqual(found["state"], "stale")
 
 
+TASKS = "## Tasks\n- [ ] **1.1 Fix it**\n  - Check: none\n"
+
+
+def changes_with_tasks(commit=NEW, ticked=False):
+    body = TASKS.replace("[ ]", "[x]") if ticked else TASKS
+    return {"author": {"login": OWNER}, "url": "https://x/pull/9#issuecomment-55",
+            "body": review.compose("changes", commit, body)}
+
+
+def pr_runner(comments=(), closing=(), issue_body=""):
+    return FakeRunner({
+        "gh pr view 9 --json headRefOid,comments,closingIssuesReferences": json.dumps(
+            {"headRefOid": NEW, "comments": list(comments),
+             "closingIssuesReferences": [{"number": n} for n in closing]}),
+        "gh pr view 9 --json comments": json.dumps({"comments": list(comments)}),
+        "gh issue view 4 --json body": json.dumps({"body": issue_body}),
+        "gh pr comment 9": "https://example.com/c/1\n",
+    })
+
+
+class ReviewTasksTest(unittest.TestCase):
+    def test_latest_changes_review_tasks(self):
+        found = review.review_tasks({"comments": [changes_with_tasks()]}, OWNER)
+        self.assertEqual((found["round"], found["next"], found["total"]), (1, "1.1", 1))
+
+    def test_after_approval_there_are_none(self):
+        found = review.review_tasks({"comments": [changes_with_tasks(), rev("approve")]}, OWNER)
+        self.assertEqual(found["tasks"], [])
+
+    def test_tick_review_patches_that_comment(self):
+        runner = pr_runner([changes_with_tasks()])
+        self.assertTrue(review.tick_review(runner, 9, OWNER, "1.1"))
+        patch = [c for c in runner.calls if c[:4] == ["gh", "api", "-X", "PATCH"]]
+        self.assertEqual(patch[0][4], "repos/{owner}/{repo}/issues/comments/55")
+
+    def test_tick_review_already_ticked(self):
+        runner = pr_runner([changes_with_tasks(ticked=True)])
+        self.assertFalse(review.tick_review(runner, 9, OWNER, "1.1"))
+        self.assertFalse(any("PATCH" in line for line in runner.lines()))
+
+
+class PostGateTest(unittest.TestCase):
+    PLAN_OPEN = "## Plan\nWritten against: " + "c" * 40 + "\n\n- [ ] **1. A**\n"
+
+    def test_approve_refused_with_open_review_task(self):
+        runner = pr_runner([changes_with_tasks(), reply()])
+        with self.assertRaises(review.ReviewError):
+            review.post(cfg(), runner, 9, "approve", NEW, "Looks right.", [], OWNER)
+        self.assertFalse(any("pr comment" in line for line in runner.lines()))
+
+    def test_approve_refused_with_open_plan_task(self):
+        runner = pr_runner(closing=[4], issue_body=self.PLAN_OPEN)
+        with self.assertRaises(review.ReviewError):
+            review.post(cfg(), runner, 9, "approve", NEW, "Looks right.", [], OWNER)
+
+    def test_approve_when_all_ticked(self):
+        runner = pr_runner([changes_with_tasks(ticked=True), reply()], closing=[4],
+                           issue_body=self.PLAN_OPEN.replace("[ ]", "[x]"))
+        self.assertEqual(review.post(cfg(), runner, 9, "approve", NEW, "Good.", [], OWNER),
+                         "https://example.com/c/1")
+
+    def test_changes_need_tasks_numbered_for_the_round(self):
+        runner = pr_runner([changes_with_tasks(ticked=True), reply()])
+        for body in ("No checklist.", TASKS):          # round 2 needs 2.n ids
+            with self.subTest(body=body), self.assertRaises(review.ReviewError):
+                review.post(cfg(), runner, 9, "changes", NEW, body, [], OWNER)
+        self.assertEqual(review.post(cfg(), runner, 9, "changes", NEW,
+                                     TASKS.replace("1.1", "2.1"), [], OWNER),
+                         "https://example.com/c/1")
+
+
 class PostTest(unittest.TestCase):
     def test_post_refuses_a_moved_head(self):
-        runner = FakeRunner({"gh pr view 9 --json headRefOid": json.dumps({"headRefOid": NEW})})
+        runner = pr_runner()
         with self.assertRaises(review.ReviewError):
-            review.post(cfg(), runner, 9, "approve", OLD, "Round 1.", [])
-        self.assertFalse(any("comment" in line for line in runner.lines()))
+            review.post(cfg(), runner, 9, "approve", OLD, "Round 1.", [], OWNER)
+        self.assertFalse(any("pr comment" in line for line in runner.lines()))
 
     def test_post_publishes_the_stamped_review(self):
-        runner = FakeRunner({"gh pr view 9 --json headRefOid": json.dumps({"headRefOid": NEW}),
-                             "gh pr comment 9": "https://example.com/c/1\n"})
-        self.assertEqual(review.post(cfg(), runner, 9, "changes", NEW, "Round 1.", []),
+        runner = pr_runner()
+        self.assertEqual(review.post(cfg(), runner, 9, "approve", NEW, "Round 1.", [], OWNER),
                          "https://example.com/c/1")

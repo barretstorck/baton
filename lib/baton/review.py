@@ -6,9 +6,11 @@ requesting-code-review and receiving-code-review skills.
 """
 import hashlib
 import json
+import os
 import re
+import tempfile
 
-from . import comment, gate, run
+from . import checklist, comment, gate, run
 
 VERDICTS = {"approve", "changes"}
 _SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -16,6 +18,7 @@ _REVIEW = re.compile(
     r"^<!-- baton:reviewer:review verdict=(approve|changes) commit=([0-9a-f]{40}) -->")
 _REPLY = f"{gate.MARKER}developer:reply -->"
 _HUNK = re.compile(r"^@@ [^@]* @@.*$")
+_COMMENT_ID = re.compile(r"#issuecomment-(\d+)$")
 
 
 class ReviewError(Exception):
@@ -131,14 +134,91 @@ def current(pr, owner, cfg, runner, default_branch):
     return found
 
 
-def post(cfg, runner, number, verdict, commit, body, terms):
-    """Post a review of `commit`, refusing if the branch moved while it was reviewed."""
+def _latest_review(comments, owner):
+    """The owner's latest review comment and its marker match, or (None, None)."""
+    found = (None, None)
+    for item in comments or []:
+        if item.get("author", {}).get("login") != owner:
+            continue
+        match = _REVIEW.match((item.get("body") or "").lstrip())
+        if match:
+            found = (item, match)
+    return found
+
+
+def review_tasks(pr, owner):
+    """The tasks of the latest review when it asks for changes; none after an approval."""
+    item, match = _latest_review(pr.get("comments"), owner)
+    if item is None or match.group(1) == "approve":
+        return {"round": 0, "review": None, "tasks": [], **checklist.progress([])}
+    tasks = checklist.tasks_under(item["body"], "tasks")
+    rounds = state(pr.get("comments"), owner, 1 << 30)["rounds"]
+    return {"round": rounds, "review": item.get("url"), "tasks": tasks,
+            **checklist.progress(tasks)}
+
+
+def tick_review(runner, number, owner, task_id):
+    """Tick a task in the latest review. False when it was already ticked."""
+    pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", "comments"]))
+    item, match = _latest_review(pr.get("comments"), owner)
+    if item is None or match.group(1) == "approve":
+        raise ReviewError(f"the latest review on #{number} asks for no changes")
+    new, changed = checklist.tick(item["body"], "tasks", task_id)
+    if not changed:
+        return False
+    found = _COMMENT_ID.search(item.get("url") or "")
+    if not found:
+        raise ReviewError("cannot tell the review comment's id from its URL")
+    handle, path = tempfile.mkstemp(suffix=".md")
+    try:
+        with os.fdopen(handle, "w", newline="") as out:
+            out.write(new)
+        runner(["gh", "api", "-X", "PATCH",
+                f"repos/{{owner}}/{{repo}}/issues/comments/{found.group(1)}",
+                "-F", f"body=@{path}", "--silent"])
+    finally:
+        os.unlink(path)
+    return True
+
+
+def _open_work(runner, pr, owner):
+    problems = [f"task {task['id']} of the last review is not done"
+                for task in review_tasks(pr, owner)["tasks"] if not task["done"]]
+    for ref in pr.get("closingIssuesReferences") or []:
+        found = checklist.plan(checklist.issue_body(runner, ref["number"]))
+        for task in (found or {}).get("tasks", []):
+            if not task["done"]:
+                problems.append(f"task {task['id']} of issue #{ref['number']}'s plan is not done")
+    return problems
+
+
+def post(cfg, runner, number, verdict, commit, body, terms, owner):
+    """Post a review of `commit`.
+
+    Refuses if the branch moved while it was reviewed, if an approval would
+    leave tasks open, or if a request for changes has no task list for its round.
+    """
     text = compose(verdict, commit, body)
-    head = json.loads(runner(["gh", "pr", "view", str(number), "--json",
-                              "headRefOid"]))["headRefOid"]
+    pr = json.loads(runner(["gh", "pr", "view", str(number), "--json",
+                            "headRefOid,comments,closingIssuesReferences"]))
+    head = pr["headRefOid"]
     if head != commit:
         raise ReviewError(f"the pull request's head is now {head[:7]}, not {commit[:7]}; "
                           "review the new commits and post again")
+    if verdict == "approve":
+        problems = _open_work(runner, pr, owner)
+        if problems:
+            raise ReviewError("cannot approve yet: " + "; ".join(problems))
+    else:
+        tasks = checklist.tasks_under(body, "tasks")
+        round_ = state(pr.get("comments"), owner, 1 << 30)["rounds"] + 1
+        if not tasks:
+            raise ReviewError("a request for changes needs a '## Tasks' checklist")
+        wrong = [task["id"] for task in tasks
+                 if task["done"] or not task["id"].startswith(f"{round_}.")]
+        if wrong:
+            raise ReviewError(f"this is round {round_}: tasks must be open and numbered "
+                              f"{round_}.1, {round_}.2 ... (not {', '.join(wrong)})")
     try:
         return comment.publish(cfg, runner, "pr", number, text, terms)
     except comment.CommentError as error:
