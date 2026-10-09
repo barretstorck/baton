@@ -13,6 +13,12 @@ progress, `merge.py` also removes the detached worktrees task agents leave, and 
 reads local transcripts. The skills change from "one developer per issue" to "one developer per
 task".
 
+**As built (2026-10-09):** Task 6 matches task worktrees by the pull request's own commit ids
+rather than by ancestry, which also matched worktrees on older default-branch commits. `baton
+usage` also recognises the pre-0.3 prompt `Implement issue #N` and agent types containing
+`baton-developer`. The review body's other headings are `##`. Two more dispatch prompts exist:
+`Fix CI on pull request <P> (issue <N>).` and `Update pull request <P> (issue <N>).`
+
 **Tech Stack:** Python 3 standard library only, `unittest`, `gh` and `git` through the injected
 `runner`; Markdown skills and agent files.
 

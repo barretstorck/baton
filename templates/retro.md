@@ -38,6 +38,11 @@
 | Problem | Cost | Root cause |
 |---|---|---|
 
+## Quota use
+
+(The table from `baton usage --since <first dispatch>`: issue numbers and counts only. Name the
+issues whose agents still grew past 250K tokens, and why.)
+
 ## How to improve
 
 Each item names where the change belongs: this repository's brief, an issue, or Baton itself.

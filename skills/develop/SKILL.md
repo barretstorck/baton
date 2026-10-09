@@ -12,6 +12,8 @@ You were dispatched with one of:
 - `Do task <n> of issue <N>.`: one task of the issue's `## Plan`;
 - `Do review task <r.n> of pull request <P> (issue <N>).`: one task of the latest code review;
 - `Do spike issue <N>.`: a whole spike (see "Spikes").
+- `Fix CI on pull request <P> (issue <N>).` or `Update pull request <P> (issue <N>).`: see
+  "Keeping a pull request mergeable".
 
 Adapted from the GitLab handbook's
 [engineering basics](https://handbook.gitlab.com/handbook/engineering/workflow/#basics) and the
@@ -104,6 +106,16 @@ filters, send long output to a file, chain related commands, wait for a long run
 4. Do not post a reply: the orchestrator writes it from your result. Do not implement the
    review's follow-up issues.
 
+## Keeping a pull request mergeable
+
+For `Fix CI on pull request <P> (issue <N>).`: check out the branch tip detached, read the failing
+check's log through filters (`gh pr checks <P>`, then `gh run view <id> --log-failed | tail -60`),
+fix the cause, run the failing check's command, commit as `Fix CI: <what>` and push as in step 6.
+For `Update pull request <P> (issue <N>).`: merge the default branch in, resolve the conflicts,
+run the checks of the tasks whose files conflicted, commit and push the same way. Then return
+`DONE <full sha>` with `Issue: #<N>, CI fix` or `Issue: #<N>, update`. If the fix changes the pull
+request's own change, the reviewer looks at the new commits.
+
 ## REPLAN
 
 When the plan cannot be followed as written (an interface changed on the default branch, a step
@@ -129,7 +141,7 @@ Do not guess on anything the description does not settle and that changes behavi
 3. `baton set-status <N> status:blocked`
 4. Return `QUESTION:` with the same text and the comment URL. Stop there; do not wait.
 
-A brief that no longer fits the code is not a question: return `REPLAN` (below).
+A brief that no longer fits the code is not a question: return `REPLAN` (above).
 
 Use `BLOCKED:` in the same way for something that is not a question: a dependency that is not
 merged, missing access, a failing default branch.

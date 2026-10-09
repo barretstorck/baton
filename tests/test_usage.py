@@ -26,6 +26,8 @@ class ClassifyTest(unittest.TestCase):
         self.assertEqual(usage.classify("Do review task 1.2 of pull request 40."),
                          ("fix", "pr 40"))
         self.assertEqual(usage.classify("Do spike issue 9."), ("spike", "issue 9"))
+        self.assertEqual(usage.classify("Fix CI on pull request 40 (issue 12)."), ("fix", "issue 12"))
+        self.assertEqual(usage.classify("Update pull request 40 (issue 12)."), ("fix", "issue 12"))
         self.assertEqual(usage.classify("Review pull request 40 (issue 12)."),
                          ("review", "issue 12"))
         self.assertEqual(usage.classify("Refine issues 5, 6, 7."), ("refine", "issues 5, 6, 7"))

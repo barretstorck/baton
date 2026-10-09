@@ -14,6 +14,9 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Open pull requests | `gh pr list --state open --json number,title,headRefName,isDraft,closingIssuesReferences` |
 | A pull request's checks | `gh pr checks <N>` |
 | A pull request's review state | `baton review state <N>`: `none`, `changes`, `replied`, `stale`, `approved` or `escalate` |
+| An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`) |
+| A review's tasks | `baton tasks pr <N>` (the latest review's `## Tasks`; none after an approval) |
+| Quota use | `baton usage [--since <UTC ISO time>] [--json]`: per issue and role, from local transcripts |
 | Repository owner and default branch | `gh repo view --json owner,defaultBranchRef` |
 
 ## Writing
@@ -28,12 +31,15 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Open a draft pull request | `gh pr create --draft --title "<title>" --body-file <file>` with `Closes #<N>` on its own line in the body |
 | Mark a pull request ready | `gh pr ready <N>` (the orchestrator, once the review is approved) |
 | Post a review | `baton review post <N> <approve\|changes> <full head sha> -` with the body as an inline heredoc. It refuses if the head moved. |
-| Answer a review | `baton comment pr <N> developer reply -`, one line per finding |
+| Answer a review | `baton comment pr <N> developer reply -`, one line per task (orchestrator, from the developers' results) |
+| Tick a task | `baton task done <issue\|pr> <N> <task>` (orchestrator only) |
+| Replace a plan's open tasks | `baton plan replace <N> <from-task> <file>` (orchestrator only) |
 | Merge | `baton merge-pr <N>` only. `gh pr merge` is refused. |
 
 Roles: `orchestrator`, `developer`, `refine`, `reviewer`. Kinds: `question`, `status`,
 `decision`, `plan`, `review`, `findings`, `reply`. Reviews are posted only with
-`baton review post`, which adds the verdict and the commit to the marker.
+`baton review post`, which adds the verdict and the commit to the marker. Task boxes are ticked
+only with `baton task done`.
 
 Where a row says "write ... to a file", an inline heredoc works too and needs no file:
 `--body "$(cat <<'EOF'` on one line, the text, then `EOF` and `)"` on the last two lines.

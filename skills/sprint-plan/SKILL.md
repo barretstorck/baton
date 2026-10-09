@@ -33,15 +33,18 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
    - Mark each `deliverable` (the sprint commits to it) or `stretch` (if time allows).
    - Prefer issues whose `Expected files:` do not overlap, so developers can work in parallel;
      where they overlap, say so, because those will run one after another.
-   - There are no size estimates. Say plainly how many issues you propose and why that many fits
-     the length; the maintainer adjusts.
-   - If an issue that the goal clearly needs is still in refinement, offer to run `/baton:refine`
-     on it now. Never put an issue that is not ready into the sprint.
+   - There are no size estimates. The number of plan tasks is the nearest thing: read it with
+     `baton tasks issue <N>` (each task is one developer and one test cycle). Say plainly how
+     many issues and tasks you propose and why that many fits the length; the maintainer adjusts.
+   - Check each with `baton ready-check <N>`; an issue without a plan (other than a spike) is not
+     ready.
+   - If an issue that the goal clearly needs is still in refinement, offer to refine it now
+     (`/baton:refine`, or `baton:baton-refiner` agents with at most about three issues each). Never put an issue that is not ready into the sprint.
    - Leave out issues written by anyone other than the maintainer unless the maintainer marked
      them ready.
 
 5. **Propose.** Show the maintainer a table: order, issue, title, deliverable or stretch,
-   blockers, overlaps. Under it list what you left out and why. Wait for approval or changes.
+   plan tasks, blockers, overlaps. Under it list what you left out and why. Wait for approval or changes.
    **Do not create anything before the maintainer says yes.**
 
 6. **Create the sprint**, once approved.

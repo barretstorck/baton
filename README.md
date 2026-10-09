@@ -9,24 +9,43 @@ The workflow is adapted from the GitLab handbook's
 [Product Development Flow](https://handbook.gitlab.com/handbook/product-development/how-we-work/product-development-flow/).
 
 The review loop is adapted from the [superpowers](https://github.com/obra/superpowers) plugin's
-code-review skills.
+code-review skills, and plans of small tasks from its `writing-plans` skill.
 
 - Design: [docs/superpowers/specs/2026-10-01-baton-design.md](docs/superpowers/specs/2026-10-01-baton-design.md)
 - Plans: [docs/superpowers/plans/](docs/superpowers/plans/)
 
 ## Status
 
-Two sprints have run on a real repository. Version 0.2.0 adds the designated reviewer.
+Two sprints have run on a real repository. Version 0.2.0 added the designated reviewer;
+version 0.3.0 works each issue as a plan of small tasks, to keep a sprint inside a subscription's
+quota.
+
+## Plans of small tasks
+
+Every tool call sends an agent's whole conversation to the model again, so an agent that works a
+whole issue grows large and expensive: in the second sprint, single developers reached 300K to
+680K tokens and two of them used a 5-hour quota window in about an hour. So:
+
+- `refine` writes a `## Plan` into each issue (except spikes): numbered tasks, each a short brief
+  with the files, the exact signatures it uses and provides, the lines to port from, and the
+  check that proves it done.
+- The sprint gives **each task to a fresh developer**, one after another on the issue's branch.
+  No developer's conversation grows large.
+- The reviewer runs **once**, when every task is ticked. What it wants fixed is a `## Tasks`
+  checklist in its review, worked the same way, one developer per task.
+- `baton usage` measures the result per issue and role from the local transcripts, and the
+  retrospective includes its table.
 
 ## How a pull request gets merged
 
-1. A developer agent implements the issue, verifies it, pushes, and leaves the pull request as
-   a draft.
+1. Developer agents do the issue's plan, one task each, pushing to the branch; the pull request
+   stays a draft.
 2. The orchestrator dispatches a reviewer agent. It reviews the head commit against the issue
-   and the brief and posts one review: `approve`, or `changes` with each problem marked "fix in
-   this pull request" or "follow-up issue".
-3. On `changes`, a developer answers each finding (fixed, or declined with a reason) and the
-   reviewer looks again, up to `review.max_rounds` rounds before the maintainer is asked.
+   and the brief and posts one review: `approve`, or `changes` with a `## Tasks` checklist of
+   what to fix in this pull request, and follow-up issues for the rest.
+3. On `changes`, one developer per task fixes it or declines it with a reason, the orchestrator
+   posts the reply, and the reviewer looks again, up to `review.max_rounds` rounds before the
+   maintainer is asked. An approval is refused while any task is open.
 4. Once approved, the orchestrator marks the pull request ready, so CI runs once, and
    `baton merge-pr` merges it after checking the approval still covers the head commit.
 
@@ -35,14 +54,15 @@ Two sprints have run on a real repository. Version 0.2.0 adds the designated rev
 | Skill | Purpose |
 |---|---|
 | `/baton:init` | Set a repository up: brief, labels, private files, git hooks |
-| `/baton:refine <issue>` | Bring an issue up to the definition of ready |
+| `/baton:refine <issue>` | Bring an issue up to the definition of ready, including its plan |
 | `/baton:sprint-plan` | Plan a sprint with the maintainer and create its milestone |
 | `/baton:sprint` | Work a sprint: dispatch developers and reviewers, collect answers, merge, retrospective |
-| `/baton:develop <issue>` | Take one issue to one pull request (used by the `baton-developer` subagent) |
+| `/baton:develop` | Do one task: a plan task, a review task or a spike (used by the `baton-developer` subagent) |
 | `/baton:review <pr>` | Review one pull request and post a verdict (used by the `baton-reviewer` subagent) |
 
-Both subagents run on Sonnet at medium effort; `developer.model` and `reviewer.model` in the brief
-change the model.
+The developer, reviewer and refiner subagents run on Sonnet at medium effort; `developer.model`
+and `reviewer.model` in the brief change the model. For bulk refinement, dispatch
+`baton-refiner` agents with at most about three issues each.
 
 Typical use:
 
@@ -64,6 +84,10 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton review post <pr> <approve\|changes> <sha> <file \| ->` | Post a review of that commit |
 | `baton answers <issue>` | The latest agent question and the maintainer's replies |
 | `baton ready-check <issue>` | The mechanical half of the definition of ready |
+| `baton tasks <issue\|pr> <number>` | An issue's plan tasks, or the latest review's tasks, as JSON |
+| `baton task done <issue\|pr> <number> <task>` | Tick one task (the orchestrator does this) |
+| `baton plan replace <issue> <from-task> <file \| ->` | Replace a plan's open tasks from that number on |
+| `baton usage [--since <time>] [--json]` | Quota use per issue and role, from local transcripts |
 | `baton sprint-status [milestone]` | The sprint's state and what may be dispatched now, as JSON |
 | `baton lock <acquire\|release>` | Stop two scheduled runs overlapping |
 

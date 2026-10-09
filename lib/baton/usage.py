@@ -19,6 +19,7 @@ _PROMPTS = [
     ("spike", re.compile(r"Do spike issue #?(\d+)")),
     ("review", re.compile(r"Review pull request #?(\d+)(?: \(issue #?(\d+)\))?")),
     ("refine", re.compile(r"Refine issues? (#?\d+(?:(?:,\s*|\s+and\s+)#?\d+)*)")),
+    ("fix", re.compile(r"(?:Fix CI on|Update) pull request #?(\d+)(?: \(issue #?(\d+)\))?")),
     ("developer", re.compile(r"Implement issue #?(\d+)")),   # before task plans (0.2.0)
 ]
 _TYPES = re.compile(r"baton-(developer|reviewer|refiner)")
