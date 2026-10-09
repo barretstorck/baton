@@ -9,7 +9,7 @@ import os
 import re
 import time
 
-from . import comment, config, issue as issue_fields, merge, review
+from . import checklist, comment, config, issue as issue_fields, merge, review
 
 _FAILED = {"failure", "timed_out", "startup_failure", "action_required"}
 _ORDER = re.compile(r"^\s*Order:(.*)$", re.M | re.I)
@@ -79,7 +79,7 @@ def snapshot(cfg, runner, milestone=None):
         "default_branch": {"name": branch, "state": branch_state(runs)},
         "repair_issue": None, "parallel": 0, "free_slots": 0, "in_dev": [], "in_review": [],
         "verification": [], "answered": [], "waiting_on_maintainer": [],
-        "dispatchable": [], "held": [], "finished": False, "issues": [],
+        "dispatchable": [], "held": [], "finished": False, "issues": [], "progress": {},
     }
     if chosen is None:
         return result
@@ -115,6 +115,16 @@ def snapshot(cfg, runner, milestone=None):
             result["repair_issue"] = number
         if cfg.label("needs-maintainer") in labels and status != "status:complete":
             waiting.add(number)
+        if status in ("status:in-dev", "status:in-review"):
+            pr = pr_for.get(number)
+            found = checklist.plan(item.get("body") or "")
+            fixes = review.review_tasks(pr, owner) if pr else None
+            result["progress"][str(number)] = {
+                "pr": pr["number"] if pr else None,
+                "plan": checklist.progress(found["tasks"]) if found else None,
+                "review": ({key: fixes[key] for key in ("round", "done", "total", "next")}
+                           if fixes and fixes["total"] else None),
+            }
         if status == "status:in-dev":
             result["in_dev"].append(number)
             busy_files.append(files)

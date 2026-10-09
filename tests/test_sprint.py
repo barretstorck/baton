@@ -198,6 +198,24 @@ class SnapshotTest(unittest.TestCase):
                          ["open_sprints"], ["Sprint A", "Sprint B"])
 
 
+    def test_progress_for_in_dev_and_in_review(self):
+        plan = ("## Plan\nWritten against: " + "c" * 40 +
+                "\n\n- [x] **1. A**\n- [ ] **2. B**\n")
+        dev = issue(4, "in-dev")
+        dev["body"] += plan
+        pr = {"number": 40, "headRefName": "issue-4-a", "headRefOid": "d" * 40,
+              "isDraft": True, "mergeable": "MERGEABLE", "statusCheckRollup": [],
+              "closingIssuesReferences": [{"number": 4}],
+              "comments": [{"author": {"login": OWNER}, "url": "u#issuecomment-1",
+                            "body": review.compose("changes", "d" * 40,
+                                                   "## Tasks\n- [ ] **1.1 Fix**\n")}]}
+        found = snap([dev, issue(5, "ready")], prs=[pr])
+        self.assertEqual(found["progress"]["4"],
+                         {"pr": 40, "plan": {"done": 1, "total": 2, "next": "2"},
+                          "review": {"round": 1, "done": 0, "total": 1, "next": "1.1"}})
+        self.assertNotIn("5", found["progress"])
+
+
 class LockTest(unittest.TestCase):
     def setUp(self):
         import tempfile
