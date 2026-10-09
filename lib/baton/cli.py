@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from . import checklist, comment, config, gate, githooks, issue, labels, merge, review, run, scan, sprint
+from . import checklist, comment, config, gate, githooks, issue, labels, merge, review, run, scan, sprint, usage
 
 
 def cmd_config(args):
@@ -191,6 +191,25 @@ def cmd_plan(args):
     return 64
 
 
+def cmd_usage(args):
+    since, as_json, root = None, False, "~/.claude/projects"
+    rest = list(args)
+    while rest:
+        flag = rest.pop(0)
+        if flag == "--json":
+            as_json = True
+        elif flag in ("--since", "--dir") and rest:
+            value = rest.pop(0)
+            since, root = (value, root) if flag == "--since" else (since, value)
+        else:
+            print("usage: baton usage [--since <ISO time>] [--json] [--dir <projects dir>]",
+                  file=sys.stderr)
+            return 64
+    found = usage.report(root, since)
+    print(json.dumps(found, indent=2) if as_json else usage.table(found))
+    return 0
+
+
 def cmd_answers(args):
     if len(args) != 1 or not args[0].isdigit():
         print("usage: baton answers <issue-number>", file=sys.stderr)
@@ -260,6 +279,7 @@ COMMANDS = {
     "sprint-status": cmd_sprint_status,
     "task": cmd_task,
     "tasks": cmd_tasks,
+    "usage": cmd_usage,
 }
 
 
