@@ -11,7 +11,13 @@ Adapted from the superpowers plugin's `requesting-code-review` and `receiving-co
 skills: a reviewer with a fresh context, a brief made of the issue and the pull request rather
 than anyone's history, findings by severity, and nothing set aside silently.
 
-Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
+Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`. Read
+`${CLAUDE_PLUGIN_ROOT}/references/habits.md` first: read diffs and files through filters, send
+long output to a file, and wait for a long run once.
+
+You are dispatched once per round, only when every task of the issue's plan is ticked and, from
+round 2, every task of your previous review is ticked and answered. Review the whole change, not
+task by task.
 
 ## What to trust
 
@@ -27,8 +33,10 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
 ## Steps
 
 1. **Read.** The issue, both briefs, the agent rules, and the pull request with its comments.
-   `baton review state <PR>` gives the round so far. On a later round, read your earlier reviews
-   and the developer's `reply` comments: the developer may have declined a finding with a reason.
+   `baton review state <PR>` gives `rounds`, the requests for changes since the last approval;
+   this review is round `rounds + 1`. On a later round, read your earlier review's tasks
+   (`baton tasks pr <PR>` shows them until you post) and the `reply` comment: each task is listed
+   as fixed with a commit, or declined with a reason.
 
 2. **Check out the head**, detached, in your own worktree:
    `git fetch origin <default> <branch>`, then `git checkout --detach origin/<branch>`. Note the
@@ -43,13 +51,14 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
        git diff $(git merge-base origin/<default> HEAD) HEAD > /tmp/after.diff
        diff -u /tmp/before.diff /tmp/after.diff
 
-   (use your worktree or scratch directory in place of `/tmp`). Then check that each earlier
-   fix-here finding was fixed, or answered with a reason you accept. Code that came from the
+   (use your worktree or scratch directory in place of `/tmp`). The fixes are the commits named
+   `Review <r.n>:`. Check that each earlier task was fixed, or declined with a reason you accept. Code that came from the
    default branch is not part of this review. If the change is too big for one pass, review it in
    passes yourself and say so. Never start a subagent.
 
 4. **Run the verification command** from the issue or the brief, unless the brief says reviewers
-   must not (a long or resource-heavy suite). Read the result.
+   must not (a long or resource-heavy suite). Never re-run a long suite that CI runs anyway. Send
+   the output to a file and read the summary.
 
 5. **Judge.**
    - Every acceptance criterion is met, and nothing outside the issue's scope changed. Work that
@@ -73,7 +82,10 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
      it would grow the pull request beyond its acceptance criteria. Give a title and two lines.
    A `minor` problem that takes a minute, in a file the change already touches, may be fixed here.
 
-7. **Verdict.** `approve` when nothing is to be fixed here; otherwise `changes`.
+7. **Verdict.** `approve` when nothing is to be fixed here; otherwise `changes`. Each fix-here
+   problem becomes a task under `## Tasks` (see the body below), numbered `<round>.<n>`. Group
+   related small problems in the same place into one task; each task is done by a fresh
+   developer who reads only that task, so it must stand on its own.
 
 8. **Post the review**, naming the commit you reviewed:
 
@@ -81,7 +93,11 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
        <the body below>
        EOF
 
-   It refuses if the branch moved while you reviewed; then review the new commits and post again.
+   It refuses if the branch moved while you reviewed; then review the new commits and post
+   again. It refuses a request for changes without a `## Tasks` list numbered for this round, and
+   an approval while any task of the plan or of the last review is open. Fix the body and post
+   again; if it refuses an approval for open tasks, do not approve: return that to the
+   orchestrator in your report.
    If you cannot post at all, put the body in your final report inside a block fenced with
    ```` ```baton-review <approve|changes> <full head sha> ````.
 
@@ -90,23 +106,26 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
 ```
 Round <n>. Reviewed <the whole change | the commits since <short sha>> at <short sha>.
 
-### Fix in this pull request
-1. **[important]** `path/file.py:42`: <the problem>. <Why it matters.> <What would fix it.>
+## Tasks
+- [ ] **<round>.1 <short title>**
+  - Problem: `path/file.py:42` <the problem and why it matters> (important)
+  - Fix: <what would fix it, specific enough for someone who has not read this review>
+  - Check: <the test to add or run that proves it fixed, or "none">
 
-### Follow-up issues
+## Follow-up issues
 - **[minor]** <title>: <two lines>
 
-### Set aside
+## Set aside
 - <behaviour you considered and left out>: <why it is outside this issue>
 
-### Checked
+## Checked
 - Acceptance criteria: <each one: met | not met>
 - Verification: `<command>` → <summary line> | not run (<why>)
-- Earlier findings: <each: fixed in <sha> | answered: <accepted or not, and why>>
+- Earlier tasks: <each: fixed in <sha> | declined: <accepted or not, and why>>
 ```
 
-Write "none" under a heading with nothing in it. Number the fix-here findings; the developer
-answers them by number.
+Write "none" under a heading with nothing in it, except `## Tasks`: an approval has no `## Tasks`
+section, and a request for changes has at least one task.
 
 ## Return
 
