@@ -21,6 +21,13 @@ Blocked by: #12, #14
 ## Verification
 scripts/test.sh
 
+## Plan
+Written against: 0123456789abcdef0123456789abcdef01234567
+
+- [ ] **1. Add the flag**
+  - Files: `src/cli.py`
+  - Check: `scripts/test.sh tests/test_cli.py`
+
 ## Decisions
 - Keep the short flag. ([answer](https://example.com/c/1))
 """
@@ -75,3 +82,22 @@ class ReadyTest(unittest.TestCase):
     def test_issue_by_someone_else_needs_the_maintainer(self):
         found = issue.ready_problems(make(author="mallory"), cfg(), OWNER)
         self.assertTrue(any("maintainer" in p for p in found))
+
+
+class PlanReadyTest(unittest.TestCase):
+    def problems(self, body, labels=("type:feature",)):
+        return issue.ready_problems(make(body=body, labels=labels), cfg(), OWNER)
+
+    def test_complete_plan_passes(self):
+        self.assertFalse(any("lan" in p for p in self.problems(BODY)))
+
+    def test_missing_plan(self):
+        body = BODY[:BODY.index("## Plan")] + BODY[BODY.index("## Decisions"):]
+        self.assertTrue(any("Plan section" in p for p in self.problems(body)))
+        self.assertFalse(any("Plan" in p for p in self.problems(body, ("type:spike",))))
+
+    def test_plan_needs_written_against_and_numbered_tasks(self):
+        no_sha = BODY.replace("Written against: 0123456789abcdef0123456789abcdef01234567\n", "")
+        self.assertTrue(any("Written against" in p for p in self.problems(no_sha)))
+        renumbered = BODY.replace("**1. Add the flag**", "**2. Add the flag**")
+        self.assertTrue(any("numbered 1, 2, 3" in p for p in self.problems(renumbered)))

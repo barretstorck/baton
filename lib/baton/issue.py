@@ -5,6 +5,8 @@ headed sections, an `Expected files:` line and `Blocked by:` lines.
 """
 import re
 
+from . import checklist
+
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.M)
 _BLOCKED = re.compile(r"^\s*Blocked by:(.*)$", re.M | re.I)
 _FILES = re.compile(r"^\s*Expected files:(.*)$", re.M | re.I)
@@ -57,6 +59,17 @@ def ready_problems(issue, cfg, owner):
                         "(the exact command, or 'repo default')")
     if not spike and not expected_files(body):
         problems.append("Expected files line is missing (used to avoid overlapping work)")
+    if not spike:
+        found = checklist.plan(body)
+        if found is None or not found["tasks"]:
+            problems.append("Plan section with at least one task is missing "
+                            "(- [ ] **1. <title>** with Files, Uses, Provides and Check lines)")
+        else:
+            if not found["written_against"]:
+                problems.append("the plan needs a 'Written against: <full commit sha>' line")
+            ids = [task["id"] for task in found["tasks"]]
+            if ids != [str(n) for n in range(1, len(ids) + 1)]:
+                problems.append("plan tasks must be numbered 1, 2, 3 ... in order")
     if not any(name.startswith("type:") or name == cfg.label("type:spike") for name in labels):
         problems.append("a type label is missing (type:feature, type:bug, "
                         "type:maintenance or type:spike)")
