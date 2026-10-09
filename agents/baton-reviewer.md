@@ -1,6 +1,6 @@
 ---
 name: baton-reviewer
-description: Use to review one pull request during a Baton sprint. Give it the repository, the pull request and its issue number. It reviews the head commit in its own worktree, decides for each problem whether it is fixed in that pull request or becomes a follow-up issue, posts one review comment with a verdict, never edits the branch, and returns REVIEWED.
+description: Use to review one pull request during a Baton sprint ("Review pull request <P> (issue <N>)."), only once every task of the issue's plan, and of the previous review, is ticked. It reviews the head commit in its own worktree, decides for each problem whether it is fixed in that pull request or becomes a follow-up issue, posts one review comment with a verdict and, when it asks for changes, a checklist of fix tasks, never edits the branch, and returns REVIEWED.
 model: sonnet
 effort: medium
 isolation: worktree
