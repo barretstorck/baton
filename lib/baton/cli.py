@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from . import comment, config, gate, githooks, issue, labels, merge, review, run, scan, sprint
+from . import checklist, comment, config, gate, githooks, issue, labels, merge, review, run, scan, sprint
 
 
 def cmd_config(args):
@@ -152,6 +152,45 @@ def cmd_review(args):
     return 64
 
 
+def cmd_tasks(args):
+    if len(args) == 2 and args[0] == "issue" and args[1].isdigit():
+        _require_config()
+        found = checklist.issue_plan(run.run, int(args[1]))
+        print(json.dumps({**found, **checklist.progress(found["tasks"])}, indent=2))
+        return 0
+    if len(args) == 2 and args[0] == "pr" and args[1].isdigit():
+        _require_config()
+        pr = json.loads(run.run(["gh", "pr", "view", args[1], "--json", "comments"]))
+        print(json.dumps(review.review_tasks(pr, _owner()), indent=2))
+        return 0
+    print("usage: baton tasks <issue|pr> <number>", file=sys.stderr)
+    return 64
+
+
+def cmd_task(args):
+    if len(args) == 4 and args[0] == "done" and args[1] in ("issue", "pr") and args[2].isdigit():
+        _require_config()
+        if args[1] == "issue":
+            changed = checklist.tick_issue(run.run, int(args[2]), args[3])
+        else:
+            changed = review.tick_review(run.run, int(args[2]), _owner(), args[3])
+        print(f"ticked task {args[3]}" if changed else f"task {args[3]} was already ticked")
+        return 0
+    print("usage: baton task done <issue|pr> <number> <task>", file=sys.stderr)
+    return 64
+
+
+def cmd_plan(args):
+    if len(args) == 4 and args[0] == "replace" and args[1].isdigit() and args[2].isdigit():
+        text = comment.read_body(args[3], sys.stdin)
+        found = checklist.replace_issue_plan(_require_config(), run.run, int(args[1]), args[2],
+                                             text, scan.load_terms())
+        print(json.dumps(found, indent=2))
+        return 0
+    print("usage: baton plan replace <issue> <from-task> <file | ->", file=sys.stderr)
+    return 64
+
+
 def cmd_answers(args):
     if len(args) != 1 or not args[0].isdigit():
         print("usage: baton answers <issue-number>", file=sys.stderr)
@@ -215,9 +254,12 @@ COMMANDS = {
     "labels": cmd_labels,
     "lock": cmd_lock,
     "merge-pr": cmd_merge_pr,
+    "plan": cmd_plan,
     "review": cmd_review,
     "set-status": cmd_set_status,
     "sprint-status": cmd_sprint_status,
+    "task": cmd_task,
+    "tasks": cmd_tasks,
 }
 
 
@@ -227,6 +269,9 @@ def main(argv):
         return 64
     try:
         return COMMANDS[argv[0]](argv[1:])
+    except (checklist.TaskError, comment.CommentError) as error:
+        print(f"baton: {error}", file=sys.stderr)
+        return 1
     except (config.ConfigError, run.RunError, ValueError, OSError) as error:
         print(f"baton: {error}", file=sys.stderr)
         return 2

@@ -1,5 +1,9 @@
+import copy
+import json
+import pathlib
 import unittest
-from baton import checklist
+from baton import checklist, config
+from tests.fakes import FakeRunner
 
 SHA = "a" * 40
 BODY = f"""## Context
@@ -113,3 +117,48 @@ class ReplaceTest(unittest.TestCase):
     def test_needs_a_plan(self):
         with self.assertRaises(checklist.TaskError):
             checklist.replace_plan("## Context\nx\n", "1", "- [ ] **1. X**\n")
+
+
+def cfg():
+    return config.Config(root=pathlib.Path("."), data=copy.deepcopy(config.DEFAULTS))
+
+
+def issue_runner(body=BODY):
+    return FakeRunner({"gh issue view 7 --json body": json.dumps({"body": body})})
+
+
+class IssueForgeTest(unittest.TestCase):
+    def test_tick_issue_writes_the_whole_body(self):
+        runner = issue_runner()
+        written = {}
+        original = runner.__call__
+
+        def capture(argv, cwd=None):
+            if argv[:3] == ["gh", "issue", "edit"]:
+                written["body"] = pathlib.Path(argv[argv.index("--body-file") + 1]).read_text()
+            return original(argv, cwd)
+
+        self.assertTrue(checklist.tick_issue(capture, 7, "2"))
+        self.assertEqual(written["body"], BODY.replace("- [ ] **2.", "- [x] **2."))
+
+    def test_tick_issue_already_done_writes_nothing(self):
+        runner = issue_runner()
+        self.assertFalse(checklist.tick_issue(runner, 7, "1"))
+        self.assertFalse(any("issue edit" in line for line in runner.lines()))
+
+    def test_replace_scans_new_text(self):
+        runner = issue_runner()
+        with self.assertRaises(checklist.TaskError):
+            checklist.replace_issue_plan(cfg(), runner, 7, "2",
+                                         "- [ ] **2. Copy from 192.168.1.20**\n", [])
+        self.assertFalse(any("issue edit" in line for line in runner.lines()))
+
+    def test_replace_refused_keeps_body(self):
+        runner = issue_runner()
+        with self.assertRaises(checklist.TaskError):
+            checklist.replace_issue_plan(cfg(), runner, 7, "1", "- [ ] **1. X**\n", [])
+        self.assertFalse(any("issue edit" in line for line in runner.lines()))
+
+    def test_issue_plan_without_plan(self):
+        with self.assertRaises(checklist.TaskError):
+            checklist.issue_plan(issue_runner("## Context\nx\n"), 7)

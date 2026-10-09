@@ -3,7 +3,12 @@
 Design spec, sections 4 ("The plan"), 6 and 7a. Only Baton's commands tick a box
 or replace open tasks; agents never edit a checklist by hand.
 """
+import json
+import os
 import re
+import tempfile
+
+from . import scan
 
 _HEADING = re.compile(r"(#{1,6})\s+(.+?)\s*$")
 _TASK = re.compile(r"^[-*] \[([ xX])\] \*\*(\d+(?:\.\d+)?)\.?\s+(.+?)\*\*\s*$")
@@ -137,3 +142,45 @@ def replace_plan(body, from_id, new_text):
     if end < len(body):
         section += newline
     return body[:start] + section + body[end:]
+
+
+def issue_body(runner, number):
+    return json.loads(runner(["gh", "issue", "view", str(number), "--json", "body"]))["body"] or ""
+
+
+def issue_plan(runner, number):
+    found = plan(issue_body(runner, number))
+    if found is None:
+        raise TaskError(f"issue #{number} has no '## Plan' section")
+    return found
+
+
+def _save_issue(runner, number, body):
+    if not body.strip():
+        raise TaskError("refusing to write an empty description")
+    handle, path = tempfile.mkstemp(suffix=".md")
+    try:
+        with os.fdopen(handle, "w", newline="") as out:
+            out.write(body)
+        runner(["gh", "issue", "edit", str(number), "--body-file", path])
+    finally:
+        os.unlink(path)
+
+
+def tick_issue(runner, number, task_id):
+    """Tick a plan task. False when it was already ticked (nothing is written)."""
+    new, changed = tick(issue_body(runner, number), "plan", str(task_id))
+    if changed:
+        _save_issue(runner, number, new)
+    return changed
+
+
+def replace_issue_plan(cfg, runner, number, from_id, new_text, terms):
+    """Replace the plan's open tasks from `from_id` on; the new text is scanned first."""
+    findings = scan.scan_text(new_text, terms, cfg.data["privacy_allow"])
+    if findings:
+        raise TaskError("plan not changed; privacy scan found: "
+                        + "; ".join(scan.describe(findings)))
+    new = replace_plan(issue_body(runner, number), str(from_id), new_text)
+    _save_issue(runner, number, new)
+    return plan(new)
