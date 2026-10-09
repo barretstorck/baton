@@ -7,7 +7,7 @@ the head commit.
 import json
 import re
 
-from . import gate, labels, review, run
+from . import gate, labels, review
 
 PR_FIELDS = ("number,state,isDraft,mergeable,headRefOid,headRefName,baseRefName,"
              "isCrossRepository,body,files,changedFiles,statusCheckRollup,"
@@ -134,11 +134,12 @@ def _worktree_for(branch, runner):
     return None, False
 
 
-def _task_worktrees(head, runner):
-    """(path, locked) of detached worktrees whose commit is part of `head`'s history.
+def _task_worktrees(commits, runner):
+    """(path, locked) of detached worktrees sitting on one of the pull request's own commits.
 
     Each task's developer works on a detached checkout of the branch, so these are
-    the worktrees a pull request's tasks left behind.
+    the worktrees a pull request's tasks left behind. A worktree on a default-branch
+    commit is never one of them, whatever its age.
     """
     found, path, sha, locked, detached = [], None, None, False, False
     for line in runner(["git", "worktree", "list", "--porcelain"]).splitlines() + [""]:
@@ -150,12 +151,9 @@ def _task_worktrees(head, runner):
             detached = True
         elif line.startswith("locked"):
             locked = True
-        elif line == "" and path and detached and sha:
-            try:
-                runner(["git", "merge-base", "--is-ancestor", sha, head])
+        elif line == "" and path:
+            if detached and sha in commits:
                 found.append((path, locked))
-            except run.RunError:
-                pass
             path = None
     return found
 
@@ -179,7 +177,8 @@ def _after_merge(pr, cfg, runner, notes):
         else:
             force = ["--force", "--force"] if locked else ["--force"]
             runner(["git", "worktree", "remove", *force, worktree])
-    for path, locked in _task_worktrees(pr["headRefOid"], runner):
+    own = {commit.get("oid") for commit in pr.get("commits") or []}
+    for path, locked in _task_worktrees(own, runner):
         if runner(["git", "-C", path, "status", "--porcelain"]).strip():
             notes.append(f"kept task worktree {path}: it has uncommitted changes")
             continue
