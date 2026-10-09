@@ -1,6 +1,6 @@
 # Baton: design
 
-**Status:** draft (revision 4: plans of small tasks and quota use, 2026-10-09; revision 3: a
+**Status:** approved (revision 4: plans of small tasks and quota use, 2026-10-09; revision 3: a
 designated code reviewer, 2026-10-08)
 **Date:** 2026-10-01
 
