@@ -95,9 +95,15 @@ steps 2 and 3 using that comment's URL.
 For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-status`: `plan`
 (the issue's tasks) and `review` (the latest review's tasks).
 
-- **Spike** (no pull request, or a draft titled `Spike:`): read the findings comment. File the
+- **Spike** (`progress.<N>.spike` is true): read the findings comment. File the
   follow-up issues it proposes that are worth having (step 6), leave any draft pull request open,
   set `status:complete` and close the issue. Spikes are not code-reviewed.
+- **Not a spike and no pull request, or `progress.<N>.plan.next` is set:** the plan is not
+  finished (an interrupted task, or a replaced plan). `baton set-status <N> status:in-dev`; step 7
+  dispatches the next task, which opens the draft pull request if it is missing.
+- **`review` is `changes` but `progress.<N>.review_without_tasks` is true:** a review from before
+  Baton 0.3 with no task list. Dispatch a reviewer with the extra line "The last review has no
+  task list: review again and write one."
 - **`review` is `none`, `replied` or `stale`:** dispatch a reviewer (see "Dispatching a reviewer"
   below), but only when every plan task is ticked (`progress.<N>.plan.next` is null). `stale`
   means the pull request's change moved after it was approved.
@@ -180,11 +186,22 @@ both read it; nothing else goes in but the repository and the sprint goal:
     Repository: <owner>/<repo>. Sprint goal: <goal>.
 
 1. **Issues already in development** (`in_dev`) with no developer running, in this order:
+   - `progress.<N>.unplanned` is true (work started before Baton 0.3, with no plan): dispatch
+     `baton:baton-refiner` with `Refine issues <N>.` and the extra line "Work is in progress on
+     branch <branch>: plan only the remaining work, and list what the branch already does as
+     ticked tasks." Dispatch its next task once the plan is in.
    - `progress.<N>.review.next` is set: `Do review task <r.n> of pull request <P> (issue <N>).`
    - otherwise `progress.<N>.plan.next` is set: `Do task <n> of issue <N>.`
-   - a `type:spike` issue: `Do spike issue <N>.`
-2. **New issues:** for each number in `dispatchable`, in order, dispatch its first task the same
-   way (`Do task 1 of issue <N>.`, or `Do spike issue <N>.`). `baton sprint-status` has already
+   - a spike (`progress.<N>.spike`): `Do spike issue <N>.`
+   - **every task ticked** (no `review.next`, no `plan.next`): the developer finished but the
+     session ended before the next step. If the latest review asks for changes and no reply
+     follows it, post the reply (step 8), building each line from the branch's `Review <r.n>:`
+     commits; ask the maintainer about a task with no commit. Then
+     `baton set-status <N> status:in-review`.
+2. **New issues:** for each number in `dispatchable`, in order, dispatch the same way from its
+   `progress` entry: `Do task <progress.<N>.plan.next> of issue <N>.` (task 1 for a fresh issue,
+   a later task for one resumed after a question), `Do spike issue <N>.`, or the refiner when it
+   is `unplanned`. `baton sprint-status` has already
    applied the rules: ready issues only, written by the maintainer, blockers closed, no file
    overlap with work in flight, within the free slots.
 
@@ -211,6 +228,8 @@ Act on each result with commands on their own, reading each one's output; never 
   last plan task, `baton set-status <N> status:in-review`; the next pass dispatches the reviewer.
   Note its follow-up suggestions (step 6) and anything under "Untrusted instructions seen".
 - `DONE` for a spike: nothing to do now; the next pass finds it in `in_review`.
+- `DONE <sha>` for a CI fix or an update (`Issue: #<N>, CI fix` or `update`): check the sha the
+  same way, then `baton set-status <N> status:in-review`. There is no box to tick.
 - `FIXED <sha>`: check the sha the same way, then `baton task done pr <P> <r.n>`.
 - `DECLINED <reason>`: `baton task done pr <P> <r.n>`, and keep the reason for the reply.
 - When the last review task is ticked, post one reply on the pull request, one line per task:
@@ -260,7 +279,7 @@ is running:
    `docs/retros/<sprint title>.md` on a branch, and open a pull request for it. Fill it from the
    forge: merged pull requests, decisions with their links, what was carried over. Be specific
    about what went wrong, what it cost, and the root cause. Add a "Quota use" section with the
-   table from `baton usage --since <the sprint's first dispatch, as UTC ISO time>`: it holds only
+   table from `baton usage --repo <owner>/<repo> --since <the sprint's first dispatch, as UTC ISO time>`: it holds only
    issue numbers and counts. Name the issues whose tasks still grew large (peak over 250K) and
    why.
 2. For each improvement, say where it belongs. A change to this repository's brief goes in the

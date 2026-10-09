@@ -76,14 +76,40 @@ class ReportTest(unittest.TestCase):
         self.assertAlmostEqual(task["weighted"], big + small)
         self.assertAlmostEqual(task["large_share"], big / (big + small))
         self.assertIn(("session s1", "orchestrator"), rows)
-        self.assertIn(("session s2", "other"), rows)
+        self.assertIn(("other sessions", "other"), rows)
         self.assertEqual(found["skipped"], 1)
 
     def test_windows_and_since(self):
         found, _ = self.rows()
         self.assertEqual(len(found["windows"]), 2)
         found, rows = self.rows(since="2026-10-09T12:00:00+00:00")
-        self.assertEqual(list(rows), [("session s2", "other")])
+        self.assertEqual(list(rows), [("other sessions", "other")])
+
+    def test_other_sessions_collapse_into_one_row(self):
+        write(self.root / "-other" / "s3.jsonl",
+              [prompt("hello"), call("r9", "2026-10-09T16:05:00Z", read=10)])
+        _, rows = self.rows()
+        self.assertEqual(rows[("other sessions", "other")]["agents"], 2)
+        self.assertNotIn(("session s2", "other"), rows)
+
+    def test_repo_keeps_only_that_repositorys_agents_and_their_sessions(self):
+        sub = self.root / "-repo" / "s1" / "subagents"
+        write(sub / "agent-b.jsonl", [prompt("Do task 1 of issue 12.\nRepository: o/a. Goal."),
+                                      call("r5", "2026-10-09T10:03:00Z", read=10)])
+        write(self.root / "-x" / "s4" / "subagents" / "agent-c.jsonl",
+              [prompt("Do task 1 of issue 12.\nRepository: o/b. Goal."),
+               call("r6", "2026-10-09T10:04:00Z", read=10)])
+        write(self.root / "-x" / "s4.jsonl", [prompt("/baton:sprint"),
+                                             call("r7", "2026-10-09T10:05:00Z", read=10)])
+        legacy = self.root / "-y" / "s5" / "subagents" / "agent-d.jsonl"
+        write(legacy, [prompt("Implement issue #3 in o/a following the develop skill."),
+                       call("r8", "2026-10-09T10:06:00Z", read=10)])
+        found, rows = self.rows(repo="o/a")
+        self.assertEqual(rows[("issue 12", "task")]["calls"], 1)
+        self.assertIn(("issue 3", "developer"), rows)
+        self.assertIn(("session s1", "orchestrator"), rows)
+        self.assertNotIn(("session s4", "orchestrator"), rows)
+        self.assertNotIn(("other sessions", "other"), rows)
 
     def test_table_mentions_rows(self):
         text = usage.table(usage.report(self.root))

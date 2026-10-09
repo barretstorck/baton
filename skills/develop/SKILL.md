@@ -65,6 +65,8 @@ filters, send long output to a file, chain related commands, wait for a long run
      and open their code only where your brief uses it.
    - If the branch already has a `Task <n>:` commit for your task, an interrupted developer did it:
      check it against the brief, finish it if needed, and continue from step 5.
+   - Whatever the task number, if the branch exists but no pull request closes the issue
+     (`gh pr list --head <branch>`), open the draft pull request now, as task 1 would.
 
 4. **Do the task with tests**, inside its brief and the issue's scope.
    - When changing existing behaviour, pin it first: commit a test of today's behaviour, so the

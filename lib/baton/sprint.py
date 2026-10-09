@@ -115,15 +115,20 @@ def snapshot(cfg, runner, milestone=None):
             result["repair_issue"] = number
         if cfg.label("needs-maintainer") in labels and status != "status:complete":
             waiting.add(number)
-        if status in ("status:in-dev", "status:in-review"):
+        if status in ("status:ready", "status:in-dev", "status:blocked", "status:in-review") \
+                and item["state"] == "OPEN":
             pr = pr_for.get(number)
             found = checklist.plan(item.get("body") or "")
             fixes = review.review_tasks(pr, owner) if pr else None
+            spike = cfg.label("type:spike") in labels
             result["progress"][str(number)] = {
                 "pr": pr["number"] if pr else None,
+                "spike": spike,
+                "unplanned": not spike and not (found and found["tasks"]),
                 "plan": checklist.progress(found["tasks"]) if found else None,
                 "review": ({key: fixes[key] for key in ("round", "done", "total", "next")}
                            if fixes and fixes["total"] else None),
+                "review_without_tasks": bool(fixes and fixes["review"] and not fixes["total"]),
             }
         if status == "status:in-dev":
             result["in_dev"].append(number)

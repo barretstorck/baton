@@ -87,7 +87,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton tasks <issue\|pr> <number>` | An issue's plan tasks, or the latest review's tasks, as JSON |
 | `baton task done <issue\|pr> <number> <task>` | Tick one task (the orchestrator does this) |
 | `baton plan replace <issue> <from-task> <file \| ->` | Replace a plan's open tasks from that number on |
-| `baton usage [--since <time>] [--json]` | Quota use per issue and role, from local transcripts |
+| `baton usage [--repo <owner/repo>] [--since <time>] [--json]` | Quota use per issue and role, from local transcripts |
 | `baton sprint-status [milestone]` | The sprint's state and what may be dispatched now, as JSON |
 | `baton lock <acquire\|release>` | Stop two scheduled runs overlapping |
 

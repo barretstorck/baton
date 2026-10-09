@@ -192,20 +192,26 @@ def cmd_plan(args):
 
 
 def cmd_usage(args):
-    since, as_json, root = None, False, "~/.claude/projects"
+    since, as_json, root, repo = None, False, "~/.claude/projects", None
     rest = list(args)
     while rest:
         flag = rest.pop(0)
         if flag == "--json":
             as_json = True
-        elif flag in ("--since", "--dir") and rest:
+        elif flag in ("--since", "--dir", "--repo") and rest:
             value = rest.pop(0)
-            since, root = (value, root) if flag == "--since" else (since, value)
+            if flag == "--since":
+                since = value
+            elif flag == "--dir":
+                root = value
+            else:
+                repo = value
         else:
-            print("usage: baton usage [--since <ISO time>] [--json] [--dir <projects dir>]",
+            print("usage: baton usage [--repo <owner/repo>] [--since <ISO time>] [--json] "
+                  "[--dir <projects dir>]",
                   file=sys.stderr)
             return 64
-    found = usage.report(root, since)
+    found = usage.report(root, since, repo)
     print(json.dumps(found, indent=2) if as_json else usage.table(found))
     return 0
 

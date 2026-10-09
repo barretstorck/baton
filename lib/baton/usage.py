@@ -96,7 +96,19 @@ def _agent_type(path):
         return None
 
 
-def report(root, since=None):
+def _for_repo(prompt, repo):
+    """True when a dispatch prompt names `repo` ("Repository: o/r." or the older "in o/r")."""
+    return bool(re.search(r"(?:Repository:\s*|\bin\s+)" + re.escape(repo) + r"(?![\w.-]*\w)",
+                          prompt or ""))
+
+
+def report(root, since=None, repo=None):
+    """Rows per (work, role) and totals per five-hour window.
+
+    With `repo`, only agents whose dispatch prompt names that repository count,
+    plus the sessions that dispatched them; every other session is left out.
+    Without it, sessions that dispatched no Baton agent are one "other sessions" row.
+    """
     root = pathlib.Path(root).expanduser()
     since = _time(since) if since else None
     seen, skipped, agents, sessions = set(), 0, [], []
@@ -105,14 +117,17 @@ def report(root, since=None):
         skipped += bad
         calls = [call for call in calls if since is None or call["time"] >= since]
         if path.parent.name == "subagents":
-            agents.append((path, classify(prompt, _agent_type(path)), calls))
+            if repo is None or _for_repo(prompt, repo):
+                agents.append((path, classify(prompt, _agent_type(path)), calls))
         else:
             sessions.append((path, calls))
     baton_dirs = {path.parent.parent for path, (role, _), _ in agents if role != "other"}
     entries = [(role_key, calls) for _, role_key, calls in agents]
     for path, calls in sessions:
-        role = "orchestrator" if path.with_suffix("") in baton_dirs else "other"
-        entries.append(((role, f"session {path.stem[:8]}"), calls))
+        if path.with_suffix("") in baton_dirs:
+            entries.append((("orchestrator", f"session {path.stem[:8]}"), calls))
+        elif repo is None:
+            entries.append((("other", "other sessions"), calls))
 
     rows, every = {}, []
     for (role, key), calls in entries:

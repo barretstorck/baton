@@ -211,9 +211,35 @@ class SnapshotTest(unittest.TestCase):
                                                    "## Tasks\n- [ ] **1.1 Fix**\n")}]}
         found = snap([dev, issue(5, "ready")], prs=[pr])
         self.assertEqual(found["progress"]["4"],
-                         {"pr": 40, "plan": {"done": 1, "total": 2, "next": "2"},
-                          "review": {"round": 1, "done": 0, "total": 1, "next": "1.1"}})
-        self.assertNotIn("5", found["progress"])
+                         {"pr": 40, "spike": False, "unplanned": False,
+                          "plan": {"done": 1, "total": 2, "next": "2"},
+                          "review": {"round": 1, "done": 0, "total": 1, "next": "1.1"},
+                          "review_without_tasks": False})
+        self.assertEqual(found["progress"]["5"]["plan"], None)
+        self.assertTrue(found["progress"]["5"]["unplanned"])
+        self.assertFalse(found["progress"]["4"]["unplanned"])
+
+    def test_resumed_ready_issue_reports_its_next_task(self):
+        ready = issue(6, "ready")
+        ready["body"] += ("## Plan\nWritten against: " + "c" * 40 +
+                          "\n\n- [x] **1. A**\n- [x] **2. B**\n- [ ] **3. C**\n")
+        found = snap([ready])
+        self.assertEqual(found["progress"]["6"]["plan"]["next"], "3")
+
+    def test_spikes_are_never_unplanned(self):
+        found = snap([issue(7, "in-dev", "type:spike")])
+        self.assertFalse(found["progress"]["7"]["unplanned"])
+        self.assertTrue(found["progress"]["7"]["spike"])
+
+    def test_review_without_tasks_is_flagged(self):
+        dev = issue(4, "in-review")
+        pr = {"number": 40, "headRefName": "issue-4-a", "headRefOid": "d" * 40,
+              "isDraft": True, "mergeable": "MERGEABLE", "statusCheckRollup": [],
+              "closingIssuesReferences": [{"number": 4}],
+              "comments": [{"author": {"login": OWNER}, "url": "u#issuecomment-1",
+                            "body": review.compose("changes", "d" * 40, "1. Fix the thing.")}]}
+        found = snap([dev], prs=[pr], extra={"git ": ""})
+        self.assertTrue(found["progress"]["4"]["review_without_tasks"])
 
 
 class LockTest(unittest.TestCase):

@@ -40,7 +40,7 @@
 
 ## Quota use
 
-(The table from `baton usage --since <first dispatch>`: issue numbers and counts only. Name the
+(The table from `baton usage --repo <owner/repo> --since <first dispatch>`: issue numbers and counts only. Name the
 issues whose agents still grew past 250K tokens, and why.)
 
 ## How to improve

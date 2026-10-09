@@ -16,7 +16,7 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | A pull request's review state | `baton review state <N>`: `none`, `changes`, `replied`, `stale`, `approved` or `escalate` |
 | An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`) |
 | A review's tasks | `baton tasks pr <N>` (the latest review's `## Tasks`; none after an approval) |
-| Quota use | `baton usage [--since <UTC ISO time>] [--json]`: per issue and role, from local transcripts |
+| Quota use | `baton usage --repo <owner/repo> [--since <UTC ISO time>] [--json]`: per issue and role, from local transcripts |
 | Repository owner and default branch | `gh repo view --json owner,defaultBranchRef` |
 
 ## Writing
