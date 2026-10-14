@@ -1,3 +1,4 @@
+import json
 import unittest
 from baton import checklist, planfile
 from baton.run import RunError
@@ -54,6 +55,54 @@ class PlanfileTest(unittest.TestCase):
     def test_read_missing(self):
         with self.assertRaises(checklist.TaskError):
             planfile.read(Missing(), "issue-5-x", PATH)
+
+
+class Capture(FakeRunner):
+    """Records the body written by `gh issue edit`, which is deleted after the call."""
+
+    def __init__(self, body):
+        super().__init__({"gh issue view": json.dumps({"body": body})})
+        self.written = []
+
+    def __call__(self, argv, cwd=None):
+        if argv[:3] == ["gh", "issue", "edit"]:
+            with open(argv[argv.index("--body-file") + 1]) as handle:
+                self.written.append(handle.read())
+        return super().__call__(argv, cwd)
+
+
+class LinkIssueTest(unittest.TestCase):
+    def test_inserts_link_when_missing(self):
+        runner = Capture("## Context\nx\n")
+        line = planfile.link_issue(runner, "o/r", 5, branch="issue-5-x", path=PATH)
+        self.assertEqual(line, planfile.link_line("o/r", "issue-5-x", PATH))
+        self.assertEqual(runner.written, [f"{line}\n\n## Context\nx\n"])
+
+    def test_at_pins_and_keeps_path_and_rest(self):
+        old = planfile.link_line("o/r", "issue-5-x", PATH)
+        runner = Capture(f"{old}\n\n## Context\nx\n")
+        planfile.link_issue(runner, "o/r", 5, at=SHA)
+        new = planfile.link_line("o/r", SHA, PATH)
+        self.assertEqual(runner.written, [f"{new}\n\n## Context\nx\n"])
+
+    def test_at_without_link_raises(self):
+        with self.assertRaises(checklist.TaskError):
+            planfile.link_issue(Capture("## Context\n"), "o/r", 5, at=SHA)
+
+    def test_at_needs_full_sha(self):
+        body = planfile.link_line("o/r", "b", PATH)
+        with self.assertRaises(checklist.TaskError):
+            planfile.link_issue(Capture(body), "o/r", 5, at="abc")
+
+    def test_unchanged_writes_nothing(self):
+        line = planfile.link_line("o/r", "issue-5-x", PATH)
+        runner = Capture(f"{line}\n\n## Context\n")
+        planfile.link_issue(runner, "o/r", 5, branch="issue-5-x", path=PATH)
+        self.assertEqual(runner.written, [])
+
+    def test_missing_args_raise(self):
+        with self.assertRaises(checklist.TaskError):
+            planfile.link_issue(Capture(""), "o/r", 5)
 
 
 if __name__ == "__main__":

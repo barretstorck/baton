@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from . import checklist, comment, config, gate, githooks, issue, labels, merge, review, run, scan, sprint, usage
+from . import checklist, comment, config, gate, githooks, issue, labels, merge, planfile, review, run, scan, sprint, usage
 
 
 def cmd_config(args):
@@ -187,7 +187,22 @@ def cmd_plan(args):
                                              text, scan.load_terms())
         print(json.dumps(found, indent=2))
         return 0
-    print("usage: baton plan replace <issue> <from-task> <file | ->", file=sys.stderr)
+    if len(args) >= 2 and args[0] == "link" and args[1].isdigit():
+        number, rest = int(args[1]), args[2:]
+        if len(rest) == 2 and rest[0] == "--at":
+            kwargs = {"at": rest[1]}
+        elif len(rest) == 2 and not rest[0].startswith("-"):
+            kwargs = {"branch": rest[0], "path": rest[1]}
+        else:
+            kwargs = None
+        if kwargs is not None:
+            _require_config()
+            repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
+            print(planfile.link_issue(run.run, repo, number, **kwargs))
+            return 0
+    print("usage: baton plan replace <issue> <from-task> <file | ->\n"
+          "       baton plan link <issue> <branch> <path>\n"
+          "       baton plan link <issue> --at <sha>", file=sys.stderr)
     return 64
 
 

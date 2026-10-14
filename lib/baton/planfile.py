@@ -53,3 +53,27 @@ def read(runner, ref, path):
         return runner(["git", "show", f"origin/{ref}:{path}"])
     except RunError as error:
         raise checklist.TaskError(f"plan file {path} not found at {ref}: {error}")
+
+
+def link_issue(runner, repo, number, branch=None, path=None, at=None):
+    """Write or replace the issue's `Plan:` line; returns the new line.
+
+    With `at`, the link is pinned to that commit and keeps the path of the existing link.
+    """
+    body = checklist.issue_body(runner, number)
+    if at is not None:
+        if not _SHA.match(at):
+            raise checklist.TaskError(f"--at needs a full 40-character commit sha, got {at!r}")
+        existing = parse_link(body)
+        if existing is None:
+            raise checklist.TaskError(f"issue #{number} has no Plan: link to pin")
+        ref, path = at, existing["path"]
+    elif branch and path:
+        ref = branch
+    else:
+        raise checklist.TaskError("plan link needs a branch and a path, or --at <sha>")
+    line = link_line(repo, ref, path)
+    new = set_link(body, line)
+    if new != body:
+        checklist._save_issue(runner, number, new)
+    return line
