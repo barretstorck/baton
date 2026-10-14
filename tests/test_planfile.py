@@ -46,13 +46,13 @@ class PlanfileTest(unittest.TestCase):
     def test_read_branch_fetches_then_shows(self):
         runner = FakeRunner({"git show": "text"})
         self.assertEqual(planfile.read(runner, "issue-5-x", PATH), "text")
-        self.assertEqual(runner.lines(), ["git fetch --quiet origin issue-5-x",
-                                          f"git show origin/issue-5-x:{PATH}"])
+        self.assertEqual(runner.lines(), ["git fetch --quiet --end-of-options origin issue-5-x",
+                                          f"git show --end-of-options origin/issue-5-x:{PATH}"])
 
     def test_read_pinned_shows_commit(self):
         runner = FakeRunner({"git show": "text"})
         planfile.read(runner, SHA, PATH)
-        self.assertEqual(runner.lines(), [f"git show {SHA}:{PATH}"])
+        self.assertEqual(runner.lines(), [f"git show --end-of-options {SHA}:{PATH}"])
 
     def test_read_missing(self):
         with self.assertRaises(checklist.TaskError):
@@ -215,6 +215,71 @@ class MigrateTest(unittest.TestCase):
         self.assertNotIn("## Plan", issue_text)
         self.assertNotIn("## Verification", issue_text)
 
+
+
+def bad_link(ref, path):
+    return f"Plan: [{path}](https://github.com/o/r/blob/{ref}/{path})\n\n## Context\nx\n"
+
+
+BAD_LINKS = [
+    ("--upload-pack=x", PATH),
+    ("issue-5-x", "../../x.md"),
+    ("issue-5-x", "docs/baton/plans/../../x.md"),
+    ("issue-5-x", "/etc/x.md"),
+    ("issue-5-x", "docs/baton/other/x.md"),
+    ("issue-5-x", "other/plans/x.md"),
+    ("issue-5-x", "docs/baton/plans/x.txt"),
+    ("issue-5-x", "docs/baton/plans/"),
+    ("issue-5-x", "-docs/baton/plans/x.md"),
+    ("a..b", PATH),
+    ("a b", PATH),
+]
+
+
+class CheckLinkTest(unittest.TestCase):
+    def test_good_links_pass(self):
+        planfile.check_link("issue-5-x", PATH)
+        planfile.check_link(SHA, PATH)
+        planfile.check_link("feature/x.y_z", "docs/baton/plans/sub/5-x.md")
+        planfile.check_link("issue-5-x", "docs/plans/5-x.md", "docs/")
+
+    def test_bad_links_are_refused(self):
+        for ref, path in BAD_LINKS:
+            with self.subTest(ref=ref, path=path), self.assertRaises(checklist.TaskError) as raised:
+                planfile.check_link(ref, path)
+            self.assertIn("invalid Plan: link", str(raised.exception))
+
+    def test_parse_link_refuses_bad_links(self):
+        for ref, path in BAD_LINKS:
+            if " " in ref:
+                continue  # not a link at all: the Plan: line does not parse
+            with self.subTest(ref=ref, path=path), self.assertRaises(checklist.TaskError):
+                planfile.parse_link(bad_link(ref, path))
+
+    def test_parse_link_uses_the_configured_docs_dir(self):
+        body = bad_link("issue-5-x", "notes/plans/5-x.md")
+        with self.assertRaises(checklist.TaskError):
+            planfile.parse_link(body)
+        self.assertEqual(planfile.parse_link(body, "notes")["path"], "notes/plans/5-x.md")
+
+    def test_link_issue_refuses_a_bad_branch_or_path(self):
+        for ref, path in BAD_LINKS:
+            runner = Capture("## Context\nx\n")
+            with self.subTest(ref=ref, path=path), self.assertRaises(checklist.TaskError):
+                planfile.link_issue(runner, "o/r", 5, branch=ref, path=path)
+            self.assertEqual(runner.written, [])
+
+    def test_link_issue_at_refuses_a_bad_existing_link(self):
+        runner = Capture(bad_link("issue-5-x", "../../x.md"))
+        with self.assertRaises(checklist.TaskError):
+            planfile.link_issue(runner, "o/r", 5, at=SHA)
+        self.assertEqual(runner.written, [])
+
+    def test_read_never_runs_for_a_bad_link_through_plan_source(self):
+        runner = FakeRunner()
+        with self.assertRaises(checklist.TaskError):
+            checklist.plan_source(runner, bad_link("--upload-pack=x", PATH))
+        self.assertEqual(runner.calls, [])
 
 if __name__ == "__main__":
     unittest.main()

@@ -197,7 +197,7 @@ def _after_merge(pr, cfg, runner, notes):
     runner(["git", "push", "origin", "--delete", branch])
 
 
-def _retire_plan(pr, repo, runner):
+def _retire_plan(pr, repo, runner, cfg):
     """Pin the issue's plan link to the head, remove the file from the branch and push.
 
     Returns the note to show, or None when there is no unpinned plan file on the head.
@@ -206,15 +206,16 @@ def _retire_plan(pr, repo, runner):
     if len(closing) != 1:
         return None
     issue, branch, head = closing[0], pr["headRefName"], pr["headRefOid"]
-    link = planfile.parse_link(checklist.issue_body(runner, issue))
+    link = planfile.parse_link(checklist.issue_body(runner, issue), cfg.data["docs"]["dir"])
     if link is None or link["pinned"]:
         return None
-    runner(["git", "fetch", "--quiet", "origin", branch])
+    runner(["git", "fetch", "--quiet", "--end-of-options", "origin", branch])
     try:
-        runner(["git", "show", f"{head}:{link['path']}"])
+        runner(["git", "show", "--end-of-options", f"{head}:{link['path']}"])
     except RunError:
         return None
-    planfile.link_issue(runner, f"{repo['owner']['login']}/{repo['name']}", issue, at=head)
+    planfile.link_issue(runner, f"{repo['owner']['login']}/{repo['name']}", issue, at=head,
+                       docs_dir=cfg.data["docs"]["dir"])
     tree = tempfile.mkdtemp(prefix="baton-retire-")
     try:
         runner(["git", "worktree", "add", "--detach", tree, head])
@@ -240,7 +241,7 @@ def merge(number, cfg, runner, notes=None):
         problems = check(pr, cfg, repo["owner"]["login"], repo["defaultBranchRef"]["name"], runner)
         if problems:
             return problems
-        note = _retire_plan(pr, repo, runner)
+        note = _retire_plan(pr, repo, runner, cfg)
         if note:
             raise PlanRetired(note)
         runner(["gh", "pr", "merge", str(number), "--merge",

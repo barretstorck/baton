@@ -182,13 +182,13 @@ def issue_body(runner, number):
     return json.loads(runner(["gh", "issue", "view", str(number), "--json", "body"]))["body"] or ""
 
 
-def plan_source(runner, body, cache=None):
+def plan_source(runner, body, cache=None, docs_dir=None):
     """(text holding the plan, link or None): the linked file's text, else the body itself.
 
     `cache` maps (ref, path) to text so one branch is fetched once.
     """
     from . import planfile  # planfile imports this module
-    link = planfile.parse_link(body)
+    link = planfile.parse_link(body, docs_dir)
     if link is None:
         return body, None
     key = (link["ref"], link["path"])
@@ -200,8 +200,8 @@ def plan_source(runner, body, cache=None):
     return text, link
 
 
-def issue_plan(runner, number):
-    text, link = plan_source(runner, issue_body(runner, number))
+def issue_plan(runner, number, docs_dir=None):
+    text, link = plan_source(runner, issue_body(runner, number), docs_dir=docs_dir)
     found = plan(text)
     if found is None:
         raise TaskError(f"issue #{number} has no '## Plan' section"
@@ -224,23 +224,23 @@ def _save_issue(runner, number, body):
         os.unlink(path)
 
 
-def _linked(runner, number):
+def _linked(runner, number, docs_dir=None):
     """(body, link or None) for the issue; a pinned link has no file left to edit."""
     from . import planfile
     body = issue_body(runner, number)
-    link = planfile.parse_link(body)
+    link = planfile.parse_link(body, docs_dir)
     if link is not None and link["pinned"]:
         raise TaskError(f"issue #{number}'s plan is pinned to a commit; its file was retired")
     return body, link
 
 
-def tick_issue(runner, number, task_id, cwd="."):
+def tick_issue(runner, number, task_id, cwd=".", docs_dir=None):
     """Tick a plan task. False when it was already ticked (nothing is written).
 
     A linked plan is ticked in its file under `cwd` (the developer's checkout) and the issue
     is not edited; the developer commits the file with the task's code.
     """
-    body, link = _linked(runner, number)
+    body, link = _linked(runner, number, docs_dir)
     if link is None:
         new, changed = tick(body, "plan", str(task_id))
         if changed:
@@ -263,7 +263,7 @@ def tick_issue(runner, number, task_id, cwd="."):
 def _replace_in_file(runner, link, from_id, new_text, drop=False):
     """Commit the replaced tasks to the linked branch from a temporary detached worktree."""
     branch, path = link["ref"], link["path"]
-    runner(["git", "fetch", "--quiet", "origin", branch])
+    runner(["git", "fetch", "--quiet", "--end-of-options", "origin", branch])
     tree = tempfile.mkdtemp(prefix="baton-plan-")
     try:
         runner(["git", "worktree", "add", "--detach", tree, f"origin/{branch}"])
@@ -296,7 +296,7 @@ def replace_issue_plan(cfg, runner, number, from_id, new_text, terms, drop=False
     if findings:
         raise TaskError("plan not changed; privacy scan found: "
                         + "; ".join(scan.describe(findings)))
-    body, link = _linked(runner, number)
+    body, link = _linked(runner, number, cfg.data["docs"]["dir"])
     if link is not None:
         new, changes = _replace_in_file(runner, link, from_id, new_text, drop)
     else:

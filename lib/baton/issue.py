@@ -61,7 +61,11 @@ def ready_problems(issue, cfg, owner, runner=None):
         problems.append("Acceptance criteria section needs at least one checkbox")
     if "out of scope" not in parts:
         problems.append("Out of scope section is missing")
-    link = None if spike else planfile.parse_link(body)
+    try:
+        link = None if spike else planfile.parse_link(body, cfg.data["docs"]["dir"])
+    except checklist.TaskError as error:
+        link = None
+        problems.append(str(error))
     plan_text, plan_where = body, "Plan section"
     if link:
         plan_where = link["path"]

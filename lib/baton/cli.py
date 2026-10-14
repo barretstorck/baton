@@ -157,8 +157,8 @@ def cmd_review(args):
 
 def cmd_tasks(args):
     if len(args) == 2 and args[0] == "issue" and args[1].isdigit():
-        _require_config()
-        found = checklist.issue_plan(run.run, int(args[1]))
+        cfg = _require_config()
+        found = checklist.issue_plan(run.run, int(args[1]), cfg.data["docs"]["dir"])
         print(json.dumps({**found, **checklist.progress(found["tasks"])}, indent=2))
         return 0
     if len(args) == 2 and args[0] == "pr" and args[1].isdigit():
@@ -172,9 +172,10 @@ def cmd_tasks(args):
 
 def cmd_task(args):
     if len(args) == 4 and args[0] == "done" and args[1] in ("issue", "pr") and args[2].isdigit():
-        _require_config()
+        cfg = _require_config()
         if args[1] == "issue":
-            changed = checklist.tick_issue(run.run, int(args[2]), args[3], cwd=os.getcwd())
+            changed = checklist.tick_issue(run.run, int(args[2]), args[3], cwd=os.getcwd(),
+                                           docs_dir=cfg.data["docs"]["dir"])
         else:
             changed = review.tick_review(run.run, int(args[2]), _owner(), args[3])
         print(f"ticked task {args[3]}" if changed else f"task {args[3]} was already ticked")
@@ -204,9 +205,9 @@ def cmd_plan(args):
         else:
             kwargs = None
         if kwargs is not None:
-            _require_config()
+            cfg = _require_config()
             repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
-            print(planfile.link_issue(run.run, repo, number, **kwargs))
+            print(planfile.link_issue(run.run, repo, number, docs_dir=cfg.data["docs"]["dir"], **kwargs))
             return 0
     if len(args) == 3 and args[0] == "migrate" and args[1].isdigit():
         cfg = _require_config()

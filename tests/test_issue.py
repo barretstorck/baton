@@ -128,12 +128,24 @@ class RaisingRunner:
         raise RunError("missing")
 
 
+class BadLinkReadyTest(unittest.TestCase):
+    def test_unsafe_link_is_a_problem_and_nothing_is_run(self):
+        for ref, path in [("--upload-pack=x", "docs/baton/plans/5-x.md"),
+                          ("issue-5-x", "../../x.md"), ("issue-5-x", "/etc/x.md")]:
+            body = f"Plan: [{path}](https://github.com/o/r/blob/{ref}/{path})\n\n" + SLIM
+            runner = FakeRunner()
+            with self.subTest(ref=ref, path=path):
+                found = issue.ready_problems(make(body=body), cfg(), OWNER, runner)
+                self.assertTrue(any("invalid Plan: link" in p for p in found))
+                self.assertEqual(runner.calls, [])
+
+
 class LinkedPlanReadyTest(unittest.TestCase):
     def problems(self, body, runner, labels=("type:feature",)):
         return issue.ready_problems(make(body=body, labels=labels), cfg(), OWNER, runner)
 
     def runner(self, text=FILE):
-        return FakeRunner({"git show origin/issue-5-x:docs/baton/plans/5-x.md": text})
+        return FakeRunner({"git show --end-of-options origin/issue-5-x:docs/baton/plans/5-x.md": text})
 
     def test_linked_plan_passes(self):
         self.assertEqual(self.problems(LINKED_HEAD + SLIM, self.runner()), [])

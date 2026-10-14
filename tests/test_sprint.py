@@ -253,12 +253,12 @@ class LinkedPlanSnapshotTest(unittest.TestCase):
         two = issue(5, "in-dev")
         two["body"] = self.LINK.replace("4-x", "5-x") + "\n\n" + two["body"]
         file_text = "## Plan\n\n- [x] **1. A**\n- [ ] **2. B**\n"
-        extra = {"git show origin/issue-4-x:docs/baton/plans/4-x.md": file_text}
+        extra = {"git show --end-of-options origin/issue-4-x:docs/baton/plans/4-x.md": file_text}
         runner = FakeRunner(replies([one, two], extra=extra))
         found = sprint.snapshot(cfg(), runner)
         self.assertEqual(found["progress"]["4"]["plan"], {"done": 1, "total": 2, "next": "2"})
         self.assertFalse(found["progress"]["4"]["unplanned"])
-        self.assertEqual(sum(1 for c in runner.lines() if c == "git fetch --quiet origin issue-4-x"), 1)
+        self.assertEqual(sum(1 for c in runner.lines() if c == "git fetch --quiet --end-of-options origin issue-4-x"), 1)
         self.assertTrue(found["progress"]["5"]["unplanned"])
 
 

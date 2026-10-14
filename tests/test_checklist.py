@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import pathlib
 import unittest
 from baton import checklist, config, planfile
@@ -214,18 +215,51 @@ LINK = planfile.link_line("o/r", "issue-7-x", "docs/baton/plans/7-x.md")
 FILE = "## Pattern\nx\n\n## Plan\n\nWritten against: " + SHA + "\n\n- [x] **1. A**\n- [ ] **2. B**\n"
 
 
+class BadLinkTest(unittest.TestCase):
+    BAD = [("--upload-pack=x", "docs/baton/plans/7-x.md"), ("issue-7-x", "../../x.md"),
+           ("issue-7-x", "/etc/x.md"), ("issue-7-x", "docs/baton/other/x.md")]
+
+    def runner(self, ref, path):
+        link = f"Plan: [{path}](https://github.com/o/r/blob/{ref}/{path})"
+        return FakeRunner({
+            "gh issue view 7 --json body": json.dumps({"body": link + "\n\n## Context\nx\n"})})
+
+    def test_tick_issue_refuses_without_running_or_writing(self):
+        import tempfile
+        for ref, path in self.BAD:
+            runner = self.runner(ref, path)
+            with self.subTest(ref=ref, path=path), tempfile.TemporaryDirectory() as tree:
+                with self.assertRaises(checklist.TaskError):
+                    checklist.tick_issue(runner, 7, "1", cwd=tree)
+                self.assertEqual(runner.lines(), ["gh issue view 7 --json body"])
+                self.assertEqual(os.listdir(tree), [])
+
+    def test_replace_issue_plan_refuses_without_git_or_edit(self):
+        for ref, path in self.BAD:
+            runner = self.runner(ref, path)
+            with self.subTest(ref=ref, path=path), self.assertRaises(checklist.TaskError):
+                checklist.replace_issue_plan(cfg(), runner, 7, "1", "- [ ] **1. X**\n", [])
+            self.assertEqual(runner.lines(), ["gh issue view 7 --json body"])
+
+    def test_issue_plan_refuses_without_git(self):
+        runner = self.runner(*self.BAD[0])
+        with self.assertRaises(checklist.TaskError):
+            checklist.issue_plan(runner, 7)
+        self.assertEqual(runner.lines(), ["gh issue view 7 --json body"])
+
+
 class LinkedPlanTest(unittest.TestCase):
     def runner(self, link=LINK):
         return FakeRunner({
             "gh issue view 7 --json body": json.dumps({"body": link + "\n\n## Context\nx\n"}),
-            "git show origin/issue-7-x:docs/baton/plans/7-x.md": FILE})
+            "git show --end-of-options origin/issue-7-x:docs/baton/plans/7-x.md": FILE})
 
     def test_plan_source_reads_the_file(self):
         runner = self.runner()
         text, link = checklist.plan_source(runner, LINK + "\n")
         self.assertEqual(text, FILE)
         self.assertEqual(link["ref"], "issue-7-x")
-        self.assertIn("git fetch --quiet origin issue-7-x", runner.lines())
+        self.assertIn("git fetch --quiet --end-of-options origin issue-7-x", runner.lines())
 
     def test_plan_source_legacy_body(self):
         runner = FakeRunner()

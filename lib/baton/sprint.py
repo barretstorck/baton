@@ -120,7 +120,8 @@ def snapshot(cfg, runner, milestone=None):
                 and item["state"] == "OPEN":
             pr = pr_for.get(number)
             try:
-                text, _ = checklist.plan_source(runner, item.get("body") or "", plan_cache)
+                text, _ = checklist.plan_source(runner, item.get("body") or "", plan_cache,
+                                                  cfg.data["docs"]["dir"])
             except checklist.TaskError:
                 text = ""
             found = checklist.plan(text)

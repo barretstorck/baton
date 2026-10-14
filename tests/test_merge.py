@@ -216,6 +216,20 @@ class MergeTest(unittest.TestCase):
         add = next(l for l in lines if l.startswith("git worktree add --detach"))
         self.assertTrue(add.endswith(HEAD))
 
+    def test_unsafe_link_is_refused_before_any_git_command_or_removal(self):
+        for ref, path in [("--upload-pack=x", self.PLAN), ("issue-4-flag", "../../x.md"),
+                          ("issue-4-flag", "/etc/x.md")]:
+            replies = self.replies(make_pr())
+            replies["gh issue view 4 --json body"] = json.dumps({"body": (
+                f"Plan: [{path}](https://github.com/octo/tool/blob/{ref}/{path})\n\n## Context\nx\n")})
+            runner = FakeRunner(replies)
+            with self.subTest(ref=ref, path=path), self.assertRaises(merge.checklist.TaskError):
+                merge.merge(9, make_config(), runner)
+            lines = runner.lines()
+            self.assertFalse(any(l.startswith(("git fetch", "git show", "git rm", "git worktree add",
+                                               "git push", "gh pr merge", "gh issue edit"))
+                                 for l in lines))
+
     def test_pinned_link_with_the_file_gone_merges_as_before(self):
         runner = FakeRunner(self.plan_replies(HEAD))
         self.assertEqual(merge.merge(9, make_config(), runner), [])

@@ -10,11 +10,12 @@ import shutil
 import tempfile
 
 from . import checklist
-from .config import STATUSES
+from .config import DEFAULTS, STATUSES
 from .run import RunError
 
 _LINK = re.compile(r"^Plan:\s*\[(?P<path>[^\]]+)\]\((?P<url>[^)\s]+)\)\s*$")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
+DEFAULT_DOCS_DIR = DEFAULTS["docs"]["dir"]
 _PLAN_LINE = re.compile(r"^Plan:.*$", re.M)
 
 
@@ -26,8 +27,36 @@ def link_line(repo, ref, path):
     return f"Plan: [{path}](https://github.com/{repo}/blob/{ref}/{path})"
 
 
-def parse_link(body):
-    """{'ref', 'path', 'pinned'} for the body's `Plan:` line, or None."""
+_BRANCH = re.compile(r"^[A-Za-z0-9._/-]+$")
+
+
+def check_link(ref, path, docs_dir=None):
+    """Raise TaskError unless `ref` and `path` are safe to hand to git and the filesystem.
+
+    The link comes from the issue body, which anyone with edit rights controls. The path must
+    be a relative `.md` file under `<docs.dir>/plans/`; the ref a full sha or a plain branch
+    name that cannot be read as an option.
+    """
+    prefix = [part for part in (docs_dir or DEFAULT_DOCS_DIR).split("/") if part not in ("", ".")]
+    parts = path.split("/")
+    if (path.startswith(("/", "-")) or "\\" in path or "\0" in path
+            or any(part in ("", ".", "..") for part in parts)
+            or parts[:len(prefix) + 1] != prefix + ["plans"] or len(parts) <= len(prefix) + 1
+            or not path.endswith(".md")):
+        raise checklist.TaskError(
+            f"invalid Plan: link, the path {path!r} must be a relative .md file under "
+            f"{'/'.join(prefix)}/plans/")
+    if not (_SHA.match(ref) or (_BRANCH.match(ref) and not ref.startswith("-")
+                                and ".." not in ref and not ref.endswith(("/", ".lock")))):
+        raise checklist.TaskError(f"invalid Plan: link, the ref {ref!r} is not a commit sha or a "
+                                  "plain branch name")
+
+
+def parse_link(body, docs_dir=None):
+    """{'ref', 'path', 'pinned'} for the body's `Plan:` line, or None.
+
+    Raises TaskError when the line is a link whose ref or path is not safe (see check_link).
+    """
     for line in (body or "").splitlines():
         match = _LINK.match(line.rstrip())
         if not match:
@@ -38,6 +67,7 @@ def parse_link(body):
             continue
         ref = url[marker + len("/blob/"):-len(path) - 1]
         if ref:
+            check_link(ref, path, docs_dir)
             return {"ref": ref, "path": path, "pinned": bool(_SHA.match(ref))}
     return None
 
@@ -53,14 +83,14 @@ def read(runner, ref, path):
     """Text of `path` on branch `ref` (fetched first) or at pinned commit `ref`."""
     try:
         if _SHA.match(ref):
-            return runner(["git", "show", f"{ref}:{path}"])
-        runner(["git", "fetch", "--quiet", "origin", ref])
-        return runner(["git", "show", f"origin/{ref}:{path}"])
+            return runner(["git", "show", "--end-of-options", f"{ref}:{path}"])
+        runner(["git", "fetch", "--quiet", "--end-of-options", "origin", ref])
+        return runner(["git", "show", "--end-of-options", f"origin/{ref}:{path}"])
     except RunError as error:
         raise checklist.TaskError(f"plan file {path} not found at {ref}: {error}")
 
 
-def link_issue(runner, repo, number, branch=None, path=None, at=None):
+def link_issue(runner, repo, number, branch=None, path=None, at=None, docs_dir=None):
     """Write or replace the issue's `Plan:` line; returns the new line.
 
     With `at`, the link is pinned to that commit and keeps the path of the existing link.
@@ -69,7 +99,7 @@ def link_issue(runner, repo, number, branch=None, path=None, at=None):
     if at is not None:
         if not _SHA.match(at):
             raise checklist.TaskError(f"--at needs a full 40-character commit sha, got {at!r}")
-        existing = parse_link(body)
+        existing = parse_link(body, docs_dir)
         if existing is None:
             raise checklist.TaskError(f"issue #{number} has no Plan: link to pin")
         ref, path = at, existing["path"]
@@ -77,6 +107,7 @@ def link_issue(runner, repo, number, branch=None, path=None, at=None):
         ref = branch
     else:
         raise checklist.TaskError("plan link needs a branch and a path, or --at <sha>")
+    check_link(ref, path, docs_dir)
     line = link_line(repo, ref, path)
     new = set_link(body, line)
     if new != body:
@@ -145,7 +176,7 @@ def migrate(cfg, runner, repo, number, branch, default_branch):
         raise checklist.TaskError(
             f"issue #{number} is {cfg.label(started[0])}; only issues not yet started can be migrated")
     body = info.get("body") or ""
-    if parse_link(body):
+    if parse_link(body, cfg.data["docs"]["dir"]):
         raise checklist.TaskError(f"issue #{number} already has a Plan: link")
     file_text, trimmed = split_legacy(body)
     path = plan_path(cfg.data, number, branch[len(prefix):])
