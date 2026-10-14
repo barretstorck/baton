@@ -2,6 +2,8 @@ import copy
 import pathlib
 import unittest
 from baton import config, issue
+from baton.run import RunError
+from tests.fakes import FakeRunner
 
 OWNER = "octo"
 BODY = """## Context
@@ -113,3 +115,53 @@ class PlanReadyTest(unittest.TestCase):
         self.assertTrue(any("Written against" in p for p in self.problems(no_sha)))
         renumbered = BODY.replace("**1. Add the flag**", "**2. Add the flag**")
         self.assertTrue(any("numbered 1, 2, 3" in p for p in self.problems(renumbered)))
+
+
+LINKED_HEAD = ("Plan: [docs/baton/plans/5-x.md]"
+               "(https://github.com/o/r/blob/issue-5-x/docs/baton/plans/5-x.md)\n\n")
+SLIM = BODY[:BODY.index("## Verification")] + BODY[BODY.index("## Decisions"):]
+FILE = BODY[BODY.index("## Verification"):BODY.index("## Decisions")]
+
+
+class RaisingRunner:
+    def __call__(self, argv, cwd=None):
+        raise RunError("missing")
+
+
+class LinkedPlanReadyTest(unittest.TestCase):
+    def problems(self, body, runner, labels=("type:feature",)):
+        return issue.ready_problems(make(body=body, labels=labels), cfg(), OWNER, runner)
+
+    def runner(self, text=FILE):
+        return FakeRunner({"git show origin/issue-5-x:docs/baton/plans/5-x.md": text})
+
+    def test_linked_plan_passes(self):
+        self.assertEqual(self.problems(LINKED_HEAD + SLIM, self.runner()), [])
+
+    def test_linked_plan_with_as_built_line_passes(self):
+        text = FILE.replace("  - Check:", "  - Provides: a\n  - Provides (as built): b\n  - Check:")
+        self.assertEqual(self.problems(LINKED_HEAD + SLIM, self.runner(text)), [])
+
+    def test_missing_file(self):
+        found = self.problems(LINKED_HEAD + SLIM, RaisingRunner())
+        self.assertTrue(any("cannot be read" in p for p in found))
+        self.assertFalse(any("Verification" in p or "Plan section" in p for p in found))
+
+    def test_both_plan_line_and_section(self):
+        found = self.problems(LINKED_HEAD + BODY, self.runner())
+        self.assertTrue(any("both a Plan:" in p for p in found))
+
+    def test_file_without_verification_or_tasks(self):
+        found = self.problems(LINKED_HEAD + SLIM, self.runner("## Notes\nx\n"))
+        self.assertTrue(any("Verification" in p and "5-x.md" in p for p in found))
+        self.assertTrue(any("Plan section" in p for p in found))
+
+    def test_missing_link_reported(self):
+        found = self.problems(SLIM, self.runner())
+        self.assertTrue(any("'Plan:' link" in p for p in found))
+
+    def test_spike_ignores_plan_line(self):
+        self.assertEqual(self.problems(LINKED_HEAD + BODY, RaisingRunner(), ("type:spike",)), [])
+
+    def test_legacy_body_plan_still_passes(self):
+        self.assertEqual(self.problems(BODY, RaisingRunner()), [])

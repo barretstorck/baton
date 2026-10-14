@@ -5,7 +5,7 @@ headed sections, an `Expected files:` line and `Blocked by:` lines.
 """
 import re
 
-from . import checklist
+from . import checklist, planfile
 
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.M)
 _BLOCKED = re.compile(r"^\s*Blocked by:(.*)$", re.M | re.I)
@@ -41,8 +41,12 @@ def expected_files(body):
     return files
 
 
-def ready_problems(issue, cfg, owner):
-    """Why this issue does not meet the definition of ready; empty when it does."""
+def ready_problems(issue, cfg, owner, runner=None):
+    """Why this issue does not meet the definition of ready; empty when it does.
+
+    A non-spike with a `Plan:` link has its Verification and plan read from the linked file
+    (through `runner`); a legacy body plan is read from the body.
+    """
     body = issue.get("body") or ""
     parts = sections(body)
     labels = {label["name"] for label in issue.get("labels") or []}
@@ -57,16 +61,37 @@ def ready_problems(issue, cfg, owner):
         problems.append("Acceptance criteria section needs at least one checkbox")
     if "out of scope" not in parts:
         problems.append("Out of scope section is missing")
-    if not parts.get("verification"):
+    link = None if spike else planfile.parse_link(body)
+    plan_text, plan_where = body, "Plan section"
+    if link:
+        plan_where = link["path"]
+        try:
+            if runner is None:
+                raise checklist.TaskError("no way to read it")
+            plan_text = planfile.read(runner, link["ref"], link["path"])
+        except checklist.TaskError as error:
+            plan_text = None
+            problems.append(f"the Plan: link cannot be read ({error})")
+        if checklist.span(body, "plan") is not None:
+            problems.append("the description has both a Plan: line and a '## Plan' section "
+                            "(keep only the linked file)")
+    verification = sections(plan_text).get("verification") if link and plan_text is not None \
+        else parts.get("verification")
+    if not verification and not (link and plan_text is None):
         problems.append("Verification section is missing or empty "
-                        "(the exact command, or 'repo default')")
+                        "(the exact command, or 'repo default')"
+                        + (f" in {plan_where}" if link else ""))
     if not spike and not expected_files(body):
         problems.append("Expected files line is missing (used to avoid overlapping work)")
     if not spike:
-        found = checklist.plan(body)
-        if found is None or not found["tasks"]:
-            problems.append("Plan section with at least one task is missing "
-                            "(- [ ] **1. <title>** with Files, Uses, Provides and Check lines)")
+        found = checklist.plan(plan_text) if plan_text is not None else None
+        if plan_text is None:
+            pass  # already reported: the file could not be read
+        elif found is None or not found["tasks"]:
+            problems.append("Plan section with at least one task is missing"
+                            + (f" in {plan_where}" if link else
+                               " and no 'Plan:' link to a plan file")
+                            + " (- [ ] **1. <title>** with Files, Uses, Provides and Check lines)")
         else:
             if not found["written_against"]:
                 problems.append("the plan needs a 'Written against: <full commit sha>' line")

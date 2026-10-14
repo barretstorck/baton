@@ -247,7 +247,7 @@ def cmd_ready_check(args):
         return 64
     cfg = _require_config()
     data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "author,body,labels"]))
-    problems = issue.ready_problems(data, cfg, _owner())
+    problems = issue.ready_problems(data, cfg, _owner(), run.run)
     for problem in problems:
         print(f"- {problem}")
     if not problems:
