@@ -17,7 +17,7 @@ code-review skills, and plans of small tasks from its `writing-plans` skill.
 ## Status
 
 Two sprints have run on a real repository. Version 0.2.0 added the designated reviewer;
-version 0.3.0 works each issue as a plan of small tasks, to keep a sprint inside a subscription's
+version 0.4.0 works each issue as a plan of small tasks, to keep a sprint inside a subscription's
 quota.
 
 ## Plans of small tasks
