@@ -101,6 +101,7 @@ def snapshot(cfg, runner, milestone=None):
                           else cfg.data["developer"]["max_parallel"])
 
     ready, busy_files, waiting = [], [], set()
+    plan_cache = {}
     for item in sorted(issues, key=lambda entry: entry["number"]):
         number = item["number"]
         labels = {label["name"] for label in item.get("labels") or []}
@@ -118,7 +119,11 @@ def snapshot(cfg, runner, milestone=None):
         if status in ("status:ready", "status:in-dev", "status:blocked", "status:in-review") \
                 and item["state"] == "OPEN":
             pr = pr_for.get(number)
-            found = checklist.plan(item.get("body") or "")
+            try:
+                text, _ = checklist.plan_source(runner, item.get("body") or "", plan_cache)
+            except checklist.TaskError:
+                text = ""
+            found = checklist.plan(text)
             fixes = review.review_tasks(pr, owner) if pr else None
             spike = cfg.label("type:spike") in labels
             result["progress"][str(number)] = {

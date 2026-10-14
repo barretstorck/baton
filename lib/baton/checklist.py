@@ -148,10 +148,33 @@ def issue_body(runner, number):
     return json.loads(runner(["gh", "issue", "view", str(number), "--json", "body"]))["body"] or ""
 
 
+def plan_source(runner, body, cache=None):
+    """(text holding the plan, link or None): the linked file's text, else the body itself.
+
+    `cache` maps (ref, path) to text so one branch is fetched once.
+    """
+    from . import planfile  # planfile imports this module
+    link = planfile.parse_link(body)
+    if link is None:
+        return body, None
+    key = (link["ref"], link["path"])
+    if cache is not None and key in cache:
+        return cache[key], link
+    text = planfile.read(runner, link["ref"], link["path"])
+    if cache is not None:
+        cache[key] = text
+    return text, link
+
+
 def issue_plan(runner, number):
-    found = plan(issue_body(runner, number))
+    text, link = plan_source(runner, issue_body(runner, number))
+    found = plan(text)
     if found is None:
-        raise TaskError(f"issue #{number} has no '## Plan' section")
+        raise TaskError(f"issue #{number} has no '## Plan' section"
+                        + (f" in {link['path']}" if link else ""))
+    found["source"] = "file" if link else "body"
+    if link:
+        found["ref"], found["path"] = link["ref"], link["path"]
     return found
 
 

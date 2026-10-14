@@ -2,7 +2,7 @@ import copy
 import json
 import pathlib
 import unittest
-from baton import checklist, config
+from baton import checklist, config, planfile
 from tests.fakes import FakeRunner
 
 SHA = "a" * 40
@@ -162,3 +162,53 @@ class IssueForgeTest(unittest.TestCase):
     def test_issue_plan_without_plan(self):
         with self.assertRaises(checklist.TaskError):
             checklist.issue_plan(issue_runner("## Context\nx\n"), 7)
+
+
+LINK = planfile.link_line("o/r", "issue-7-x", "docs/baton/plans/7-x.md")
+FILE = "## Pattern\nx\n\n## Plan\n\nWritten against: " + SHA + "\n\n- [x] **1. A**\n- [ ] **2. B**\n"
+
+
+class LinkedPlanTest(unittest.TestCase):
+    def runner(self, link=LINK):
+        return FakeRunner({
+            "gh issue view 7 --json body": json.dumps({"body": link + "\n\n## Context\nx\n"}),
+            "git show origin/issue-7-x:docs/baton/plans/7-x.md": FILE})
+
+    def test_plan_source_reads_the_file(self):
+        runner = self.runner()
+        text, link = checklist.plan_source(runner, LINK + "\n")
+        self.assertEqual(text, FILE)
+        self.assertEqual(link["ref"], "issue-7-x")
+        self.assertIn("git fetch --quiet origin issue-7-x", runner.lines())
+
+    def test_plan_source_legacy_body(self):
+        runner = FakeRunner()
+        self.assertEqual(checklist.plan_source(runner, BODY), (BODY, None))
+        self.assertEqual(runner.calls, [])
+
+    def test_plan_source_cache_fetches_once(self):
+        runner, cache = self.runner(), {}
+        for _ in range(2):
+            checklist.plan_source(runner, LINK + "\n", cache)
+        self.assertEqual(sum(1 for c in runner.lines() if "fetch" in c), 1)
+
+    def test_issue_plan_linked(self):
+        found = checklist.issue_plan(self.runner(), 7)
+        self.assertEqual(found["source"], "file")
+        self.assertEqual(found["ref"], "issue-7-x")
+        self.assertEqual(found["path"], "docs/baton/plans/7-x.md")
+        self.assertEqual(found["written_against"], SHA)
+        self.assertEqual(found["next"], "2")
+
+    def test_issue_plan_legacy_has_source_body(self):
+        self.assertEqual(checklist.issue_plan(issue_runner(), 7)["source"], "body")
+
+    def test_missing_file_raises(self):
+        from baton.run import RunError
+
+        def runner(argv, cwd=None):
+            if argv[1] == "show":
+                raise RunError("missing")
+            return json.dumps({"body": LINK + "\n"})
+        with self.assertRaises(checklist.TaskError):
+            checklist.issue_plan(runner, 7)
