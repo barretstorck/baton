@@ -94,7 +94,7 @@ class SnapshotTest(unittest.TestCase):
     def test_slots_account_for_work_in_flight(self):
         result = snap([issue(1, "in-dev", "deliverable", files="z.py"),
                        issue(2, "ready", "deliverable", files="a.py"),
-                       issue(3, "ready", "deliverable", files="b.py")])
+                       issue(3, "ready", "deliverable", files="b.py")], config_=cfg(max_parallel=2))
         self.assertEqual(result["free_slots"], 1)
         self.assertEqual(result["dispatchable"], [2])
         self.assertEqual(result["in_dev"], [1])
@@ -154,7 +154,8 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(result["dispatchable"], [1])
 
     def test_without_a_parallel_line_the_brief_sets_the_slots(self):
-        result = snap([issue(1, "ready"), issue(2, "ready"), issue(3, "ready")])
+        result = snap([issue(1, "ready"), issue(2, "ready"), issue(3, "ready")],
+                      config_=cfg(max_parallel=2))
         self.assertEqual((result["parallel"], result["free_slots"]), (2, 2))
 
     def test_red_default_branch_only_lets_the_repair_issue_through(self):

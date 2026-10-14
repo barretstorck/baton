@@ -14,7 +14,7 @@ OTHER_LABELS = [
 ]
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 DEFAULTS = {
-    "developer": {"model": "sonnet", "max_parallel": 2, "effort": "medium"},
+    "developer": {"model": "sonnet", "max_parallel": 1, "effort": "medium"},
     "reviewer": {"model": "sonnet"},
     "review": {"required": True, "max_rounds": 2},
     "refine": {"may_mark_ready": True},

@@ -1,7 +1,7 @@
 ---
 developer:
   model: sonnet
-  max_parallel: 2
+  max_parallel: 1
   effort: medium
 reviewer:
   model: sonnet
