@@ -33,6 +33,9 @@ task by task.
 ## Steps
 
 1. **Read.** The issue, both briefs, the agent rules, and the pull request with its comments.
+   The issue's first line is a `Plan:` link to the plan file on the issue branch
+   (`<docs.dir>/plans/<N>-<slug>.md`); after you check out the head (step 2), read the plan's
+   Verification, pattern and tasks from that file. An older issue keeps them in its body.
    `baton review state <PR>` gives `rounds`, the requests for changes since the last approval;
    this review is round `rounds + 1`. On a later round, read your earlier review's tasks
    (`baton tasks pr <PR>` shows them until you post) and the `reply` comment: each task is listed
@@ -54,9 +57,11 @@ task by task.
    (use your worktree or scratch directory in place of `/tmp`). The fixes are the commits named
    `Review <r.n>:`. Check that each earlier task was fixed, or declined with a reason you accept. Code that came from the
    default branch is not part of this review. If the change is too big for one pass, review it in
-   passes yourself and say so. Never start a subagent.
+   passes yourself and say so. Never start a subagent. The plan file is part of the branch: do not
+   review its prose as code, and do not flag its ticks or its later removal by `merge-pr`.
 
-4. **Run the verification command** from the issue or the brief, unless the brief says reviewers
+4. **Run the verification command** from the plan file's `## Verification` (or the issue, for an
+   older issue or a spike) or the brief, unless the brief says reviewers
    must not (a long or resource-heavy suite). Never re-run a long suite that CI runs anyway. Send
    the output to a file and read the summary.
 

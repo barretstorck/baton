@@ -26,11 +26,18 @@ Every tool call sends an agent's whole conversation to the model again, so an ag
 whole issue grows large and expensive: in the second sprint, single developers reached 300K to
 680K tokens and two of them used a 5-hour quota window in about an hour. So:
 
-- `refine` writes a `## Plan` into each issue (except spikes): numbered tasks, each a short brief
-  with the files, the exact signatures it uses and provides, the lines to port from, and the
-  check that proves it done.
+- `refine` writes a plan file for each issue (except spikes) to `<docs.dir>/plans/<N>-<slug>.md`
+  (`docs.dir` in `.baton/brief.md`, default `docs/baton`) on the issue branch, and links it from
+  the issue's first line (`Plan:`). The issue stays short for a person to read. The plan holds
+  numbered tasks, each a short brief with the files, the exact signatures it uses and provides,
+  the lines to port from, and the check that proves it done.
 - The sprint gives **each task to a fresh developer**, one after another on the issue's branch.
-  No developer's conversation grows large.
+  No developer's conversation grows large. A developer ticks its task in the plan file and
+  commits the tick with its code; the orchestrator confirms the tick in the pushed head.
+- `merge-pr` removes the plan file from the branch just before the merge, after pinning the
+  issue's link to the last commit that has it, so the default branch collects no plan files and
+  the link still opens the final plan. Sprint retrospectives go to `<docs.dir>/retros/`. An older
+  issue with a `## Plan` in its body is still read, and `baton plan migrate` moves it to a file.
 - The reviewer runs **once**, when every task is ticked. What it wants fixed is a `## Tasks`
   checklist in its review, worked the same way, one developer per task.
 - `baton usage` measures the result per issue and role from the local transcripts, and the
@@ -88,8 +95,10 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton answers <issue>` | The latest agent question and the maintainer's replies |
 | `baton ready-check <issue>` | The mechanical half of the definition of ready |
 | `baton tasks <issue\|pr> <number>` | An issue's plan tasks, or the latest review's tasks, as JSON |
-| `baton task done <issue\|pr> <number> <task>` | Tick one task (the orchestrator does this) |
-| `baton plan replace <issue> <from-task> <file \| ->` | Replace a plan's open tasks from that number on |
+| `baton task done <issue\|pr> <number> <task>` | Tick one task: in the plan file of the current checkout for an issue (the developer commits it), in the review for a pull request (the orchestrator) |
+| `baton plan replace <issue> <from-task> <file \| ->` | Replace a plan's open tasks from that number on; a linked plan is committed to its branch and pushed |
+| `baton plan link <issue> <branch> <path>` / `--at <sha>` | Write the issue's `Plan:` link to the file on the branch, or pin it to a commit |
+| `baton plan migrate <issue> <branch>` | Move a plan from the issue body to a plan file on a new branch |
 | `baton usage [--repo <owner/repo>] [--since <time>] [--json]` | Quota use per issue and role, from local transcripts |
 | `baton sprint-status [milestone]` | The sprint's state and what may be dispatched now, as JSON |
 | `baton lock <acquire\|release>` | Stop two scheduled runs overlapping |

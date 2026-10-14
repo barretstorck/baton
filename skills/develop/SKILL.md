@@ -9,7 +9,7 @@ Do **one task** and stop. Another developer does the next one; you do not merge 
 
 You were dispatched with one of:
 
-- `Do task <n> of issue <N>.`: one task of the issue's `## Plan`;
+- `Do task <n> of issue <N>.`: one task of the issue's plan (the file its `Plan:` link points to; an older issue has a `## Plan` section in its body);
 - `Do review task <r.n> of pull request <P> (issue <N>).`: one task of the latest code review;
 - `Do spike issue <N>.`: a whole spike (see "Spikes").
 - `Fix CI on pull request <P> (issue <N>).` or `Update pull request <P> (issue <N>).`: see
@@ -41,9 +41,15 @@ filters, send long output to a file, chain related commands, wait for a long run
 
 1. **Read only what the task needs.**
    - `baton tasks issue <N>` for the plan's `Written against` commit and which tasks are done.
-   - The issue's Context, Acceptance criteria, Out of scope and Decisions, and your task's brief,
-     for example: `gh issue view <N> --json body -q .body | sed -n '/^## Context/,/^## Pointers/p'`
-     and the lines of your task under `## Plan`. `baton answers <N>`.
+   - Check out the issue branch first (step 3): the plan file is in your checkout, at
+     `<docs.dir>/plans/<N>-<slug>.md` (`docs.dir` from `baton config`). Read your task's brief and
+     the `## Verification` and pattern text there, for example
+     `awk '/^- \[.\] \*\*<n>\./,/^$/' <plan file>`. If the plan file is missing on the branch,
+     return `BLOCKED: the plan file is missing`. An older issue with a `## Plan` section in its
+     body takes the brief from the body instead.
+   - The issue's Context, Acceptance criteria, Out of scope and Decisions, for example:
+     `gh issue view <N> --json body -q .body | sed -n '/^## Context/,/^## Pointers/p'`.
+     `baton answers <N>`.
    - Both briefs and the agent rules, and `baton config`.
    - Not the other tasks' briefs, and not the whole codebase: the brief names your files,
      signatures and line ranges.
@@ -53,18 +59,24 @@ filters, send long output to a file, chain related commands, wait for a long run
    If something your brief relies on changed, read only those hunks. If the `Uses` signatures or
    the files no longer match and the brief cannot be followed as written, return `REPLAN`.
 
-3. **Get the branch.**
-   - *Task 1:* `baton set-status <N> status:in-dev`; create `issue-<N>-<short-slug>` from
-     `origin/<default>`; do the task (steps 4 to 6) and push; then open a **draft** pull request
-     whose body has `Closes #<N>` on its own line and a short summary of the plan. Drafts may not
-     run CI, which saves minutes.
+3. **Get the branch.** The refiner created `issue-<N>-<slug>` and committed the plan file to it.
+   - *Task 1:* `baton set-status <N> status:in-dev`;
+     `git fetch --quiet origin <branch> && git checkout --detach origin/<branch>`. If the branch
+     holds only plan commits (`git log --oneline origin/<default>..HEAD` shows only `Plan for`
+     commits), rebase it onto `origin/<default>`; it has no pull request yet, so the one
+     exception to "never force-push" is `git push --force-with-lease=<branch>:<old sha>
+     origin HEAD:<branch>` after that rebase, and only then. Do the task (steps 4 to 6) and push;
+     then open a **draft** pull request whose body has `Closes #<N>` on its own line and a short
+     summary of the plan. Drafts may not run CI, which saves minutes. An older issue whose branch
+     does not exist yet: create `issue-<N>-<short-slug>` from `origin/<default>` instead.
    - *Later tasks:* `git fetch --quiet origin <branch> && git checkout --detach origin/<branch>`.
      A worktree left by an earlier task may still hold the branch; a detached checkout never
      conflicts with it. See what earlier tasks did with
      `git log --oneline origin/<default>..HEAD` and `git diff --stat origin/<default>...HEAD`,
      and open their code only where your brief uses it.
    - If the branch already has a `Task <n>:` commit for your task, an interrupted developer did it:
-     check it against the brief, finish it if needed, and continue from step 5.
+     check it against the brief and that its commit ticks the task (`baton tasks issue <N>`),
+     finish it if needed, and continue from step 5.
    - Whatever the task number, if the branch exists but no pull request closes the issue
      (`gh pr list --head <branch>`), open the draft pull request now, as task 1 would.
 
@@ -73,14 +85,16 @@ filters, send long output to a file, chain related commands, wait for a long run
      diff shows exactly what moved.
    - Never loosen a threshold or delete a test to get to green; a number that moved is a finding.
    - Ideas outside the brief go in your report as follow-up suggestions, not into the code.
+   - Tick your task: with the plan file in your checkout, `baton task done issue <N> <n>` ticks
+     its box in that file and does not edit the issue. Commit it with the task's code.
 
 5. **Run the task's `Check:`**, and nothing more unless the brief says so. "none" means none. Send
    long output to a file and read the summary; it must pass.
 
-6. **Commit and push.** `git commit -m "Task <n>: <title>"`, then
+6. **Commit and push.** Stage the code and the ticked plan file, `git commit -m "Task <n>: <title>"`, then
    `git push origin HEAD:<branch>` (task 1: `git push -u origin <branch>`). The push only
    fast-forwards; if it is refused, someone else moved the branch: return
-   `BLOCKED: the branch moved`. Never force-push.
+   `BLOCKED: the branch moved`. Never force-push, except the one plan-only rebase in step 3.
 
 7. **The last task of the plan** also:
    - fetches and merges the default branch in, resolves conflicts, re-runs its check, pushes;
@@ -252,8 +266,9 @@ Issue: #<N>
 ## Never
 
 - Merge any pull request, or post a review of your own work.
-- Tick a task box, or edit an issue description or a review comment. The orchestrator does that
-  with `baton task done` and `baton plan replace`.
+- Tick a box other than your own task's (with `baton task done issue <N> <n>`, committed with
+  your code), or edit an issue description, a review comment or another task's brief. The
+  orchestrator replans with `baton plan replace`, and ticks review tasks.
 - Work on more than your one task. Finding the next task done-looking is not a reason to do it.
 - Change `.github/`, `.baton/`, `.claude/` or other protected paths unless the issue asks for it;
   if it does, say so in your report, because the maintainer must approve it.
