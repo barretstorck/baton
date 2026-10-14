@@ -53,6 +53,18 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(issue.expected_files("text"), [])
         self.assertEqual(issue.blocked_by(None), [])
 
+    def test_none_line_has_no_blockers(self):
+        note = ("Blocked by: (none; issue #5 also edits `config.py`, `README.md` and the "
+                "sprint skill, so expect a trivial merge conflict if both are in one sprint)")
+        self.assertEqual(issue.blocked_by(note), [])
+        for line in ("Blocked by: none, see #5", "  blocked by:   None #5", "Blocked by: (None) #5"):
+            with self.subTest(line=line):
+                self.assertEqual(issue.blocked_by(line), [])
+
+    def test_none_line_does_not_hide_other_lines(self):
+        body = "Blocked by: none (#5 conflicts)\nBlocked by: #12\nBlocked by: #14, #15"
+        self.assertEqual(issue.blocked_by(body), [12, 14, 15])
+
 
 class ReadyTest(unittest.TestCase):
     def test_complete_issue_is_ready(self):
