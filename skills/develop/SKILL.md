@@ -58,6 +58,8 @@ filters, send long output to a file, chain related commands, wait for a long run
    `git fetch --quiet origin <default> && git diff --stat <written-against> origin/<default> -- <your task's files>`.
    If something your brief relies on changed, read only those hunks. If the `Uses` signatures or
    the files no longer match and the brief cannot be followed as written, return `REPLAN`.
+   Where an earlier task's `Provides (as built):` line sits under its `Provides:`, read your
+   `Uses:` against that line, not the original.
 
 3. **Get the branch.** The refiner created `issue-<N>-<slug>` and committed the plan file to it.
    - *Task 1:* `baton set-status <N> status:in-dev`;
@@ -85,6 +87,9 @@ filters, send long output to a file, chain related commands, wait for a long run
      diff shows exactly what moved.
    - Never loosen a threshold or delete a test to get to green; a number that moved is a finding.
    - Ideas outside the brief go in your report as follow-up suggestions, not into the code.
+   - If what you built differs from your task's `Provides:` (a changed signature or name), add a
+     `Provides (as built): <what exists now>` line under it in the plan file; the original line
+     stays. Commit it with the code and the tick.
    - Tick your task: with the plan file in your checkout, `baton task done issue <N> <n>` ticks
      its box in that file and does not edit the issue. Commit it with the task's code.
 

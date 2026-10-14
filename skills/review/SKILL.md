@@ -68,6 +68,7 @@ task by task.
 5. **Judge.**
    - Every acceptance criterion is met, and nothing outside the issue's scope changed. Work that
      belongs to another issue is a finding even when the code is good.
+   - Where the plan file has `Provides (as built):` lines, they match the code.
    - The brief's project rules are kept, for example where expected test values must come from.
    - A measurement (a timing, a benchmark, a count) measures what the user actually waits for.
    - Tests check real behaviour, cover what the change adds and its edge cases, and no threshold

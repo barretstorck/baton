@@ -260,7 +260,9 @@ Act on each result with commands on their own, reading each one's output; never 
 - `REPLAN`: read the proposal against the issue's acceptance criteria and out-of-scope section.
   - Inside them: write the fenced `baton-plan <n>` block's content to a file, run
     `baton plan replace <N> <n> <file>` (for a linked plan it commits the new tasks to the issue
-    branch and pushes; the issue body is unchanged), post an orchestrator `decision` comment on the issue
+    branch and pushes; the issue body is unchanged). It prints the tasks it replaces and the new
+    ones; read both lists. It refuses fewer new tasks than replaced: pass `--drop` only when a
+    later task is meant to go, never to get past the refusal. Post an orchestrator `decision` comment on the issue
     saying which tasks changed and why (quoting the developer's reason), and dispatch the new
     task `<n>`.
   - It would change what the issue promises: post the proposal as an orchestrator `question`
