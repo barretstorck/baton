@@ -145,13 +145,13 @@ class CurrentTest(unittest.TestCase):
 
 
 class PlanRemovalTest(unittest.TestCase):
-    def test_diff_excludes_the_plans_folder(self):
+    def test_diff_covers_the_whole_tree(self):
         runner = diff_runner(DIFF, DIFF)
         pr = {"number": 9, "headRefOid": NEW, "headRefName": "issue-4-x",
               "comments": [rev("approve", OLD)]}
         found = review.current(pr, OWNER, cfg(), runner, "main")
         self.assertEqual(found["state"], "approved")
-        spec = "-- . :(exclude)docs/baton/plans/"
+        spec = "-- ."
         self.assertIn(f"git diff --binary base1 {OLD} {spec}", runner.lines())
         self.assertIn(f"git diff --binary base2 {NEW} {spec}", runner.lines())
 
