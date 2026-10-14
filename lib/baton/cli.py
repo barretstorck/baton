@@ -203,7 +203,14 @@ def cmd_plan(args):
             repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
             print(planfile.link_issue(run.run, repo, number, **kwargs))
             return 0
+    if len(args) == 3 and args[0] == "migrate" and args[1].isdigit():
+        cfg = _require_config()
+        repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
+        print(planfile.migrate(cfg, run.run, repo["nameWithOwner"], int(args[1]), args[2],
+                               repo["defaultBranchRef"]["name"]))
+        return 0
     print("usage: baton plan replace <issue> <from-task> <file | ->\n"
+          "       baton plan migrate <issue> <branch>\n"
           "       baton plan link <issue> <branch> <path>\n"
           "       baton plan link <issue> --at <sha>", file=sys.stderr)
     return 64
