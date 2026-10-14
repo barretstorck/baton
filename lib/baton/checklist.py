@@ -113,8 +113,35 @@ def _blocks(section):
     return head, blocks
 
 
-def replace_plan(body, from_id, new_text):
-    """`body` with the plan's tasks from `from_id` on replaced by `new_text`'s tasks."""
+def _title(block):
+    match = _match(block["lines"][0])
+    return match.group(3) if match else ""
+
+
+def plan_changes(text, from_id, new_text):
+    """(replaced, written): `(id, title)` of the tasks from `from_id` on, and of the new ones."""
+    where = span(text, "plan")
+    if where is None:
+        raise TaskError("the issue has no '## Plan' section")
+    if not str(from_id).isdigit():
+        raise TaskError("plan tasks are numbered 1, 2, 3 ...")
+    _, blocks = _blocks(text[where[0]:where[1]])
+    _, new_blocks = _blocks(new_text.replace("\r\n", "\n"))
+    replaced = [(b["id"], _title(b)) for b in blocks
+                if b["id"].isdigit() and int(b["id"]) >= int(from_id)]
+    return replaced, [(b["id"], _title(b)) for b in new_blocks]
+
+
+def _describe(tasks):
+    return ", ".join(f"{task_id} ({title})" for task_id, title in tasks)
+
+
+def replace_plan(body, from_id, new_text, drop=False):
+    """`body` with the plan's tasks from `from_id` on replaced by `new_text`'s tasks.
+
+    Refused when the new text has fewer tasks than it replaces, unless `drop`: the tasks
+    that no longer exist would otherwise vanish silently.
+    """
     where = span(body, "plan")
     if where is None:
         raise TaskError("the issue has no '## Plan' section")
@@ -136,6 +163,12 @@ def replace_plan(body, from_id, new_text):
     for offset, block in enumerate(new_blocks):
         if block["done"] or block["id"] != str(first + offset):
             raise TaskError(f"the new tasks must be open and numbered from {first}")
+    replaced, _ = plan_changes(body, from_id, new_text)
+    dropped = replaced[len(new_blocks):]
+    if dropped and not drop:
+        raise TaskError(f"the new text has {len(new_blocks)} task(s) for {len(replaced)} replaced; "
+                        f"it would drop task {_describe(dropped)}; "
+                        "write them again or pass --drop to drop them")
     kept = [line for block in blocks if int(block["id"]) < first for line in block["lines"]]
     if kept and not kept[-1].strip():
         kept = kept[:-1]
@@ -227,7 +260,7 @@ def tick_issue(runner, number, task_id, cwd="."):
     return changed
 
 
-def _replace_in_file(runner, link, from_id, new_text):
+def _replace_in_file(runner, link, from_id, new_text, drop=False):
     """Commit the replaced tasks to the linked branch from a temporary detached worktree."""
     branch, path = link["ref"], link["path"]
     runner(["git", "fetch", "--quiet", "origin", branch])
@@ -238,21 +271,26 @@ def _replace_in_file(runner, link, from_id, new_text):
             target = os.path.join(tree, path)
             with open(target, newline="") as handle:
                 text = handle.read()
-            new = replace_plan(text, str(from_id), new_text)
+            changes = plan_changes(text, from_id, new_text)
+            new = replace_plan(text, str(from_id), new_text, drop)
+            dropped = changes[0][len(changes[1]):]
+            message = f"Replan from task {from_id}"
+            if dropped:
+                message += f"\n\nDropped: {_describe(dropped)}"
             with open(target, "w", newline="") as handle:
                 handle.write(new)
             runner(["git", "add", "--", path], cwd=tree)
-            runner(["git", "commit", "-q", "-m", f"Replan from task {from_id}"], cwd=tree)
+            runner(["git", "commit", "-q", "-m", message], cwd=tree)
             runner(["git", "push", "origin", f"HEAD:{branch}"], cwd=tree)
         finally:
             runner(["git", "worktree", "remove", "--force", tree])
     finally:
         if os.path.isdir(tree):
             shutil.rmtree(tree, ignore_errors=True)
-    return new
+    return new, changes
 
 
-def replace_issue_plan(cfg, runner, number, from_id, new_text, terms):
+def replace_issue_plan(cfg, runner, number, from_id, new_text, terms, drop=False):
     """Replace the plan's open tasks from `from_id` on; the new text is scanned first."""
     findings = scan.scan_text(new_text, terms, cfg.data["privacy_allow"])
     if findings:
@@ -260,7 +298,12 @@ def replace_issue_plan(cfg, runner, number, from_id, new_text, terms):
                         + "; ".join(scan.describe(findings)))
     body, link = _linked(runner, number)
     if link is not None:
-        return plan(_replace_in_file(runner, link, from_id, new_text))
-    new = replace_plan(body, str(from_id), new_text)
-    _save_issue(runner, number, new)
-    return plan(new)
+        new, changes = _replace_in_file(runner, link, from_id, new_text, drop)
+    else:
+        changes = plan_changes(body, from_id, new_text)
+        new = replace_plan(body, str(from_id), new_text, drop)
+        _save_issue(runner, number, new)
+    found = plan(new)
+    found["replaced"], found["written"] = changes
+    found["dropped"] = changes[0][len(changes[1]):]
+    return found

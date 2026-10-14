@@ -184,10 +184,15 @@ def cmd_task(args):
 
 
 def cmd_plan(args):
+    drop = "--drop" in args
+    args = [a for a in args if a != "--drop"]
     if len(args) == 4 and args[0] == "replace" and args[1].isdigit() and args[2].isdigit():
         text = comment.read_body(args[3], sys.stdin)
         found = checklist.replace_issue_plan(_require_config(), run.run, int(args[1]), args[2],
-                                             text, scan.load_terms())
+                                             text, scan.load_terms(), drop=drop)
+        for label, key in (("replaced", "replaced"), ("new", "written")):
+            for task_id, title in found[key]:
+                print(f"{label} task {task_id}: {title}")
         print(json.dumps(found, indent=2))
         return 0
     if len(args) >= 2 and args[0] == "link" and args[1].isdigit():
@@ -209,7 +214,7 @@ def cmd_plan(args):
         print(planfile.migrate(cfg, run.run, repo["nameWithOwner"], int(args[1]), args[2],
                                repo["defaultBranchRef"]["name"]))
         return 0
-    print("usage: baton plan replace <issue> <from-task> <file | ->\n"
+    print("usage: baton plan replace <issue> <from-task> <file | -> [--drop]\n"
           "       baton plan migrate <issue> <branch>\n"
           "       baton plan link <issue> <branch> <path>\n"
           "       baton plan link <issue> --at <sha>", file=sys.stderr)

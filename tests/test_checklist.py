@@ -119,6 +119,52 @@ class ReplaceTest(unittest.TestCase):
             checklist.replace_plan("## Context\nx\n", "1", "- [ ] **1. X**\n")
 
 
+PHOTO = """## Plan
+Written against: %s
+
+- [x] **4. Four**
+- [ ] **5. Five**
+  - Files: `e.py`
+- [ ] **6. Six**
+  - Files: `f.py`
+
+## Decisions
+- kept
+""" % SHA
+MERGED = "- [ ] **5. Five and six**\n  - Files: `e.py`, `f.py`\n"
+
+
+class DropTest(unittest.TestCase):
+    def test_fewer_tasks_refused_naming_the_dropped(self):
+        with self.assertRaises(checklist.TaskError) as caught:
+            checklist.replace_plan(PHOTO, "5", MERGED)
+        self.assertIn("6 (Six)", str(caught.exception))
+        self.assertIn("--drop", str(caught.exception))
+
+    def test_drop_accepts(self):
+        body = checklist.replace_plan(PHOTO, "5", MERGED, drop=True)
+        self.assertEqual([t["id"] for t in checklist.plan(body)["tasks"]], ["4", "5"])
+
+    def test_equal_or_more_accepted(self):
+        two = "- [ ] **5. A**\n- [ ] **6. B**\n- [ ] **7. C**\n"
+        checklist.replace_plan(PHOTO, "5", "- [ ] **5. A**\n- [ ] **6. B**\n")
+        checklist.replace_plan(PHOTO, "5", two)
+
+    def test_plan_changes(self):
+        self.assertEqual(checklist.plan_changes(PHOTO, "5", MERGED),
+                         ([("5", "Five"), ("6", "Six")], [("5", "Five and six")]))
+
+    def test_body_plan_issue_level(self):
+        runner = issue_runner(PHOTO)
+        with self.assertRaises(checklist.TaskError):
+            checklist.replace_issue_plan(cfg(), runner, 7, "5", MERGED, [])
+        self.assertFalse(any("issue edit" in line for line in runner.lines()))
+        found = checklist.replace_issue_plan(cfg(), runner, 7, "5", MERGED, [], drop=True)
+        self.assertEqual(found["dropped"], [("6", "Six")])
+        self.assertEqual(found["replaced"], [("5", "Five"), ("6", "Six")])
+        self.assertTrue(any("issue edit" in line for line in runner.lines()))
+
+
 def cfg():
     return config.Config(root=pathlib.Path("."), data=copy.deepcopy(config.DEFAULTS))
 
@@ -286,3 +332,43 @@ class LinkedTickReplaceTest(unittest.TestCase):
         lines = base.lines()
         self.assertFalse(any(l.startswith("git commit") or l.startswith("git push") for l in lines))
         self.assertTrue(any(l.startswith("git worktree remove") for l in lines))
+
+
+class LinkedDropTest(unittest.TestCase):
+    PATH = LinkedTickReplaceTest.PATH
+    issue = LinkedTickReplaceTest.issue
+    fake_worktree = LinkedTickReplaceTest.fake_worktree
+    FILE = FILE.replace("- [ ] **2. B**\n", "- [ ] **2. B**\n- [ ] **3. C**\n")
+
+    def runner(self):
+        base = FakeRunner({"gh issue view 7": self.issue()})
+        original = self.fake_worktree(base)
+
+        def run(argv, cwd=None):
+            result = original(argv, cwd)
+            if argv[:4] == ["git", "worktree", "add", "--detach"]:
+                pathlib.Path(argv[4], self.PATH).write_text(self.FILE)
+            return result
+        return base, run
+
+    def test_refused_without_drop_before_commit(self):
+        base, run = self.runner()
+        with self.assertRaises(checklist.TaskError):
+            checklist.replace_issue_plan(cfg(), run, 7, "2", "- [ ] **2. BC**\n", [])
+        self.assertFalse(any(l.startswith("git commit") or l.startswith("git push")
+                             for l in base.lines()))
+
+    def test_drop_names_the_tasks_in_the_commit(self):
+        base, run = self.runner()
+        found = checklist.replace_issue_plan(cfg(), run, 7, "2", "- [ ] **2. BC**\n", [],
+                                             drop=True)
+        self.assertEqual(found["dropped"], [("3", "C")])
+        commit = [l for l in base.lines() if l.startswith("git commit")][0]
+        self.assertIn("Replan from task 2", commit)
+        self.assertIn("Dropped: 3 (C)", commit)
+        self.assertFalse(any("issue edit" in l for l in base.lines()))
+
+    def test_no_dropped_line_when_nothing_dropped(self):
+        base, run = self.runner()
+        checklist.replace_issue_plan(cfg(), run, 7, "2", "- [ ] **2. B**\n- [ ] **3. C**\n", [])
+        self.assertIn("git commit -q -m Replan from task 2", base.lines())
