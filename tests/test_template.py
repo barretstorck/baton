@@ -11,6 +11,12 @@ class TemplateTest(unittest.TestCase):
         self.assertEqual(frontmatter.parse(meta), config.DEFAULTS)
         self.assertIn("## Verification", body)
 
+    def test_plan_template_describes_as_built_line(self):
+        text = (ROOT / "templates" / "plan.md").read_text()
+        self.assertIn("Provides (as built):", text)
+        self.assertLess(text.index("  - Provides:"), text.index("  - Provides (as built):"))
+        self.assertLess(text.index("  - Provides (as built):"), text.index("  - Check:"))
+
     def test_plugin_files_exist(self):
         for path in (".claude-plugin/plugin.json", "hooks/hooks.json",
                      "skills/init/SKILL.md", "skills/review/SKILL.md", "agents/baton-developer.md",
