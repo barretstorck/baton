@@ -145,13 +145,13 @@ class CurrentTest(unittest.TestCase):
 
 
 class PlanRemovalTest(unittest.TestCase):
-    def test_diff_excludes_the_plans_folder(self):
+    def test_diff_covers_the_whole_tree(self):
         runner = diff_runner(DIFF, DIFF)
         pr = {"number": 9, "headRefOid": NEW, "headRefName": "issue-4-x",
               "comments": [rev("approve", OLD)]}
         found = review.current(pr, OWNER, cfg(), runner, "main")
         self.assertEqual(found["state"], "approved")
-        spec = "-- . :(exclude)docs/baton/plans/"
+        spec = "-- ."
         self.assertIn(f"git diff --binary base1 {OLD} {spec}", runner.lines())
         self.assertIn(f"git diff --binary base2 {NEW} {spec}", runner.lines())
 
@@ -160,6 +160,69 @@ class PlanRemovalTest(unittest.TestCase):
         pr = {"number": 9, "headRefOid": NEW, "headRefName": "issue-4-x",
               "comments": [rev("approve", OLD)]}
         self.assertEqual(review.current(pr, OWNER, cfg(), runner, "main")["state"], "stale")
+
+
+PLAN = "docs/baton/plans/4-x.md"
+OTHER_PLAN = "docs/baton/plans/5-y.md"
+PLAN_BODY = f"Plan: [{PLAN}](https://github.com/o/r/blob/issue-4-x/{PLAN})\n\nBody."
+EXCLUDE = f"-- . :(exclude){PLAN}"
+
+
+def plan_runner(full_new, status, excluded_new=DIFF, body=PLAN_BODY):
+    """Approved OLD, head NEW: `full_new` is the whole-tree diff of the head, `status` the
+    name-status of the linked plan file between them, `excluded_new` the head's diff without it."""
+    return FakeRunner({
+        f"git merge-base origin/main {OLD}": "base1\n",
+        f"git merge-base origin/main {NEW}": "base2\n",
+        f"git diff --binary base1 {OLD} -- .": DIFF,
+        f"git diff --binary base2 {NEW} -- .": full_new,
+        f"git diff --binary base1 {OLD} {EXCLUDE}": DIFF,
+        f"git diff --binary base2 {NEW} {EXCLUDE}": excluded_new,
+        f"git diff --name-status {OLD} {NEW} -- {PLAN}": status,
+        "gh issue view 4 --json body": json.dumps({"body": body}),
+    })
+
+
+class LinkedPlanDeletionTest(unittest.TestCase):
+    def state(self, runner, closing=(4,)):
+        pr = {"number": 9, "headRefOid": NEW, "headRefName": "issue-4-x",
+              "comments": [rev("approve", OLD)],
+              "closingIssuesReferences": [{"number": n} for n in closing]}
+        return review.current(pr, OWNER, cfg(), runner, "main")["state"]
+
+    def test_deleting_only_the_linked_plan_stays_approved(self):
+        runner = plan_runner(DIFF + "-plan\n", f"D\t{PLAN}\n")
+        self.assertEqual(self.state(runner), "approved")
+
+    def test_editing_the_linked_plan_is_stale(self):
+        runner = plan_runner(DIFF + "+plan\n", f"M\t{PLAN}\n")
+        self.assertEqual(self.state(runner), "stale")
+
+    def test_adding_the_linked_plan_is_stale(self):
+        runner = plan_runner(DIFF + "+plan\n", f"A\t{PLAN}\n")
+        self.assertEqual(self.state(runner), "stale")
+
+    def test_changing_another_plan_is_stale(self):
+        for change in ("added", "edited", "deleted"):
+            with self.subTest(change=change):
+                # The linked plan is untouched, so only the other plan's change differs.
+                runner = plan_runner(DIFF + f"{change} {OTHER_PLAN}\n", "")
+                self.assertEqual(self.state(runner), "stale")
+
+    def test_deleting_the_linked_plan_and_another_file_is_stale(self):
+        runner = plan_runner(DIFF + "-plan\n+x\n", f"D\t{PLAN}\n", excluded_new=DIFF + "+x\n")
+        self.assertEqual(self.state(runner), "stale")
+
+    def test_nothing_is_exempt_without_a_plan_link(self):
+        runner = plan_runner(DIFF + "-plan\n", f"D\t{PLAN}\n", body="No link here.")
+        self.assertEqual(self.state(runner), "stale")
+
+    def test_nothing_is_exempt_without_one_closing_issue(self):
+        for closing in ((), (4, 6)):
+            with self.subTest(closing=closing):
+                runner = plan_runner(DIFF + "-plan\n", f"D\t{PLAN}\n")
+                self.assertEqual(self.state(runner, closing), "stale")
+                self.assertFalse(any("gh issue view" in line for line in runner.lines()))
 
 
 TASKS = "## Tasks\n- [ ] **1.1 Fix it**\n  - Check: none\n"

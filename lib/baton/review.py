@@ -123,15 +123,48 @@ def fetch(runner, default_branch, branch):
         pass
 
 
+def _linked_plan_path(runner, pr, cfg):
+    """The plan file the pull request's one closing issue links to, or None."""
+    from . import planfile  # planfile imports checklist
+    refs = pr.get("closingIssuesReferences") or []
+    if len(refs) != 1:
+        return None
+    try:
+        link = planfile.parse_link(checklist.issue_body(runner, refs[0]["number"]),
+                                   cfg.data["docs"]["dir"])
+    except (checklist.TaskError, run.RunError, OSError, ValueError, KeyError):
+        return None
+    return link["path"] if link else None
+
+
+def _only_plan_deleted(runner, pr, cfg, default_branch, approved):
+    """True when the head differs from the approved commit only by deleting the linked plan file.
+
+    Removing the plan file before the merge is not a change to the code. Editing it,
+    or changing any other file under the plans folder, still is.
+    """
+    path = _linked_plan_path(runner, pr, cfg)
+    if path is None:
+        return False
+    head = pr["headRefOid"]
+    try:
+        status = runner(["git", "diff", "--name-status", approved, head, "--", path]).split()
+    except (run.RunError, OSError):
+        return False
+    if status != ["D", path]:
+        return False
+    return same_change(runner, f"origin/{default_branch}", approved, head,
+                       [".", f":(exclude){path}"])
+
+
 def current(pr, owner, cfg, runner, default_branch):
     """The review state at the pull request's head commit: an older approval may be stale."""
     found = state(pr.get("comments"), owner, cfg.data["review"]["max_rounds"])
     if found["state"] == "approved" and found["review"]["commit"] != pr["headRefOid"]:
         fetch(runner, default_branch, pr["headRefName"])
-        # Removing the plan file before the merge is not a change to the code.
-        paths = [".", f":(exclude){cfg.data['docs']['dir']}/plans/"]
         if not same_change(runner, f"origin/{default_branch}", found["review"]["commit"],
-                           pr["headRefOid"], paths):
+                           pr["headRefOid"], ["."]) and not _only_plan_deleted(
+                runner, pr, cfg, default_branch, found["review"]["commit"]):
             found["state"] = "stale"
     return found
 
