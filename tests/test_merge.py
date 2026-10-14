@@ -216,6 +216,25 @@ class MergeTest(unittest.TestCase):
         add = next(l for l in lines if l.startswith("git worktree add --detach"))
         self.assertTrue(add.endswith(HEAD))
 
+    def test_failed_push_restores_the_link_to_the_branch(self):
+        class PushFails(FakeRunner):
+            def __call__(self, argv, cwd=None):
+                result = super().__call__(argv, cwd)
+                if argv[:4] == ["gh", "issue", "edit", "4"] and "--body-file" in argv:
+                    # the pin is now on the issue, so later reads see the pinned link
+                    self.replies["gh issue view 4 --json body"] = pinned
+                if argv[:2] == ["git", "push"]:
+                    raise merge.RunError("rejected")
+                return result
+        pinned = self.plan_replies(HEAD)["gh issue view 4 --json body"]
+        runner = PushFails(self.plan_replies("issue-4-flag"))
+        with self.assertRaises(merge.RunError):
+            merge.merge(9, make_config(), runner)
+        edits = [c for c in runner.calls if c[:4] == ["gh", "issue", "edit", "4"]]
+        self.assertEqual(len(edits), 2)
+        self.assertFalse(any(line.startswith("gh pr merge") for line in runner.lines()))
+        self.assertIn("git worktree remove --force", " ".join(runner.lines()))
+
     def test_unsafe_link_is_refused_before_any_git_command_or_removal(self):
         for ref, path in [("--upload-pack=x", self.PLAN), ("issue-4-flag", "../../x.md"),
                           ("issue-4-flag", "/etc/x.md")]:

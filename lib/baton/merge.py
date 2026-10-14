@@ -214,7 +214,8 @@ def _retire_plan(pr, repo, runner, cfg):
         runner(["git", "show", "--end-of-options", f"{head}:{link['path']}"])
     except RunError:
         return None
-    planfile.link_issue(runner, f"{repo['owner']['login']}/{repo['name']}", issue, at=head,
+    slug = f"{repo['owner']['login']}/{repo['name']}"
+    planfile.link_issue(runner, slug, issue, at=head,
                        docs_dir=cfg.data["docs"]["dir"])
     tree = tempfile.mkdtemp(prefix="baton-retire-")
     try:
@@ -225,6 +226,15 @@ def _retire_plan(pr, repo, runner, cfg):
             runner(["git", "push", "origin", f"HEAD:{branch}"], cwd=tree)
         finally:
             runner(["git", "worktree", "remove", "--force", tree])
+    except BaseException:
+        # The file is still on the branch, so the link must not stay pinned: a rerun would
+        # find it pinned and merge the plan file into the default branch.
+        try:
+            planfile.link_issue(runner, slug, issue, branch=branch, path=link["path"],
+                                docs_dir=cfg.data["docs"]["dir"])
+        except Exception:
+            pass
+        raise
     finally:
         if os.path.isdir(tree):
             shutil.rmtree(tree, ignore_errors=True)

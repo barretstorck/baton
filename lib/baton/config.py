@@ -86,7 +86,11 @@ def _check_docs_dir(data):
         raise ConfigError(".baton/brief.md: docs.dir must be a relative path inside the repository")
     if ".." in path.parts:
         raise ConfigError(".baton/brief.md: docs.dir must not contain '..'")
-    norm = "/".join(part for part in path.parts if part != ".") + "/"
+    parts = [part for part in path.parts if part != "."]
+    if not parts:
+        raise ConfigError(".baton/brief.md: docs.dir must name a folder, not the repository root")
+    data["docs"]["dir"] = "/".join(parts)
+    norm = data["docs"]["dir"] + "/"
     for entry in data["protected_paths"]:
         prefix = "/".join(part for part in pathlib.PurePosixPath(entry).parts if part != ".")
         if prefix and (norm + "/").startswith(prefix.rstrip("/") + "/") and (
