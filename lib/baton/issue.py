@@ -9,6 +9,7 @@ from . import checklist
 
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.M)
 _BLOCKED = re.compile(r"^\s*Blocked by:(.*)$", re.M | re.I)
+_NO_BLOCKERS = re.compile(r"^\(?none", re.I)
 _FILES = re.compile(r"^\s*Expected files:(.*)$", re.M | re.I)
 _CHECKBOX = re.compile(r"^\s*[-*]\s+\[[ xX]\]\s+\S", re.M)
 
@@ -27,6 +28,8 @@ def sections(body):
 def blocked_by(body):
     numbers = []
     for line in _BLOCKED.findall(body or ""):
+        if _NO_BLOCKERS.match(line.strip()):
+            continue
         numbers.extend(int(n) for n in re.findall(r"#(\d+)", line))
     return numbers
 
