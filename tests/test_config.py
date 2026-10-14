@@ -54,6 +54,13 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.DEFAULTS["reviewer"], {"model": "sonnet"})
         self.assertEqual(config.DEFAULTS["review"], {"required": True, "max_rounds": 2})
 
+    def test_developer_effort_default_override_and_rejection(self):
+        self.assertEqual(config.load(str(make_repo("# none\n"))).data["developer"]["effort"], "medium")
+        cfg = config.load(str(make_repo("---\ndeveloper:\n  effort: high\n---\n")))
+        self.assertEqual(cfg.data["developer"]["effort"], "high")
+        with self.assertRaisesRegex(config.ConfigError, "developer.effort"):
+            config.load(str(make_repo("---\ndeveloper:\n  effort: turbo\n---\n")))
+
     def test_review_rounds_must_be_positive(self):
         with self.assertRaises(config.ConfigError):
             config.load(str(make_repo("---\nreview:\n  max_rounds: 0\n---\n")))

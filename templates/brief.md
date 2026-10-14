@@ -2,6 +2,7 @@
 developer:
   model: sonnet
   max_parallel: 2
+  effort: medium
 reviewer:
   model: sonnet
 review:
