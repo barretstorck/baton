@@ -5,9 +5,13 @@ prototype sprint's lesson: never merge until CI has concluded SUCCESS on
 the head commit.
 """
 import json
+import os
 import re
+import shutil
+import tempfile
 
-from . import gate, labels, review
+from . import checklist, gate, labels, planfile, review
+from .run import RunError
 
 PR_FIELDS = ("number,state,isDraft,mergeable,headRefOid,headRefName,baseRefName,"
              "isCrossRepository,body,files,changedFiles,statusCheckRollup,"
@@ -17,6 +21,10 @@ _APPROVE = re.compile(r"^/baton approve\s+([0-9a-f]{7,40})\b")
 
 class PostMergeError(Exception):
     pass
+
+
+class PlanRetired(Exception):
+    """The plan file was removed from the branch; checks must run again before the merge."""
 _CLOSING = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s+#(\d+)", re.I)
 _PASSING = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 
@@ -189,14 +197,52 @@ def _after_merge(pr, cfg, runner, notes):
     runner(["git", "push", "origin", "--delete", branch])
 
 
+def _retire_plan(pr, repo, runner):
+    """Pin the issue's plan link to the head, remove the file from the branch and push.
+
+    Returns the note to show, or None when there is no unpinned plan file on the head.
+    """
+    closing = [ref["number"] for ref in pr.get("closingIssuesReferences") or []]
+    if len(closing) != 1:
+        return None
+    issue, branch, head = closing[0], pr["headRefName"], pr["headRefOid"]
+    link = planfile.parse_link(checklist.issue_body(runner, issue))
+    if link is None or link["pinned"]:
+        return None
+    runner(["git", "fetch", "--quiet", "origin", branch])
+    try:
+        runner(["git", "show", f"{head}:{link['path']}"])
+    except RunError:
+        return None
+    planfile.link_issue(runner, f"{repo['owner']['login']}/{repo['name']}", issue, at=head)
+    tree = tempfile.mkdtemp(prefix="baton-retire-")
+    try:
+        runner(["git", "worktree", "add", "--detach", tree, head])
+        try:
+            runner(["git", "rm", "-q", "--", link["path"]], cwd=tree)
+            runner(["git", "commit", "-q", "-m", f"Remove the plan of #{issue}"], cwd=tree)
+            runner(["git", "push", "origin", f"HEAD:{branch}"], cwd=tree)
+        finally:
+            runner(["git", "worktree", "remove", "--force", tree])
+    finally:
+        if os.path.isdir(tree):
+            shutil.rmtree(tree, ignore_errors=True)
+    return (f"removed the plan {link['path']} of #{issue} from {branch} and pinned the link "
+            f"to {head}; checks run on the new head, run `baton merge-pr {pr['number']}` "
+            "again once they pass")
+
+
 def merge(number, cfg, runner, notes=None):
     notes = [] if notes is None else notes
-    repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,defaultBranchRef"]))
+    repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", PR_FIELDS]))
     if pr.get("state") != "MERGED":
         problems = check(pr, cfg, repo["owner"]["login"], repo["defaultBranchRef"]["name"], runner)
         if problems:
             return problems
+        note = _retire_plan(pr, repo, runner)
+        if note:
+            raise PlanRetired(note)
         runner(["gh", "pr", "merge", str(number), "--merge",
                 "--match-head-commit", pr["headRefOid"]])
     try:

@@ -94,6 +94,9 @@ def cmd_merge_pr(args):
     notes = []
     try:
         problems = merge.merge(int(args[0]), _require_config(), tolerant, notes)
+    except merge.PlanRetired as note:
+        print(f"baton: {note}; not merged yet")
+        return 0
     except merge.PostMergeError as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
