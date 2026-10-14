@@ -246,6 +246,8 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None):
         if changed:
             _save_issue(runner, number, new)
         return changed
+    from . import planfile
+    planfile.check_write(cwd, link["path"])
     path = os.path.join(cwd, link["path"])
     try:
         with open(path, newline="") as handle:
@@ -260,15 +262,18 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None):
     return changed
 
 
-def _replace_in_file(runner, link, from_id, new_text, drop=False):
+def _replace_in_file(runner, number, link, from_id, new_text, drop=False):
     """Commit the replaced tasks to the linked branch from a temporary detached worktree."""
+    from . import planfile
     branch, path = link["ref"], link["path"]
+    planfile.check_branch(number, branch)
     runner(["git", "fetch", "--quiet", "--end-of-options", "origin", branch])
     tree = tempfile.mkdtemp(prefix="baton-plan-")
     try:
         runner(["git", "worktree", "add", "--detach", tree, f"origin/{branch}"])
         try:
             target = os.path.join(tree, path)
+            planfile.check_write(tree, path)
             with open(target, newline="") as handle:
                 text = handle.read()
             changes = plan_changes(text, from_id, new_text)
@@ -298,7 +303,7 @@ def replace_issue_plan(cfg, runner, number, from_id, new_text, terms, drop=False
                         + "; ".join(scan.describe(findings)))
     body, link = _linked(runner, number, cfg.data["docs"]["dir"])
     if link is not None:
-        new, changes = _replace_in_file(runner, link, from_id, new_text, drop)
+        new, changes = _replace_in_file(runner, number, link, from_id, new_text, drop)
     else:
         changes = plan_changes(body, from_id, new_text)
         new = replace_plan(body, str(from_id), new_text, drop)

@@ -367,6 +367,56 @@ class LinkedTickReplaceTest(unittest.TestCase):
         self.assertFalse(any(l.startswith("git commit") or l.startswith("git push") for l in lines))
         self.assertTrue(any(l.startswith("git worktree remove") for l in lines))
 
+    def test_replace_refuses_a_branch_that_is_not_the_issues_own(self):
+        for branch in ("main", "issue-8-x", "issue-7-"):
+            link = planfile.link_line("o/r", branch, "docs/baton/plans/7-x.md")
+            base = FakeRunner({"gh issue view 7": self.issue(link)})
+            with self.subTest(branch=branch), self.assertRaises(checklist.TaskError):
+                checklist.replace_issue_plan(cfg(), self.fake_worktree(base), 7, "2",
+                                             "- [ ] **2. X**\n", [])
+            self.assertEqual(base.lines(), ["gh issue view 7 --json body"])
+
+    def test_tick_refuses_a_symlinked_plan_path(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as cwd, tempfile.TemporaryDirectory() as other:
+            victim = pathlib.Path(other, "victim.md")
+            victim.write_text(FILE)
+            target = pathlib.Path(cwd, self.PATH)
+            target.parent.mkdir(parents=True)
+            target.symlink_to(victim)
+            runner = FakeRunner({"gh issue view 7": self.issue()})
+            with self.assertRaises(checklist.TaskError):
+                checklist.tick_issue(runner, 7, "2", cwd=cwd)
+            self.assertEqual(victim.read_text(), FILE)
+
+    def test_tick_refuses_a_symlinked_parent_folder(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as cwd, tempfile.TemporaryDirectory() as other:
+            pathlib.Path(other, "plans").mkdir()
+            victim = pathlib.Path(other, "plans", "7-x.md")
+            victim.write_text(FILE)
+            pathlib.Path(cwd, "docs").mkdir()
+            pathlib.Path(cwd, "docs", "baton").symlink_to(other)
+            runner = FakeRunner({"gh issue view 7": self.issue()})
+            with self.assertRaises(checklist.TaskError):
+                checklist.tick_issue(runner, 7, "2", cwd=cwd)
+            self.assertEqual(victim.read_text(), FILE)
+
+    def test_replace_refuses_a_symlinked_plan_in_the_branch(self):
+        base = FakeRunner({"gh issue view 7": self.issue()})
+
+        def runner(argv, cwd=None):
+            out = base(argv, cwd)
+            if argv[:4] == ["git", "worktree", "add", "--detach"]:
+                target = pathlib.Path(argv[4], self.PATH)
+                target.parent.mkdir(parents=True)
+                target.symlink_to("/etc/hostname")
+            return out
+
+        with self.assertRaises(checklist.TaskError):
+            checklist.replace_issue_plan(cfg(), runner, 7, "2", "- [ ] **2. X**\n", [])
+        self.assertFalse(any(l.startswith(("git commit", "git push")) for l in base.lines()))
+
 
 class LinkedDropTest(unittest.TestCase):
     PATH = LinkedTickReplaceTest.PATH

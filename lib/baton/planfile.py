@@ -52,6 +52,31 @@ def check_link(ref, path, docs_dir=None):
                                   "plain branch name")
 
 
+def check_branch(number, branch):
+    """Raise TaskError unless `branch` is the issue's own branch, `issue-<number>-<slug>`."""
+    prefix = f"issue-{number}-"
+    if not branch.startswith(prefix) or len(branch) == len(prefix):
+        raise checklist.TaskError(
+            f"the Plan: link names branch {branch!r}; plans are only written to {prefix}<slug>")
+
+
+def check_write(root, path):
+    """Raise TaskError unless writing `path` under `root` stays inside it.
+
+    The path and every folder below `root` on the way to it must not be a symlink, and the
+    resolved target must be inside the resolved `root`.
+    """
+    top = os.path.realpath(root)
+    target = os.path.realpath(os.path.join(root, path))
+    if os.path.commonpath([top, target]) != top or target == top:
+        raise checklist.TaskError(f"refusing to write {path!r}: it resolves outside {root!r}")
+    current = root
+    for part in path.split("/"):
+        current = os.path.join(current, part)
+        if os.path.islink(current):
+            raise checklist.TaskError(f"refusing to write {path!r}: {part!r} is a symlink")
+
+
 def parse_link(body, docs_dir=None):
     """{'ref', 'path', 'pinned'} for the body's `Plan:` line, or None.
 
@@ -186,7 +211,9 @@ def migrate(cfg, runner, repo, number, branch, default_branch):
         runner(["git", "worktree", "add", "--detach", tree, f"origin/{default_branch}"])
         try:
             target = os.path.join(tree, path)
+            check_write(tree, path)
             os.makedirs(os.path.dirname(target), exist_ok=True)
+            check_write(tree, path)
             with open(target, "w", newline="") as handle:
                 handle.write(file_text)
             runner(["git", "add", "--", path], cwd=tree)
