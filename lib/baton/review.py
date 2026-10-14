@@ -128,8 +128,10 @@ def current(pr, owner, cfg, runner, default_branch):
     found = state(pr.get("comments"), owner, cfg.data["review"]["max_rounds"])
     if found["state"] == "approved" and found["review"]["commit"] != pr["headRefOid"]:
         fetch(runner, default_branch, pr["headRefName"])
+        # Removing the plan file before the merge is not a change to the code.
+        paths = [".", f":(exclude){cfg.data['docs']['dir']}/plans/"]
         if not same_change(runner, f"origin/{default_branch}", found["review"]["commit"],
-                           pr["headRefOid"]):
+                           pr["headRefOid"], paths):
             found["state"] = "stale"
     return found
 

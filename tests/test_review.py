@@ -144,6 +144,24 @@ class CurrentTest(unittest.TestCase):
         self.assertEqual(found["state"], "stale")
 
 
+class PlanRemovalTest(unittest.TestCase):
+    def test_diff_excludes_the_plans_folder(self):
+        runner = diff_runner(DIFF, DIFF)
+        pr = {"number": 9, "headRefOid": NEW, "headRefName": "issue-4-x",
+              "comments": [rev("approve", OLD)]}
+        found = review.current(pr, OWNER, cfg(), runner, "main")
+        self.assertEqual(found["state"], "approved")
+        spec = "-- . :(exclude)docs/baton/plans/"
+        self.assertIn(f"git diff --binary base1 {OLD} {spec}", runner.lines())
+        self.assertIn(f"git diff --binary base2 {NEW} {spec}", runner.lines())
+
+    def test_other_changes_still_make_it_stale(self):
+        runner = diff_runner(DIFF, DIFF + "+x\n")
+        pr = {"number": 9, "headRefOid": NEW, "headRefName": "issue-4-x",
+              "comments": [rev("approve", OLD)]}
+        self.assertEqual(review.current(pr, OWNER, cfg(), runner, "main")["state"], "stale")
+
+
 TASKS = "## Tasks\n- [ ] **1.1 Fix it**\n  - Check: none\n"
 
 
