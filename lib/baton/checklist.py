@@ -6,6 +6,7 @@ or replace open tasks; agents never edit a checklist by hand.
 import json
 import os
 import re
+import shutil
 import tempfile
 
 from . import scan
@@ -190,12 +191,65 @@ def _save_issue(runner, number, body):
         os.unlink(path)
 
 
-def tick_issue(runner, number, task_id):
-    """Tick a plan task. False when it was already ticked (nothing is written)."""
-    new, changed = tick(issue_body(runner, number), "plan", str(task_id))
+def _linked(runner, number):
+    """(body, link or None) for the issue; a pinned link has no file left to edit."""
+    from . import planfile
+    body = issue_body(runner, number)
+    link = planfile.parse_link(body)
+    if link is not None and link["pinned"]:
+        raise TaskError(f"issue #{number}'s plan is pinned to a commit; its file was retired")
+    return body, link
+
+
+def tick_issue(runner, number, task_id, cwd="."):
+    """Tick a plan task. False when it was already ticked (nothing is written).
+
+    A linked plan is ticked in its file under `cwd` (the developer's checkout) and the issue
+    is not edited; the developer commits the file with the task's code.
+    """
+    body, link = _linked(runner, number)
+    if link is None:
+        new, changed = tick(body, "plan", str(task_id))
+        if changed:
+            _save_issue(runner, number, new)
+        return changed
+    path = os.path.join(cwd, link["path"])
+    try:
+        with open(path, newline="") as handle:
+            text = handle.read()
+    except OSError as error:
+        raise TaskError(f"plan file {link['path']} not found in {cwd}: {error}")
+    new, changed = tick(text, "plan", str(task_id))
     if changed:
-        _save_issue(runner, number, new)
+        with open(path, "w", newline="") as handle:
+            handle.write(new)
+        print(f"ticked in {link['path']}; commit it with the task's code")
     return changed
+
+
+def _replace_in_file(runner, link, from_id, new_text):
+    """Commit the replaced tasks to the linked branch from a temporary detached worktree."""
+    branch, path = link["ref"], link["path"]
+    runner(["git", "fetch", "--quiet", "origin", branch])
+    tree = tempfile.mkdtemp(prefix="baton-plan-")
+    try:
+        runner(["git", "worktree", "add", "--detach", tree, f"origin/{branch}"])
+        try:
+            target = os.path.join(tree, path)
+            with open(target, newline="") as handle:
+                text = handle.read()
+            new = replace_plan(text, str(from_id), new_text)
+            with open(target, "w", newline="") as handle:
+                handle.write(new)
+            runner(["git", "add", "--", path], cwd=tree)
+            runner(["git", "commit", "-q", "-m", f"Replan from task {from_id}"], cwd=tree)
+            runner(["git", "push", "origin", f"HEAD:{branch}"], cwd=tree)
+        finally:
+            runner(["git", "worktree", "remove", "--force", tree])
+    finally:
+        if os.path.isdir(tree):
+            shutil.rmtree(tree, ignore_errors=True)
+    return new
 
 
 def replace_issue_plan(cfg, runner, number, from_id, new_text, terms):
@@ -204,6 +258,9 @@ def replace_issue_plan(cfg, runner, number, from_id, new_text, terms):
     if findings:
         raise TaskError("plan not changed; privacy scan found: "
                         + "; ".join(scan.describe(findings)))
-    new = replace_plan(issue_body(runner, number), str(from_id), new_text)
+    body, link = _linked(runner, number)
+    if link is not None:
+        return plan(_replace_in_file(runner, link, from_id, new_text))
+    new = replace_plan(body, str(from_id), new_text)
     _save_issue(runner, number, new)
     return plan(new)

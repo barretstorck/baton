@@ -171,7 +171,7 @@ def cmd_task(args):
     if len(args) == 4 and args[0] == "done" and args[1] in ("issue", "pr") and args[2].isdigit():
         _require_config()
         if args[1] == "issue":
-            changed = checklist.tick_issue(run.run, int(args[2]), args[3])
+            changed = checklist.tick_issue(run.run, int(args[2]), args[3], cwd=os.getcwd())
         else:
             changed = review.tick_review(run.run, int(args[2]), _owner(), args[3])
         print(f"ticked task {args[3]}" if changed else f"task {args[3]} was already ticked")

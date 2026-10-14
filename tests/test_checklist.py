@@ -212,3 +212,77 @@ class LinkedPlanTest(unittest.TestCase):
             return json.dumps({"body": LINK + "\n"})
         with self.assertRaises(checklist.TaskError):
             checklist.issue_plan(runner, 7)
+
+
+class LinkedTickReplaceTest(unittest.TestCase):
+    PATH = "docs/baton/plans/7-x.md"
+
+    def issue(self, link=LINK):
+        return json.dumps({"body": link + "\n\n## Context\nx\n"})
+
+    def fake_worktree(self, base):
+        def runner(argv, cwd=None):
+            base(argv, cwd)
+            if argv[:4] == ["git", "worktree", "add", "--detach"]:
+                target = pathlib.Path(argv[4], self.PATH)
+                target.parent.mkdir(parents=True)
+                target.write_text(FILE)
+            return base.replies.get(" ".join(argv[:4]), "")
+        return runner
+
+    def test_tick_edits_the_file_not_the_issue(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as cwd:
+            target = pathlib.Path(cwd, self.PATH)
+            target.parent.mkdir(parents=True)
+            target.write_text(FILE)
+            runner = FakeRunner({"gh issue view 7": self.issue()})
+            self.assertTrue(checklist.tick_issue(runner, 7, "2", cwd=cwd))
+            self.assertEqual(target.read_text(), FILE.replace("- [ ] **2.", "- [x] **2."))
+            self.assertFalse(checklist.tick_issue(runner, 7, "2", cwd=cwd))
+        self.assertFalse(any("issue edit" in line for line in runner.lines()))
+
+    def test_tick_missing_file_raises(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as cwd:
+            with self.assertRaises(checklist.TaskError):
+                checklist.tick_issue(FakeRunner({"gh issue view 7": self.issue()}), 7, "2", cwd=cwd)
+
+    def test_pinned_link_is_refused(self):
+        pinned = planfile.link_line("o/r", SHA, self.PATH)
+        runner = FakeRunner({"gh issue view 7": self.issue(pinned)})
+        with self.assertRaises(checklist.TaskError):
+            checklist.tick_issue(runner, 7, "2")
+        with self.assertRaises(checklist.TaskError):
+            checklist.replace_issue_plan(cfg(), runner, 7, "2", "- [ ] **2. X**\n", [])
+
+    def test_replace_commits_and_pushes_without_editing_the_issue(self):
+        base = FakeRunner({"gh issue view 7": self.issue()})
+        seen = {}
+        inner = self.fake_worktree(base)
+
+        def runner(argv, cwd=None):
+            if argv[:2] == ["git", "push"]:
+                seen["push"] = (argv, cwd)
+                seen["text"] = pathlib.Path(cwd, self.PATH).read_text()
+            return inner(argv, cwd)
+
+        found = checklist.replace_issue_plan(cfg(), runner, 7, "2",
+                                             "- [ ] **2. New B**\n- [ ] **3. New C**\n", [])
+        self.assertEqual([t["title"] for t in found["tasks"]], ["A", "New B", "New C"])
+        argv, tree = seen["push"]
+        self.assertEqual(argv, ["git", "push", "origin", "HEAD:issue-7-x"])
+        self.assertIn("- [ ] **3. New C**", seen["text"])
+        self.assertIn("git commit -q -m Replan from task 2", base.lines())
+        self.assertIn(f"git worktree remove --force {tree}", base.lines())
+        self.assertFalse(pathlib.Path(tree).exists())
+        self.assertFalse(any("issue edit" in line for line in base.lines()))
+
+    def test_replace_done_task_refused_before_commit(self):
+        base = FakeRunner({"gh issue view 7": self.issue()})
+        with self.assertRaises(checklist.TaskError):
+            checklist.replace_issue_plan(cfg(), self.fake_worktree(base), 7, "1",
+                                         "- [ ] **1. X**\n", [])
+        lines = base.lines()
+        self.assertFalse(any(l.startswith("git commit") or l.startswith("git push") for l in lines))
+        self.assertTrue(any(l.startswith("git worktree remove") for l in lines))
