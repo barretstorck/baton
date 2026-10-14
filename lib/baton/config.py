@@ -23,6 +23,7 @@ DEFAULTS = {
         "map": {name: name for name in STATUSES + OTHER_LABELS},
     },
     "merge": {"allow_no_ci": False},
+    "docs": {"dir": "docs/baton"},
     "protected_paths": [".github/", ".baton/", ".claude/"],
     "fixtures_paths": [],
     "privacy_allow": [],
@@ -78,6 +79,25 @@ def _validate(data, defaults, prefix=""):
             _validate(value, default, name + ".")
 
 
+def _check_docs_dir(data):
+    docs_dir = data["docs"]["dir"]
+    path = pathlib.PurePosixPath(docs_dir)
+    if not docs_dir.strip() or path.is_absolute() or pathlib.PureWindowsPath(docs_dir).is_absolute():
+        raise ConfigError(".baton/brief.md: docs.dir must be a relative path inside the repository")
+    if ".." in path.parts:
+        raise ConfigError(".baton/brief.md: docs.dir must not contain '..'")
+    parts = [part for part in path.parts if part != "."]
+    if not parts:
+        raise ConfigError(".baton/brief.md: docs.dir must name a folder, not the repository root")
+    data["docs"]["dir"] = "/".join(parts)
+    norm = data["docs"]["dir"] + "/"
+    for entry in data["protected_paths"]:
+        prefix = "/".join(part for part in pathlib.PurePosixPath(entry).parts if part != ".")
+        if prefix and (norm + "/").startswith(prefix.rstrip("/") + "/") and (
+                entry.endswith("/") or norm.rstrip("/") == prefix):
+            raise ConfigError(f".baton/brief.md: docs.dir {docs_dir} is under protected path {entry}")
+
+
 def repo_root(path):
     try:
         out = run.run(["git", "-C", path, "rev-parse", "--show-toplevel"])
@@ -104,4 +124,5 @@ def load(path):
         raise ConfigError(".baton/brief.md: developer.effort must be one of " + ", ".join(EFFORTS))
     if merged["review"]["max_rounds"] < 1:
         raise ConfigError(".baton/brief.md: review.max_rounds must be at least 1")
+    _check_docs_dir(merged)
     return Config(root=root, data=merged)

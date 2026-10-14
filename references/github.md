@@ -14,7 +14,8 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Open pull requests | `gh pr list --state open --json number,title,headRefName,isDraft,closingIssuesReferences` |
 | A pull request's checks | `gh pr checks <N>` |
 | A pull request's review state | `baton review state <N>`: `none`, `changes`, `replied`, `stale`, `approved` or `escalate` |
-| An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`) |
+| An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`); reads the plan file on the issue branch, or a legacy `## Plan` in the body |
+| An issue's plan file | the issue's first line is `Plan: [path](link)`; in a checkout of `issue-<N>-<slug>` it is `<docs.dir>/plans/<N>-<slug>.md` (`docs.dir` from `baton config`) |
 | A review's tasks | `baton tasks pr <N>` (the latest review's `## Tasks`; none after an approval) |
 | Quota use | `baton usage --repo <owner/repo> [--since <UTC ISO time>] [--json]`: per issue and role, from local transcripts |
 | Repository owner and default branch | `gh repo view --json owner,defaultBranchRef` |
@@ -32,14 +33,17 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Mark a pull request ready | `gh pr ready <N>` (the orchestrator, once the review is approved) |
 | Post a review | `baton review post <N> <approve\|changes> <full head sha> -` with the body as an inline heredoc. It refuses if the head moved. |
 | Answer a review | `baton comment pr <N> developer reply -`, one line per task (orchestrator, from the developers' results) |
-| Tick a task | `baton task done <issue\|pr> <N> <task>` (orchestrator only) |
-| Replace a plan's open tasks | `baton plan replace <N> <from-task> <file>` (orchestrator only) |
+| Link an issue to its plan | `baton plan link <N> <branch> <path>` (refiner, after pushing the plan file); `baton plan link <N> --at <sha>` pins it to a commit |
+| Migrate a legacy plan | `baton plan migrate <N> <branch>` (refiner or orchestrator, for an issue not yet in development) |
+| Tick a task | `baton task done issue <N> <task>` (developer: ticks the plan file in the checkout, committed with the code); `baton task done pr <P> <r.n>` (orchestrator, review tasks) |
+| Replace a plan's open tasks | `baton plan replace <N> <from-task> <file> [--drop]` (orchestrator only; refuses fewer new tasks than replaced unless `--drop`; a linked plan is committed to the issue branch and pushed) |
 | Merge | `baton merge-pr <N>` only. `gh pr merge` is refused. |
 
 Roles: `orchestrator`, `developer`, `refine`, `reviewer`. Kinds: `question`, `status`,
 `decision`, `plan`, `review`, `findings`, `reply`. Reviews are posted only with
 `baton review post`, which adds the verdict and the commit to the marker. Task boxes are ticked
-only with `baton task done`.
+only with `baton task done`. A merge removes the plan file from the branch first; run
+`baton merge-pr <P>` again after the checks pass on the removal commit.
 
 Where a row says "write ... to a file", an inline heredoc works too and needs no file:
 `--body "$(cat <<'EOF'` on one line, the text, then `EOF` and `)"` on the last two lines.

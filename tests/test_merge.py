@@ -180,14 +180,95 @@ class CheckTest(unittest.TestCase):
 class MergeTest(unittest.TestCase):
     def replies(self, pr, issue_state="OPEN"):
         return {
-            "gh repo view": json.dumps({"owner": {"login": OWNER},
+            "gh repo view": json.dumps({"owner": {"login": OWNER}, "name": "tool",
                                         "defaultBranchRef": {"name": "main"}}),
             "gh pr view 9": json.dumps(pr),
             "gh issue view 4 --json state": json.dumps({"state": issue_state}),
+            "gh issue view 4 --json body": json.dumps({"body": "## Context\nx\n"}),
             "gh issue view 4 --json labels": json.dumps({"labels": [{"name": "status:in-review"}]}),
             "git worktree list": "worktree /repo\nbranch refs/heads/main\n\n"
                                  "worktree /wt/issue-4\nbranch refs/heads/issue-4-flag\n",
         }
+
+    PLAN = "docs/baton/plans/4-flag.md"
+
+    def plan_replies(self, ref, pr=None):
+        url = f"https://github.com/octo/tool/blob/{ref}/{self.PLAN}"
+        replies = self.replies(pr or make_pr())
+        replies["gh issue view 4 --json body"] = json.dumps(
+            {"body": f"Plan: [{self.PLAN}]({url})\n\n## Context\nx\n"})
+        return replies
+
+    def test_unpinned_plan_is_pinned_removed_and_pushed_before_any_merge(self):
+        runner = FakeRunner(self.plan_replies("issue-4-flag"))
+        with self.assertRaises(merge.PlanRetired) as raised:
+            merge.merge(9, make_config(), runner)
+        self.assertIn("run `baton merge-pr 9` again", str(raised.exception))
+        lines = runner.lines()
+        self.assertFalse(any(line.startswith("gh pr merge") for line in lines))
+        pin = next(i for i, l in enumerate(lines) if l.startswith("gh issue edit 4 --body-file"))
+        rm = next(i for i, l in enumerate(lines) if f"git rm -q -- {self.PLAN}" in l)
+        commit = next(i for i, l in enumerate(lines) if "Remove the plan of #4" in l)
+        push = next(i for i, l in enumerate(lines) if l == "git push origin HEAD:issue-4-flag")
+        self.assertLess(pin, rm)
+        self.assertLess(rm, commit)
+        self.assertLess(commit, push)
+        add = next(l for l in lines if l.startswith("git worktree add --detach"))
+        self.assertTrue(add.endswith(HEAD))
+
+    def test_failed_push_restores_the_link_to_the_branch(self):
+        class PushFails(FakeRunner):
+            def __call__(self, argv, cwd=None):
+                result = super().__call__(argv, cwd)
+                if argv[:4] == ["gh", "issue", "edit", "4"] and "--body-file" in argv:
+                    # the pin is now on the issue, so later reads see the pinned link
+                    self.replies["gh issue view 4 --json body"] = pinned
+                if argv[:2] == ["git", "push"]:
+                    raise merge.RunError("rejected")
+                return result
+        pinned = self.plan_replies(HEAD)["gh issue view 4 --json body"]
+        runner = PushFails(self.plan_replies("issue-4-flag"))
+        with self.assertRaises(merge.RunError):
+            merge.merge(9, make_config(), runner)
+        edits = [c for c in runner.calls if c[:4] == ["gh", "issue", "edit", "4"]]
+        self.assertEqual(len(edits), 2)
+        self.assertFalse(any(line.startswith("gh pr merge") for line in runner.lines()))
+        self.assertIn("git worktree remove --force", " ".join(runner.lines()))
+
+    def test_unsafe_link_is_refused_before_any_git_command_or_removal(self):
+        for ref, path in [("--upload-pack=x", self.PLAN), ("issue-4-flag", "../../x.md"),
+                          ("issue-4-flag", "/etc/x.md")]:
+            replies = self.replies(make_pr())
+            replies["gh issue view 4 --json body"] = json.dumps({"body": (
+                f"Plan: [{path}](https://github.com/octo/tool/blob/{ref}/{path})\n\n## Context\nx\n")})
+            runner = FakeRunner(replies)
+            with self.subTest(ref=ref, path=path), self.assertRaises(merge.checklist.TaskError):
+                merge.merge(9, make_config(), runner)
+            lines = runner.lines()
+            self.assertFalse(any(l.startswith(("git fetch", "git show", "git rm", "git worktree add",
+                                               "git push", "gh pr merge", "gh issue edit"))
+                                 for l in lines))
+
+    def test_pinned_link_with_the_file_gone_merges_as_before(self):
+        runner = FakeRunner(self.plan_replies(HEAD))
+        self.assertEqual(merge.merge(9, make_config(), runner), [])
+        self.assertIn(f"gh pr merge 9 --merge --match-head-commit {HEAD}", runner.lines())
+        self.assertFalse(any(" rm " in line for line in runner.lines()))
+
+    def test_unpinned_link_without_the_file_on_the_head_merges_as_before(self):
+        class Missing(FakeRunner):
+            def __call__(self, argv, cwd=None):
+                if argv[:2] == ["git", "show"]:
+                    raise merge.RunError("missing")
+                return super().__call__(argv, cwd)
+        runner = Missing(self.plan_replies("issue-4-flag"))
+        self.assertEqual(merge.merge(9, make_config(), runner), [])
+        self.assertFalse(any(" rm " in line for line in runner.lines()))
+
+    def test_refused_pr_does_not_retire_the_plan(self):
+        runner = FakeRunner(self.plan_replies("issue-4-flag", pr=make_pr(isDraft=True)))
+        self.assertTrue(merge.merge(9, make_config(), runner))
+        self.assertFalse(any(" rm " in line for line in runner.lines()))
 
     def test_refused_pr_is_not_merged(self):
         runner = FakeRunner(self.replies(make_pr(isDraft=True)))

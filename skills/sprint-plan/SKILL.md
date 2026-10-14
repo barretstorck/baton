@@ -28,7 +28,7 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
      to choose.
 
 3. **Read the backlog.** List open issues with `status:ready`, and separately those in
-   `status:refinement`. Read the last two files in `docs/retros/` if they exist and apply their
+   `status:refinement`. Read the last two files in `<docs.dir>/retros/` (`docs.dir` from `baton config`, default `docs/baton`) if they exist and apply their
    "How to improve" items.
 
 4. **Choose.** From the ready issues, pick those that serve the goal.

@@ -69,6 +69,25 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaises(config.ConfigError):
             config.load(str(make_repo("---\nreview:\n  max_rounds: 0\n---\n")))
 
+    def test_docs_dir_default_and_override(self):
+        self.assertEqual(config.DEFAULTS["docs"], {"dir": "docs/baton"})
+        self.assertEqual(config.load(str(make_repo("# none\n"))).data["docs"]["dir"], "docs/baton")
+        cfg = config.load(str(make_repo("---\ndocs:\n  dir: notes/plans\n---\n")))
+        self.assertEqual(cfg.data["docs"]["dir"], "notes/plans")
+
+    def test_docs_dir_is_normalised(self):
+        for given in ("docs//baton", "./docs/baton/", "docs/./baton"):
+            brief = f'---\ndocs:\n  dir: "{given}"\n---\n'
+            self.assertEqual(config.load(str(make_repo(brief))).data["docs"]["dir"], "docs/baton")
+
+    def test_docs_dir_refused(self):
+        for bad in (".", "./", "/abs/docs", "../docs", "docs/../x", ".github/docs", ".baton", "./.claude/x", "hooks/docs"):
+            brief = f'---\ndocs:\n  dir: "{bad}"\nprotected_paths: [".github/", ".baton/", ".claude/", "hooks/"]\n---\n'
+            with self.assertRaises(config.ConfigError, msg=bad):
+                config.load(str(make_repo(brief)))
+        ok = '---\ndocs:\n  dir: ".github-docs"\n---\n'
+        self.assertEqual(config.load(str(make_repo(ok))).data["docs"]["dir"], ".github-docs")
+
     def test_load_from_subdirectory(self):
         root = make_repo("x\n")
         (root / "src").mkdir()

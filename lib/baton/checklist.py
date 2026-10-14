@@ -6,6 +6,7 @@ or replace open tasks; agents never edit a checklist by hand.
 import json
 import os
 import re
+import shutil
 import tempfile
 
 from . import scan
@@ -112,8 +113,35 @@ def _blocks(section):
     return head, blocks
 
 
-def replace_plan(body, from_id, new_text):
-    """`body` with the plan's tasks from `from_id` on replaced by `new_text`'s tasks."""
+def _title(block):
+    match = _match(block["lines"][0])
+    return match.group(3) if match else ""
+
+
+def plan_changes(text, from_id, new_text):
+    """(replaced, written): `(id, title)` of the tasks from `from_id` on, and of the new ones."""
+    where = span(text, "plan")
+    if where is None:
+        raise TaskError("the issue has no '## Plan' section")
+    if not str(from_id).isdigit():
+        raise TaskError("plan tasks are numbered 1, 2, 3 ...")
+    _, blocks = _blocks(text[where[0]:where[1]])
+    _, new_blocks = _blocks(new_text.replace("\r\n", "\n"))
+    replaced = [(b["id"], _title(b)) for b in blocks
+                if b["id"].isdigit() and int(b["id"]) >= int(from_id)]
+    return replaced, [(b["id"], _title(b)) for b in new_blocks]
+
+
+def _describe(tasks):
+    return ", ".join(f"{task_id} ({title})" for task_id, title in tasks)
+
+
+def replace_plan(body, from_id, new_text, drop=False):
+    """`body` with the plan's tasks from `from_id` on replaced by `new_text`'s tasks.
+
+    Refused when the new text has fewer tasks than it replaces, unless `drop`: the tasks
+    that no longer exist would otherwise vanish silently.
+    """
     where = span(body, "plan")
     if where is None:
         raise TaskError("the issue has no '## Plan' section")
@@ -135,6 +163,12 @@ def replace_plan(body, from_id, new_text):
     for offset, block in enumerate(new_blocks):
         if block["done"] or block["id"] != str(first + offset):
             raise TaskError(f"the new tasks must be open and numbered from {first}")
+    replaced, _ = plan_changes(body, from_id, new_text)
+    dropped = replaced[len(new_blocks):]
+    if dropped and not drop:
+        raise TaskError(f"the new text has {len(new_blocks)} task(s) for {len(replaced)} replaced; "
+                        f"it would drop task {_describe(dropped)}; "
+                        "write them again or pass --drop to drop them")
     kept = [line for block in blocks if int(block["id"]) < first for line in block["lines"]]
     if kept and not kept[-1].strip():
         kept = kept[:-1]
@@ -148,10 +182,33 @@ def issue_body(runner, number):
     return json.loads(runner(["gh", "issue", "view", str(number), "--json", "body"]))["body"] or ""
 
 
-def issue_plan(runner, number):
-    found = plan(issue_body(runner, number))
+def plan_source(runner, body, cache=None, docs_dir=None):
+    """(text holding the plan, link or None): the linked file's text, else the body itself.
+
+    `cache` maps (ref, path) to text so one branch is fetched once.
+    """
+    from . import planfile  # planfile imports this module
+    link = planfile.parse_link(body, docs_dir)
+    if link is None:
+        return body, None
+    key = (link["ref"], link["path"])
+    if cache is not None and key in cache:
+        return cache[key], link
+    text = planfile.read(runner, link["ref"], link["path"])
+    if cache is not None:
+        cache[key] = text
+    return text, link
+
+
+def issue_plan(runner, number, docs_dir=None):
+    text, link = plan_source(runner, issue_body(runner, number), docs_dir=docs_dir)
+    found = plan(text)
     if found is None:
-        raise TaskError(f"issue #{number} has no '## Plan' section")
+        raise TaskError(f"issue #{number} has no '## Plan' section"
+                        + (f" in {link['path']}" if link else ""))
+    found["source"] = "file" if link else "body"
+    if link:
+        found["ref"], found["path"] = link["ref"], link["path"]
     return found
 
 
@@ -167,20 +224,91 @@ def _save_issue(runner, number, body):
         os.unlink(path)
 
 
-def tick_issue(runner, number, task_id):
-    """Tick a plan task. False when it was already ticked (nothing is written)."""
-    new, changed = tick(issue_body(runner, number), "plan", str(task_id))
+def _linked(runner, number, docs_dir=None):
+    """(body, link or None) for the issue; a pinned link has no file left to edit."""
+    from . import planfile
+    body = issue_body(runner, number)
+    link = planfile.parse_link(body, docs_dir)
+    if link is not None and link["pinned"]:
+        raise TaskError(f"issue #{number}'s plan is pinned to a commit; its file was retired")
+    return body, link
+
+
+def tick_issue(runner, number, task_id, cwd=".", docs_dir=None):
+    """Tick a plan task. False when it was already ticked (nothing is written).
+
+    A linked plan is ticked in its file under `cwd` (the developer's checkout) and the issue
+    is not edited; the developer commits the file with the task's code.
+    """
+    body, link = _linked(runner, number, docs_dir)
+    if link is None:
+        new, changed = tick(body, "plan", str(task_id))
+        if changed:
+            _save_issue(runner, number, new)
+        return changed
+    from . import planfile
+    planfile.check_write(cwd, link["path"])
+    path = os.path.join(cwd, link["path"])
+    try:
+        with open(path, newline="") as handle:
+            text = handle.read()
+    except OSError as error:
+        raise TaskError(f"plan file {link['path']} not found in {cwd}: {error}")
+    new, changed = tick(text, "plan", str(task_id))
     if changed:
-        _save_issue(runner, number, new)
+        with open(path, "w", newline="") as handle:
+            handle.write(new)
+        print(f"ticked in {link['path']}; commit it with the task's code")
     return changed
 
 
-def replace_issue_plan(cfg, runner, number, from_id, new_text, terms):
+def _replace_in_file(runner, number, link, from_id, new_text, drop=False):
+    """Commit the replaced tasks to the linked branch from a temporary detached worktree."""
+    from . import planfile
+    branch, path = link["ref"], link["path"]
+    planfile.check_branch(number, branch)
+    runner(["git", "fetch", "--quiet", "--end-of-options", "origin", branch])
+    tree = tempfile.mkdtemp(prefix="baton-plan-")
+    try:
+        runner(["git", "worktree", "add", "--detach", tree, f"origin/{branch}"])
+        try:
+            target = os.path.join(tree, path)
+            planfile.check_write(tree, path)
+            with open(target, newline="") as handle:
+                text = handle.read()
+            changes = plan_changes(text, from_id, new_text)
+            new = replace_plan(text, str(from_id), new_text, drop)
+            dropped = changes[0][len(changes[1]):]
+            message = f"Replan from task {from_id}"
+            if dropped:
+                message += f"\n\nDropped: {_describe(dropped)}"
+            with open(target, "w", newline="") as handle:
+                handle.write(new)
+            runner(["git", "add", "--", path], cwd=tree)
+            runner(["git", "commit", "-q", "-m", message], cwd=tree)
+            runner(["git", "push", "origin", f"HEAD:{branch}"], cwd=tree)
+        finally:
+            runner(["git", "worktree", "remove", "--force", tree])
+    finally:
+        if os.path.isdir(tree):
+            shutil.rmtree(tree, ignore_errors=True)
+    return new, changes
+
+
+def replace_issue_plan(cfg, runner, number, from_id, new_text, terms, drop=False):
     """Replace the plan's open tasks from `from_id` on; the new text is scanned first."""
     findings = scan.scan_text(new_text, terms, cfg.data["privacy_allow"])
     if findings:
         raise TaskError("plan not changed; privacy scan found: "
                         + "; ".join(scan.describe(findings)))
-    new = replace_plan(issue_body(runner, number), str(from_id), new_text)
-    _save_issue(runner, number, new)
-    return plan(new)
+    body, link = _linked(runner, number, cfg.data["docs"]["dir"])
+    if link is not None:
+        new, changes = _replace_in_file(runner, number, link, from_id, new_text, drop)
+    else:
+        changes = plan_changes(body, from_id, new_text)
+        new = replace_plan(body, str(from_id), new_text, drop)
+        _save_issue(runner, number, new)
+    found = plan(new)
+    found["replaced"], found["written"] = changes
+    found["dropped"] = changes[0][len(changes[1]):]
+    return found

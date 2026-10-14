@@ -1,5 +1,5 @@
 {
   "name": "baton",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Run software sprints on a forge repository: issues are planned as small tasks, each done by a fresh developer agent, with a reviewer agent and an orchestrator that merges."
 }

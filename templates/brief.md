@@ -30,6 +30,8 @@ labels:
     needs-maintainer: "needs-maintainer"
 merge:
   allow_no_ci: false          # true only for repositories with no CI at all
+docs:
+  dir: docs/baton             # where plans and retrospectives live: relative, no "..", not protected
 protected_paths: [".github/", ".baton/", ".claude/"]
 fixtures_paths: []            # the only places new image files may be added
 privacy_allow: []             # literal strings the privacy scan should ignore

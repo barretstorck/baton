@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from . import checklist, comment, config, gate, githooks, issue, labels, merge, review, run, scan, sprint, usage
+from . import checklist, comment, config, gate, githooks, issue, labels, merge, planfile, review, run, scan, sprint, usage
 
 
 def cmd_config(args):
@@ -94,6 +94,9 @@ def cmd_merge_pr(args):
     notes = []
     try:
         problems = merge.merge(int(args[0]), _require_config(), tolerant, notes)
+    except merge.PlanRetired as note:
+        print(f"baton: {note}; not merged yet")
+        return 0
     except merge.PostMergeError as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
@@ -154,8 +157,8 @@ def cmd_review(args):
 
 def cmd_tasks(args):
     if len(args) == 2 and args[0] == "issue" and args[1].isdigit():
-        _require_config()
-        found = checklist.issue_plan(run.run, int(args[1]))
+        cfg = _require_config()
+        found = checklist.issue_plan(run.run, int(args[1]), cfg.data["docs"]["dir"])
         print(json.dumps({**found, **checklist.progress(found["tasks"])}, indent=2))
         return 0
     if len(args) == 2 and args[0] == "pr" and args[1].isdigit():
@@ -169,9 +172,10 @@ def cmd_tasks(args):
 
 def cmd_task(args):
     if len(args) == 4 and args[0] == "done" and args[1] in ("issue", "pr") and args[2].isdigit():
-        _require_config()
+        cfg = _require_config()
         if args[1] == "issue":
-            changed = checklist.tick_issue(run.run, int(args[2]), args[3])
+            changed = checklist.tick_issue(run.run, int(args[2]), args[3], cwd=os.getcwd(),
+                                           docs_dir=cfg.data["docs"]["dir"])
         else:
             changed = review.tick_review(run.run, int(args[2]), _owner(), args[3])
         print(f"ticked task {args[3]}" if changed else f"task {args[3]} was already ticked")
@@ -181,13 +185,40 @@ def cmd_task(args):
 
 
 def cmd_plan(args):
+    drop = "--drop" in args
+    args = [a for a in args if a != "--drop"]
     if len(args) == 4 and args[0] == "replace" and args[1].isdigit() and args[2].isdigit():
         text = comment.read_body(args[3], sys.stdin)
         found = checklist.replace_issue_plan(_require_config(), run.run, int(args[1]), args[2],
-                                             text, scan.load_terms())
+                                             text, scan.load_terms(), drop=drop)
+        for label, key in (("replaced", "replaced"), ("new", "written")):
+            for task_id, title in found[key]:
+                print(f"{label} task {task_id}: {title}")
         print(json.dumps(found, indent=2))
         return 0
-    print("usage: baton plan replace <issue> <from-task> <file | ->", file=sys.stderr)
+    if len(args) >= 2 and args[0] == "link" and args[1].isdigit():
+        number, rest = int(args[1]), args[2:]
+        if len(rest) == 2 and rest[0] == "--at":
+            kwargs = {"at": rest[1]}
+        elif len(rest) == 2 and not rest[0].startswith("-"):
+            kwargs = {"branch": rest[0], "path": rest[1]}
+        else:
+            kwargs = None
+        if kwargs is not None:
+            cfg = _require_config()
+            repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
+            print(planfile.link_issue(run.run, repo, number, docs_dir=cfg.data["docs"]["dir"], **kwargs))
+            return 0
+    if len(args) == 3 and args[0] == "migrate" and args[1].isdigit():
+        cfg = _require_config()
+        repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
+        print(planfile.migrate(cfg, run.run, repo["nameWithOwner"], int(args[1]), args[2],
+                               repo["defaultBranchRef"]["name"]))
+        return 0
+    print("usage: baton plan replace <issue> <from-task> <file | -> [--drop]\n"
+          "       baton plan migrate <issue> <branch>\n"
+          "       baton plan link <issue> <branch> <path>\n"
+          "       baton plan link <issue> --at <sha>", file=sys.stderr)
     return 64
 
 
@@ -232,7 +263,7 @@ def cmd_ready_check(args):
         return 64
     cfg = _require_config()
     data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "author,body,labels"]))
-    problems = issue.ready_problems(data, cfg, _owner())
+    problems = issue.ready_problems(data, cfg, _owner(), run.run)
     for problem in problems:
         print(f"- {problem}")
     if not problems:
