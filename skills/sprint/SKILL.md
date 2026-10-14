@@ -179,7 +179,8 @@ Developers return follow-up suggestions. For each one worth keeping, create an i
 
 An issue in development has **one developer at a time**, doing **one task**. Every task gets a
 fresh `baton:baton-developer` subagent, started in the background with the model from
-`developer.model`. The prompt's first line is exact, because the developer and `baton usage`
+`developer.model` and the Agent tool's `effort` set to `developer.effort` (from `baton config`,
+default `medium`). Say in the sprint status which effort you used. The prompt's first line is exact, because the developer and `baton usage`
 both read it; nothing else goes in but the repository and the sprint goal:
 
     Do task <n> of issue <N>.

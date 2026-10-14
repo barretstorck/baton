@@ -61,7 +61,10 @@ whole issue grows large and expensive: in the second sprint, single developers r
 | `/baton:review <pr>` | Review one pull request and post a verdict (used by the `baton-reviewer` subagent) |
 
 The developer, reviewer and refiner subagents run on Sonnet at medium effort; `developer.model`
-and `reviewer.model` in the brief change the model. For bulk refinement, dispatch
+and `reviewer.model` in the brief change the model, and `developer.effort` (`low`, `medium`,
+`high`, `xhigh` or `max`) overrides the developer's effort. Medium is the default because a
+developer's thinking is about half of its context and every call re-reads that context, so
+thinking is the largest single cost of a sprint. For bulk refinement, dispatch
 `baton-refiner` agents with at most about three issues each.
 
 Typical use:
