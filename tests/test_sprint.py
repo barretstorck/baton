@@ -135,6 +135,19 @@ class SnapshotTest(unittest.TestCase):
                                                 "ci": "green", "mergeable": "MERGEABLE",
                                                 "review": "approved", "rounds": 0}])
 
+    def test_lagging_check_run_on_a_finished_workflow_run_is_green(self):
+        head = "f" * 40
+        prs = [{"number": 30, "headRefName": "issue-1-x", "isDraft": False, "mergeable": "MERGEABLE",
+                "headRefOid": head, "comments": [], "closingIssuesReferences": [{"number": 1}],
+                "statusCheckRollup": [{"__typename": "CheckRun", "name": "build",
+                                       "status": "IN_PROGRESS", "conclusion": "",
+                                       "detailsUrl": "https://github.com/octo/proj/actions/runs/123/job/4"}]}]
+        run_view = json.dumps({"status": "completed", "conclusion": "success", "workflowName": "ci",
+                               "url": "https://github.com/octo/proj/actions/runs/123"})
+        result = snap([issue(1, "in-review", "deliverable")], prs=prs,
+                      extra={"gh run view 123": run_view})
+        self.assertEqual(result["in_review"][0]["ci"], "green")
+
     def test_review_state_none_and_not_required(self):
         pr = {"number": 20, "headRefName": "issue-1-x", "headRefOid": "f" * 40, "isDraft": True,
               "mergeable": "MERGEABLE", "statusCheckRollup": [], "comments": [],

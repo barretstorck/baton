@@ -32,7 +32,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_merge`
   - Tests to add, with `FakeRunner` replying to `gh run view 123`: lagging check on a successful run passes and a note names the check and run; on a failed run reports `concluded FAILURE`; on a run still `in_progress` reports `has not finished`; with `runner=None` or an unreachable run the old behaviour holds
 
-- [ ] **2. Use it in sprint-status**
+- [x] **2. Use it in sprint-status**
   - Files: `lib/baton/sprint.py`, `tests/test_sprint.py`
   - Uses: `_pr_ci(pr, cfg)` (`lib/baton/sprint.py:42`), `merge._check_ci(pr, cfg, runner, notes)` (task 1), the snapshot call site `"ci": _pr_ci(pr, cfg)` (`lib/baton/sprint.py:152`)
   - Provides: `_pr_ci(pr, cfg, runner)`; call site passes `runner`

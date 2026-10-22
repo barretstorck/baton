@@ -39,10 +39,10 @@ def overlaps(first, second):
     return False
 
 
-def _pr_ci(pr, cfg):
+def _pr_ci(pr, cfg, runner=None):
     if not pr.get("statusCheckRollup"):
         return "none"
-    problems = merge._check_ci(pr, cfg)
+    problems = merge._check_ci(pr, cfg, runner)
     if any("not finished" in problem for problem in problems):
         return "pending"
     return "red" if problems else "green"
@@ -149,7 +149,7 @@ def snapshot(cfg, runner, milestone=None):
             result["in_review"].append({
                 "number": number, "pr": pr["number"] if pr else None,
                 "draft": pr["isDraft"] if pr else None,
-                "ci": _pr_ci(pr, cfg) if pr else "none",
+                "ci": _pr_ci(pr, cfg, runner) if pr else "none",
                 "mergeable": pr["mergeable"] if pr else None,
                 "review": review_state, "rounds": rounds})
             busy_files.append(files)
