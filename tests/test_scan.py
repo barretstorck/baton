@@ -20,6 +20,23 @@ class ScanTest(unittest.TestCase):
     def test_public_ip_and_versions_pass(self):
         self.assertEqual(kinds("8.8.8.8 and version 10.2.1"), [])
 
+    def test_skip_leaves_out_a_kind(self):
+        version = ".".join(["10", "0", "0", "5"])
+        text = f"nvidia-cublas {version}\nmail alice" + "@corp-mail.test"
+        found = [f.kind for f in scan.scan_text(text, [], [], skip={"private-ip"})]
+        self.assertEqual(found, ["email"])
+        self.assertEqual(kinds(version), ["private-ip"])
+
+    def test_skips_private_ip_by_basename(self):
+        for path in ("uv.lock", "sub/dir/uv.lock", "requirements.txt",
+                     "requirements-dev.txt", "requirements.in", "constraints-3.txt",
+                     "poetry.lock", "pdm.lock", "Pipfile.lock", "pylock.toml",
+                     "pylock.cuda.toml"):
+            self.assertTrue(scan.skips_private_ip(path), path)
+        for path in ("README.md", "uv.lock.bak", "notes/requirements.md", "Cargo.lock",
+                     "pyproject.toml"):
+            self.assertFalse(scan.skips_private_ip(path), path)
+
     def test_email(self):
         self.assertEqual(kinds("mail alice@corp-mail.test"), ["email"])
 

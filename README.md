@@ -114,6 +114,10 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
   `/baton approve <commit sha>` (at least 7 characters of the sha), naming the head commit or an
   earlier one with the same changes to the protected paths.
 - Empty bodies are refused, so a failed edit cannot blank an issue description.
+- The git hooks do not report `private-ip` in Python dependency files (matched by basename:
+  `uv.lock`, `poetry.lock`, `pdm.lock`, `Pipfile.lock`, `requirements*.txt`, `requirements*.in`,
+  `constraints*.txt`, `pylock*.toml`), where four-part package versions look like addresses. Email,
+  host-path, internal-domain and private terms are still checked in those files.
 
 The gate guards against mistakes. It is not a sandbox: it only sees `gh` and `git` commands.
 

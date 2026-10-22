@@ -24,6 +24,37 @@ def added_text(patch):
                      if line.startswith("+") and not line.startswith("+++"))
 
 
+def added_by_file(patch):
+    """(path, added lines) for each file a patch changes, by the path on the new side.
+
+    Files that are only deleted or only change mode have no added lines and give no entry.
+    A line starting with "+++ " inside a hunk is an added line, not a header.
+    """
+    entries = []
+    path = None
+    added = []
+    in_hunk = False
+
+    def flush():
+        if path is not None and added:
+            entries.append((path, "\n".join(added)))
+
+    for line in patch.splitlines():
+        if line.startswith("diff --git "):
+            flush()
+            path, added, in_hunk = None, [], False
+        elif in_hunk:
+            if line.startswith("+"):
+                added.append(line[1:])
+        elif line.startswith("+++ "):
+            name = line[4:].split("\t")[0]
+            path = None if name == "/dev/null" else name[2:] if name.startswith("b/") else name
+        elif line.startswith("@@"):
+            in_hunk = True
+    flush()
+    return entries
+
+
 def _image_problems(cfg, paths):
     allowed = tuple(cfg.data["fixtures_paths"])
     problems = []
@@ -37,8 +68,11 @@ def _image_problems(cfg, paths):
 
 
 def _check(cfg, patch, new_files, terms, messages=""):
-    text = "\n".join([added_text(patch), messages] + new_files)
-    findings = scan.scan_text(text, terms, cfg.data["privacy_allow"])
+    allow = cfg.data["privacy_allow"]
+    findings = scan.scan_text("\n".join([messages] + new_files), terms, allow)
+    for path, text in added_by_file(patch):
+        skip = {"private-ip"} if scan.skips_private_ip(path) else ()
+        findings += scan.scan_text(text, terms, allow, skip=skip)
     kinds = sorted({finding.kind for finding in findings})
     problems = [f"privacy: {kind} in added lines, new file names or commit message"
                 for kind in kinds]
