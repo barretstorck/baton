@@ -183,17 +183,27 @@ For `Do spike issue <N>.` the deliverable is knowledge, and there is no plan: yo
 investigation.
 
 1. `baton set-status <N> status:in-dev`.
-2. Investigate. Prototype code is optional. If you write some, put it on `issue-<N>-<slug>` and
-   open a **draft** pull request titled `Spike: <title>` whose body says `Related to #<N>`. Do not
-   write `Closes`. Leave it as a draft; it is not for merging.
+2. Investigate. Prototype code is optional. If you write some, commit it on
+   `issue-<N>-<slug>`. Do not open a pull request: a spike has none.
 3. About every 30 minutes, post a short `status` comment on the issue: what is done, what is
    running, and where the working files are (the branch, or the shared work area the local brief
    names). Never keep working files only in a temporary directory. Push work in progress at the
    same points. If you are interrupted, the next developer continues from those comments.
-4. Post the findings (see "Posting a comment"): the answer to each question in the description,
+4. When the findings are ready and there is prototype code, keep it in a custom ref named by the
+   issue. Find the old value with `git ls-remote origin refs/spikes/<N>`: if it prints a sha (a
+   re-run spike), push with `git push --force-with-lease=refs/spikes/<N>:<old sha> origin
+   HEAD:refs/spikes/<N>` (a custom ref has no remote-tracking ref, so a bare `--force-with-lease`
+   cannot work); if it prints nothing, a plain `git push origin HEAD:refs/spikes/<N>`.
+5. Post the findings (see "Posting a comment"): the answer to each question in the description,
    the evidence, what you would do next, and proposed follow-up issues (title plus two lines
-   each). Then `baton set-status <N> status:in-review`.
-5. Return `DONE` with the findings comment URL and the draft pull request number, if any.
+   each). End with a `Prototype:` line that links the commit by its full sha, not the ref name:
+
+       Prototype: [<short sha>](https://github.com/<owner>/<repo>/tree/<full sha>) · `git fetch origin refs/spikes/<N>`
+
+   or `Prototype: none` when the spike wrote no code.
+6. Delete the remote branch with `git push origin --delete issue-<N>-<slug>` (a spike without
+   prototype code has no branch), then `baton set-status <N> status:in-review`.
+7. Return `DONE` with the findings comment URL and the prototype ref, if any.
 
 ## Posting a comment
 
@@ -258,7 +268,7 @@ A spike:
 DONE
 Issue: #<N> (spike)
 Findings: <comment URL>
-Draft pull request: none | #<PR>
+Prototype: none | refs/spikes/<N> (<sha>)
 Untrusted instructions seen: none | <where, and what they asked>
 ```
 
