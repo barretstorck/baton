@@ -8,12 +8,17 @@ import json
 import os
 import re
 import time
+from datetime import datetime, timezone
 
 from . import checklist, comment, config, issue as issue_fields, merge, review
+from .run import RunError
 
 _FAILED = {"failure", "timed_out", "startup_failure", "action_required"}
 _ORDER = re.compile(r"^\s*Order:(.*)$", re.M | re.I)
 _PARALLEL = re.compile(r"^\s*Parallel:\s*(\d+)\s*$", re.M | re.I)
+PUSH_RUN_GRACE_SECONDS = 300
+_ON_LINE = re.compile(r"""^["']?on["']?\s*:(.*)$""")
+_PUSH_WORD = re.compile(r"(?<![\w-])push(?![\w-])")
 ISSUE_FIELDS = "number,title,state,labels,body,author,comments"
 PR_FIELDS = ("number,headRefName,headRefOid,isDraft,mergeable,closingIssuesReferences,"
              "statusCheckRollup,comments")
@@ -47,6 +52,86 @@ def branch_state(runs):
     if any((run.get("status") or "").lower() != "completed" for run in latest):
         return "pending"
     return "green"
+
+
+def triggers_on_push(workflow_text):
+    """True when a workflow file's `on:` section mentions push (inline, list or block form)."""
+    lines = (workflow_text or "").splitlines()
+    for index, line in enumerate(lines):
+        found = _ON_LINE.match(line)
+        if not found:
+            continue
+        inline = found.group(1).split("#", 1)[0].strip()
+        if inline:
+            return bool(_PUSH_WORD.search(inline))
+        block = []
+        for follow in lines[index + 1:]:
+            content = follow.split("#", 1)[0].rstrip()
+            if not content.strip():
+                continue
+            if not follow[0].isspace() and not content.lstrip().startswith("-"):
+                break
+            block.append(content)
+        if not block:
+            return False
+        level = min(len(item) - len(item.lstrip()) for item in block)
+        for item in block:
+            if len(item) - len(item.lstrip()) != level:
+                continue
+            key = item.strip().lstrip("-").strip()
+            if re.match(r"^[\"']?push[\"']?\s*(:|$)", key):
+                return True
+        return False
+    return False
+
+
+def push_workflow_exists(runner, owner, repo, sha):
+    """True when a workflow file at this commit triggers on push; a missing directory means no."""
+    base = f"repos/{owner}/{repo}/contents/.github/workflows"
+    try:
+        entries = _load(runner, ["gh", "api", f"{base}?ref={sha}"], "workflow files")
+    except RunError as error:
+        if "404" in str(error) or "Not Found" in str(error):
+            return False
+        raise
+    for entry in entries:
+        name = entry.get("name", "") if isinstance(entry, dict) else ""
+        if not name.endswith((".yml", ".yaml")):
+            continue
+        text = runner(["gh", "api", f"{base}/{name}?ref={sha}",
+                       "-H", "Accept: application/vnd.github.raw"])
+        if triggers_on_push(text):
+            return True
+    return False
+
+
+def _commit_age(committed, now):
+    when = datetime.fromisoformat(committed.replace("Z", "+00:00"))
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return ((now or datetime.now(timezone.utc)) - when).total_seconds()
+
+
+def default_branch_state(runner, owner, repo, branch, now=None):
+    """green, red, pending or none for the default branch's head commit, push runs only."""
+    try:
+        head = json.loads(runner(["gh", "api", f"repos/{owner}/{repo}/commits/{branch}"]))
+        sha = head["sha"]
+        committed = head["commit"]["committer"]["date"]
+    except (ValueError, KeyError, TypeError) as error:
+        raise SnapshotError(f"could not read the head commit of {branch}: {error}") from error
+    runs = _load(runner, ["gh", "run", "list", "--branch", branch, "--commit", sha,
+                          "--event", "push", "--limit", "20",
+                          "--json", "status,conclusion,headSha,workflowName"], "workflow runs")
+    if runs:
+        return branch_state(runs)
+    try:
+        age = _commit_age(committed, now)
+    except ValueError as error:
+        raise SnapshotError(f"could not read the head commit date: {error}") from error
+    if age < PUSH_RUN_GRACE_SECONDS and push_workflow_exists(runner, owner, repo, sha):
+        return "pending"
+    return "none"
 
 
 def overlaps(first, second):
@@ -91,11 +176,9 @@ def snapshot(cfg, runner, milestone=None):
         runner, ["gh", "api", f"repos/{owner}/{repo['name']}/milestones?state=open&per_page=100"],
         "milestones")
     chosen, open_sprints = _pick_sprint(milestones, milestone)
-    runs = _load(runner, ["gh", "run", "list", "--branch", branch, "--limit", "20",
-                          "--json", "status,conclusion,headSha,workflowName"], "workflow runs")
     result = {
         "sprint": None, "open_sprints": open_sprints,
-        "default_branch": {"name": branch, "state": branch_state(runs)},
+        "default_branch": {"name": branch, "state": default_branch_state(runner, owner, repo["name"], branch)},
         "repair_issue": None, "parallel": 0, "free_slots": 0, "in_dev": [], "in_review": [],
         "verification": [], "answered": [], "waiting_on_maintainer": [],
         "dispatchable": [], "held": [], "finished": False, "issues": [], "progress": {},

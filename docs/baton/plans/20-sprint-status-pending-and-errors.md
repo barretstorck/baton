@@ -39,7 +39,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_sprint`
   - Tests to add: an empty reply for `gh issue list` raises `SnapshotError`; so does one for `gh pr list` and for the milestones call; a `[]` reply still gives a valid empty snapshot; a `RunError` from the runner propagates
 
-- [ ] **2. Pending while a push run is in progress**
+- [x] **2. Pending while a push run is in progress**
   - Files: `lib/baton/sprint.py`, `tests/test_sprint.py`
   - Uses: `branch_state(runs)` (`lib/baton/sprint.py:22`, keep it and its tests), `_load` (task 1), `snapshot` line `"default_branch": {...}` (`lib/baton/sprint.py:79`)
   - Provides: `default_branch_state(runner, owner, repo, branch, now=None) -> str`, `push_workflow_exists(runner, owner, repo, sha) -> bool`, `triggers_on_push(workflow_text) -> bool`, `PUSH_RUN_GRACE_SECONDS = 300`; `snapshot` uses `default_branch_state`
