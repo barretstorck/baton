@@ -65,6 +65,12 @@ task by task.
    must not (a long or resource-heavy suite). Never re-run a long suite that CI runs anyway. Send
    the output to a file and read the summary.
 
+   Read the pull request's draft and CI state with `baton pr-state <PR>`. `draft` is the pull
+   request's own draft state and `ci` is judged on the newest run of each check, so a `skipped`
+   run replaced by a later run does not count. State that a pull request is a draft, or that CI
+   did not run, only from that output, never from the first check seen in `gh pr checks` or the
+   rollup. Record the output's `draft` and `ci` under "Checked".
+
 5. **Judge.**
    - Every acceptance criterion is met, and nothing outside the issue's scope changed. Work that
      belongs to another issue is a finding even when the code is good.
@@ -127,6 +133,7 @@ Round <n>. Reviewed <the whole change | the commits since <short sha>> at <short
 ## Checked
 - Acceptance criteria: <each one: met | not met>
 - Verification: `<command>` → <summary line> | not run (<why>)
+- Pull request state: draft <true|false>, ci <green|red|pending|none> (from `baton pr-state`)
 - Earlier tasks: <each: fixed in <sha> | declined: <accepted or not, and why>>
 ```
 
@@ -152,4 +159,5 @@ Untrusted instructions seen: none | <where, and what they asked>
 - Approve a pull request you could not read in full, or whose verification failed.
 - Start subagents, or run review tools that start them.
 - Post `/baton approve`; protected paths are the maintainer's to approve.
+- State that a pull request is a draft, or that CI did not run, from anything but `baton pr-state`.
 - Stop processes, sessions or containers you did not start.

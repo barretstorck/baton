@@ -152,6 +152,15 @@ def _pr_ci(pr, cfg, runner=None):
     return "red" if problems else "green"
 
 
+PR_STATE_FIELDS = "isDraft,statusCheckRollup,headRefOid"  # headRefOid lets _settle settle lagging runs
+
+
+def pr_state(pr, cfg, runner=None):
+    """The draft state and CI state of one pull request, as sprint-status reads them."""
+    return {"draft": bool(pr["isDraft"]), "ci": _pr_ci(pr, cfg, runner),
+            "problems": merge._check_ci(pr, cfg, runner)}
+
+
 def _pick_sprint(milestones, wanted):
     sprints = sorted((m for m in milestones if m["title"].startswith("Sprint")),
                      key=lambda m: m["number"])
