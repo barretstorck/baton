@@ -46,7 +46,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_sprint`
   - Tests to add (give `replies()` default replies for `gh api repos/octo/proj/commits/main` and the workflows listing, so the existing tests keep passing): push run in progress on the head gives `pending`; no push workflow gives `none`; push workflow present, no run, commit older than the grace gives `none`; younger gives `pending`; a failed run gives `red`; `triggers_on_push` for the three forms and for a pull_request-only file
 
-- [ ] **3. Update the sprint skill**
+- [x] **3. Update the sprint skill**
   - Files: `skills/sprint/SKILL.md`
   - Uses: the verification rules at `skills/sprint/SKILL.md:163-170`
   - Provides: the `none` bullet says it now means no push workflow or no run triggered for that commit; one sentence that `sprint-status` exits non-zero when forge data could not be read, and the orchestrator must not act on a pass that failed
