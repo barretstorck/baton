@@ -27,17 +27,19 @@ whole issue grows large and expensive: in the second sprint, single developers r
 680K tokens and two of them used a 5-hour quota window in about an hour. So:
 
 - `refine` writes a plan file for each issue (except spikes) to `<docs.dir>/plans/<N>-<slug>.md`
-  (`docs.dir` in `.baton/brief.md`, default `docs/baton`) on the issue branch, and links it from
-  the issue's first line (`Plan:`). The issue stays short for a person to read. The plan holds
+  (`docs.dir` in `.baton/brief.md`, default `docs/baton`) and keeps it in the custom ref
+  `refs/plans/<N>`, not on the issue branch; the issue's first line (`Plan:`) links to the ref's
+  commit history. The issue stays short for a person to read. The plan holds
   numbered tasks, each a short brief with the files, the exact signatures it uses and provides,
   the lines to port from, and the check that proves it done.
 - The sprint gives **each task to a fresh developer**, one after another on the issue's branch.
-  No developer's conversation grows large. A developer ticks its task in the plan file and
-  commits the tick with its code; the orchestrator confirms the tick in the pushed head.
-- `merge-pr` removes the plan file from the branch just before the merge, after pinning the
-  issue's link to the last commit that has it, so the default branch collects no plan files and
-  the link still opens the final plan. Sprint retrospectives go to `<docs.dir>/retros/`. An older
-  issue with a `## Plan` in its body is still read, and `baton plan migrate` moves it to a file.
+  No developer's conversation grows large. A developer ticks its task on the plan ref and
+  pushes the tick with its code in one atomic push; the orchestrator confirms the tick on the ref.
+- `merge-pr` pins the issue's link to the plan's last commit and merges in the same pass, so the
+  default branch collects no plan files and the link still opens the final plan. (A plan still
+  on the branch from before refs is removed in a commit before the merge.) Sprint retrospectives
+  go to `<docs.dir>/retros/`. An older issue with a `## Plan` in its body is still read, and
+  `baton plan migrate` moves it to the ref.
 - The reviewer runs **once**, when every task is ticked. What it wants fixed is a `## Tasks`
   checklist in its review, worked the same way, one developer per task.
 - `baton usage` measures the result per issue and role from the local transcripts, and the
@@ -60,18 +62,20 @@ whole issue grows large and expensive: in the second sprint, single developers r
 5. Once approved, `baton merge-pr` merges it after checking CI and that the approval still
    covers the head commit.
 
-## Spike prototypes
+## Custom refs: spike prototypes and plans
 
-A spike that writes prototype code keeps it in the custom ref `refs/spikes/<N>`, where `<N>` is the
+Baton keeps some work in custom refs, which no branch or pull request holds. Plans live in
+`refs/plans/<N>`, with the same caveats as below. A spike that writes prototype code keeps it in the custom ref `refs/spikes/<N>`, where `<N>` is the
 spike's issue number. No pull request and no branch is left behind; the findings comment ends with
 a `Prototype:` link to the commit.
 
-- Fetch one with `git fetch origin refs/spikes/<N>`. A normal clone does not fetch these refs, and
+- Fetch one with `git fetch origin refs/spikes/<N>` (a plan: `git fetch origin refs/plans/<N>`). A normal clone does not fetch these refs, and
   `git push --mirror` from such a clone deletes them on the remote.
-- GitHub rulesets cover only branches and tags, so anyone with write access can delete a spike ref.
-- **Before making a repository public**, list the refs with `git ls-remote origin 'refs/spikes/*'`,
-  then review them or delete them with `git push origin --delete refs/spikes/<N>`. A deleted ref
-  breaks its findings link, but the findings text stays. Deleting a ref does not erase the commits:
+- GitHub rulesets cover only branches and tags, so anyone with write access can delete a spike or plan ref.
+- **Before making a repository public**, list the refs with `git ls-remote origin 'refs/spikes/*'`
+  and `git ls-remote origin 'refs/plans/*'`, then review them or delete them with
+  `git push origin --delete refs/spikes/<N>` (or `refs/plans/<N>`). A deleted ref breaks its
+  findings or `Plan:` link, but the findings text stays. Deleting a ref does not erase the commits:
   GitHub can still serve them by SHA from cached views, forks and old pull request refs
   (`refs/pull/*`, including earlier spike drafts) until GitHub Support runs a garbage collection.
 

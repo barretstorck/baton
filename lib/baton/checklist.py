@@ -100,6 +100,38 @@ def tick(text, heading, task_id):
     raise TaskError(f"no task {task_id} under '{heading}'")
 
 
+def add_as_built(text, heading, task_id, note):
+    """`text` with a `Provides (as built): <note>` line under task `task_id`'s `Provides:` line.
+
+    An existing as-built line of that task is replaced; the original `Provides:` line stays.
+    """
+    where = span(text, heading)
+    if where is None:
+        raise TaskError(f"no '{heading}' section")
+    start, end = where
+    lines = text[start:end].splitlines(keepends=True)
+    found = False
+    for index, line in enumerate(lines):
+        match = _match(line)
+        if match:
+            if found:
+                break
+            found = match.group(2) == task_id
+        elif found and "Provides:" in line and "(as built)" not in line:
+            indent = line[:len(line) - len(line.lstrip())]
+            bullet = "- " if line.lstrip().startswith("- ") else ""
+            new = f"{indent}{bullet}Provides (as built): {note.strip()}\n"
+            after = index + 1
+            if after < len(lines) and "Provides (as built):" in lines[after]:
+                lines[after] = new
+            else:
+                lines.insert(after, new)
+            return text[:start] + "".join(lines) + text[end:]
+    if not found:
+        raise TaskError(f"no task {task_id} under '{heading}'")
+    raise TaskError(f"task {task_id} has no 'Provides:' line to add an as-built line under")
+
+
 def _blocks(section):
     head, blocks = [], []
     for line in section.splitlines(keepends=True):
@@ -234,13 +266,32 @@ def _linked(runner, number, docs_dir=None):
     return body, link
 
 
-def tick_issue(runner, number, task_id, cwd=".", docs_dir=None):
+def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None):
     """Tick a plan task. False when it was already ticked (nothing is written).
 
-    A linked plan is ticked in its file under `cwd` (the developer's checkout) and the issue
-    is not edited; the developer commits the file with the task's code.
+    A plan at `refs/plans/<N>` is ticked by a new commit on that ref (with `as_built`, a
+    `Provides (as built):` line is added in the same commit); the commit is not pushed, the
+    developer pushes it atomically with the task's code. A plan file on a branch is ticked in
+    its file under `cwd` (the developer's checkout) and the issue is not edited; the developer
+    commits the file with the task's code. A plan in the issue body is ticked in the issue.
     """
     body, link = _linked(runner, number, docs_dir)
+    if link is not None and link["kind"] == "ref":
+        from . import planfile
+        text = planfile.read(runner, link["ref"], link["path"])
+        new, changed = tick(text, "plan", str(task_id))
+        if not changed:
+            return False
+        if as_built:
+            new = add_as_built(new, "plan", str(task_id), as_built)
+        sha = planfile.write(runner, number, link["path"], new, f"Task {task_id}")
+        print(f"plan commit {sha}")
+        print(f"push with: git push --atomic origin HEAD:refs/heads/<branch> "
+              f"{sha}:{link['ref']}")
+        return True
+    if as_built:
+        raise TaskError("--as-built needs a plan kept at refs/plans/<N>; "
+                        "edit the plan file or the issue by hand for this plan")
     if link is None:
         new, changed = tick(body, "plan", str(task_id))
         if changed:
@@ -263,9 +314,20 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None):
 
 
 def _replace_in_file(runner, number, link, from_id, new_text, drop=False):
-    """Commit the replaced tasks to the linked branch from a temporary detached worktree."""
+    """Commit the replaced tasks to the plan ref, or to the linked branch from a temporary
+    detached worktree."""
     from . import planfile
     branch, path = link["ref"], link["path"]
+    if link["kind"] == "ref":
+        text = planfile.read(runner, branch, path)
+        changes = plan_changes(text, from_id, new_text)
+        new = replace_plan(text, str(from_id), new_text, drop)
+        dropped = changes[0][len(changes[1]):]
+        message = f"Replan from task {from_id}"
+        if dropped:
+            message += f"\n\nDropped: {_describe(dropped)}"
+        planfile.push(runner, number, planfile.write(runner, number, path, new, message))
+        return new, changes
     planfile.check_branch(number, branch)
     runner(["git", "fetch", "--quiet", "--end-of-options", "origin", branch])
     tree = tempfile.mkdtemp(prefix="baton-plan-")

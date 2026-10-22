@@ -45,12 +45,14 @@ filters, send long output to a file, chain related commands, wait for a long run
 
 1. **Read only what the task needs.**
    - `baton tasks issue <N>` for the plan's `Written against` commit and which tasks are done.
-   - Check out the issue branch first (step 3): the plan file is in your checkout, at
-     `<docs.dir>/plans/<N>-<slug>.md` (`docs.dir` from `baton config`). Read your task's brief and
-     the `## Verification` and pattern text there, for example
-     `awk '/^- \[.\] \*\*<n>\./,/^$/' <plan file>`. If the plan file is missing on the branch,
-     return `BLOCKED: the plan file is missing`. An older issue with a `## Plan` section in its
-     body takes the brief from the body instead.
+   - The plan lives on its own ref, `refs/plans/<N>`, not in your checkout. `baton tasks issue <N>`
+     prints its `path` (`<docs.dir>/plans/<N>-<slug>.md`). Read it with
+     `git fetch --quiet origin +refs/plans/<N>:refs/baton/plans/<N> && git show refs/baton/plans/<N>:<path>`,
+     your task's brief and the `## Verification` and pattern text, for example piped through
+     `awk '/^- \[.\] \*\*<n>\./,/^$/'`. If the ref is missing, return
+     `BLOCKED: the plan ref is missing`. (The older way, a plan file on the issue branch: the
+     `Plan:` link then points at the branch and the file is in your checkout at that path. An
+     older issue with a `## Plan` section in its body takes the brief from the body.)
    - The issue's Context, Acceptance criteria, Out of scope and Decisions, for example:
      `gh issue view <N> --json body -q .body | sed -n '/^## Context/,/^## Pointers/p'`.
      `baton answers <N>`.
@@ -65,16 +67,14 @@ filters, send long output to a file, chain related commands, wait for a long run
    Where an earlier task's `Provides (as built):` line sits under its `Provides:`, read your
    `Uses:` against that line, not the original.
 
-3. **Get the branch.** The refiner created `issue-<N>-<slug>` and committed the plan file to it.
-   - *Task 1:* `baton set-status <N> status:in-dev`;
-     `git fetch --quiet origin <branch> && git checkout --detach origin/<branch>`. If the branch
-     holds only plan commits (`git log --oneline origin/<default>..HEAD` shows only `Plan for`
-     commits), rebase it onto `origin/<default>`; it has no pull request yet, so the one
-     exception to "never force-push" is `git push --force-with-lease=<branch>:<old sha>
-     origin HEAD:<branch>` after that rebase, and only then. Do the task (steps 4 to 6) and push;
+3. **Get the branch.** The branch `issue-<N>-<short-slug>` is made by task 1 from the default
+   branch; the plan is not on it.
+   - *Task 1:* `baton set-status <N> status:in-dev`; create `issue-<N>-<short-slug>` from
+     `origin/<default>` (`git fetch --quiet origin <default> && git checkout --detach
+     origin/<default>`, pushed as `HEAD:refs/heads/<branch>` in step 6). Do the task (steps 4 to 6);
      then open a **draft** pull request whose body has `Closes #<N>` on its own line and a short
-     summary of the plan. Drafts may not run CI, which saves minutes. An older issue whose branch
-     does not exist yet: create `issue-<N>-<short-slug>` from `origin/<default>` instead.
+     summary of the plan. Drafts may not run CI, which saves minutes. An issue whose plan file is
+     already on a branch (the older way): check out that branch instead, as for later tasks.
    - *Later tasks:* `git fetch --quiet origin <branch> && git checkout --detach origin/<branch>`.
      A worktree left by an earlier task may still hold the branch; a detached checkout never
      conflicts with it. See what earlier tasks did with
@@ -91,24 +91,28 @@ filters, send long output to a file, chain related commands, wait for a long run
      diff shows exactly what moved.
    - Never loosen a threshold or delete a test to get to green; a number that moved is a finding.
    - Ideas outside the brief go in your report as follow-up suggestions, not into the code.
-   - If what you built differs from your task's `Provides:` (a changed signature or name), add a
-     `Provides (as built): <what exists now>` line under it in the plan file; the original line
-     stays. Commit it with the code and the tick.
-   - Tick your task: with the plan file in your checkout, `baton task done issue <N> <n>` ticks
-     its box in that file and does not edit the issue. Commit it with the task's code.
+   - Tick your task: `baton task done issue <N> <n>` ticks its box in the plan on `refs/plans/<N>`
+     as a new commit there and prints the commit's sha. If what you built differs from your task's
+     `Provides:` (a changed signature or name), add `--as-built "<what exists now>"`: it adds a
+     `Provides (as built):` line under it in the same commit; the original line stays. Nothing is
+     pushed yet and nothing in your checkout changes. (The older way, a plan file on the branch:
+     the same command ticks the file in your checkout and you commit it with the code.)
    - Who ticks what:
-     - *Plan task:* you tick your own box in the plan file, `baton task done issue <N> <n>`, and
-       commit it with the code.
+     - *Plan task:* you tick your own box on the plan ref, `baton task done issue <N> <n>`,
+       and push that commit with the code in step 6, not as a file in your checkout.
      - *Review task:* you never run `baton task done pr`. You return `FIXED <sha>` or
        `DECLINED <reason>`; the orchestrator checks the sha is on the branch and ticks.
 
 5. **Run the task's `Check:`**, and nothing more unless the brief says so. "none" means none. Send
    long output to a file and read the summary; it must pass.
 
-6. **Commit and push.** Stage the code and the ticked plan file, `git commit -m "Task <n>: <title>"`, then
-   `git push origin HEAD:<branch>` (task 1: `git push -u origin <branch>`). The push only
-   fast-forwards; if it is refused, someone else moved the branch: return
-   `BLOCKED: the branch moved`. Never force-push, except the one plan-only rebase in step 3.
+6. **Commit and push.** Stage the code, `git commit -m "Task <n>: <title>"`, then push the branch
+   and the tick together, for every task, task 1 included:
+   `git push --atomic origin HEAD:refs/heads/<branch> <sha>:refs/plans/<N>` (`<sha>` is the commit
+   `baton task done` printed). Your checkout is detached, so there is no `-u`. The push only
+   fast-forwards; if it is refused, someone else moved the branch or the plan: return
+   `BLOCKED: the branch moved`. Never force-push. (The older way, a plan file on the branch:
+   stage the ticked file with the code and `git push origin HEAD:<branch>`.)
 
 7. **The last task of the plan** also:
    - fetches and merges the default branch in, resolves conflicts, re-runs its check, pushes;

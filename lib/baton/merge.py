@@ -247,10 +247,12 @@ def _after_merge(pr, cfg, runner, notes):
     runner(["git", "push", "origin", "--delete", branch])
 
 
-def _retire_plan(pr, repo, runner, cfg):
-    """Pin the issue's plan link to the head, remove the file from the branch and push.
+def _retire_plan(pr, repo, runner, cfg, notes=None):
+    """Pin the issue's plan link; for an in-flight branch plan also remove the file and push.
 
-    Returns the note to show, or None when there is no unpinned plan file on the head.
+    A plan in `refs/plans/<N>` is pinned to the ref's tip and the merge goes on in the same
+    call. A plan file on the branch is pinned to the head, removed from the branch and pushed,
+    and the note to show is returned. None when there is nothing to retire.
     """
     closing = [ref["number"] for ref in pr.get("closingIssuesReferences") or []]
     if len(closing) != 1:
@@ -258,6 +260,14 @@ def _retire_plan(pr, repo, runner, cfg):
     issue, branch, head = closing[0], pr["headRefName"], pr["headRefOid"]
     link = planfile.parse_link(checklist.issue_body(runner, issue), cfg.data["docs"]["dir"])
     if link is None or link["pinned"]:
+        return None
+    if link["kind"] == "ref":
+        slug = f"{repo['owner']['login']}/{repo['name']}"
+        try:
+            planfile.pin(runner, slug, issue, cfg.data["docs"]["dir"])
+        except checklist.TaskError as error:
+            if notes is not None:
+                notes.append(f"the plan link of #{issue} was not pinned: {error}")
         return None
     runner(["git", "fetch", "--quiet", "--end-of-options", "origin", branch])
     try:
@@ -302,7 +312,7 @@ def merge(number, cfg, runner, notes=None):
                          notes)
         if problems:
             return problems
-        note = _retire_plan(pr, repo, runner, cfg)
+        note = _retire_plan(pr, repo, runner, cfg, notes)
         if note:
             raise PlanRetired(note)
         runner(["gh", "pr", "merge", str(number), "--merge",

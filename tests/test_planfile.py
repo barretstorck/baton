@@ -1,8 +1,12 @@
 import copy
 import json
 import pathlib
+import contextlib
+import io
+import tempfile
 import unittest
-from baton import checklist, config, planfile
+from unittest import mock
+from baton import checklist, cli, config, planfile
 from baton.run import RunError
 from tests.fakes import FakeRunner
 
@@ -27,9 +31,26 @@ class PlanfileTest(unittest.TestCase):
     def test_parse_branch_and_pinned(self):
         body = planfile.link_line("o/r", "issue-5-x", PATH) + "\n\n## Context\n"
         self.assertEqual(planfile.parse_link(body),
-                         {"ref": "issue-5-x", "path": PATH, "pinned": False})
+                         {"ref": "issue-5-x", "path": PATH, "pinned": False,
+                          "kind": "branch"})
         body = planfile.link_line("o/r", SHA, PATH)
-        self.assertEqual(planfile.parse_link(body), {"ref": SHA, "path": PATH, "pinned": True})
+        self.assertEqual(planfile.parse_link(body), {"ref": SHA, "path": PATH, "pinned": True,
+                                              "kind": "pinned"})
+
+    def test_history_page_link_round_trips(self):
+        self.assertEqual(planfile.ref_name(5), "refs/plans/5")
+        line = planfile.link_line("o/r", "refs/plans/5", PATH)
+        self.assertEqual(line, f"Plan: [{PATH}](https://github.com/o/r/commits/refs/plans/5)")
+        self.assertEqual(planfile.parse_link(line + "\n\n## Context\n"),
+                         {"ref": "refs/plans/5", "path": PATH, "pinned": False, "kind": "ref"})
+
+    def test_plan_ref_must_match_the_file_number(self):
+        planfile.check_link("refs/plans/5", PATH)
+        for ref in ("refs/plans/7", "refs/plans/x", "refs/plans/", "refs/plans/5/x"):
+            with self.assertRaises(checklist.TaskError, msg=ref):
+                planfile.check_link(ref, PATH)
+        with self.assertRaises(checklist.TaskError):
+            planfile.parse_link(f"Plan: [{PATH}](https://github.com/o/r/commits/refs/plans/7)")
 
     def test_parse_none(self):
         self.assertIsNone(planfile.parse_link("## Context\nPlan: later\n"))
@@ -66,11 +87,11 @@ class Capture(FakeRunner):
         super().__init__({"gh issue view": json.dumps({"body": body})})
         self.written = []
 
-    def __call__(self, argv, cwd=None):
+    def __call__(self, argv, cwd=None, input=None):
         if argv[:3] == ["gh", "issue", "edit"]:
             with open(argv[argv.index("--body-file") + 1]) as handle:
                 self.written.append(handle.read())
-        return super().__call__(argv, cwd)
+        return super().__call__(argv, cwd, input)
 
 
 class LinkIssueTest(unittest.TestCase):
@@ -144,17 +165,12 @@ Written against: %s
 
 
 class Migrating(Capture):
-    def __init__(self, body, labels=()):
+    def __init__(self, body, labels=(), plan_text=None):
         super().__init__(body)
         self.replies["gh issue view"] = json.dumps(
-            {"body": body, "labels": [{"name": name} for name in labels]})
-        self.files = {}
-
-    def __call__(self, argv, cwd=None):
-        if argv[:2] == ["git", "add"]:
-            with open(f"{cwd}/{argv[-1]}") as handle:
-                self.files[argv[-1]] = handle.read()
-        return super().__call__(argv, cwd)
+            {"title": "T", "body": body, "labels": [{"name": name} for name in labels]})
+        self.replies["git commit-tree"] = SHA
+        self.replies["git show"] = plan_text or ""
 
 
 class MigrateTest(unittest.TestCase):
@@ -173,37 +189,68 @@ class MigrateTest(unittest.TestCase):
         self.assertTrue(body.index("## Pointers") < body.index("## Decisions"))
         self.assertIn("- one", body)
 
-    def test_migrate_commits_pushes_links_and_trims(self):
+    def test_body_plan_goes_to_the_ref(self):
         runner = Migrating(LEGACY, ["status:ready"])
         line = planfile.migrate(self.cfg, runner, "o/r", 5, "issue-5-x", "main")
         path = "docs/baton/plans/5-x.md"
-        self.assertEqual(line, planfile.link_line("o/r", "issue-5-x", path))
-        self.assertIn("make test", runner.files[path])
+        self.assertEqual(line, planfile.link_line("o/r", "refs/plans/5", path))
+        self.assertTrue(line.endswith("/commits/refs/plans/5)"))
         calls = runner.lines()
-        self.assertTrue(any(c.startswith("git worktree add --detach") and c.endswith("origin/main")
+        self.assertIn(f"git push origin {SHA}:refs/plans/5", calls)
+        self.assertFalse(any(c.startswith("git worktree") for c in calls))
+        hashed = runner.inputs[next(i for i, c in enumerate(calls) if c.startswith("git hash-object"))]
+        self.assertIn("make test", hashed)
+        self.assertTrue(any(c.startswith("git commit-tree") and c.endswith("-m Plan for #5: T")
                             for c in calls))
-        push = "git push origin HEAD:refs/heads/issue-5-x"
-        self.assertIn(push, calls)
-        self.assertLess(calls.index(push), next(i for i, c in enumerate(calls)
-                                                if c.startswith("gh issue edit")))
+        self.assertLess(calls.index(f"git push origin {SHA}:refs/plans/5"),
+                        next(i for i, c in enumerate(calls) if c.startswith("gh issue edit")))
         self.assertEqual(len(runner.written), 1)
         self.assertTrue(runner.written[0].startswith(line + "\n\n## Context"))
         self.assertNotIn("## Plan", runner.written[0])
+
+    def test_branch_plan_goes_to_the_ref_and_leaves_the_branch(self):
+        body = planfile.link_line("o/r", "issue-5-x", PATH) + "\n\n## Context\nx\n"
+        runner = Migrating(body, ["status:ready"], plan_text="the plan\n")
+        line = planfile.migrate(self.cfg, runner, "o/r", 5, None, "main")
+        self.assertEqual(line, planfile.link_line("o/r", "refs/plans/5", PATH))
+        calls = runner.lines()
+        self.assertIn(f"git show --end-of-options origin/issue-5-x:{PATH}", calls)
+        self.assertIn(f"git push origin {SHA}:refs/plans/5", calls)
+        hashed = runner.inputs[next(i for i, c in enumerate(calls) if c.startswith("git hash-object"))]
+        self.assertEqual(hashed, "the plan\n")
+        self.assertEqual(runner.written, [line + "\n\n## Context\nx\n"])
+        self.assertTrue(any(c.startswith("git worktree add --detach") and c.endswith("origin/issue-5-x")
+                            for c in calls))
+        self.assertIn(f"git rm -q -- {PATH}", calls)
+        remove = "git push origin HEAD:refs/heads/issue-5-x"
+        self.assertIn(remove, calls)
+        self.assertLess(calls.index(f"git push origin {SHA}:refs/plans/5"), calls.index(remove))
 
     def test_refuses_started_issue(self):
         for label in ("status:in-dev", "status:blocked", "status:in-review", "status:complete"):
             runner = Migrating(LEGACY, [label])
             with self.assertRaises(checklist.TaskError):
-                planfile.migrate(self.cfg, runner, "o/r", 5, "issue-5-x", "main")
+                planfile.migrate(self.cfg, runner, "o/r", 5, "x", "main")
             self.assertFalse(any(c.startswith("git push") for c in runner.lines()))
             self.assertEqual(runner.written, [])
 
-    def test_refuses_linked_issue_and_bad_branch(self):
-        linked = planfile.link_line("o/r", "issue-5-x", PATH) + "\n\n" + LEGACY
+    def test_refuses_an_issue_that_already_links_a_ref_or_a_pin(self):
+        for ref in ("refs/plans/5", SHA):
+            linked = planfile.link_line("o/r", ref, PATH) + "\n\n" + LEGACY
+            runner = Migrating(linked)
+            with self.assertRaises(checklist.TaskError):
+                planfile.migrate(self.cfg, runner, "o/r", 5, "x", "main")
+            self.assertFalse(any(c.startswith("git push") for c in runner.lines()))
+
+    def test_body_plan_needs_a_slug(self):
         with self.assertRaises(checklist.TaskError):
-            planfile.migrate(self.cfg, Migrating(linked), "o/r", 5, "issue-5-x", "main")
+            planfile.migrate(self.cfg, Migrating(LEGACY), "o/r", 5, None, "main")
         with self.assertRaises(checklist.TaskError):
-            planfile.migrate(self.cfg, Migrating(LEGACY), "o/r", 5, "other", "main")
+            planfile.migrate(self.cfg, Migrating(LEGACY), "o/r", 5, "issue-5-", "main")
+
+    def test_plain_slug_is_accepted(self):
+        line = planfile.migrate(self.cfg, Migrating(LEGACY), "o/r", 5, "x", "main")
+        self.assertIn("docs/baton/plans/5-x.md", line)
 
     def test_templates(self):
         root = pathlib.Path(__file__).resolve().parent.parent / "templates"
@@ -283,3 +330,208 @@ class CheckLinkTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+REF = "refs/plans/5"
+LOCAL = "refs/baton/plans/5"
+FETCH = f"git fetch --quiet origin +{REF}:{LOCAL}"
+
+
+class MissingUntilFetched(FakeRunner):
+    """`git show` fails until the plan ref has been fetched."""
+
+    def __call__(self, argv, cwd=None, input=None):
+        out = super().__call__(argv, cwd, input)
+        if argv[1] == "show" and not any(call[1] == "fetch" for call in self.calls):
+            raise RunError("git show failed: missing")
+        return out
+
+
+class PlanRefTest(unittest.TestCase):
+    def test_read_ref_fetches_into_local_ref_then_shows(self):
+        runner = FakeRunner({"git show": "text"})
+        self.assertEqual(planfile.read(runner, REF, PATH), "text")
+        self.assertEqual(runner.lines(),
+                         [FETCH, f"git show --end-of-options {LOCAL}:{PATH}"])
+
+    def test_read_pinned_missing_locally_fetches_the_ref_and_retries(self):
+        runner = MissingUntilFetched({"git show": "text"})
+        self.assertEqual(planfile.read(runner, SHA, PATH), "text")
+        self.assertEqual(runner.lines(), [f"git show --end-of-options {SHA}:{PATH}", FETCH,
+                                          f"git show --end-of-options {SHA}:{PATH}"])
+
+    def test_tip(self):
+        runner = FakeRunner({"git ls-remote": f"{SHA}\t{REF}\n"})
+        self.assertEqual(planfile.tip(runner, 5), SHA)
+        self.assertEqual(runner.lines(), [f"git ls-remote origin {REF}"])
+        self.assertIsNone(planfile.tip(FakeRunner(), 5))
+
+    def test_write_first_commit_has_no_parent(self):
+        runner = FakeRunner({"git hash-object": "b1\n", "git mktree": "t\n",
+                             "git commit-tree": f"{SHA}\n"})
+        self.assertEqual(planfile.write(runner, 5, PATH, "text", "Plan for #5: x"), SHA)
+        lines = runner.lines()
+        self.assertEqual(lines[0], "git hash-object -w --stdin")
+        self.assertEqual(lines.count("git mktree"), 4)
+        self.assertEqual(lines[-2], f"git ls-remote origin {REF}")
+        self.assertEqual(lines[-1], "git commit-tree t -m Plan for #5: x")
+        self.assertFalse(any(call[1] == "fetch" for call in runner.calls))
+        self.assertEqual([i for i in runner.inputs if i][0], "text")
+        self.assertEqual(runner.inputs[1], "100644 blob b1\t5-x.md\n")
+        self.assertEqual(runner.inputs[2], "040000 tree t\tplans\n")
+        self.assertEqual(runner.inputs[3], "040000 tree t\tbaton\n")
+        self.assertEqual(runner.inputs[4], "040000 tree t\tdocs\n")
+
+    def test_write_on_an_existing_ref_has_the_fetched_parent(self):
+        runner = FakeRunner({"git hash-object": "b1\n", "git mktree": "t\n",
+                             "git ls-remote": f"{SHA}\t{REF}\n", "git commit-tree": f"{SHA}\n"})
+        planfile.write(runner, 5, PATH, "text", "Task 2")
+        self.assertEqual(runner.lines()[-2:], [FETCH, f"git commit-tree t -p {LOCAL} -m Task 2"])
+
+    def test_write_refuses_a_path_for_another_issue(self):
+        with self.assertRaises(checklist.TaskError):
+            planfile.write(FakeRunner(), 6, PATH, "text", "m")
+
+    def test_push_is_a_plain_fast_forward(self):
+        runner = FakeRunner()
+        planfile.push(runner, 5, SHA)
+        self.assertEqual(runner.lines(), [f"git push origin {SHA}:{REF}"])
+        with self.assertRaises(checklist.TaskError):
+            planfile.push(runner, 5, "abc")
+
+    def test_link_issue_writes_the_history_page_link(self):
+        runner = Capture("## Context\nx\n")
+        line = planfile.link_issue(runner, "o/r", 5, branch=REF, path=PATH)
+        self.assertEqual(line, f"Plan: [{PATH}](https://github.com/o/r/commits/{REF})")
+        self.assertEqual(runner.written, [f"{line}\n\n## Context\nx\n"])
+
+    def test_pin_writes_the_permalink(self):
+        old = planfile.link_line("o/r", REF, PATH)
+        runner = Capture(f"{old}\n\n## Context\nx\n")
+        runner.replies["git ls-remote"] = f"{SHA}\t{REF}\n"
+        self.assertEqual(planfile.pin(runner, "o/r", 5), SHA)
+        self.assertEqual(runner.written,
+                         [f"{planfile.link_line('o/r', SHA, PATH)}\n\n## Context\nx\n"])
+
+    def test_pin_is_a_no_op_for_pinned_and_branch_links(self):
+        for ref in (SHA, "issue-5-x"):
+            runner = Capture(planfile.link_line("o/r", ref, PATH))
+            self.assertIsNone(planfile.pin(runner, "o/r", 5))
+            self.assertEqual(runner.written, [])
+            self.assertFalse(any("ls-remote" in line for line in runner.lines()))
+
+    def test_pin_without_the_ref_raises(self):
+        runner = Capture(planfile.link_line("o/r", REF, PATH))
+        with self.assertRaises(checklist.TaskError):
+            planfile.pin(runner, "o/r", 5)
+
+
+PLAN_TEXT = """## Plan
+Written against: abc
+
+- [ ] **1. First**
+  - Provides: `f()`
+  - Check: none
+- [ ] **2. Second**
+  - Check: none
+"""
+
+
+class CliRunner(FakeRunner):
+    def __init__(self, replies=None, body=""):
+        base = {"hash-object": "b1\n", "git mktree": "t\n", "git commit-tree": f"{SHA}\n",
+                "gh issue view 5 --json title": json.dumps({"title": "The title"}),
+                "gh issue view 5 --json body": json.dumps({"body": body}),
+                "gh repo view": json.dumps({"nameWithOwner": "o/r"}),
+                "git show": PLAN_TEXT}
+        base.update(replies or {})
+        super().__init__(base)
+
+
+class CliTest(unittest.TestCase):
+    def call(self, runner, argv, stdin=""):
+        out, err = io.StringIO(), io.StringIO()
+        cfg = mock.Mock(data={"docs": {"dir": "docs/baton"}})
+        with mock.patch.object(cli.run, "run", runner), \
+                mock.patch.object(cli, "_require_config", return_value=cfg), \
+                mock.patch("sys.stdin", io.StringIO(stdin)), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_plan_commit_writes_pushes_and_prints_the_sha(self):
+        runner = CliRunner()
+        code, out, _ = self.call(runner, ["plan", "commit", "5", PATH, "-"], stdin=PLAN_TEXT)
+        self.assertEqual((code, out), (0, SHA + "\n"))
+        self.assertEqual([i for i in runner.inputs if i][0], PLAN_TEXT)
+        lines = runner.lines()
+        self.assertIn("git commit-tree t -m Plan for #5: The title", lines)
+        self.assertEqual(lines[-1], f"git push origin {SHA}:{REF}")
+
+    def test_plan_commit_reads_a_file(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".md") as handle:
+            handle.write(PLAN_TEXT)
+            handle.flush()
+            runner = CliRunner()
+            code, _, _ = self.call(runner, ["plan", "commit", "5", PATH, handle.name])
+        self.assertEqual(code, 0)
+        self.assertEqual([i for i in runner.inputs if i][0], PLAN_TEXT)
+
+    def test_plan_link_writes_the_history_page_link(self):
+        runner = CliRunner(body="## Context\nx\n")
+        with mock.patch.object(checklist, "_save_issue") as save:
+            code, out, _ = self.call(runner, ["plan", "link", "5", REF, PATH])
+        line = f"Plan: [{PATH}](https://github.com/o/r/commits/{REF})"
+        self.assertEqual((code, out), (0, line + "\n"))
+        save.assert_called_once_with(runner, 5, f"{line}\n\n## Context\nx\n")
+
+    def test_plan_pin_pins_to_the_tip(self):
+        body = planfile.link_line("o/r", REF, PATH) + "\n\n## Context\n"
+        runner = CliRunner(replies={"git ls-remote": f"{SHA}\t{REF}\n"}, body=body)
+        with mock.patch.object(checklist, "_save_issue") as save:
+            code, out, _ = self.call(runner, ["plan", "pin", "5"])
+        self.assertEqual((code, out), (0, SHA + "\n"))
+        self.assertIn(planfile.link_line("o/r", SHA, PATH), save.call_args[0][2])
+
+    def test_plan_pin_with_nothing_to_pin(self):
+        runner = CliRunner(body=planfile.link_line("o/r", "issue-5-x", PATH))
+        code, out, _ = self.call(runner, ["plan", "pin", "5"])
+        self.assertEqual((code, out), (0, "nothing to pin\n"))
+
+    def test_task_done_ticks_on_the_ref(self):
+        body = planfile.link_line("o/r", REF, PATH) + "\n"
+        runner = CliRunner(replies={"git ls-remote": f"{SHA}\t{REF}\n"}, body=body)
+        code, out, _ = self.call(runner, ["task", "done", "issue", "5", "1"])
+        self.assertEqual(code, 0)
+        self.assertIn(f"plan commit {SHA}", out)
+        self.assertIn("git commit-tree t -p refs/baton/plans/5 -m Task 1", runner.lines())
+        self.assertIn("[x] **1. First**", [i for i in runner.inputs if i][0])
+
+    def test_task_done_as_built_adds_the_line(self):
+        body = planfile.link_line("o/r", REF, PATH) + "\n"
+        runner = CliRunner(body=body)
+        code, _, _ = self.call(runner, ["task", "done", "issue", "5", "1", "--as-built", "g()"])
+        self.assertEqual(code, 0)
+        self.assertIn("Provides (as built): g()", [i for i in runner.inputs if i][0])
+
+    def test_task_done_as_built_flag_before_the_task(self):
+        body = planfile.link_line("o/r", REF, PATH) + "\n"
+        runner = CliRunner(body=body)
+        code, _, _ = self.call(runner, ["task", "done", "issue", "5", "--as-built", "g()", "1"])
+        self.assertEqual(code, 0)
+        self.assertIn("Provides (as built): g()", [i for i in runner.inputs if i][0])
+
+    def test_bad_argument_counts_exit_64(self):
+        for argv in (["plan", "commit", "5", PATH], ["plan", "commit", "x", PATH, "-"],
+                     ["plan", "pin"], ["plan", "pin", "5", "6"],
+                     ["task", "done", "issue", "5", "1", "--as-built"],
+                     ["task", "done", "pr", "5", "1.1", "--as-built", "x"],
+                     ["task", "done", "issue", "5"]):
+            code, _, err = self.call(CliRunner(), argv)
+            self.assertEqual(code, 64, argv)
+            self.assertIn("usage:", err)
+
+    def test_usage_lists_the_new_forms(self):
+        _, _, err = self.call(CliRunner(), ["plan"])
+        for form in ("plan commit", "plan pin", "plan link <issue> refs/plans/<issue>"):
+            self.assertIn(form, err)

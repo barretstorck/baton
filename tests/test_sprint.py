@@ -275,6 +275,19 @@ class SnapshotTest(unittest.TestCase):
         self.assertTrue(found["progress"]["5"]["unplanned"])
         self.assertFalse(found["progress"]["4"]["unplanned"])
 
+    def test_progress_reads_a_ref_plan(self):
+        dev = issue(4, "in-dev")
+        dev["body"] = ("Plan: [docs/baton/plans/4-a.md]"
+                       "(https://github.com/octo/proj/commits/refs/plans/4)\n\n" + dev["body"])
+        plan = ("## Plan\nWritten against: " + "c" * 40 +
+                "\n\n- [x] **1. A**\n- [x] **2. B**\n- [ ] **3. C**\n")
+        extra = {"git show --end-of-options refs/baton/plans/4:docs/baton/plans/4-a.md": plan}
+        runner = FakeRunner(replies([dev], extra=extra))
+        found = sprint.snapshot(cfg(), runner)
+        self.assertEqual(found["progress"]["4"]["plan"], {"done": 2, "total": 3, "next": "3"})
+        self.assertFalse(found["progress"]["4"]["unplanned"])
+        self.assertIn("git fetch --quiet origin +refs/plans/4:refs/baton/plans/4", runner.lines())
+
     def test_resumed_ready_issue_reports_its_next_task(self):
         ready = issue(6, "ready")
         ready["body"] += ("## Plan\nWritten against: " + "c" * 40 +
