@@ -47,7 +47,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: the Spike bullet no longer says to leave a draft open; when the report's `Prototype:` is not `none` the orchestrator runs `git ls-remote origin refs/spikes/<N>` and `git ls-remote --heads origin 'issue-<N>-*'`, deletes the branch with `git push origin --delete <branch>` if it still exists, and if the ref is missing reports it to the maintainer instead of closing the issue. Retro step 4 reads "List spike prototypes in the retrospective." The template heading is `## Spike prototypes`, one line per spike (issue, ref, link), for reference only, nothing for the maintainer to do
   - Check: `rg -in "spike draft|leave any draft" skills templates` prints nothing
 
-- [ ] **4. Refine skill and design spec**
+- [x] **4. Refine skill and design spec**
   - Files: `skills/refine/SKILL.md`, `docs/superpowers/specs/2026-10-01-baton-design.md`
   - Uses: refine step 2 "Investigate the code" and the Pointers rule in step 5 (`skills/refine/SKILL.md:56`, `:104`); design spec "### Spikes" (`docs/superpowers/specs/2026-10-01-baton-design.md:199-206`) and the developer section's spike paragraph (`:360-362`)
   - Provides: refine: one sentence that for an issue that comes from a spike, Pointers name the spike's `Prototype:` link as reference material and never as a base branch. Design spec: "Spikes" describes `refs/spikes/<N>`, a findings link by SHA, no pull request, no branch left; remove the "draft stays open ... build on that branch" reasoning and say prototypes are listed in the retrospective for reference; the developer-section paragraph says "an optional prototype ref" instead of "optional draft pull request"
