@@ -287,7 +287,7 @@ def cmd_pr_state(args):
         print("usage: baton pr-state <PR>", file=sys.stderr)
         return 64
     cfg = _require_config()
-    pr = json.loads(run.run(["gh", "pr", "view", args[0], "--json", "isDraft,statusCheckRollup"]))
+    pr = json.loads(run.run(["gh", "pr", "view", args[0], "--json", sprint.PR_STATE_FIELDS]))
     print(json.dumps(sprint.pr_state(pr, cfg, run.run), indent=2))
     return 0
 

@@ -426,6 +426,28 @@ class PrStateCommandTests(unittest.TestCase):
         printed = json.loads(out.getvalue())
         self.assertEqual((printed["draft"], printed["ci"]), (False, "green"))
 
+    def test_command_fetches_head_sha_so_a_lagging_run_is_green(self):
+        import io
+        from contextlib import redirect_stdout
+        from unittest import mock
+        from baton import cli
+        head = "f" * 40
+        pr = {"isDraft": False, "headRefOid": head,
+              "statusCheckRollup": [{"__typename": "CheckRun", "name": "build",
+                                     "status": "IN_PROGRESS", "conclusion": "",
+                                     "detailsUrl": "https://github.com/octo/proj/actions/runs/123/job/1"}]}
+        run_view = json.dumps({"status": "completed", "conclusion": "success",
+                               "workflowName": "ci", "headSha": head,
+                               "url": "https://github.com/octo/proj/actions/runs/123"})
+        runner = FakeRunner({
+            "gh pr view 13 --json isDraft,statusCheckRollup,headRefOid": json.dumps(pr),
+            "gh run view 123": run_view})
+        out = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.run, "run", runner), redirect_stdout(out):
+            self.assertEqual(cli.cmd_pr_state(["13"]), 0)
+        self.assertEqual(json.loads(out.getvalue())["ci"], "green")
+
 
 NOW = datetime(2026, 10, 22, 12, 0, 0, tzinfo=timezone.utc)
 CI_ON_PUSH = "name: ci\non:\n  pull_request:\n  push:\n    branches: [main]\njobs: {}\n"
