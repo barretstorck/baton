@@ -101,6 +101,6 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: sprint: `merge-pr` pins and merges in one pass for a ref plan, the retire-and-wait text is described as the in-flight branch case only; an issue closed without a merge gets `baton plan pin <N>` first; migrate on touch uses `baton plan migrate <N>`; resuming uses `baton task done issue <N> <n>` then the atomic push, and reads ticks with `baton tasks issue <N>`. Review: the plan is read from the plan ref (`git fetch --quiet origin +refs/plans/<N>:refs/baton/plans/<N>`), nothing about plan ticks or removal on the branch for ref plans. Spec: a note at the top of those three sections that issue #25 supersedes them for new plans. README: plans bullet says the plan lives at `refs/plans/<N>` not on the branch; the spike-prototype section is generalised to custom refs, its public-repository checklist also lists `git ls-remote origin 'refs/plans/*'` and the same deletion caveats
   - Check: `rg -n "retire|Remove the plan" skills/sprint/SKILL.md` leaves only text marked as the in-flight case; `rg -n "refs/plans" README.md` shows the note and the checklist
 
-- [ ] **10. Full verification**
+- [x] **10. Full verification**
   - Files: none
   - Check: `PYTHONPATH=lib python3 -m unittest discover -s tests -v` passes
