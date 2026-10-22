@@ -16,7 +16,7 @@ Prose edits to the sprint skill and the issue template; no code. Follow the exis
 
 Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
 
-- [ ] **1. Add the premise check to the follow-up step**
+- [x] **1. Add the premise check to the follow-up step**
   - Files: `skills/sprint/SKILL.md`
   - Uses: the step 6 paragraph "Developers return follow-up suggestions..." (`skills/sprint/SKILL.md:171-175`)
   - Provides: a paragraph in step 6, before the `joins this sprint` bullets, saying: before filing, check the follow-up's central claim ("X currently does Y", "Z was not measured") against the code on the default branch or the findings comment it came from; if it cannot be checked in a few commands, write in the issue's Context that the claim is unverified and name its source ("per the developer of #N"); do not repeat an agent's claim as fact
