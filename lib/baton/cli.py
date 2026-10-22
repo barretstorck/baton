@@ -334,6 +334,6 @@ def main(argv):
     except (checklist.TaskError, comment.CommentError, review.ReviewError) as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
-    except (config.ConfigError, run.RunError, ValueError, OSError) as error:
+    except (config.ConfigError, run.RunError, sprint.SnapshotError, ValueError, OSError) as error:
         print(f"baton: {error}", file=sys.stderr)
         return 2
