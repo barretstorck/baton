@@ -34,7 +34,7 @@ Written against: ca35e49f8d8ccc60810e48b641d55936677276d0
   - Provides: the `changes` bullet runs `gh pr ready <PR> --undo` (only when `draft` is false) together with `baton set-status <N> status:in-dev`, and says why (one CI run per "developer done", not one per pushed fix task); the `escalate` bullet says the same re-draft happens when the maintainer's answer sends the review tasks to a developer; the ready bullet gains the condition that `review` is not `changes` or `escalate`
   - Check: none (prose; task 3 tests the wording)
 
-- [ ] **2. Say ready-again happens after the reply**
+- [x] **2. Say ready-again happens after the reply**
   - Files: `skills/sprint/SKILL.md`
   - Uses: step 8 reply bullet ("When the last review task is ticked, post one reply", about line 297) and the "every task ticked" fallback in step 7 (about line 237)
   - Provides: step 8 and the step 7 fallback say that after the reply the pull request, still a draft, is marked ready by the next pass (step 4), CI runs once, and the reviewer is dispatched only when `ci` is green or `none`; no separate `gh pr ready` call in step 8

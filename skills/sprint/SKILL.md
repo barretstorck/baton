@@ -241,7 +241,9 @@ both read it; nothing else goes in but the repository and the sprint goal:
      session ended before the next step. If the latest review asks for changes and no reply
      follows it, post the reply (step 8), building each line from the branch's `Review <r.n>:`
      commits; ask the maintainer about a task with no commit. Then
-     `baton set-status <N> status:in-review`.
+     `baton set-status <N> status:in-review`. The pull request stays a draft until the next pass
+     marks it ready (step 4); CI runs once, and the reviewer comes only when `ci` is `green` or
+     `none`.
 2. **New issues:** for each number in `dispatchable`, in order, dispatch the same way from its
    `progress` entry: `Do task <progress.<N>.plan.next> of issue <N>.` (task 1 for a fresh issue,
    a later task for one resumed after a question), `Do spike issue <N>.`, or the refiner when it
@@ -306,7 +308,9 @@ Act on each result with commands on their own, reading each one's output; never 
       1.2 declined: <the developer's reason>.
       EOF
 
-  then `baton set-status <N> status:in-review`; the next pass marks the pull request ready, and dispatches the reviewer once CI is green. If this
+  then `baton set-status <N> status:in-review`. The pull request is still a draft: make no
+  `gh pr ready` call here. The next pass marks it ready (step 4), CI runs once, and the reviewer is
+  dispatched only when `ci` is `green` or `none`. If this
   session no longer has the developers' results, read them from the branch: `Review <r.n>:`
   commits are fixes; ask the maintainer about a task with no commit and no recorded reason.
 - `REPLAN`: read the proposal against the issue's acceptance criteria and out-of-scope section.
