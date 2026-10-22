@@ -116,7 +116,8 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
 - **`review` is `changes` but `progress.<N>.review_without_tasks` is true:** a review from before
   Baton 0.3 with no task list. Dispatch a reviewer with the extra line "The last review has no
   task list: review again and write one."
-- **Not a spike, `progress.<N>.plan.next` is null and `draft` is true:** the plan is finished, so
+- **Not a spike, `progress.<N>.plan.next` is null, `draft` is true and `review` is not `changes`
+  or `escalate`:** the plan is finished (or the review's fixes are replied to), so
   mark the pull request ready: `gh pr ready <PR>`. CI runs once, now, instead of on every push
   of a draft. Look again next pass; nothing else for this issue this pass.
 - **Ready (not a draft), every plan task ticked, and `ci` is `red` or `mergeable` is
@@ -128,13 +129,16 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   `allow_no_ci` is true). `ci` `pending` waits: a pull request just marked ready has no checks
   registered yet, and the reviewer starts on a later pass. `stale` means the pull request's
   change moved after it was approved.
-- **`changes`:** `baton set-status <N> status:in-dev`. Step 7 then works the review's tasks one
+- **`changes`:** if `draft` is false, turn the pull request back into a draft: `gh pr ready <PR>
+  --undo`, so that CI runs once per "developer done" and not once per pushed fix task. Then
+  `baton set-status <N> status:in-dev`. Step 7 then works the review's tasks one
   at a time, and step 8 posts the reply when the last one is ticked. This takes a developer slot.
 - **`escalate`:** the review rounds in the brief are used up and the reviewer still asks for
   changes. Add `needs-maintainer`, post an orchestrator `status` comment on the issue linking the
   last review and the last reply, and tell the maintainer in a few lines what the two disagree
-  about. When the maintainer answers, record it as a decision (step 3) and work the review's
-  tasks (step 7).
+  about. When the maintainer answers, record it as a decision (step 3); if the answer sends the
+  review's tasks to a developer, re-draft the pull request as for `changes` (`gh pr ready <PR>
+  --undo` when `draft` is false) and work the tasks (step 7).
 - **`approved`**, or `not-required`:
   1. Still a draft (a fallback; normally ready already): `gh pr ready <PR>`. CI starts now; look
      again next pass.

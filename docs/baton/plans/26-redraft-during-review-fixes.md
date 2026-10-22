@@ -28,7 +28,7 @@ its output does not change, so there is no code or sprint-status test change.
 
 Written against: ca35e49f8d8ccc60810e48b641d55936677276d0
 
-- [ ] **1. Re-draft on changes and guard the ready bullet**
+- [x] **1. Re-draft on changes and guard the ready bullet**
   - Files: `skills/sprint/SKILL.md`
   - Uses: step 4 bullets "Not a spike, `progress.<N>.plan.next` is null and `draft` is true" (about line 119), "`changes`" (about line 131) and "`escalate`" (about line 133)
   - Provides: the `changes` bullet runs `gh pr ready <PR> --undo` (only when `draft` is false) together with `baton set-status <N> status:in-dev`, and says why (one CI run per "developer done", not one per pushed fix task); the `escalate` bullet says the same re-draft happens when the maintainer's answer sends the review tasks to a developer; the ready bullet gains the condition that `review` is not `changes` or `escalate`
