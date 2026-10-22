@@ -146,10 +146,13 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
      protected paths, then merges, closes the issue, sets `status:verification` and removes that
      pull request's branch and worktree. Read its output before doing anything else; never chain
      another command after it, and never set a status it did not set. If it says it kept a
-     worktree, tell the maintainer. If the plan file was still on the branch, it pinned the
-     issue's `Plan:` link, pushed a commit removing the file and stopped without merging: that is
-     expected. Wait for CI on the new head (look again next pass), then run `baton merge-pr <PR>`
-     again; the reviewer's approval still holds.
+     worktree, tell the maintainer. For a plan on `refs/plans/<N>` it pins the `Plan:` link to the
+     plan's last commit and merges in the same pass; nothing is pushed to the branch. Only an
+     in-flight plan that is still a file on the branch (the older way) is different: `merge-pr`
+     pins the link, pushes a commit removing the file and stops without merging. Wait for CI on
+     the new head (look again next pass), then run `baton merge-pr <PR>` again; the reviewer's
+     approval still holds. An issue closed without a merge (a spike, a dropped issue) keeps its
+     plan on the ref: run `baton plan pin <N>` so its `Plan:` link points at a permanent commit.
 - **`merge-pr` refuses:** read its reasons.
   - *Protected paths:* add `needs-maintainer` and ask the maintainer for the comment
     `/baton approve <head sha>`, naming the sha. Ask only once the review is approved and CI is
@@ -242,8 +245,9 @@ Do not paste the issue text, the task brief, your notes or other issues into the
 
 **Legacy issues.** An issue whose body has a `## Plan` section and no `Plan:` line is a legacy
 issue. Before you dispatch its first task, while it is not yet in development, run
-`baton plan migrate <N> issue-<N>-<slug>`; it moves the plan to a file on the branch, links it
-and trims the body. An issue already in development keeps its body plan until it merges.
+`baton plan migrate <N>`; it moves the plan to `refs/plans/<N>`, links it and trims the body.
+The same command moves an in-flight plan that is a file on the branch, when it is not in
+development. An issue already in development keeps its older plan until it merges.
 
 Look at `held` too: if an issue is held for a reason you can clear (a blocker you can dispatch
 first), order the work accordingly; otherwise leave it.
@@ -256,11 +260,13 @@ a finished developer.
 
 **Resuming.** A new session cannot tell from its own memory which developers are still running.
 For each `in_dev` issue, compare `git log --oneline origin/<default>..origin/<branch>` with the
-ticked boxes (`baton tasks issue <N>` reads them from the plan file on the branch). A `Task <n>:`
-commit whose box is not ticked in the pushed head was done by a developer that was interrupted
-before it finished: run that task's `Check:` on that commit in a scratch worktree, and if it
-passes, tick it in a detached checkout of the branch with `baton task done issue <N> <n>`,
-commit that as `Tick task <n>` and push; otherwise dispatch the task again. A `Review <r.n>:`
+ticked boxes (`baton tasks issue <N>` reads them from the plan ref; for an in-flight plan file on
+the branch, from the branch). A `Task <n>:` commit whose box is not ticked was done by a developer
+that was interrupted before it finished: run that task's `Check:` on that commit in a scratch
+worktree, and if it passes, run `baton task done issue <N> <n>`, which ticks the box on the plan
+ref and prints the commit, then push it with `git push origin <sha>:refs/plans/<N>`; otherwise
+dispatch the task again. (A developer's own tick goes out in the atomic push with the code:
+`git push --atomic origin HEAD:refs/heads/<branch> <sha>:refs/plans/<N>`.) A `Review <r.n>:`
 commit whose box is not ticked is checked the same way, then `baton task done pr <P> <r.n>`. A
 task with no commit is dispatched again.
 
@@ -272,7 +278,7 @@ Act on each result with commands on their own, reading each one's output; never 
 
 - `DONE <sha>` for a plan task: `git ls-remote origin <branch>` must show that sha as the branch
   tip; if not, dispatch the task again. Then check the tick with `baton tasks issue <N>`: the
-  developer commits it with the code, so the box must be ticked in the pushed head. If it is not,
+  developer pushes it with the code in one atomic push, so the box must be ticked on the plan ref. If it is not,
   treat the task as not done and dispatch it again with the note that the tick was missing. Do
   not tick it yourself. (A legacy body plan is ticked with `baton task done issue <N> <n>`.) If
   that was the last plan task, `baton set-status <N> status:in-review`; the next pass marks the pull request ready, and dispatches the reviewer once CI is green.
@@ -284,7 +290,7 @@ Act on each result with commands on their own, reading each one's output; never 
 - `DECLINED <reason>`: `baton task done pr <P> <r.n>`, and keep the reason for the reply.
 - Only the orchestrator runs `baton task done pr`, from the main checkout, or with
   `BATON_ROLE=orchestrator` set when it runs from a linked worktree (otherwise `baton` warns).
-  Plan tasks are the other way round: the developer ticks its own box in the plan file.
+  Plan tasks are the other way round: the developer ticks its own box on the plan ref.
 - When the last review task is ticked, post one reply on the pull request, one line per task:
 
       baton comment pr <P> developer reply - <<'EOF'

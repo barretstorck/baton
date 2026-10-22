@@ -33,9 +33,11 @@ task by task.
 ## Steps
 
 1. **Read.** The issue, both briefs, the agent rules, and the pull request with its comments.
-   The issue's first line is a `Plan:` link to the plan file on the issue branch
-   (`<docs.dir>/plans/<N>-<slug>.md`); after you check out the head (step 2), read the plan's
-   Verification, pattern and tasks from that file. An older issue keeps them in its body.
+   The issue's first line is a `Plan:` link to the plan's history on `refs/plans/<N>`; read the
+   plan's Verification, pattern and tasks from the ref:
+   `git fetch --quiet origin +refs/plans/<N>:refs/baton/plans/<N>` then
+   `git show refs/baton/plans/<N>:<path>` (the path is in `baton tasks issue <N>`). An in-flight
+   issue keeps the plan as a file on the branch, and an older one in its body.
    `baton review state <PR>` gives `rounds`, the requests for changes since the last approval;
    this review is round `rounds + 1`. On a later round, read your earlier review's tasks
    (`baton tasks pr <PR>` shows them until you post) and the `reply` comment: each task is listed
@@ -57,8 +59,9 @@ task by task.
    (use your worktree or scratch directory in place of `/tmp`). The fixes are the commits named
    `Review <r.n>:`. Check that each earlier task was fixed, or declined with a reason you accept. Code that came from the
    default branch is not part of this review. If the change is too big for one pass, review it in
-   passes yourself and say so. Never start a subagent. The plan file is part of the branch: do not
-   review its prose as code, and do not flag its ticks or its later removal by `merge-pr`.
+   passes yourself and say so. Never start a subagent. A plan on `refs/plans/<N>` is not part of the branch, so there is nothing of it to review there.
+   If the plan is still a file on the branch (the older way), do not review its prose as code,
+   and do not flag its ticks or its later removal by `merge-pr`.
 
 4. **Run the verification command** from the plan file's `## Verification` (or the issue, for an
    older issue or a spike) or the brief, unless the brief says reviewers
