@@ -2,7 +2,7 @@ Plan: [path of the plan file](link to it on the issue branch; `baton plan link` 
 
 ## Context
 
-What is wrong or missing, and why it matters.
+What is wrong or missing, and why it matters. Check a claim about current behaviour or past measurements against the code or a linked comment, or mark it unverified and name its source (for example "per the developer of #N").
 
 ## Acceptance criteria
 

@@ -21,7 +21,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Uses: the step 6 paragraph "Developers return follow-up suggestions..." (`skills/sprint/SKILL.md:171-175`)
   - Provides: a paragraph in step 6, before the `joins this sprint` bullets, saying: before filing, check the follow-up's central claim ("X currently does Y", "Z was not measured") against the code on the default branch or the findings comment it came from; if it cannot be checked in a few commands, write in the issue's Context that the claim is unverified and name its source ("per the developer of #N"); do not repeat an agent's claim as fact
   - Check: `rg -n "unverified" skills/sprint/SKILL.md` finds the new text inside step 6
-- [ ] **2. Add the same guidance to the issue template**
+- [x] **2. Add the same guidance to the issue template**
   - Files: `templates/issue.md`
   - Uses: the `## Context` placeholder line
   - Provides: Context guidance extended with one sentence: a claim about current behaviour or past measurements is checked against the code or a linked comment, or marked unverified with its source
