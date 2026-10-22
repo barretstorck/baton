@@ -8,15 +8,38 @@ import json
 import os
 import re
 import time
+from datetime import datetime, timezone
 
 from . import checklist, comment, config, issue as issue_fields, merge, review
+from .run import RunError
 
 _FAILED = {"failure", "timed_out", "startup_failure", "action_required"}
 _ORDER = re.compile(r"^\s*Order:(.*)$", re.M | re.I)
 _PARALLEL = re.compile(r"^\s*Parallel:\s*(\d+)\s*$", re.M | re.I)
+PUSH_RUN_GRACE_SECONDS = 300
+_ON_LINE = re.compile(r"""^["']?on["']?\s*:(.*)$""")
+_PUSH_WORD = re.compile(r"(?<![\w-])push(?![\w-])")
 ISSUE_FIELDS = "number,title,state,labels,body,author,comments"
 PR_FIELDS = ("number,headRefName,headRefOid,isDraft,mergeable,closingIssuesReferences,"
              "statusCheckRollup,comments")
+
+
+class SnapshotError(Exception):
+    """Forge data could not be read; the snapshot must not look valid."""
+
+
+def _load(runner, argv, what):
+    """Run a forge read that must answer with a JSON list; never turn a bad reply into []."""
+    text = runner(argv)
+    if not (text or "").strip():
+        raise SnapshotError(f"could not read {what}: empty reply")
+    try:
+        data = json.loads(text)
+    except ValueError as error:
+        raise SnapshotError(f"could not read {what}: invalid JSON ({error})") from error
+    if not isinstance(data, list):
+        raise SnapshotError(f"could not read {what}: expected a list")
+    return data
 
 
 def branch_state(runs):
@@ -31,6 +54,86 @@ def branch_state(runs):
     return "green"
 
 
+def triggers_on_push(workflow_text):
+    """True when a workflow file's `on:` section mentions push (inline, list or block form)."""
+    lines = (workflow_text or "").splitlines()
+    for index, line in enumerate(lines):
+        found = _ON_LINE.match(line)
+        if not found:
+            continue
+        inline = found.group(1).split("#", 1)[0].strip()
+        if inline:
+            return bool(_PUSH_WORD.search(inline))
+        block = []
+        for follow in lines[index + 1:]:
+            content = follow.split("#", 1)[0].rstrip()
+            if not content.strip():
+                continue
+            if not follow[0].isspace() and not content.lstrip().startswith("-"):
+                break
+            block.append(content)
+        if not block:
+            return False
+        level = min(len(item) - len(item.lstrip()) for item in block)
+        for item in block:
+            if len(item) - len(item.lstrip()) != level:
+                continue
+            key = item.strip().lstrip("-").strip()
+            if re.match(r"^[\"']?push[\"']?\s*(:|$)", key):
+                return True
+        return False
+    return False
+
+
+def push_workflow_exists(runner, owner, repo, sha):
+    """True when a workflow file at this commit triggers on push; a missing directory means no."""
+    base = f"repos/{owner}/{repo}/contents/.github/workflows"
+    try:
+        entries = _load(runner, ["gh", "api", f"{base}?ref={sha}"], "workflow files")
+    except RunError as error:
+        if "404" in str(error) or "Not Found" in str(error):
+            return False
+        raise
+    for entry in entries:
+        name = entry.get("name", "") if isinstance(entry, dict) else ""
+        if not name.endswith((".yml", ".yaml")):
+            continue
+        text = runner(["gh", "api", f"{base}/{name}?ref={sha}",
+                       "-H", "Accept: application/vnd.github.raw"])
+        if triggers_on_push(text):
+            return True
+    return False
+
+
+def _commit_age(committed, now):
+    when = datetime.fromisoformat(committed.replace("Z", "+00:00"))
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return ((now or datetime.now(timezone.utc)) - when).total_seconds()
+
+
+def default_branch_state(runner, owner, repo, branch, now=None):
+    """green, red, pending or none for the default branch's head commit, push runs only."""
+    try:
+        head = json.loads(runner(["gh", "api", f"repos/{owner}/{repo}/commits/{branch}"]))
+        sha = head["sha"]
+        committed = head["commit"]["committer"]["date"]
+    except (ValueError, KeyError, TypeError) as error:
+        raise SnapshotError(f"could not read the head commit of {branch}: {error}") from error
+    runs = _load(runner, ["gh", "run", "list", "--branch", branch, "--commit", sha,
+                          "--event", "push", "--limit", "20",
+                          "--json", "status,conclusion,headSha,workflowName"], "workflow runs")
+    if runs:
+        return branch_state(runs)
+    try:
+        age = _commit_age(committed, now)
+    except ValueError as error:
+        raise SnapshotError(f"could not read the head commit date: {error}") from error
+    if age < PUSH_RUN_GRACE_SECONDS and push_workflow_exists(runner, owner, repo, sha):
+        return "pending"
+    return "none"
+
+
 def overlaps(first, second):
     for a in first:
         for b in second:
@@ -39,11 +142,12 @@ def overlaps(first, second):
     return False
 
 
-def _pr_ci(pr, cfg):
+def _pr_ci(pr, cfg, runner=None):
     if not pr.get("statusCheckRollup"):
-        return "none"
-    problems = merge._check_ci(pr, cfg)
-    if any("not finished" in problem for problem in problems):
+        return "none" if cfg.data["merge"]["allow_no_ci"] else "pending"
+    problems = merge._check_ci(pr, cfg, runner)
+    if any("not finished" in problem or "every check was skipped" in problem
+           for problem in problems):
         return "pending"
     return "red" if problems else "green"
 
@@ -69,14 +173,13 @@ def _blocker_open(number, by_number, runner):
 def snapshot(cfg, runner, milestone=None):
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     owner, branch = repo["owner"]["login"], repo["defaultBranchRef"]["name"]
-    milestones = json.loads(runner(
-        ["gh", "api", f"repos/{owner}/{repo['name']}/milestones?state=open&per_page=100"]) or "[]")
+    milestones = _load(
+        runner, ["gh", "api", f"repos/{owner}/{repo['name']}/milestones?state=open&per_page=100"],
+        "milestones")
     chosen, open_sprints = _pick_sprint(milestones, milestone)
-    runs = json.loads(runner(["gh", "run", "list", "--branch", branch, "--limit", "20",
-                              "--json", "status,conclusion,headSha,workflowName"]) or "[]")
     result = {
         "sprint": None, "open_sprints": open_sprints,
-        "default_branch": {"name": branch, "state": branch_state(runs)},
+        "default_branch": {"name": branch, "state": default_branch_state(runner, owner, repo["name"], branch)},
         "repair_issue": None, "parallel": 0, "free_slots": 0, "in_dev": [], "in_review": [],
         "verification": [], "answered": [], "waiting_on_maintainer": [],
         "dispatchable": [], "held": [], "finished": False, "issues": [], "progress": {},
@@ -86,10 +189,10 @@ def snapshot(cfg, runner, milestone=None):
     result["sprint"] = {"number": chosen["number"], "title": chosen["title"],
                         "description": chosen.get("description") or "", "due": chosen.get("due_on")}
 
-    issues = json.loads(runner(["gh", "issue", "list", "--milestone", chosen["title"], "--state",
-                                "all", "--limit", "300", "--json", ISSUE_FIELDS]) or "[]")
-    prs = json.loads(runner(["gh", "pr", "list", "--state", "open", "--limit", "200",
-                             "--json", PR_FIELDS]) or "[]")
+    issues = _load(runner, ["gh", "issue", "list", "--milestone", chosen["title"], "--state",
+                            "all", "--limit", "300", "--json", ISSUE_FIELDS], "issues")
+    prs = _load(runner, ["gh", "pr", "list", "--state", "open", "--limit", "200",
+                         "--json", PR_FIELDS], "pull requests")
     pr_for = {ref["number"]: pr for pr in prs for ref in pr.get("closingIssuesReferences") or []}
     by_number = {item["number"]: item for item in issues}
     status_of = {cfg.label(name): name for name in config.STATUSES}
@@ -149,7 +252,7 @@ def snapshot(cfg, runner, milestone=None):
             result["in_review"].append({
                 "number": number, "pr": pr["number"] if pr else None,
                 "draft": pr["isDraft"] if pr else None,
-                "ci": _pr_ci(pr, cfg) if pr else "none",
+                "ci": _pr_ci(pr, cfg, runner) if pr else "none",
                 "mergeable": pr["mergeable"] if pr else None,
                 "review": review_state, "rounds": rounds})
             busy_files.append(files)

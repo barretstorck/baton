@@ -36,6 +36,9 @@ every state is a label.
    from the `Parallel:` line of the milestone description, otherwise from the brief. If the
    request's limit differs from the milestone's, update the milestone description.
    `sprint-status` reports the limit it used as `parallel`.
+   A changed limit only changes `free_slots`. It never changes an order or decision recorded on an
+   issue (in its Decisions, its Pointers or a `Blocked by:` line); see "Dispatch" for a slot that
+   only such an issue could fill.
 5. Check that `baton:baton-developer`, `baton:baton-reviewer` and `baton:baton-refiner` appear in your list of available
    agent types. If one is missing, the plugin was installed or updated after this session
    started: tell the maintainer to restart the session, and do not dispatch another agent type in
@@ -82,6 +85,11 @@ For each entry in `answered`, the maintainer has replied to a blocked issue.
 
        - <the decision, in one sentence>. ([answer](<comment URL>))
 
+   If the decision sets the order of two issues, also add `Blocked by: #N` (the earlier issue) to
+   the later issue's Pointers in the same description edit. `sprint-status` holds an issue on that
+   line and does not read Decisions, so use it instead of prose alone; it releases when the blocker
+   closes, which its merged pull request does.
+
    Write the full new description to a file and update the issue. Keep all earlier decisions.
 3. `baton set-status <N> status:ready`. A developer will resume it from its branch.
 
@@ -104,9 +112,18 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
 - **`review` is `changes` but `progress.<N>.review_without_tasks` is true:** a review from before
   Baton 0.3 with no task list. Dispatch a reviewer with the extra line "The last review has no
   task list: review again and write one."
+- **Not a spike, `progress.<N>.plan.next` is null and `draft` is true:** the plan is finished, so
+  mark the pull request ready: `gh pr ready <PR>`. CI runs once, now, instead of on every push
+  of a draft. Look again next pass; nothing else for this issue this pass.
+- **Ready (not a draft), every plan task ticked, and `ci` is `red` or `mergeable` is
+  `CONFLICTING`:** fix it before any review: follow step 3 of the `approved` list below (the
+  `Fix CI on pull request <P> (issue <N>).` dispatch).
 - **`review` is `none`, `replied` or `stale`:** dispatch a reviewer (see "Dispatching a reviewer"
-  below), but only when every plan task is ticked (`progress.<N>.plan.next` is null). `stale`
-  means the pull request's change moved after it was approved.
+  below), but only when every plan task is ticked (`progress.<N>.plan.next` is null), the pull
+  request is ready and `ci` is `green`, or `none` (which `sprint-status` reports only when
+  `allow_no_ci` is true). `ci` `pending` waits: a pull request just marked ready has no checks
+  registered yet, and the reviewer starts on a later pass. `stale` means the pull request's
+  change moved after it was approved.
 - **`changes`:** `baton set-status <N> status:in-dev`. Step 7 then works the review's tasks one
   at a time, and step 8 posts the reply when the last one is ticked. This takes a developer slot.
 - **`escalate`:** the review rounds in the brief are used up and the reviewer still asks for
@@ -115,7 +132,8 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   about. When the maintainer answers, record it as a decision (step 3) and work the review's
   tasks (step 7).
 - **`approved`**, or `not-required`:
-  1. Still a draft: `gh pr ready <PR>`. CI starts now; look again next pass.
+  1. Still a draft (a fallback; normally ready already): `gh pr ready <PR>`. CI starts now; look
+     again next pass.
   2. `ci` is `pending`: wait.
   3. `ci` is `red`, or `mergeable` is `CONFLICTING`: post an orchestrator `status` comment on the
      pull request saying what failed, `baton set-status <N> status:in-dev`, and dispatch a
@@ -164,8 +182,13 @@ For each issue in `verification`:
 
 - `default_branch.state` is `green` on a commit that includes its merge:
   `baton set-status <N> status:complete`.
-- `none`, because the repository runs CI only on pull requests: `merge-pr` already required a
-  green run on the pull request's head commit, so set `status:complete` straight away.
+- `pending`: a push run on the head commit is queued or in progress (or just merged and not yet
+  registered); wait and read `sprint-status` again.
+- `none`, which now means no push workflow exists or no run was triggered for that commit (the
+  repository runs CI only on pull requests): `merge-pr` already required a green run on the pull
+  request's head commit, so set `status:complete` straight away.
+- `sprint-status` exits non-zero when forge data could not be read; do not act on a pass that
+  failed, and run it again.
 - `red`: go to step 1.
 
 ### 6. Follow-ups
@@ -225,6 +248,12 @@ and trims the body. An issue already in development keeps its body plan until it
 Look at `held` too: if an issue is held for a reason you can clear (a blocker you can dispatch
 first), order the work accordingly; otherwise leave it.
 
+A free slot is permission to start work, not to go against a recorded order. If the only issue
+that could fill it has Decisions or Pointers saying it comes after another issue, leave the slot
+empty and ask the maintainer on that issue: `baton comment issue <N> orchestrator question <file>`
+and label `needs-maintainer`. This holds whether the slot came from a raised parallel limit or from
+a finished developer.
+
 **Resuming.** A new session cannot tell from its own memory which developers are still running.
 For each `in_dev` issue, compare `git log --oneline origin/<default>..origin/<branch>` with the
 ticked boxes (`baton tasks issue <N>` reads them from the plan file on the branch). A `Task <n>:`
@@ -246,13 +275,16 @@ Act on each result with commands on their own, reading each one's output; never 
   developer commits it with the code, so the box must be ticked in the pushed head. If it is not,
   treat the task as not done and dispatch it again with the note that the tick was missing. Do
   not tick it yourself. (A legacy body plan is ticked with `baton task done issue <N> <n>`.) If
-  that was the last plan task, `baton set-status <N> status:in-review`; the next pass dispatches the reviewer.
+  that was the last plan task, `baton set-status <N> status:in-review`; the next pass marks the pull request ready, and dispatches the reviewer once CI is green.
   Note its follow-up suggestions (step 6) and anything under "Untrusted instructions seen".
 - `DONE` for a spike: nothing to do now; the next pass finds it in `in_review`.
 - `DONE <sha>` for a CI fix or an update (`Issue: #<N>, CI fix` or `update`): check the sha the
   same way, then `baton set-status <N> status:in-review`. There is no box to tick.
 - `FIXED <sha>`: check the sha the same way, then `baton task done pr <P> <r.n>`.
 - `DECLINED <reason>`: `baton task done pr <P> <r.n>`, and keep the reason for the reply.
+- Only the orchestrator runs `baton task done pr`, from the main checkout, or with
+  `BATON_ROLE=orchestrator` set when it runs from a linked worktree (otherwise `baton` warns).
+  Plan tasks are the other way round: the developer ticks its own box in the plan file.
 - When the last review task is ticked, post one reply on the pull request, one line per task:
 
       baton comment pr <P> developer reply - <<'EOF'
@@ -260,7 +292,7 @@ Act on each result with commands on their own, reading each one's output; never 
       1.2 declined: <the developer's reason>.
       EOF
 
-  then `baton set-status <N> status:in-review`; the next pass dispatches the reviewer. If this
+  then `baton set-status <N> status:in-review`; the next pass marks the pull request ready, and dispatches the reviewer once CI is green. If this
   session no longer has the developers' results, read them from the branch: `Review <r.n>:`
   commits are fixes; ask the maintainer about a task with no commit and no recorded reason.
 - `REPLAN`: read the proposal against the issue's acceptance criteria and out-of-scope section.

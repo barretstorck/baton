@@ -47,14 +47,18 @@ whole issue grows large and expensive: in the second sprint, single developers r
 
 1. Developer agents do the issue's plan, one task each, pushing to the branch; the pull request
    stays a draft.
-2. The orchestrator dispatches a reviewer agent. It reviews the head commit against the issue
-   and the brief and posts one review: `approve`, or `changes` with a `## Tasks` checklist of
-   what to fix in this pull request, and follow-up issues for the rest.
-3. On `changes`, one developer per task fixes it or declines it with a reason, the orchestrator
+2. Once the last plan task is ticked, the orchestrator marks the pull request ready, so CI runs
+   once on the finished work.
+3. The orchestrator dispatches a reviewer agent only when CI on the head commit is green, or
+   straight away when the repository has no CI (`merge.allow_no_ci: true`). While CI is pending
+   it waits; a red CI is fixed by a developer before any review. The reviewer reviews the head
+   commit against the issue and the brief and posts one review: `approve`, or `changes` with a
+   `## Tasks` checklist of what to fix in this pull request, and follow-up issues for the rest.
+4. On `changes`, one developer per task fixes it or declines it with a reason, the orchestrator
    posts the reply, and the reviewer looks again, up to `review.max_rounds` rounds before the
    maintainer is asked. An approval is refused while any task is open.
-4. Once approved, the orchestrator marks the pull request ready, so CI runs once, and
-   `baton merge-pr` merges it after checking the approval still covers the head commit.
+5. Once approved, `baton merge-pr` merges it after checking CI and that the approval still
+   covers the head commit.
 
 ## Skills
 
@@ -114,6 +118,10 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
   `/baton approve <commit sha>` (at least 7 characters of the sha), naming the head commit or an
   earlier one with the same changes to the protected paths.
 - Empty bodies are refused, so a failed edit cannot blank an issue description.
+- The git hooks do not report `private-ip` in Python dependency files (matched by basename:
+  `uv.lock`, `poetry.lock`, `pdm.lock`, `Pipfile.lock`, `requirements*.txt`, `requirements*.in`,
+  `constraints*.txt`, `pylock*.toml`), where four-part package versions look like addresses. Email,
+  host-path, internal-domain and private terms are still checked in those files.
 
 The gate guards against mistakes. It is not a sandbox: it only sees `gh` and `git` commands.
 
