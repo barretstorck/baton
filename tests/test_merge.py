@@ -1,6 +1,8 @@
 import copy
 import json
+import os
 import pathlib
+import tempfile
 import unittest
 from baton import config, merge, review
 from baton.run import RunError
@@ -380,6 +382,46 @@ class MergeTest(unittest.TestCase):
         self.assertFalse(any(line.startswith("git branch -D") for line in runner.lines()))
         self.assertIn("git push origin --delete issue-4-flag", runner.lines())
         self.assertTrue(any("/wt/issue-4" in note for note in notes))
+
+    def secret_tree(self, kind):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        for name in (".env", ".env.example", ".env.sample", ".env.template", "notes.txt"):
+            open(os.path.join(tmp.name, name), "w").close()
+        replies = self.replies(make_pr())
+        if kind == "branch":
+            replies["git worktree list"] = replies["git worktree list"].replace("/wt/issue-4", tmp.name)
+            replies[f"git -C {tmp.name} status --porcelain"] = " M src/tool.py\n"
+        else:
+            replies["git worktree list"] += f"\nworktree {tmp.name}\nHEAD {HEAD}\ndetached\n\n"
+            replies[f"git -C {tmp.name} status --porcelain"] = "?? scratch.txt\n"
+        return tmp.name, replies
+
+    def test_kept_branch_worktree_note_names_the_secret_file(self):
+        path, replies = self.secret_tree("branch")
+        notes = []
+        merge.merge(9, make_config(), FakeRunner(replies), notes)
+        note = next(n for n in notes if path in n)
+        self.assertIn("it holds .env; delete it by hand", note)
+        self.assertNotIn(".env.example", note)
+
+    def test_kept_task_worktree_note_names_the_secret_file(self):
+        path, replies = self.secret_tree("task")
+        notes = []
+        merge.merge(9, make_config(), FakeRunner(replies), notes)
+        note = next(n for n in notes if path in n)
+        self.assertIn("it holds .env; delete it by hand", note)
+
+    def test_kept_worktree_without_a_secret_file_has_no_mention(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            open(os.path.join(tmp, ".env.example"), "w").close()
+            self.assertEqual(merge._secret_files(tmp), [])
+            self.assertEqual(merge._secret_files(tmp + "/missing"), [])
+        notes = []
+        replies = self.replies(make_pr())
+        replies["git -C /wt/issue-4 status --porcelain"] = " M src/tool.py\n"
+        merge.merge(9, make_config(), FakeRunner(replies), notes)
+        self.assertFalse(any("holds" in n for n in notes))
 
     TASK_TREES = (f"worktree /wt/agent-a\nHEAD {HEAD}\ndetached\nlocked agent\n\n"
                   "worktree /wt/agent-b\nHEAD 3333\ndetached\n\n"

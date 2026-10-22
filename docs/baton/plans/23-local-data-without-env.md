@@ -42,7 +42,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: the bullet says to read the local brief's Hosts, Paths and Local data sections, never its Credentials section; a new paragraph says local data is reached only through the absolute paths listed under `## Local data`, never by copying or linking `.env` or any other secret file (API keys, tokens) into a worktree, and that if needed data is not listed or not reachable the developer returns `QUESTION` (return form in the skill's "## Return"); a `## Never` bullet repeats the no-copy rule; one sentence in `agents/baton-developer.md`. Add a test that the skill contains `Local data` and `.env`.
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_template -v`
 
-- [ ] **4. merge-pr warns about a secret file in a kept worktree**
+- [x] **4. merge-pr warns about a secret file in a kept worktree**
   - Files: `lib/baton/merge.py`, `tests/test_merge.py`
   - Uses: `_after_merge(pr, cfg, runner, notes)` (`lib/baton/merge.py:169`), its two "kept ... uncommitted changes" notes (lines 183 and 191)
   - Provides: `def _secret_files(path) -> list[str]`, the names of `.env` and `.env.*` files directly in `path`, excluding names ending `.example`, `.sample` or `.template`; when a branch or task worktree is kept, its note also says `it holds <names>; delete it by hand`.
