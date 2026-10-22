@@ -41,6 +41,6 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: in `skills/sprint/SKILL.md` section 8 (lines 248-249) a sentence that only the orchestrator runs `baton task done pr`, from the main checkout, or with `BATON_ROLE=orchestrator` set when it runs from a linked worktree; the same note on the `baton task done pr` entry of the table at `references/github.md:38`. Add a test that `skills/sprint/SKILL.md` contains `BATON_ROLE`.
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_template -v`
 
-- [ ] **4. Full suite**
+- [x] **4. Full suite**
   - Files: none
   - Check: `PYTHONPATH=lib python3 -m unittest discover -s tests -v`
