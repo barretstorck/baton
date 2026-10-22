@@ -3,6 +3,7 @@ import json
 import pathlib
 import unittest
 from baton import config, merge, review
+from baton.run import RunError
 from tests.fakes import FakeRunner
 
 OWNER = "octo"
@@ -63,6 +64,45 @@ class CheckTest(unittest.TestCase):
         for rollup in (pending, failed, status):
             with self.subTest(rollup=rollup):
                 self.assertTrue(any("check" in p for p in problems(statusCheckRollup=rollup)))
+
+    def _lagging(self, run, runner=True, notes=None):
+        url = "https://github.com/octo/repo/actions/runs/123/job/456"
+        rollup = [{"__typename": "CheckRun", "name": "build", "status": "IN_PROGRESS",
+                   "conclusion": "", "detailsUrl": url}]
+        fake = FakeRunner({"gh run view 123": run}) if runner else None
+        return merge.check(make_pr(statusCheckRollup=rollup), make_config(), OWNER, "main",
+                           fake, notes)
+
+    def test_lagging_check_on_a_successful_run_passes_with_a_note(self):
+        run = json.dumps({"status": "completed", "conclusion": "success",
+                          "url": "https://github.com/octo/repo/actions/runs/123"})
+        notes = []
+        self.assertEqual(self._lagging(run, notes=notes), [])
+        self.assertEqual(len(notes), 1)
+        self.assertIn("'build'", notes[0])
+        self.assertIn("actions/runs/123", notes[0])
+
+    def test_lagging_check_on_a_failed_run_is_refused(self):
+        run = json.dumps({"status": "completed", "conclusion": "failure", "url": "u"})
+        self.assertTrue(any("concluded FAILURE" in p for p in self._lagging(run)))
+
+    def test_lagging_check_on_a_running_run_has_not_finished(self):
+        run = json.dumps({"status": "in_progress", "conclusion": "", "url": "u"})
+        notes = []
+        self.assertTrue(any("has not finished" in p for p in self._lagging(run, notes=notes)))
+        self.assertEqual(notes, [])
+
+    def test_lagging_check_without_a_runner_or_readable_run_is_unchanged(self):
+        self.assertTrue(any("has not finished" in p for p in self._lagging("", runner=False)))
+        self.assertTrue(any("has not finished" in p for p in self._lagging("not json")))
+
+        class Broken:
+            def __call__(self, argv, cwd=None):
+                raise RunError("gh failed")
+        rollup = [{"__typename": "CheckRun", "name": "build", "status": "QUEUED",
+                   "detailsUrl": "https://x/actions/runs/123/job/4"}]
+        found = merge.check(make_pr(statusCheckRollup=rollup), make_config(), OWNER, "main", Broken())
+        self.assertTrue(any("has not finished" in p for p in found))
 
     def test_only_the_latest_run_of_each_check_counts(self):
         def check(conclusion, started):

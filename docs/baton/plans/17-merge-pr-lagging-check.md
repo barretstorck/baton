@@ -25,7 +25,7 @@ from `tests/fakes.py`, whose replies match by command-line prefix) and `tests/te
 
 Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
 
-- [ ] **1. Settle a lagging check run from its workflow run**
+- [x] **1. Settle a lagging check run from its workflow run**
   - Files: `lib/baton/merge.py`, `tests/test_merge.py`
   - Uses: `_check_ci(pr, cfg)` (`lib/baton/merge.py:46`), `_latest_runs(rollup)` (`lib/baton/merge.py:32`), `RunError` (`lib/baton/run.py`)
   - Provides: `_settle(item, runner, notes) -> dict` (returns the item unchanged, or a copy with `status` COMPLETED and `conclusion` set from the finished run, appending one note such as `check 'build' was still in progress; used the result of run <url> (success)`); `_check_ci(pr, cfg, runner=None, notes=None)` applies `_settle` after `_latest_runs`; `check(pr, cfg, owner, default_branch, runner, notes=None)` and `merge(...)` pass `runner` and their notes list through
