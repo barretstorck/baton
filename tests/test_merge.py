@@ -74,7 +74,7 @@ class CheckTest(unittest.TestCase):
                            fake, notes)
 
     def test_lagging_check_on_a_successful_run_passes_with_a_note(self):
-        run = json.dumps({"status": "completed", "conclusion": "success",
+        run = json.dumps({"status": "completed", "conclusion": "success", "headSha": HEAD,
                           "url": "https://github.com/octo/repo/actions/runs/123"})
         notes = []
         self.assertEqual(self._lagging(run, notes=notes), [])
@@ -82,8 +82,32 @@ class CheckTest(unittest.TestCase):
         self.assertIn("'build'", notes[0])
         self.assertIn("actions/runs/123", notes[0])
 
+    def test_lagging_check_on_a_run_of_another_commit_is_not_settled(self):
+        run = json.dumps({"status": "completed", "conclusion": "success",
+                          "headSha": "0" * 40, "url": "u"})
+        notes = []
+        self.assertTrue(any("has not finished" in p for p in self._lagging(run, notes=notes)))
+        self.assertEqual(notes, [])
+        no_sha = json.dumps({"status": "completed", "conclusion": "success", "url": "u"})
+        self.assertTrue(any("has not finished" in p for p in self._lagging(no_sha)))
+
+    def test_lagging_check_requires_the_same_workflow_when_named(self):
+        def lagging(item_workflow, run_workflow):
+            url = "https://github.com/octo/repo/actions/runs/123/job/456"
+            item = {"__typename": "CheckRun", "name": "build", "status": "IN_PROGRESS",
+                    "conclusion": "", "detailsUrl": url}
+            if item_workflow:
+                item["workflowName"] = item_workflow
+            run = json.dumps({"status": "completed", "conclusion": "success",
+                              "headSha": HEAD, "workflowName": run_workflow, "url": "u"})
+            return merge.check(make_pr(statusCheckRollup=[item]), make_config(), OWNER, "main",
+                               FakeRunner({"gh run view 123": run}))
+        self.assertEqual(lagging("ci", "ci"), [])
+        self.assertEqual(lagging(None, "ci"), [])
+        self.assertTrue(any("has not finished" in p for p in lagging("ci", "other")))
+
     def test_lagging_check_on_a_failed_run_is_refused(self):
-        run = json.dumps({"status": "completed", "conclusion": "failure", "url": "u"})
+        run = json.dumps({"status": "completed", "conclusion": "failure", "headSha": HEAD, "url": "u"})
         self.assertTrue(any("concluded FAILURE" in p for p in self._lagging(run)))
 
     def test_lagging_check_on_a_running_run_has_not_finished(self):

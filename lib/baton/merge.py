@@ -46,21 +46,26 @@ def _latest_runs(rollup):
 _RUN_URL = re.compile(r"/actions/runs/(\d+)(?:/|$)")
 
 
-def _settle(item, runner, notes):
+def _settle(item, runner, notes, head=""):
     """GitHub can keep a check run open after its workflow run finished. For an unfinished
-    check run, ask the workflow run; if it is completed, return a copy settled from it."""
+    check run, ask the workflow run; if it is completed and ran on the pull request's head
+    commit (and is the item's workflow), return a copy settled from it. Fails closed."""
     if item.get("__typename") == "StatusContext" or item.get("status") == "COMPLETED":
         return item
     found = _RUN_URL.search(item.get("detailsUrl") or "")
-    if runner is None or not found:
+    if runner is None or not found or not head:
         return item
     try:
         run = json.loads(runner(["gh", "run", "view", found.group(1),
-                                 "--json", "status,conclusion,workflowName,url"]))
+                                 "--json", "status,conclusion,workflowName,url,headSha"]))
     except (RunError, ValueError):
         return item
     if not isinstance(run, dict) or str(run.get("status", "")).lower() != "completed" \
             or not run.get("conclusion"):
+        return item
+    if run.get("headSha") != head:
+        return item
+    if item.get("workflowName") and item["workflowName"] != run.get("workflowName"):
         return item
     conclusion = str(run["conclusion"]).upper()
     if notes is not None:
@@ -70,7 +75,7 @@ def _settle(item, runner, notes):
 
 
 def _check_ci(pr, cfg, runner=None, notes=None):
-    rollup = [_settle(item, runner, notes)
+    rollup = [_settle(item, runner, notes, pr.get("headRefOid") or "")
               for item in _latest_runs(pr.get("statusCheckRollup") or [])]
     if not rollup:
         if cfg.data["merge"]["allow_no_ci"]:

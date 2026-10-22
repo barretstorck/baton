@@ -143,6 +143,7 @@ class SnapshotTest(unittest.TestCase):
                                        "status": "IN_PROGRESS", "conclusion": "",
                                        "detailsUrl": "https://github.com/octo/proj/actions/runs/123/job/4"}]}]
         run_view = json.dumps({"status": "completed", "conclusion": "success", "workflowName": "ci",
+                               "headSha": head,
                                "url": "https://github.com/octo/proj/actions/runs/123"})
         result = snap([issue(1, "in-review", "deliverable")], prs=prs,
                       extra={"gh run view 123": run_view})
