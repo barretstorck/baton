@@ -29,7 +29,7 @@ text in skills, a template, the design spec and the README.
 
 Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
 
-- [ ] **1. Label description names no pull request**
+- [x] **1. Label description names no pull request**
   - Files: `lib/baton/labels.py`, `tests/test_labels.py`
   - Uses: the `"type:spike": ("5319e7", "Research; a pull request is optional")` entry (`lib/baton/labels.py:16`); `make_config` and the `LabelsTest` class (`tests/test_labels.py:9`, `:19`)
   - Provides: description `"Research; findings, optional prototype ref"`
