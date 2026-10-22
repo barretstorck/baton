@@ -13,6 +13,7 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | The latest agent question and the maintainer's replies | `baton answers <N>` |
 | Open pull requests | `gh pr list --state open --json number,title,headRefName,isDraft,closingIssuesReferences` |
 | A pull request's checks | `gh pr checks <N>` |
+| A pull request's draft state and CI state (reviewer) | `baton pr-state <N>` (JSON: `draft`, `ci`: `green`, `red`, `pending` or `none`, `problems`) |
 | A pull request's review state | `baton review state <N>`: `none`, `changes`, `replied`, `stale`, `approved` or `escalate` |
 | An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`); reads the plan file on the issue branch, or a legacy `## Plan` in the body |
 | An issue's plan file | the issue's first line is `Plan: [path](link)`; in a checkout of `issue-<N>-<slug>` it is `<docs.dir>/plans/<N>-<slug>.md` (`docs.dir` from `baton config`) |

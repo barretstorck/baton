@@ -40,7 +40,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: `baton pr-state <PR>` prints `json.dumps(sprint.pr_state(pr, cfg, run.run), indent=2)` for `gh pr view <PR> --json isDraft,statusCheckRollup`; no number prints `usage: baton pr-state <PR>` to stderr and returns 64; add `"pr-state": cmd_pr_state` to `COMMANDS` (`cli.py:299`)
   - Check: `bin/baton pr-state 13` (a merged pull request in this repository) prints JSON with a `draft` key and a `ci` key; `bin/baton pr-state` exits 64.
 
-- [ ] **3. Tell the reviewer to use it**
+- [x] **3. Tell the reviewer to use it**
   - Files: `skills/review/SKILL.md`, `references/github.md`, `tests/test_template.py`
   - Uses: the command from task 2
   - Provides: in `skills/review/SKILL.md` step 4, a paragraph saying: run `baton pr-state <PR>`; `draft` is the pull request's own draft state and `ci` is judged on the newest run of each check, so a `skipped` run replaced by a later run does not count; state a pull request is a draft, or that CI did not run, only from that output, never from the first check seen in `gh pr checks` or the rollup; record the output's `draft` and `ci` under "Checked" in the review; add a matching bullet to the skill's `## Never` list. In `references/github.md` add a table row for `baton pr-state <N>` (reviewer: draft state and CI state of a pull request). In `tests/test_template.py` add a test that `skills/review/SKILL.md` contains `baton pr-state`.

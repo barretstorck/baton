@@ -48,3 +48,7 @@ class TemplateTest(unittest.TestCase):
     def test_sprint_skill_names_orchestrator_role_variable(self):
         text = (ROOT / "skills/sprint/SKILL.md").read_text()
         self.assertIn("BATON_ROLE", text)
+
+    def test_review_skill_reads_state_from_pr_state(self):
+        text = (ROOT / "skills/review/SKILL.md").read_text()
+        self.assertIn("baton pr-state", text)
