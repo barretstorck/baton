@@ -19,6 +19,24 @@ PR_FIELDS = ("number,headRefName,headRefOid,isDraft,mergeable,closingIssuesRefer
              "statusCheckRollup,comments")
 
 
+class SnapshotError(Exception):
+    """Forge data could not be read; the snapshot must not look valid."""
+
+
+def _load(runner, argv, what):
+    """Run a forge read that must answer with a JSON list; never turn a bad reply into []."""
+    text = runner(argv)
+    if not (text or "").strip():
+        raise SnapshotError(f"could not read {what}: empty reply")
+    try:
+        data = json.loads(text)
+    except ValueError as error:
+        raise SnapshotError(f"could not read {what}: invalid JSON ({error})") from error
+    if not isinstance(data, list):
+        raise SnapshotError(f"could not read {what}: expected a list")
+    return data
+
+
 def branch_state(runs):
     """green, red, pending or none, judged on the newest commit's workflow runs."""
     if not runs:
@@ -69,11 +87,12 @@ def _blocker_open(number, by_number, runner):
 def snapshot(cfg, runner, milestone=None):
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     owner, branch = repo["owner"]["login"], repo["defaultBranchRef"]["name"]
-    milestones = json.loads(runner(
-        ["gh", "api", f"repos/{owner}/{repo['name']}/milestones?state=open&per_page=100"]) or "[]")
+    milestones = _load(
+        runner, ["gh", "api", f"repos/{owner}/{repo['name']}/milestones?state=open&per_page=100"],
+        "milestones")
     chosen, open_sprints = _pick_sprint(milestones, milestone)
-    runs = json.loads(runner(["gh", "run", "list", "--branch", branch, "--limit", "20",
-                              "--json", "status,conclusion,headSha,workflowName"]) or "[]")
+    runs = _load(runner, ["gh", "run", "list", "--branch", branch, "--limit", "20",
+                          "--json", "status,conclusion,headSha,workflowName"], "workflow runs")
     result = {
         "sprint": None, "open_sprints": open_sprints,
         "default_branch": {"name": branch, "state": branch_state(runs)},
@@ -86,10 +105,10 @@ def snapshot(cfg, runner, milestone=None):
     result["sprint"] = {"number": chosen["number"], "title": chosen["title"],
                         "description": chosen.get("description") or "", "due": chosen.get("due_on")}
 
-    issues = json.loads(runner(["gh", "issue", "list", "--milestone", chosen["title"], "--state",
-                                "all", "--limit", "300", "--json", ISSUE_FIELDS]) or "[]")
-    prs = json.loads(runner(["gh", "pr", "list", "--state", "open", "--limit", "200",
-                             "--json", PR_FIELDS]) or "[]")
+    issues = _load(runner, ["gh", "issue", "list", "--milestone", chosen["title"], "--state",
+                            "all", "--limit", "300", "--json", ISSUE_FIELDS], "issues")
+    prs = _load(runner, ["gh", "pr", "list", "--state", "open", "--limit", "200",
+                         "--json", PR_FIELDS], "pull requests")
     pr_for = {ref["number"]: pr for pr in prs for ref in pr.get("closingIssuesReferences") or []}
     by_number = {item["number"]: item for item in issues}
     status_of = {cfg.label(name): name for name in config.STATUSES}

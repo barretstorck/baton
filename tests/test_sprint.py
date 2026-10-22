@@ -3,6 +3,7 @@ import json
 import pathlib
 import unittest
 from baton import config, review, sprint
+from baton import run as run_module
 from tests.fakes import FakeRunner
 
 OWNER = "octo"
@@ -53,6 +54,39 @@ def replies(issues, prs=(), runs=(run(),), milestones=None, extra=None):
 
 def snap(issues, config_=None, **kwargs):
     return sprint.snapshot(config_ or cfg(), FakeRunner(replies(issues, **kwargs)))
+
+
+class StrictReadsTest(unittest.TestCase):
+    def broken(self, key, reply):
+        data = replies([issue(1, "ready")])
+        data[key] = reply
+        return sprint.snapshot(cfg(), FakeRunner(data))
+
+    def test_empty_replies_raise(self):
+        for key, what in (("gh issue list", "issues"), ("gh pr list", "pull requests"),
+                          ("gh api repos/octo/proj/milestones", "milestones"),
+                          ("gh run list", "workflow runs")):
+            with self.assertRaises(sprint.SnapshotError) as caught:
+                self.broken(key, "")
+            self.assertIn(f"could not read {what}", str(caught.exception))
+
+    def test_invalid_json_and_non_list_raise(self):
+        with self.assertRaises(sprint.SnapshotError):
+            self.broken("gh issue list", "{oops")
+        with self.assertRaises(sprint.SnapshotError):
+            self.broken("gh pr list", "{}")
+
+    def test_real_empty_lists_are_valid(self):
+        result = snap([], prs=[])
+        self.assertEqual(result["dispatchable"], [])
+        self.assertEqual(result["sprint"]["number"], 3)
+
+    def test_runner_error_propagates(self):
+        class Boom:
+            def __call__(self, argv, cwd=None):
+                raise run_module.RunError("gh failed")
+        with self.assertRaises(run_module.RunError):
+            sprint.snapshot(cfg(), Boom())
 
 
 class BranchStateTest(unittest.TestCase):

@@ -32,7 +32,7 @@ key prefixes, so every new `gh` call needs a default reply in `replies()`.
 
 Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
 
-- [ ] **1. Strict reads: never turn a bad reply into empty lists**
+- [x] **1. Strict reads: never turn a bad reply into empty lists**
   - Files: `lib/baton/sprint.py`, `lib/baton/cli.py`, `tests/test_sprint.py`
   - Uses: the `or "[]"` reads for milestones, issues, prs and runs in `snapshot` (`lib/baton/sprint.py:69-130`); `main` (`lib/baton/cli.py:322`)
   - Provides: `class SnapshotError(Exception)` and `_load(runner, argv, what) -> list` in `sprint.py` (raises `SnapshotError("could not read <what>: ...")` on an empty reply, invalid JSON or a non-list); `cli.main` prints `baton: <message>` and returns 2 for `SnapshotError`
