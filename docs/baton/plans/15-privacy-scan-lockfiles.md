@@ -25,7 +25,7 @@ change: `baton comment`, `plan replace` and the gate keep calling `scan.scan_tex
 
 Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
 
-- [ ] **1. Scan helper that can skip a kind**
+- [x] **1. Scan helper that can skip a kind**
   - Files: `lib/baton/scan.py`, `tests/test_scan.py`
   - Uses: `scan_text(text, terms, allow)` (`lib/baton/scan.py:51`)
   - Provides: `scan.PY_DEPENDENCY_FILES` (tuple of the fnmatch patterns above), `scan.skips_private_ip(path) -> bool` (basename match, any directory), and `scan_text(text, terms, allow, skip=())` where `skip` is a collection of kinds to leave out (default behaviour unchanged)

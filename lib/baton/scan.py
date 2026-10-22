@@ -1,3 +1,4 @@
+import fnmatch
 import os
 import re
 from dataclasses import dataclass
@@ -20,6 +21,19 @@ _PATTERNS = [
 ]
 _EMAIL_OK = re.compile(
     r"@(?:users\.noreply\.github\.com|anthropic\.com|example\.(?:com|org|net))$")
+
+
+# Python dependency files hold four-part package versions (CUDA wheels) that look like
+# private IPs; matched by basename.
+PY_DEPENDENCY_FILES = (
+    "uv.lock", "poetry.lock", "pdm.lock", "Pipfile.lock",
+    "requirements*.txt", "requirements*.in", "constraints*.txt", "pylock*.toml",
+)
+
+
+def skips_private_ip(path):
+    name = os.path.basename(path)
+    return any(fnmatch.fnmatchcase(name, pattern) for pattern in PY_DEPENDENCY_FILES)
 
 
 @dataclass(frozen=True)
@@ -48,13 +62,15 @@ def _matches(kind, pattern, line):
         yield text
 
 
-def scan_text(text, terms, allow):
+def scan_text(text, terms, allow, skip=()):
     findings = []
     lowered_terms = [term.lower() for term in terms]
     for number, line in enumerate(text.splitlines(), start=1):
         for literal in allow:
             line = line.replace(literal, "")
         for kind, pattern in _PATTERNS:
+            if kind in skip:
+                continue
             if any(True for _ in _matches(kind, pattern, line)):
                 findings.append(Finding(kind, number))
         lowered = line.lower()
