@@ -22,4 +22,4 @@ Written against: (full commit sha of the default branch the plan was written fro
   - Port from: `path:first-last` (when porting; leave out otherwise)
   - Check: the test or subset that proves this task done, a build, or "none"
 
-(Not for spikes. Tasks run in order, one developer each. No code here; the developer writes it.)
+(Not for spikes. This file is committed to `refs/plans/<N>` by `baton plan commit`, not to a branch. Tasks run in order, one developer each. No code here; the developer writes it.)

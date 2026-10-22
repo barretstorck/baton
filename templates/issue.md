@@ -1,4 +1,4 @@
-Plan: [path of the plan file](link to it on the issue branch; `baton plan link` writes this line)
+Plan: [path of the plan file](link to the plan ref's history page, `refs/plans/<N>`; `baton plan link` writes this line)
 
 ## Context
 
