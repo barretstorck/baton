@@ -29,7 +29,9 @@ looks done. Workflow adapted from the
    maintainer the missing list and run `baton labels --create` only after they agree.
 
 5. **Create the local brief.** Create `~/.baton/<owner>-<repo>/brief.local.md` if it is missing,
-   with headings `Hosts`, `Paths` and `Credentials` for the maintainer to fill in. Create
+   by copying `${CLAUDE_PLUGIN_ROOT}/templates/brief.local.md` to it. Ask the maintainer which
+   local data paths (test footage, reference images) agents may use and write them, as absolute
+   paths, under `## Local data`. Create
    `~/.baton/private-terms.txt` if it is missing, with one comment line explaining that each line
    is a name, hostname or folder name that must never be published. Ask the maintainer to add
    their terms. Do not suggest terms yourself and never print the file's contents.

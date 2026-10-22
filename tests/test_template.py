@@ -34,6 +34,17 @@ class TemplateTest(unittest.TestCase):
             text = (ROOT / path).read_text().lower()
             self.assertIn("never run `baton task done pr`", text, path)
 
+    def test_local_brief_template_has_local_data_section(self):
+        text = (ROOT / "templates" / "brief.local.md").read_text()
+        self.assertIn("## Local data", text)
+        self.assertIn("## Credentials", text)
+
+    def test_developer_instructions_forbid_copying_secret_files(self):
+        for path in ("skills/develop/SKILL.md", "agents/baton-developer.md"):
+            text = (ROOT / path).read_text()
+            self.assertIn("never copy or link `.env`", text.lower(), path)
+            self.assertIn("## Local data", text, path)
+
     def test_sprint_skill_names_orchestrator_role_variable(self):
         text = (ROOT / "skills/sprint/SKILL.md").read_text()
         self.assertIn("BATON_ROLE", text)
