@@ -116,7 +116,8 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
 - **`review` is `changes` but `progress.<N>.review_without_tasks` is true:** a review from before
   Baton 0.3 with no task list. Dispatch a reviewer with the extra line "The last review has no
   task list: review again and write one."
-- **Not a spike, `progress.<N>.plan.next` is null and `draft` is true:** the plan is finished, so
+- **Not a spike, `progress.<N>.plan.next` is null, `draft` is true and `review` is not `changes`
+  or `escalate`:** the plan is finished (or the review's fixes are replied to), so
   mark the pull request ready: `gh pr ready <PR>`. CI runs once, now, instead of on every push
   of a draft. Look again next pass; nothing else for this issue this pass.
 - **Ready (not a draft), every plan task ticked, and `ci` is `red` or `mergeable` is
@@ -128,13 +129,16 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   `allow_no_ci` is true). `ci` `pending` waits: a pull request just marked ready has no checks
   registered yet, and the reviewer starts on a later pass. `stale` means the pull request's
   change moved after it was approved.
-- **`changes`:** `baton set-status <N> status:in-dev`. Step 7 then works the review's tasks one
+- **`changes`:** if `draft` is false, turn the pull request back into a draft: `gh pr ready <PR>
+  --undo`, so that CI runs once per "developer done" and not once per pushed fix task. Then
+  `baton set-status <N> status:in-dev`. Step 7 then works the review's tasks one
   at a time, and step 8 posts the reply when the last one is ticked. This takes a developer slot.
 - **`escalate`:** the review rounds in the brief are used up and the reviewer still asks for
   changes. Add `needs-maintainer`, post an orchestrator `status` comment on the issue linking the
   last review and the last reply, and tell the maintainer in a few lines what the two disagree
-  about. When the maintainer answers, record it as a decision (step 3) and work the review's
-  tasks (step 7).
+  about. When the maintainer answers, record it as a decision (step 3); if the answer sends the
+  review's tasks to a developer, re-draft the pull request as for `changes` (`gh pr ready <PR>
+  --undo` when `draft` is false) and work the tasks (step 7).
 - **`approved`**, or `not-required`:
   1. Still a draft (a fallback; normally ready already): `gh pr ready <PR>`. CI starts now; look
      again next pass.
@@ -237,7 +241,9 @@ both read it; nothing else goes in but the repository and the sprint goal:
      session ended before the next step. If the latest review asks for changes and no reply
      follows it, post the reply (step 8), building each line from the branch's `Review <r.n>:`
      commits; ask the maintainer about a task with no commit. Then
-     `baton set-status <N> status:in-review`.
+     `baton set-status <N> status:in-review`. The pull request stays a draft until the next pass
+     marks it ready (step 4); CI runs once, and the reviewer comes only when `ci` is `green` or
+     `none`.
 2. **New issues:** for each number in `dispatchable`, in order, dispatch the same way from its
    `progress` entry: `Do task <progress.<N>.plan.next> of issue <N>.` (task 1 for a fresh issue,
    a later task for one resumed after a question), `Do spike issue <N>.`, or the refiner when it
@@ -302,7 +308,9 @@ Act on each result with commands on their own, reading each one's output; never 
       1.2 declined: <the developer's reason>.
       EOF
 
-  then `baton set-status <N> status:in-review`; the next pass marks the pull request ready, and dispatches the reviewer once CI is green. If this
+  then `baton set-status <N> status:in-review`. The pull request is still a draft: make no
+  `gh pr ready` call here. The next pass marks it ready (step 4), CI runs once, and the reviewer is
+  dispatched only when `ci` is `green` or `none`. If this
   session no longer has the developers' results, read them from the branch: `Review <r.n>:`
   commits are fixes; ask the maintainer about a task with no commit and no recorded reason.
 - `REPLAN`: read the proposal against the issue's acceptance criteria and out-of-scope section.

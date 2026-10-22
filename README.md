@@ -56,6 +56,8 @@ whole issue grows large and expensive: in the second sprint, single developers r
    it waits; a red CI is fixed by a developer before any review. The reviewer reviews the head
    commit against the issue and the brief and posts one review: `approve`, or `changes` with a
    `## Tasks` checklist of what to fix in this pull request, and follow-up issues for the rest.
+   A `changes` review turns the pull request back into a draft while its fix tasks are worked,
+   and it is marked ready again after the developer's reply, so CI runs once per round.
 4. On `changes`, one developer per task fixes it or declines it with a reason, the orchestrator
    posts the reply, and the reviewer looks again, up to `review.max_rounds` rounds before the
    maintainer is asked. An approval is refused while any task is open.
