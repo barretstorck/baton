@@ -24,7 +24,7 @@ orchestrator side is `skills/sprint/SKILL.md` section 8 (lines 248-249) and the 
 
 Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
 
-- [ ] **1. Developer instructions: who ticks what**
+- [x] **1. Developer instructions: who ticks what**
   - Files: `skills/develop/SKILL.md`, `agents/baton-developer.md`, `tests/test_template.py`
   - Provides: in `skills/develop/SKILL.md`, directly under the plan-task tick line (step 4, line 93) a short two-row contrast: plan task, the developer ticks its own box in the plan file with `baton task done issue <N> <n>` and commits it with the code; review task, the developer never runs `baton task done pr`, it returns `FIXED <sha>` or `DECLINED <reason>` and the orchestrator checks the sha and ticks. Repeat the review-task half in "## A review task" step 3, and add a `## Never` bullet "Run `baton task done pr`". Add one sentence with the same rule to `agents/baton-developer.md`. In `tests/test_template.py` add a test that both files contain `never run \`baton task done pr\`` (case-insensitive) .
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_template -v`

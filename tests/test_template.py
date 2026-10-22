@@ -28,3 +28,8 @@ class TemplateTest(unittest.TestCase):
         for name in ("baton-developer", "baton-reviewer", "baton-refiner"):
             meta, _ = frontmatter.split((ROOT / "agents" / f"{name}.md").read_text())
             self.assertIn("\neffort: medium\n", f"\n{meta}\n", name)
+
+    def test_developer_instructions_forbid_ticking_review_tasks(self):
+        for path in ("skills/develop/SKILL.md", "agents/baton-developer.md"):
+            text = (ROOT / path).read_text().lower()
+            self.assertIn("never run `baton task done pr`", text, path)
