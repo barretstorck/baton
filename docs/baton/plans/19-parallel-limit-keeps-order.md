@@ -21,7 +21,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Uses: Start step 4 ("Take the parallel limit from the request...", `:34-37`); step 7 "Dispatch", the paragraph beginning "Look at `held` too" (`:219`)
   - Provides: in Start step 4, a sentence that changing the limit only changes `free_slots`, never an order or decision recorded on an issue; in step 7 beside the `held` paragraph, a rule that when a free slot could only be filled by an issue whose Decisions or Pointers say it comes later, the orchestrator leaves the slot empty and asks the maintainer on that issue (`baton comment issue <N> orchestrator question <file>`, label `needs-maintainer`)
   - Check: `rg -n "recorded" skills/sprint/SKILL.md` finds both
-- [ ] **2. Record maintainer-decided order as Blocked by**
+- [x] **2. Record maintainer-decided order as Blocked by**
   - Files: `skills/sprint/SKILL.md`
   - Uses: step 3 "Answers", item 2 (`:81-85`)
   - Provides: in step 3 item 2, when a decision sets the order of two issues, also add `Blocked by: #N` to the later issue's Pointers in the same description edit, because `sprint-status` reads that line and not Decisions; and a sentence that this is used instead of prose alone
