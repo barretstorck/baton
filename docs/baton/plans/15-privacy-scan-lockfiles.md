@@ -31,7 +31,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: `scan.PY_DEPENDENCY_FILES` (tuple of the fnmatch patterns above), `scan.skips_private_ip(path) -> bool` (basename match, any directory), and `scan_text(text, terms, allow, skip=())` where `skip` is a collection of kinds to leave out (default behaviour unchanged)
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_scan`
 
-- [ ] **2. Split the patch per file and apply the exemption in the hooks**
+- [x] **2. Split the patch per file and apply the exemption in the hooks**
   - Files: `lib/baton/githooks.py`, `tests/test_githooks.py`
   - Uses: `scan.skips_private_ip`, `scan.scan_text(..., skip=...)` (task 1); `added_text(patch)` (`lib/baton/githooks.py:19`, keep it working, its test stays); `_check(cfg, patch, new_files, terms, messages="")` (`lib/baton/githooks.py:38`)
   - Provides: `githooks.added_by_file(patch) -> list[tuple[str, str]]` (path of the new side, added lines joined by newline; deleted files and mode-only changes give no entry); `_check` scans each file's added lines with `skip={"private-ip"}` when `skips_private_ip(path)`, and scans messages and new file names in full
