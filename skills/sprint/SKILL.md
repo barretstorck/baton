@@ -201,6 +201,12 @@ Developers return follow-up suggestions. For each one worth keeping, create an i
 `${CLAUDE_PLUGIN_ROOT}/templates/issue.md` in `status:refinement`, mentioning where it came from
 ("see #N", never a closing keyword).
 
+Before filing, check the follow-up's central claim ("X currently does Y", "Z was not measured")
+against the code on the default branch (`rg`, or `git show origin/<default>:<path>`) or against
+the findings comment it came from (`gh issue view <N> --comments`). If you cannot check it in a
+few commands, write in the issue's Context that the claim is **unverified** and name its source
+("per the developer of #N"). Do not repeat an agent's claim as fact.
+
 - It joins **this** sprint only if it serves the sprint goal: add it to the milestone, run
   `baton:refine` on it as a subagent, and it is dispatched once ready.
 - Otherwise leave it out of the sprint for the maintainer to prioritise.
