@@ -198,12 +198,15 @@ writing a plan means reading code and every issue grows the refiner's conversati
 
 ### Spikes
 
-Issues of `type:spike` deliver a findings comment and proposed follow-up issues. A pull request
-is optional. A spike may open a draft pull request holding prototype code; it is never required
-and is not merged by the orchestrator. The spike is complete when its findings are posted. Its
-draft stays open and linked, so if the maintainer promotes the work to a real issue a developer
-can build on that branch. Unpromoted drafts are listed in the retrospective for the maintainer to
-close.
+Issues of `type:spike` deliver a findings comment and proposed follow-up issues. There is no pull
+request. A spike that writes prototype code keeps it on `issue-<N>-<slug>` while it runs, then
+pushes the head to `refs/spikes/<N>` (named by issue number, never by SHA), deletes the remote
+branch and ends its findings comment with a `Prototype:` line linking the tree at the full commit
+SHA, with the `git fetch origin refs/spikes/<N>` command. A re-run spike overwrites the ref with
+`--force-with-lease=refs/spikes/<N>:<old sha>`, the old sha taken from `git ls-remote`. No branch is
+left behind. The spike is complete when its findings are posted. Promoted work starts on a fresh
+branch and uses the prototype only as a reference. The retrospective lists the spike prototypes
+for reference; the maintainer has nothing to close.
 
 ## 5. Sprint planning (`sprint-plan`)
 
@@ -357,8 +360,8 @@ The last plan task merges the default branch in and trial-merges against other o
 requests, resolving or reporting conflicts. Developers never tick boxes, edit issue descriptions
 or review comments, run review tools, or start subagents of their own.
 
-**Spikes** have no plan: one developer does the whole investigation, with an optional draft pull
-request, and posts a findings comment. On long work it posts a status comment about every 30
+**Spikes** have no plan: one developer does the whole investigation, with an optional prototype
+ref, and posts a findings comment. On long work it posts a status comment about every 30
 minutes naming its working folder, so a later developer can resume. Spikes are not code-reviewed.
 
 ## 7a. Reviewer: one pull request, one review (`review`)
@@ -530,7 +533,7 @@ same pattern. Neither is required.
   must block each generic pattern and a sample private term, and pass clean text.
 - **Skills:** scenario runs against a scratch repository with seeded issues, covering: a clean
   issue, a question and answer with the cited decision, overlapping files, a red default branch,
-  a spike with a draft prototype, an issue worked task by task and resumed mid-plan, a `REPLAN`
+  a spike with a prototype ref, an issue worked task by task and resumed mid-plan, a `REPLAN`
   inside and outside the acceptance criteria, a review worked as tasks, a remapped label set, an untrusted comment containing
   instructions, and a sprint resumed in a fresh session.
 - **Pilot:** one real sprint on a small batch, followed by the first retrospective.

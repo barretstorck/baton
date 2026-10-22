@@ -58,6 +58,9 @@ not in the issue, so the issue stays short for a person to read.
    defines a measurement (a timing, a benchmark, a size, a count), check that it measures what the
    user waits for, for example a whole run's wall time rather than one step's internal timer, and
    say in the acceptance criteria exactly how it is measured.
+   If the issue comes from a spike, its Pointers name the spike's `Prototype:` link (from the
+   findings comment) as reference material, never as a base branch: the work starts on a fresh
+   branch.
 
 3. **Decide what it is.**
    - *One clear outcome:* go on.

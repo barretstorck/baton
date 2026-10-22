@@ -13,7 +13,7 @@ _STYLE = {
     "type:feature": ("a2eeef", "New behaviour"),
     "type:bug": ("d73a4a", "Something is wrong"),
     "type:maintenance": ("cfd3d7", "Refactoring, tooling, upkeep"),
-    "type:spike": ("5319e7", "Research; a pull request is optional"),
+    "type:spike": ("5319e7", "Research; findings, optional prototype ref"),
     "deliverable": ("0052cc", "Accepted into the sprint"),
     "stretch": ("bfd4f2", "In the sprint if time allows"),
     "broken-default-branch": ("b60205", "The default branch is failing; top priority"),

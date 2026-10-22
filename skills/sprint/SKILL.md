@@ -104,8 +104,12 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
 (the issue's tasks) and `review` (the latest review's tasks).
 
 - **Spike** (`progress.<N>.spike` is true): read the findings comment. File the
-  follow-up issues it proposes that are worth having (step 6), leave any draft pull request open,
-  set `status:complete` and close the issue. Spikes are not code-reviewed.
+  follow-up issues it proposes that are worth having (step 6). When the report's `Prototype:` is
+  not `none`, run `git ls-remote origin refs/spikes/<N>` and
+  `git ls-remote --heads origin 'issue-<N>-*'`: delete the branch with
+  `git push origin --delete <branch>` if it still exists; if the ref is missing, report that to
+  the maintainer and do not close the issue. Otherwise set `status:complete` and close the issue.
+  Spikes are not code-reviewed.
 - **Not a spike and no pull request, or `progress.<N>.plan.next` is set:** the plan is not
   finished (an interrupted task, or a replaced plan). `baton set-status <N> status:in-dev`; step 7
   dispatches the next task, which opens the draft pull request if it is missing.
@@ -355,7 +359,7 @@ is running:
 3. For each unfinished issue: remove it from the milestone and add the label
    `missed:<sprint title>` ([GitLab's milestone cleanup](https://handbook.gitlab.com/handbook/engineering/workflow/#milestone-cleanup)).
    Create the label if it does not exist.
-4. List open spike drafts in the retrospective.
+4. List spike prototypes in the retrospective.
 5. Close the milestone.
 6. Give the maintainer a short summary: delivered, carried over, what needs them.
 

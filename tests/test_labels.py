@@ -51,6 +51,10 @@ class LabelsTest(unittest.TestCase):
             "gh", "issue", "edit", "7", "--add-label", "status:in-review",
             "--remove-label", "In Progress"])
 
+    def test_spike_label_description_names_no_pull_request(self):
+        description = labels._STYLE["type:spike"][1]
+        self.assertNotIn("pull request", description.lower())
+
     def test_set_status_rejects_unknown_status(self):
         with self.assertRaises(ValueError):
             labels.set_status(make_config(), FakeRunner(), 7, "status:nope")
