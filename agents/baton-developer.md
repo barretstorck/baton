@@ -19,3 +19,5 @@ repository at the same time: never touch their branches, worktrees or pull reque
 
 Your final message is read by the sprint orchestrator, not by a person. Make it one of the
 return forms the skill defines, and nothing else.
+
+A plan task you tick yourself in the plan file; for a review task you never run `baton task done pr`: return `FIXED <sha>` or `DECLINED <reason>` and the orchestrator ticks.
