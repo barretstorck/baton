@@ -170,13 +170,31 @@ def cmd_tasks(args):
     return 64
 
 
+_TASK_USAGE = "usage: baton task done <issue|pr> <number> <task> [--as-built <text>]"
+
+
+def _repo_name():
+    return json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
+
+
 def cmd_task(args):
+    as_built = None
+    if "--as-built" in args:
+        at = args.index("--as-built")
+        if at + 1 >= len(args) or args[1:2] != ["issue"]:
+            print(_TASK_USAGE, file=sys.stderr)
+            return 64
+        as_built = args[at + 1]
+        args = args[:at] + args[at + 2:]
     if len(args) == 4 and args[0] == "done" and args[1] in ("issue", "pr") and args[2].isdigit():
         cfg = _require_config()
         if args[1] == "issue":
             changed = checklist.tick_issue(run.run, int(args[2]), args[3], cwd=os.getcwd(),
-                                           docs_dir=cfg.data["docs"]["dir"])
+                                           docs_dir=cfg.data["docs"]["dir"], as_built=as_built)
         else:
+            if as_built:
+                print(_TASK_USAGE, file=sys.stderr)
+                return 64
             if (os.environ.get("BATON_ROLE") != "orchestrator"
                     and review.in_linked_worktree(run.run, os.getcwd())):
                 print("baton: warning: task done pr is the orchestrator's; developers report "
@@ -185,7 +203,7 @@ def cmd_task(args):
             changed = review.tick_review(run.run, int(args[2]), _owner(), args[3])
         print(f"ticked task {args[3]}" if changed else f"task {args[3]} was already ticked")
         return 0
-    print("usage: baton task done <issue|pr> <number> <task>", file=sys.stderr)
+    print(_TASK_USAGE, file=sys.stderr)
     return 64
 
 
@@ -200,6 +218,20 @@ def cmd_plan(args):
             for task_id, title in found[key]:
                 print(f"{label} task {task_id}: {title}")
         print(json.dumps(found, indent=2))
+        return 0
+    if len(args) == 4 and args[0] == "commit" and args[1].isdigit():
+        cfg = _require_config()
+        number = int(args[1])
+        text = comment.read_body(args[3], sys.stdin)
+        title = json.loads(run.run(["gh", "issue", "view", str(number), "--json", "title"]))["title"]
+        sha = planfile.write(run.run, number, args[2], text, f"Plan for #{number}: {title}")
+        planfile.push(run.run, number, sha)
+        print(sha)
+        return 0
+    if len(args) == 2 and args[0] == "pin" and args[1].isdigit():
+        cfg = _require_config()
+        sha = planfile.pin(run.run, _repo_name(), int(args[1]), docs_dir=cfg.data["docs"]["dir"])
+        print(sha if sha else "nothing to pin")
         return 0
     if len(args) >= 2 and args[0] == "link" and args[1].isdigit():
         number, rest = int(args[1]), args[2:]
@@ -221,6 +253,9 @@ def cmd_plan(args):
                                repo["defaultBranchRef"]["name"]))
         return 0
     print("usage: baton plan replace <issue> <from-task> <file | -> [--drop]\n"
+          "       baton plan commit <issue> <path> <file | ->\n"
+          "       baton plan pin <issue>\n"
+          "       baton plan link <issue> refs/plans/<issue> <path>\n"
           "       baton plan migrate <issue> <branch>\n"
           "       baton plan link <issue> <branch> <path>\n"
           "       baton plan link <issue> --at <sha>", file=sys.stderr)
