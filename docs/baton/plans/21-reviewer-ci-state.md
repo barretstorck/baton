@@ -28,7 +28,7 @@ command and of `tests/test_sprint.py:128` for the pull request fixtures.
 
 Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
 
-- [ ] **1. A pr_state helper in sprint.py**
+- [x] **1. A pr_state helper in sprint.py**
   - Files: `lib/baton/sprint.py`, `tests/test_sprint.py`
   - Uses: `_pr_ci(pr, cfg, runner)` (`lib/baton/sprint.py`, after #16 and #17), `merge._check_ci(pr, cfg, runner=None, notes=None)` (`lib/baton/merge.py`, after #17)
   - Provides: `def pr_state(pr, cfg, runner=None) -> dict` returning `{"draft": bool, "ci": "green|red|pending|none", "problems": [str]}`; `draft` is `bool(pr["isDraft"])`, `ci` is `_pr_ci(pr, cfg, runner)`, `problems` is `merge._check_ci(pr, cfg, runner)`

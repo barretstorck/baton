@@ -369,6 +369,44 @@ class PrCiTests(unittest.TestCase):
         self.assertEqual(self.ci([self.check("", status="IN_PROGRESS")]), "pending")
 
 
+class PrStateTests(unittest.TestCase):
+    check = staticmethod(PrCiTests.check)
+
+    def state(self, rollup, draft=False, runner=None, **extra):
+        pr = {"isDraft": draft, "statusCheckRollup": rollup, **extra}
+        return sprint.pr_state(pr, cfg(), runner)
+
+    def test_replaced_skipped_run_is_ignored_on_a_ready_pull_request(self):
+        rollup = [self.check("SKIPPED"), self.check("SUCCESS", started="2026-10-22T11:00:00Z")]
+        result = self.state(rollup)
+        self.assertFalse(result["draft"])
+        self.assertEqual(result["ci"], "green")
+        self.assertEqual(result["problems"], [])
+
+    def test_draft_with_only_a_skipped_check_is_pending(self):
+        result = self.state([self.check("SKIPPED")], draft=True)
+        self.assertTrue(result["draft"])
+        self.assertEqual(result["ci"], "pending")
+        self.assertTrue(any("skipped" in problem for problem in result["problems"]))
+
+    def test_draft_with_a_passing_check_is_still_a_draft(self):
+        result = self.state([self.check("SUCCESS")], draft=True)
+        self.assertTrue(result["draft"])
+        self.assertEqual(result["ci"], "green")
+
+    def test_lagging_check_run_is_settled_from_its_workflow_run(self):
+        head = "f" * 40
+        rollup = [{"__typename": "CheckRun", "name": "build", "status": "IN_PROGRESS",
+                   "conclusion": "",
+                   "detailsUrl": "https://github.com/octo/proj/actions/runs/123/job/1"}]
+        run_view = json.dumps({"status": "completed", "conclusion": "success",
+                               "workflowName": "ci", "headSha": head,
+                               "url": "https://github.com/octo/proj/actions/runs/123"})
+        result = self.state(rollup, runner=FakeRunner({"gh run view 123": run_view}),
+                            headRefOid=head)
+        self.assertEqual(result["ci"], "green")
+
+
 NOW = datetime(2026, 10, 22, 12, 0, 0, tzinfo=timezone.utc)
 CI_ON_PUSH = "name: ci\non:\n  pull_request:\n  push:\n    branches: [main]\njobs: {}\n"
 WORKFLOWS = "gh api repos/octo/proj/contents/.github/workflows?ref=aaa"
