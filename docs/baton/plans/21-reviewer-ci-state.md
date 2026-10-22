@@ -34,7 +34,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: `def pr_state(pr, cfg, runner=None) -> dict` returning `{"draft": bool, "ci": "green|red|pending|none", "problems": [str]}`; `draft` is `bool(pr["isDraft"])`, `ci` is `_pr_ci(pr, cfg, runner)`, `problems` is `merge._check_ci(pr, cfg, runner)`
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_sprint -v`, with new tests: (a) a ready pull request whose rollup has a `skipped` run and a later `SUCCESS` run of the same name (give both `startedAt`) gives `draft` false and `ci` green; (b) a draft pull request whose only check is `skipped` gives `draft` true and `ci` pending (the all-skipped rule from #16) with a problem mentioning "skipped"; (d) with a `FakeRunner` replying to `gh run view 123`, a check run with `detailsUrl` ending `/actions/runs/123/job/1`, still `IN_PROGRESS` whose workflow run has finished with `success` gives `ci` green, the same as `sprint-status` (#17); (c) a draft whose rollup has a passing check still gives `draft` true.
 
-- [ ] **2. The `baton pr-state` command**
+- [x] **2. The `baton pr-state` command**
   - Files: `lib/baton/cli.py`, `tests/test_sprint.py`
   - Uses: `sprint.pr_state(pr, cfg, runner)` (task 1), `_require_config()` (`lib/baton/cli.py:52`), `run.run`
   - Provides: `baton pr-state <PR>` prints `json.dumps(sprint.pr_state(pr, cfg, run.run), indent=2)` for `gh pr view <PR> --json isDraft,statusCheckRollup`; no number prints `usage: baton pr-state <PR>` to stderr and returns 64; add `"pr-state": cmd_pr_state` to `COMMANDS` (`cli.py:299`)

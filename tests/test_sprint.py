@@ -407,6 +407,26 @@ class PrStateTests(unittest.TestCase):
         self.assertEqual(result["ci"], "green")
 
 
+class PrStateCommandTests(unittest.TestCase):
+    def test_no_number_exits_64(self):
+        from baton import cli
+        self.assertEqual(cli.cmd_pr_state([]), 64)
+
+    def test_prints_draft_and_ci(self):
+        import io
+        from contextlib import redirect_stdout
+        from unittest import mock
+        from baton import cli
+        pr = {"isDraft": False, "statusCheckRollup": [PrCiTests.check("SUCCESS")]}
+        runner = FakeRunner({"gh pr view 13": json.dumps(pr)})
+        out = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.run, "run", runner), redirect_stdout(out):
+            self.assertEqual(cli.cmd_pr_state(["13"]), 0)
+        printed = json.loads(out.getvalue())
+        self.assertEqual((printed["draft"], printed["ci"]), (False, "green"))
+
+
 NOW = datetime(2026, 10, 22, 12, 0, 0, tzinfo=timezone.utc)
 CI_ON_PUSH = "name: ci\non:\n  pull_request:\n  push:\n    branches: [main]\njobs: {}\n"
 WORKFLOWS = "gh api repos/octo/proj/contents/.github/workflows?ref=aaa"

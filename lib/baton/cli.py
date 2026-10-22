@@ -282,6 +282,16 @@ def cmd_sprint_status(args):
     return 0
 
 
+def cmd_pr_state(args):
+    if not args:
+        print("usage: baton pr-state <PR>", file=sys.stderr)
+        return 64
+    cfg = _require_config()
+    pr = json.loads(run.run(["gh", "pr", "view", args[0], "--json", "isDraft,statusCheckRollup"]))
+    print(json.dumps(sprint.pr_state(pr, cfg, run.run), indent=2))
+    return 0
+
+
 def cmd_lock(args):
     ttl = 6.0
     if "--ttl-hours" in args:
@@ -316,6 +326,7 @@ COMMANDS = {
     "lock": cmd_lock,
     "merge-pr": cmd_merge_pr,
     "plan": cmd_plan,
+    "pr-state": cmd_pr_state,
     "review": cmd_review,
     "set-status": cmd_set_status,
     "sprint-status": cmd_sprint_status,
