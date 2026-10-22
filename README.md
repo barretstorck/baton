@@ -60,6 +60,21 @@ whole issue grows large and expensive: in the second sprint, single developers r
 5. Once approved, `baton merge-pr` merges it after checking CI and that the approval still
    covers the head commit.
 
+## Spike prototypes
+
+A spike that writes prototype code keeps it in the custom ref `refs/spikes/<N>`, where `<N>` is the
+spike's issue number. No pull request and no branch is left behind; the findings comment ends with
+a `Prototype:` link to the commit.
+
+- Fetch one with `git fetch origin refs/spikes/<N>`. A normal clone does not fetch these refs, and
+  `git push --mirror` from such a clone deletes them on the remote.
+- GitHub rulesets cover only branches and tags, so anyone with write access can delete a spike ref.
+- **Before making a repository public**, list the refs with `git ls-remote origin 'refs/spikes/*'`,
+  then review them or delete them with `git push origin --delete refs/spikes/<N>`. A deleted ref
+  breaks its findings link, but the findings text stays. Deleting a ref does not erase the commits:
+  GitHub can still serve them by SHA from cached views, forks and old pull request refs
+  (`refs/pull/*`, including earlier spike drafts) until GitHub Support runs a garbage collection.
+
 ## Skills
 
 | Skill | Purpose |

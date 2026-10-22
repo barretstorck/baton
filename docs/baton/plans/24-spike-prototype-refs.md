@@ -53,7 +53,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: refine: one sentence that for an issue that comes from a spike, Pointers name the spike's `Prototype:` link as reference material and never as a base branch. Design spec: "Spikes" describes `refs/spikes/<N>`, a findings link by SHA, no pull request, no branch left; remove the "draft stays open ... build on that branch" reasoning and say prototypes are listed in the retrospective for reference; the developer-section paragraph says "an optional prototype ref" instead of "optional draft pull request"
   - Check: `rg -n "draft" docs/superpowers/specs/2026-10-01-baton-design.md` leaves only the ordinary-issue uses (lines 123 and 339)
 
-- [ ] **5. README note on spike prototypes**
+- [x] **5. README note on spike prototypes**
   - Files: `README.md`
   - Uses: README headings (`## How a pull request gets merged` at line 46, `## Skills` at line 59)
   - Provides: a `## Spike prototypes` section between those two with the bullets of #24's last acceptance criterion: where prototypes live and the fetch command; a normal clone does not fetch them and `git push --mirror` from such a clone deletes them on the remote; rulesets cover only branches and tags so anyone with write access can delete a spike ref; a "before making a repository public" checklist (`git ls-remote origin 'refs/spikes/*'`, review or `git push origin --delete refs/spikes/<N>`; a deleted ref breaks its findings link but not the findings text; deleting does not erase the commits, which GitHub can serve by SHA from cached views, forks and old `refs/pull/*` refs, including earlier spike drafts, until GitHub Support runs a garbage collection)
