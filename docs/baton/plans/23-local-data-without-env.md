@@ -36,7 +36,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: step 5 (line 31) says to copy `${CLAUDE_PLUGIN_ROOT}/templates/brief.local.md` to `~/.baton/<owner>-<repo>/brief.local.md` when missing, replacing the sentence that lists the headings, and to ask the maintainer which local data paths (test footage, reference images) agents may use and write them under `## Local data`.
   - Check: `rg -n "Local data" skills/init/SKILL.md` matches
 
-- [ ] **3. Developer rules for local data and secrets**
+- [x] **3. Developer rules for local data and secrets**
   - Files: `skills/develop/SKILL.md`, `agents/baton-developer.md`, `tests/test_template.py`
   - Uses: `skills/develop/SKILL.md:31` (the "What to trust" bullet about the local brief)
   - Provides: the bullet says to read the local brief's Hosts, Paths and Local data sections, never its Credentials section; a new paragraph says local data is reached only through the absolute paths listed under `## Local data`, never by copying or linking `.env` or any other secret file (API keys, tokens) into a worktree, and that if needed data is not listed or not reachable the developer returns `QUESTION` (return form in the skill's "## Return"); a `## Never` bullet repeats the no-copy rule; one sentence in `agents/baton-developer.md`. Add a test that the skill contains `Local data` and `.env`.
