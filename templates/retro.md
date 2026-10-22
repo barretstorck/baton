@@ -49,6 +49,7 @@ Each item names where the change belongs: this repository's brief, an issue, or 
 
 1.
 
-## Open spike drafts
+## Spike prototypes
 
-Draft pull requests from spikes that were not promoted, for the maintainer to close or keep.
+One line per spike with a prototype: issue, ref (`refs/spikes/<N>`), link. For reference only;
+nothing for the maintainer to do.
