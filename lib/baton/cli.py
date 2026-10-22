@@ -246,17 +246,23 @@ def cmd_plan(args):
             repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
             print(planfile.link_issue(run.run, repo, number, docs_dir=cfg.data["docs"]["dir"], **kwargs))
             return 0
-    if len(args) == 3 and args[0] == "migrate" and args[1].isdigit():
+    if len(args) in (2, 3) and args[0] == "migrate" and args[1].isdigit():
         cfg = _require_config()
         repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
-        print(planfile.migrate(cfg, run.run, repo["nameWithOwner"], int(args[1]), args[2],
+        slug = args[2] if len(args) == 3 else None
+        if slug is None:
+            link = planfile.parse_link(checklist.issue_body(run.run, int(args[1])),
+                                       cfg.data["docs"]["dir"])
+            if link is not None:
+                slug = link["path"].rsplit("/", 1)[-1][:-len(".md")].split("-", 1)[-1]
+        print(planfile.migrate(cfg, run.run, repo["nameWithOwner"], int(args[1]), slug,
                                repo["defaultBranchRef"]["name"]))
         return 0
     print("usage: baton plan replace <issue> <from-task> <file | -> [--drop]\n"
           "       baton plan commit <issue> <path> <file | ->\n"
           "       baton plan pin <issue>\n"
           "       baton plan link <issue> refs/plans/<issue> <path>\n"
-          "       baton plan migrate <issue> <branch>\n"
+          "       baton plan migrate <issue> [<slug-or-branch>]\n"
           "       baton plan link <issue> <branch> <path>\n"
           "       baton plan link <issue> --at <sha>", file=sys.stderr)
     return 64

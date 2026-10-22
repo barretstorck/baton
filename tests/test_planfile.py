@@ -87,11 +87,11 @@ class Capture(FakeRunner):
         super().__init__({"gh issue view": json.dumps({"body": body})})
         self.written = []
 
-    def __call__(self, argv, cwd=None):
+    def __call__(self, argv, cwd=None, input=None):
         if argv[:3] == ["gh", "issue", "edit"]:
             with open(argv[argv.index("--body-file") + 1]) as handle:
                 self.written.append(handle.read())
-        return super().__call__(argv, cwd)
+        return super().__call__(argv, cwd, input)
 
 
 class LinkIssueTest(unittest.TestCase):
@@ -165,17 +165,12 @@ Written against: %s
 
 
 class Migrating(Capture):
-    def __init__(self, body, labels=()):
+    def __init__(self, body, labels=(), plan_text=None):
         super().__init__(body)
         self.replies["gh issue view"] = json.dumps(
-            {"body": body, "labels": [{"name": name} for name in labels]})
-        self.files = {}
-
-    def __call__(self, argv, cwd=None):
-        if argv[:2] == ["git", "add"]:
-            with open(f"{cwd}/{argv[-1]}") as handle:
-                self.files[argv[-1]] = handle.read()
-        return super().__call__(argv, cwd)
+            {"title": "T", "body": body, "labels": [{"name": name} for name in labels]})
+        self.replies["git commit-tree"] = SHA
+        self.replies["git show"] = plan_text or ""
 
 
 class MigrateTest(unittest.TestCase):
@@ -194,37 +189,68 @@ class MigrateTest(unittest.TestCase):
         self.assertTrue(body.index("## Pointers") < body.index("## Decisions"))
         self.assertIn("- one", body)
 
-    def test_migrate_commits_pushes_links_and_trims(self):
+    def test_body_plan_goes_to_the_ref(self):
         runner = Migrating(LEGACY, ["status:ready"])
         line = planfile.migrate(self.cfg, runner, "o/r", 5, "issue-5-x", "main")
         path = "docs/baton/plans/5-x.md"
-        self.assertEqual(line, planfile.link_line("o/r", "issue-5-x", path))
-        self.assertIn("make test", runner.files[path])
+        self.assertEqual(line, planfile.link_line("o/r", "refs/plans/5", path))
+        self.assertTrue(line.endswith("/commits/refs/plans/5)"))
         calls = runner.lines()
-        self.assertTrue(any(c.startswith("git worktree add --detach") and c.endswith("origin/main")
+        self.assertIn(f"git push origin {SHA}:refs/plans/5", calls)
+        self.assertFalse(any(c.startswith("git worktree") for c in calls))
+        hashed = runner.inputs[next(i for i, c in enumerate(calls) if c.startswith("git hash-object"))]
+        self.assertIn("make test", hashed)
+        self.assertTrue(any(c.startswith("git commit-tree") and c.endswith("-m Plan for #5: T")
                             for c in calls))
-        push = "git push origin HEAD:refs/heads/issue-5-x"
-        self.assertIn(push, calls)
-        self.assertLess(calls.index(push), next(i for i, c in enumerate(calls)
-                                                if c.startswith("gh issue edit")))
+        self.assertLess(calls.index(f"git push origin {SHA}:refs/plans/5"),
+                        next(i for i, c in enumerate(calls) if c.startswith("gh issue edit")))
         self.assertEqual(len(runner.written), 1)
         self.assertTrue(runner.written[0].startswith(line + "\n\n## Context"))
         self.assertNotIn("## Plan", runner.written[0])
+
+    def test_branch_plan_goes_to_the_ref_and_leaves_the_branch(self):
+        body = planfile.link_line("o/r", "issue-5-x", PATH) + "\n\n## Context\nx\n"
+        runner = Migrating(body, ["status:ready"], plan_text="the plan\n")
+        line = planfile.migrate(self.cfg, runner, "o/r", 5, None, "main")
+        self.assertEqual(line, planfile.link_line("o/r", "refs/plans/5", PATH))
+        calls = runner.lines()
+        self.assertIn(f"git show --end-of-options origin/issue-5-x:{PATH}", calls)
+        self.assertIn(f"git push origin {SHA}:refs/plans/5", calls)
+        hashed = runner.inputs[next(i for i, c in enumerate(calls) if c.startswith("git hash-object"))]
+        self.assertEqual(hashed, "the plan\n")
+        self.assertEqual(runner.written, [line + "\n\n## Context\nx\n"])
+        self.assertTrue(any(c.startswith("git worktree add --detach") and c.endswith("origin/issue-5-x")
+                            for c in calls))
+        self.assertIn(f"git rm -q -- {PATH}", calls)
+        remove = "git push origin HEAD:refs/heads/issue-5-x"
+        self.assertIn(remove, calls)
+        self.assertLess(calls.index(f"git push origin {SHA}:refs/plans/5"), calls.index(remove))
 
     def test_refuses_started_issue(self):
         for label in ("status:in-dev", "status:blocked", "status:in-review", "status:complete"):
             runner = Migrating(LEGACY, [label])
             with self.assertRaises(checklist.TaskError):
-                planfile.migrate(self.cfg, runner, "o/r", 5, "issue-5-x", "main")
+                planfile.migrate(self.cfg, runner, "o/r", 5, "x", "main")
             self.assertFalse(any(c.startswith("git push") for c in runner.lines()))
             self.assertEqual(runner.written, [])
 
-    def test_refuses_linked_issue_and_bad_branch(self):
-        linked = planfile.link_line("o/r", "issue-5-x", PATH) + "\n\n" + LEGACY
+    def test_refuses_an_issue_that_already_links_a_ref_or_a_pin(self):
+        for ref in ("refs/plans/5", SHA):
+            linked = planfile.link_line("o/r", ref, PATH) + "\n\n" + LEGACY
+            runner = Migrating(linked)
+            with self.assertRaises(checklist.TaskError):
+                planfile.migrate(self.cfg, runner, "o/r", 5, "x", "main")
+            self.assertFalse(any(c.startswith("git push") for c in runner.lines()))
+
+    def test_body_plan_needs_a_slug(self):
         with self.assertRaises(checklist.TaskError):
-            planfile.migrate(self.cfg, Migrating(linked), "o/r", 5, "issue-5-x", "main")
+            planfile.migrate(self.cfg, Migrating(LEGACY), "o/r", 5, None, "main")
         with self.assertRaises(checklist.TaskError):
-            planfile.migrate(self.cfg, Migrating(LEGACY), "o/r", 5, "other", "main")
+            planfile.migrate(self.cfg, Migrating(LEGACY), "o/r", 5, "issue-5-", "main")
+
+    def test_plain_slug_is_accepted(self):
+        line = planfile.migrate(self.cfg, Migrating(LEGACY), "o/r", 5, "x", "main")
+        self.assertIn("docs/baton/plans/5-x.md", line)
 
     def test_templates(self):
         root = pathlib.Path(__file__).resolve().parent.parent / "templates"

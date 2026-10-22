@@ -292,41 +292,61 @@ def split_legacy(body):
     return file_text, trimmed.rstrip() + "\n"
 
 
-def migrate(cfg, runner, repo, number, branch, default_branch):
-    """Move a legacy body plan to a plan file on a new `branch`, link it and trim the body."""
-    prefix = f"issue-{number}-"
-    if not branch.startswith(prefix) or len(branch) == len(prefix):
-        raise checklist.TaskError(f"the branch must be named {prefix}<slug>, got {branch!r}")
-    info = json.loads(runner(["gh", "issue", "view", str(number), "--json", "body,labels"]))
+def migrate(cfg, runner, repo, number, slug, default_branch):
+    """Move a plan to `refs/plans/<number>`, relink the issue and return the new `Plan:` line.
+
+    The source is the body's legacy `## Plan` or the plan file the issue's branch link names
+    (its latest version at `origin/<branch>`). The text is committed to the ref and pushed; a
+    body plan is trimmed from the body, a branch plan is removed from the branch. Refused for
+    an issue that is in development or later, or that already has a ref or pinned link.
+    """
+    docs_dir = cfg.data["docs"]["dir"]
+    info = json.loads(runner(["gh", "issue", "view", str(number), "--json", "title,body,labels"]))
     labels = {item["name"] for item in info.get("labels") or []}
     started = [name for name in STATUSES[STATUSES.index("status:in-dev"):] if cfg.label(name) in labels]
     if started:
         raise checklist.TaskError(
             f"issue #{number} is {cfg.label(started[0])}; only issues not yet started can be migrated")
     body = info.get("body") or ""
-    if parse_link(body, cfg.data["docs"]["dir"]):
+    existing = parse_link(body, docs_dir)
+    if existing is not None and existing["kind"] != "branch":
         raise checklist.TaskError(f"issue #{number} already has a Plan: link")
-    file_text, trimmed = split_legacy(body)
-    path = plan_path(cfg.data, number, branch[len(prefix):])
-    runner(["git", "fetch", "--quiet", "origin", default_branch])
+    if existing is None:
+        if slug is None:
+            raise checklist.TaskError(f"migrating issue #{number} needs a slug")
+        prefix = f"issue-{number}-"
+        slug = slug[len(prefix):] if slug.startswith(prefix) else slug
+        if not slug:
+            raise checklist.TaskError(f"the slug must not be empty, got {prefix!r}")
+        text, new_body = split_legacy(body)
+        path = plan_path(cfg.data, number, slug)
+        check_link(ref_name(number), path, docs_dir)
+    else:
+        branch, path = existing["ref"], existing["path"]
+        text, new_body = read(runner, branch, path), body
+    message = f"Plan for #{number}: {info.get('title') or ''}".rstrip(": ")
+    sha = write(runner, number, path, text, message)
+    push(runner, number, sha)
+    line = link_line(repo, ref_name(number), path)
+    checklist._save_issue(runner, number, set_link(new_body, line))
+    if existing is not None:
+        _remove_from_branch(runner, branch, path, number)
+    return line
+
+
+def _remove_from_branch(runner, branch, path, number):
+    """Commit `git rm` of the plan file on `branch` from a temporary detached worktree."""
+    runner(["git", "fetch", "--quiet", "--end-of-options", "origin", branch])
     tree = tempfile.mkdtemp(prefix="baton-migrate-")
     try:
-        runner(["git", "worktree", "add", "--detach", tree, f"origin/{default_branch}"])
+        runner(["git", "worktree", "add", "--detach", tree, f"origin/{branch}"])
         try:
-            target = os.path.join(tree, path)
-            check_write(tree, path)
-            os.makedirs(os.path.dirname(target), exist_ok=True)
-            check_write(tree, path)
-            with open(target, "w", newline="") as handle:
-                handle.write(file_text)
-            runner(["git", "add", "--", path], cwd=tree)
-            runner(["git", "commit", "-q", "-m", f"Plan for #{number}"], cwd=tree)
+            runner(["git", "rm", "-q", "--", path], cwd=tree)
+            runner(["git", "commit", "-q", "-m", f"Move the plan of #{number} to {ref_name(number)}"],
+                   cwd=tree)
             runner(["git", "push", "origin", f"HEAD:refs/heads/{branch}"], cwd=tree)
         finally:
             runner(["git", "worktree", "remove", "--force", tree])
     finally:
         if os.path.isdir(tree):
             shutil.rmtree(tree, ignore_errors=True)
-    line = link_line(repo, branch, path)
-    checklist._save_issue(runner, number, set_link(trimmed, line))
-    return line
