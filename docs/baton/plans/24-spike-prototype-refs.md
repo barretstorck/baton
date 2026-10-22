@@ -35,7 +35,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: description `"Research; findings, optional prototype ref"`
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_labels -v`; add one test that the `type:spike` description contains no "pull request"
 
-- [ ] **2. Developer skill: spike flow without a draft pull request**
+- [x] **2. Developer skill: spike flow without a draft pull request**
   - Files: `skills/develop/SKILL.md`
   - Uses: section "## Spikes" (`skills/develop/SKILL.md:170-186`), the spike report block (`:245-252`)
   - Provides: Spikes steps are: 1 set `status:in-dev` (unchanged); 2 investigate, prototype commits go on `issue-<N>-<slug>`, no pull request; 3 status comments and pushes (unchanged); 4 when the findings are ready and there is prototype code: `git push --force-with-lease=refs/spikes/<N>:<old sha> origin HEAD:refs/spikes/<N>` (see Design notes for the old sha); 5 post the findings, ending with `Prototype: [<short sha>](https://github.com/<owner>/<repo>/tree/<full sha>) · ` followed by the code span `git fetch origin refs/spikes/<N>`, or `Prototype: none`; 6 `git push origin --delete issue-<N>-<slug>` (a no-prototype spike has no branch), then `baton set-status <N> status:in-review`; 7 return `DONE`. Report block: replace `Draft pull request: none | #<PR>` with `Prototype: none | refs/spikes/<N> (<sha>)`; the `DONE` sentence at the end of the Spikes list names the prototype ref, not a pull request
