@@ -307,3 +307,17 @@ class PostTest(unittest.TestCase):
         runner = pr_runner()
         self.assertEqual(review.post(cfg(), runner, 9, "approve", NEW, "Round 1.", [], OWNER),
                          "https://example.com/c/1")
+
+
+class InLinkedWorktreeTests(unittest.TestCase):
+    BASE = "git rev-parse --path-format=absolute"
+
+    def test_equal_paths_is_not_linked(self):
+        runner = FakeRunner({f"{self.BASE} --git-dir": "/r/.git\n",
+                             f"{self.BASE} --git-common-dir": "/r/.git\n"})
+        self.assertFalse(review.in_linked_worktree(runner, "/r"))
+
+    def test_different_paths_is_linked(self):
+        runner = FakeRunner({f"{self.BASE} --git-dir": "/r/.git/worktrees/w\n",
+                             f"{self.BASE} --git-common-dir": "/r/.git\n"})
+        self.assertTrue(review.in_linked_worktree(runner, "/w"))

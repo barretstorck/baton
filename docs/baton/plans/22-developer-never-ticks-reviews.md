@@ -29,7 +29,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: in `skills/develop/SKILL.md`, directly under the plan-task tick line (step 4, line 93) a short two-row contrast: plan task, the developer ticks its own box in the plan file with `baton task done issue <N> <n>` and commits it with the code; review task, the developer never runs `baton task done pr`, it returns `FIXED <sha>` or `DECLINED <reason>` and the orchestrator checks the sha and ticks. Repeat the review-task half in "## A review task" step 3, and add a `## Never` bullet "Run `baton task done pr`". Add one sentence with the same rule to `agents/baton-developer.md`. In `tests/test_template.py` add a test that both files contain `never run \`baton task done pr\`` (case-insensitive) .
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_template -v`
 
-- [ ] **2. Warn when `baton task done pr` runs in a linked worktree**
+- [x] **2. Warn when `baton task done pr` runs in a linked worktree**
   - Files: `lib/baton/review.py`, `lib/baton/cli.py`, `tests/test_review.py`
   - Uses: `cmd_task` (`lib/baton/cli.py:173`), the runner convention of `tests/fakes.py:1` (`FakeRunner`)
   - Provides: `def in_linked_worktree(runner, cwd) -> bool` in `review.py`, true when `git rev-parse --path-format=absolute --git-dir` and `... --git-common-dir` (run with `cwd`) differ. In `cmd_task`'s `pr` branch, when `os.environ.get("BATON_ROLE") != "orchestrator"` and `in_linked_worktree(run.run, os.getcwd())`, print to stderr `baton: warning: task done pr is the orchestrator's; developers report FIXED or DECLINED instead. Set BATON_ROLE=orchestrator to silence this.` then tick as before (exit code unchanged).
