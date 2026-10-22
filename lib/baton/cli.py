@@ -177,6 +177,11 @@ def cmd_task(args):
             changed = checklist.tick_issue(run.run, int(args[2]), args[3], cwd=os.getcwd(),
                                            docs_dir=cfg.data["docs"]["dir"])
         else:
+            if (os.environ.get("BATON_ROLE") != "orchestrator"
+                    and review.in_linked_worktree(run.run, os.getcwd())):
+                print("baton: warning: task done pr is the orchestrator's; developers report "
+                      "FIXED or DECLINED instead. Set BATON_ROLE=orchestrator to silence this.",
+                      file=sys.stderr)
             changed = review.tick_review(run.run, int(args[2]), _owner(), args[3])
         print(f"ticked task {args[3]}" if changed else f"task {args[3]} was already ticked")
         return 0
@@ -329,6 +334,6 @@ def main(argv):
     except (checklist.TaskError, comment.CommentError, review.ReviewError) as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
-    except (config.ConfigError, run.RunError, ValueError, OSError) as error:
+    except (config.ConfigError, run.RunError, sprint.SnapshotError, ValueError, OSError) as error:
         print(f"baton: {error}", file=sys.stderr)
         return 2

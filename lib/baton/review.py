@@ -181,6 +181,14 @@ def _latest_review(comments, owner):
     return found
 
 
+def in_linked_worktree(runner, cwd):
+    """True when cwd is a linked git worktree: its git dir differs from the common dir."""
+    base = ["git", "rev-parse", "--path-format=absolute"]
+    git_dir = runner(base + ["--git-dir"], cwd=cwd).strip()
+    common = runner(base + ["--git-common-dir"], cwd=cwd).strip()
+    return git_dir != common
+
+
 def review_tasks(pr, owner):
     """The tasks of the latest review when it asks for changes; none after an approval."""
     item, match = _latest_review(pr.get("comments"), owner)

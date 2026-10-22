@@ -32,6 +32,6 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Uses: `README.md:47-57` ("How a pull request gets merged"); `templates/brief.md:32` (the `allow_no_ci` comment)
   - Provides: README steps say the orchestrator marks the pull request ready once the last plan task is ticked, CI runs once, the reviewer starts only when CI is green (or right away with `allow_no_ci: true`), and a red CI is fixed before review; the `allow_no_ci` comment says it also lets the reviewer start with no CI. Front matter values unchanged
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_template`
-- [ ] **4. Full verification**
+- [x] **4. Full verification**
   - Files: none
   - Check: `PYTHONPATH=lib python3 -m unittest discover -s tests`

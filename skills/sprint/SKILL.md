@@ -174,8 +174,13 @@ For each issue in `verification`:
 
 - `default_branch.state` is `green` on a commit that includes its merge:
   `baton set-status <N> status:complete`.
-- `none`, because the repository runs CI only on pull requests: `merge-pr` already required a
-  green run on the pull request's head commit, so set `status:complete` straight away.
+- `pending`: a push run on the head commit is queued or in progress (or just merged and not yet
+  registered); wait and read `sprint-status` again.
+- `none`, which now means no push workflow exists or no run was triggered for that commit (the
+  repository runs CI only on pull requests): `merge-pr` already required a green run on the pull
+  request's head commit, so set `status:complete` straight away.
+- `sprint-status` exits non-zero when forge data could not be read; do not act on a pass that
+  failed, and run it again.
 - `red`: go to step 1.
 
 ### 6. Follow-ups
@@ -257,6 +262,9 @@ Act on each result with commands on their own, reading each one's output; never 
   same way, then `baton set-status <N> status:in-review`. There is no box to tick.
 - `FIXED <sha>`: check the sha the same way, then `baton task done pr <P> <r.n>`.
 - `DECLINED <reason>`: `baton task done pr <P> <r.n>`, and keep the reason for the reply.
+- Only the orchestrator runs `baton task done pr`, from the main checkout, or with
+  `BATON_ROLE=orchestrator` set when it runs from a linked worktree (otherwise `baton` warns).
+  Plan tasks are the other way round: the developer ticks its own box in the plan file.
 - When the last review task is ticked, post one reply on the pull request, one line per task:
 
       baton comment pr <P> developer reply - <<'EOF'

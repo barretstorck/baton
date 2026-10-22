@@ -1,8 +1,11 @@
 import copy
 import json
+import os
 import pathlib
+import tempfile
 import unittest
 from baton import config, merge, review
+from baton.run import RunError
 from tests.fakes import FakeRunner
 
 OWNER = "octo"
@@ -63,6 +66,69 @@ class CheckTest(unittest.TestCase):
         for rollup in (pending, failed, status):
             with self.subTest(rollup=rollup):
                 self.assertTrue(any("check" in p for p in problems(statusCheckRollup=rollup)))
+
+    def _lagging(self, run, runner=True, notes=None):
+        url = "https://github.com/octo/repo/actions/runs/123/job/456"
+        rollup = [{"__typename": "CheckRun", "name": "build", "status": "IN_PROGRESS",
+                   "conclusion": "", "detailsUrl": url}]
+        fake = FakeRunner({"gh run view 123": run}) if runner else None
+        return merge.check(make_pr(statusCheckRollup=rollup), make_config(), OWNER, "main",
+                           fake, notes)
+
+    def test_lagging_check_on_a_successful_run_passes_with_a_note(self):
+        run = json.dumps({"status": "completed", "conclusion": "success", "headSha": HEAD,
+                          "url": "https://github.com/octo/repo/actions/runs/123"})
+        notes = []
+        self.assertEqual(self._lagging(run, notes=notes), [])
+        self.assertEqual(len(notes), 1)
+        self.assertIn("'build'", notes[0])
+        self.assertIn("actions/runs/123", notes[0])
+
+    def test_lagging_check_on_a_run_of_another_commit_is_not_settled(self):
+        run = json.dumps({"status": "completed", "conclusion": "success",
+                          "headSha": "0" * 40, "url": "u"})
+        notes = []
+        self.assertTrue(any("has not finished" in p for p in self._lagging(run, notes=notes)))
+        self.assertEqual(notes, [])
+        no_sha = json.dumps({"status": "completed", "conclusion": "success", "url": "u"})
+        self.assertTrue(any("has not finished" in p for p in self._lagging(no_sha)))
+
+    def test_lagging_check_requires_the_same_workflow_when_named(self):
+        def lagging(item_workflow, run_workflow):
+            url = "https://github.com/octo/repo/actions/runs/123/job/456"
+            item = {"__typename": "CheckRun", "name": "build", "status": "IN_PROGRESS",
+                    "conclusion": "", "detailsUrl": url}
+            if item_workflow:
+                item["workflowName"] = item_workflow
+            run = json.dumps({"status": "completed", "conclusion": "success",
+                              "headSha": HEAD, "workflowName": run_workflow, "url": "u"})
+            return merge.check(make_pr(statusCheckRollup=[item]), make_config(), OWNER, "main",
+                               FakeRunner({"gh run view 123": run}))
+        self.assertEqual(lagging("ci", "ci"), [])
+        self.assertEqual(lagging(None, "ci"), [])
+        self.assertTrue(any("has not finished" in p for p in lagging("ci", "other")))
+
+    def test_lagging_check_on_a_failed_run_is_refused(self):
+        run = json.dumps({"status": "completed", "conclusion": "failure", "headSha": HEAD, "url": "u"})
+        self.assertTrue(any("concluded FAILURE" in p for p in self._lagging(run)))
+
+    def test_lagging_check_on_a_running_run_has_not_finished(self):
+        run = json.dumps({"status": "in_progress", "conclusion": "", "url": "u"})
+        notes = []
+        self.assertTrue(any("has not finished" in p for p in self._lagging(run, notes=notes)))
+        self.assertEqual(notes, [])
+
+    def test_lagging_check_without_a_runner_or_readable_run_is_unchanged(self):
+        self.assertTrue(any("has not finished" in p for p in self._lagging("", runner=False)))
+        self.assertTrue(any("has not finished" in p for p in self._lagging("not json")))
+
+        class Broken:
+            def __call__(self, argv, cwd=None):
+                raise RunError("gh failed")
+        rollup = [{"__typename": "CheckRun", "name": "build", "status": "QUEUED",
+                   "detailsUrl": "https://x/actions/runs/123/job/4"}]
+        found = merge.check(make_pr(statusCheckRollup=rollup), make_config(), OWNER, "main", Broken())
+        self.assertTrue(any("has not finished" in p for p in found))
 
     def test_only_the_latest_run_of_each_check_counts(self):
         def check(conclusion, started):
@@ -316,6 +382,46 @@ class MergeTest(unittest.TestCase):
         self.assertFalse(any(line.startswith("git branch -D") for line in runner.lines()))
         self.assertIn("git push origin --delete issue-4-flag", runner.lines())
         self.assertTrue(any("/wt/issue-4" in note for note in notes))
+
+    def secret_tree(self, kind):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        for name in (".env", ".env.example", ".env.sample", ".env.template", "notes.txt"):
+            open(os.path.join(tmp.name, name), "w").close()
+        replies = self.replies(make_pr())
+        if kind == "branch":
+            replies["git worktree list"] = replies["git worktree list"].replace("/wt/issue-4", tmp.name)
+            replies[f"git -C {tmp.name} status --porcelain"] = " M src/tool.py\n"
+        else:
+            replies["git worktree list"] += f"\nworktree {tmp.name}\nHEAD {HEAD}\ndetached\n\n"
+            replies[f"git -C {tmp.name} status --porcelain"] = "?? scratch.txt\n"
+        return tmp.name, replies
+
+    def test_kept_branch_worktree_note_names_the_secret_file(self):
+        path, replies = self.secret_tree("branch")
+        notes = []
+        merge.merge(9, make_config(), FakeRunner(replies), notes)
+        note = next(n for n in notes if path in n)
+        self.assertIn("it holds .env; delete it by hand", note)
+        self.assertNotIn(".env.example", note)
+
+    def test_kept_task_worktree_note_names_the_secret_file(self):
+        path, replies = self.secret_tree("task")
+        notes = []
+        merge.merge(9, make_config(), FakeRunner(replies), notes)
+        note = next(n for n in notes if path in n)
+        self.assertIn("it holds .env; delete it by hand", note)
+
+    def test_kept_worktree_without_a_secret_file_has_no_mention(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            open(os.path.join(tmp, ".env.example"), "w").close()
+            self.assertEqual(merge._secret_files(tmp), [])
+            self.assertEqual(merge._secret_files(tmp + "/missing"), [])
+        notes = []
+        replies = self.replies(make_pr())
+        replies["git -C /wt/issue-4 status --porcelain"] = " M src/tool.py\n"
+        merge.merge(9, make_config(), FakeRunner(replies), notes)
+        self.assertFalse(any("holds" in n for n in notes))
 
     TASK_TREES = (f"worktree /wt/agent-a\nHEAD {HEAD}\ndetached\nlocked agent\n\n"
                   "worktree /wt/agent-b\nHEAD 3333\ndetached\n\n"

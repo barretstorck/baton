@@ -43,8 +43,40 @@ def _latest_runs(rollup):
     return [item for _, item in latest.values()]
 
 
-def _check_ci(pr, cfg):
-    rollup = _latest_runs(pr.get("statusCheckRollup") or [])
+_RUN_URL = re.compile(r"/actions/runs/(\d+)(?:/|$)")
+
+
+def _settle(item, runner, notes, head=""):
+    """GitHub can keep a check run open after its workflow run finished. For an unfinished
+    check run, ask the workflow run; if it is completed and ran on the pull request's head
+    commit (and is the item's workflow), return a copy settled from it. Fails closed."""
+    if item.get("__typename") == "StatusContext" or item.get("status") == "COMPLETED":
+        return item
+    found = _RUN_URL.search(item.get("detailsUrl") or "")
+    if runner is None or not found or not head:
+        return item
+    try:
+        run = json.loads(runner(["gh", "run", "view", found.group(1),
+                                 "--json", "status,conclusion,workflowName,url,headSha"]))
+    except (RunError, ValueError):
+        return item
+    if not isinstance(run, dict) or str(run.get("status", "")).lower() != "completed" \
+            or not run.get("conclusion"):
+        return item
+    if run.get("headSha") != head:
+        return item
+    if item.get("workflowName") and item["workflowName"] != run.get("workflowName"):
+        return item
+    conclusion = str(run["conclusion"]).upper()
+    if notes is not None:
+        notes.append(f"check {item.get('name')!r} was still in progress; used the result "
+                     f"of run {run.get('url') or found.group(1)} ({conclusion.lower()})")
+    return {**item, "status": "COMPLETED", "conclusion": conclusion}
+
+
+def _check_ci(pr, cfg, runner=None, notes=None):
+    rollup = [_settle(item, runner, notes, pr.get("headRefOid") or "")
+              for item in _latest_runs(pr.get("statusCheckRollup") or [])]
     if not rollup:
         if cfg.data["merge"]["allow_no_ci"]:
             return []
@@ -84,7 +116,7 @@ def _approved(pr, owner, runner, default_branch, touched):
     return False
 
 
-def check(pr, cfg, owner, default_branch, runner):
+def check(pr, cfg, owner, default_branch, runner, notes=None):
     problems = []
     if pr.get("isCrossRepository"):
         problems.append("pull request comes from a fork; Baton only merges its own branches")
@@ -96,7 +128,7 @@ def check(pr, cfg, owner, default_branch, runner):
         problems.append("pull request is still a draft")
     if pr.get("mergeable") != "MERGEABLE":
         problems.append(f"pull request is not mergeable ({pr.get('mergeable')})")
-    problems.extend(_check_ci(pr, cfg))
+    problems.extend(_check_ci(pr, cfg, runner, notes))
 
     closing = {ref["number"] for ref in pr.get("closingIssuesReferences") or []}
     if len(closing) != 1:
@@ -166,6 +198,23 @@ def _task_worktrees(commits, runner):
     return found
 
 
+def _secret_files(path):
+    """Names of the `.env` and `.env.*` files directly in `path`, skipping example templates."""
+    try:
+        names = sorted(os.listdir(path))
+    except OSError:
+        return []
+    return [name for name in names
+            if (name == ".env" or name.startswith(".env."))
+            and not name.endswith((".example", ".sample", ".template"))
+            and os.path.isfile(os.path.join(path, name))]
+
+
+def _secret_note(path):
+    names = _secret_files(path)
+    return f"; it holds {', '.join(names)}; delete it by hand" if names else ""
+
+
 def _after_merge(pr, cfg, runner, notes):
     for ref in pr.get("closingIssuesReferences") or []:
         issue = ref["number"]
@@ -181,14 +230,15 @@ def _after_merge(pr, cfg, runner, notes):
         if runner(["git", "-C", worktree, "status", "--porcelain"]).strip():
             keep = True
             notes.append(f"kept worktree {worktree} and branch {branch}: "
-                         "it has uncommitted changes")
+                         "it has uncommitted changes" + _secret_note(worktree))
         else:
             force = ["--force", "--force"] if locked else ["--force"]
             runner(["git", "worktree", "remove", *force, worktree])
     own = {commit.get("oid") for commit in pr.get("commits") or []}
     for path, locked in _task_worktrees(own, runner):
         if runner(["git", "-C", path, "status", "--porcelain"]).strip():
-            notes.append(f"kept task worktree {path}: it has uncommitted changes")
+            notes.append(f"kept task worktree {path}: it has uncommitted changes"
+                         + _secret_note(path))
             continue
         force = ["--force", "--force"] if locked else ["--force"]
         runner(["git", "worktree", "remove", *force, path])
@@ -248,7 +298,8 @@ def merge(number, cfg, runner, notes=None):
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", PR_FIELDS]))
     if pr.get("state") != "MERGED":
-        problems = check(pr, cfg, repo["owner"]["login"], repo["defaultBranchRef"]["name"], runner)
+        problems = check(pr, cfg, repo["owner"]["login"], repo["defaultBranchRef"]["name"], runner,
+                         notes)
         if problems:
             return problems
         note = _retire_plan(pr, repo, runner, cfg)

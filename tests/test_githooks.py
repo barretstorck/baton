@@ -41,6 +41,19 @@ class AddedTextTest(unittest.TestCase):
         self.assertEqual(githooks.added_text(patch), "added")
 
 
+class AddedByFileTest(unittest.TestCase):
+    def test_splits_per_file_and_keeps_plus_lines_in_hunks(self):
+        patch = ("diff --git a/one.txt b/one.txt\n--- a/one.txt\n+++ b/one.txt\n"
+                 "@@ -1 +1,2 @@\n-old\n+new\n+++ not a header\n"
+                 "diff --git a/gone.txt b/gone.txt\ndeleted file mode 100644\n"
+                 "--- a/gone.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-bye\n"
+                 "diff --git a/sub/two.txt b/sub/two.txt\nnew file mode 100644\n"
+                 "--- /dev/null\n+++ b/sub/two.txt\n@@ -0,0 +1 @@\n+second\n"
+                 "diff --git a/mode.sh b/mode.sh\nold mode 100644\nnew mode 100755\n")
+        self.assertEqual(githooks.added_by_file(patch), [
+            ("one.txt", "new\n++ not a header"), ("sub/two.txt", "second")])
+
+
 class PreCommitTest(unittest.TestCase):
     def test_clean_change_passes(self):
         repo = make_repo()
@@ -110,6 +123,44 @@ class PreCommitTest(unittest.TestCase):
         write(repo, "a.txt", "Zebrowski\n")
         git(repo, "add", "-A")
         self.assertEqual(githooks.pre_commit(repo, TERMS), [])
+
+
+VERSION = ".".join(["10", "1", "2", "3"])
+
+
+class DependencyFileTest(unittest.TestCase):
+    def staged(self, name, content):
+        repo = make_repo()
+        write(repo, name, content)
+        git(repo, "add", "-A")
+        return repo
+
+    def test_version_in_lockfiles_passes(self):
+        for name in ("uv.lock", "sub/requirements-dev.txt"):
+            repo = self.staged(name, f'nvidia-cublas = "{VERSION}"\n')
+            self.assertEqual(githooks.pre_commit(repo, TERMS), [], name)
+
+    def test_version_in_other_file_is_reported(self):
+        repo = self.staged("a.txt", f"nvidia-cublas {VERSION}\n")
+        self.assertTrue(any("private-ip" in p for p in githooks.pre_commit(repo, TERMS)))
+
+    def test_other_kinds_in_lockfile_are_reported(self):
+        lines = {
+            "email": "mail " + "alice@corp-mail" + ".test",
+            "host-path": "path = " + "/Us" + "ers/alice/proj",
+            "internal-domain": "url = host" + ".internal",
+        }
+        for kind, line in lines.items():
+            repo = self.staged("uv.lock", line + "\n")
+            problems = githooks.pre_commit(repo, TERMS)
+            self.assertTrue(any(kind in p for p in problems), (kind, problems))
+
+    def test_push_of_new_branch_with_lockfile_passes(self):
+        repo = self.staged("uv.lock", f'nvidia-cublas = "{VERSION}"\n')
+        git(repo, "commit", "-q", "-m", "relock")
+        head = git(repo, "rev-parse", "HEAD")
+        line = f"refs/heads/main {head} refs/heads/main {ZEROS}\n"
+        self.assertEqual(githooks.pre_push(repo, line, TERMS), [])
 
 
 class PrePushTest(unittest.TestCase):

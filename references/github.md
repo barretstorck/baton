@@ -35,7 +35,7 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Answer a review | `baton comment pr <N> developer reply -`, one line per task (orchestrator, from the developers' results) |
 | Link an issue to its plan | `baton plan link <N> <branch> <path>` (refiner, after pushing the plan file); `baton plan link <N> --at <sha>` pins it to a commit |
 | Migrate a legacy plan | `baton plan migrate <N> <branch>` (refiner or orchestrator, for an issue not yet in development) |
-| Tick a task | `baton task done issue <N> <task>` (developer: ticks the plan file in the checkout, committed with the code); `baton task done pr <P> <r.n>` (orchestrator, review tasks) |
+| Tick a task | `baton task done issue <N> <task>` (developer: ticks the plan file in the checkout, committed with the code); `baton task done pr <P> <r.n>` (orchestrator only, review tasks; from a linked worktree set `BATON_ROLE=orchestrator` or it warns) |
 | Replace a plan's open tasks | `baton plan replace <N> <from-task> <file> [--drop]` (orchestrator only; refuses fewer new tasks than replaced unless `--drop`; a linked plan is committed to the issue branch and pushed) |
 | Merge | `baton merge-pr <N>` only. `gh pr merge` is refused. |
 

@@ -2,7 +2,9 @@ import copy
 import json
 import pathlib
 import unittest
+from datetime import datetime, timezone
 from baton import config, review, sprint
+from baton import run as run_module
 from tests.fakes import FakeRunner
 
 OWNER = "octo"
@@ -35,6 +37,10 @@ def run(conclusion="success", status="completed", sha="aaa"):
     return {"status": status, "conclusion": conclusion, "headSha": sha, "workflowName": "test"}
 
 
+def commit_reply(date="2020-01-01T00:00:00Z", sha="aaa"):
+    return json.dumps({"sha": sha, "commit": {"committer": {"date": date}}})
+
+
 def replies(issues, prs=(), runs=(run(),), milestones=None, extra=None):
     milestones = milestones if milestones is not None else [
         {"number": 3, "title": "Sprint 2026-10-01-1", "description": "Goal: speed\nOrder: #5, #2",
@@ -46,6 +52,8 @@ def replies(issues, prs=(), runs=(run(),), milestones=None, extra=None):
         "gh issue list": json.dumps(list(issues)),
         "gh pr list": json.dumps(list(prs)),
         "gh run list": json.dumps(list(runs)),
+        "gh api repos/octo/proj/commits/main": commit_reply(),
+        "gh api repos/octo/proj/contents/.github/workflows?ref=": "[]",
     }
     out.update(extra or {})
     return out
@@ -53,6 +61,39 @@ def replies(issues, prs=(), runs=(run(),), milestones=None, extra=None):
 
 def snap(issues, config_=None, **kwargs):
     return sprint.snapshot(config_ or cfg(), FakeRunner(replies(issues, **kwargs)))
+
+
+class StrictReadsTest(unittest.TestCase):
+    def broken(self, key, reply):
+        data = replies([issue(1, "ready")])
+        data[key] = reply
+        return sprint.snapshot(cfg(), FakeRunner(data))
+
+    def test_empty_replies_raise(self):
+        for key, what in (("gh issue list", "issues"), ("gh pr list", "pull requests"),
+                          ("gh api repos/octo/proj/milestones", "milestones"),
+                          ("gh run list", "workflow runs")):
+            with self.assertRaises(sprint.SnapshotError) as caught:
+                self.broken(key, "")
+            self.assertIn(f"could not read {what}", str(caught.exception))
+
+    def test_invalid_json_and_non_list_raise(self):
+        with self.assertRaises(sprint.SnapshotError):
+            self.broken("gh issue list", "{oops")
+        with self.assertRaises(sprint.SnapshotError):
+            self.broken("gh pr list", "{}")
+
+    def test_real_empty_lists_are_valid(self):
+        result = snap([], prs=[])
+        self.assertEqual(result["dispatchable"], [])
+        self.assertEqual(result["sprint"]["number"], 3)
+
+    def test_runner_error_propagates(self):
+        class Boom:
+            def __call__(self, argv, cwd=None):
+                raise run_module.RunError("gh failed")
+        with self.assertRaises(run_module.RunError):
+            sprint.snapshot(cfg(), Boom())
 
 
 class BranchStateTest(unittest.TestCase):
@@ -134,6 +175,20 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(result["in_review"], [{"number": 1, "pr": 30, "draft": False,
                                                 "ci": "green", "mergeable": "MERGEABLE",
                                                 "review": "approved", "rounds": 0}])
+
+    def test_lagging_check_run_on_a_finished_workflow_run_is_green(self):
+        head = "f" * 40
+        prs = [{"number": 30, "headRefName": "issue-1-x", "isDraft": False, "mergeable": "MERGEABLE",
+                "headRefOid": head, "comments": [], "closingIssuesReferences": [{"number": 1}],
+                "statusCheckRollup": [{"__typename": "CheckRun", "name": "build",
+                                       "status": "IN_PROGRESS", "conclusion": "",
+                                       "detailsUrl": "https://github.com/octo/proj/actions/runs/123/job/4"}]}]
+        run_view = json.dumps({"status": "completed", "conclusion": "success", "workflowName": "ci",
+                               "headSha": head,
+                               "url": "https://github.com/octo/proj/actions/runs/123"})
+        result = snap([issue(1, "in-review", "deliverable")], prs=prs,
+                      extra={"gh run view 123": run_view})
+        self.assertEqual(result["in_review"][0]["ci"], "green")
 
     def test_review_state_none_and_not_required(self):
         pr = {"number": 20, "headRefName": "issue-1-x", "headRefOid": "f" * 40, "isDraft": True,
@@ -312,3 +367,84 @@ class PrCiTests(unittest.TestCase):
 
     def test_unfinished_run_is_pending(self):
         self.assertEqual(self.ci([self.check("", status="IN_PROGRESS")]), "pending")
+
+
+NOW = datetime(2026, 10, 22, 12, 0, 0, tzinfo=timezone.utc)
+CI_ON_PUSH = "name: ci\non:\n  pull_request:\n  push:\n    branches: [main]\njobs: {}\n"
+WORKFLOWS = "gh api repos/octo/proj/contents/.github/workflows?ref=aaa"
+CI_FILE = "gh api repos/octo/proj/contents/.github/workflows/ci.yml?ref=aaa"
+
+
+class DefaultBranchStateTest(unittest.TestCase):
+    def state(self, runs=(), date="2026-10-22T11:59:00Z", workflows="ci.yml", text=CI_ON_PUSH):
+        data = replies([], runs=runs)
+        data["gh api repos/octo/proj/commits/main"] = commit_reply(date)
+        data[WORKFLOWS] = json.dumps([{"name": workflows}] if workflows else [])
+        data[CI_FILE] = text
+        runner = FakeRunner(data)
+        return sprint.default_branch_state(runner, OWNER, "proj", "main", now=NOW), runner
+
+    def test_push_run_in_progress_is_pending(self):
+        state, runner = self.state(runs=[run("", "in_progress")], date="2020-01-01T00:00:00Z")
+        self.assertEqual(state, "pending")
+        listing = [line for line in runner.lines() if line.startswith("gh run list")][0]
+        self.assertIn("--commit aaa --event push", listing)
+
+    def test_failed_run_is_red(self):
+        self.assertEqual(self.state(runs=[run("failure")])[0], "red")
+
+    def test_finished_run_is_green(self):
+        self.assertEqual(self.state(runs=[run()])[0], "green")
+
+    def test_no_push_workflow_is_none(self):
+        self.assertEqual(self.state(text="on: pull_request\n")[0], "none")
+        self.assertEqual(self.state(workflows="")[0], "none")
+
+    def test_missing_workflows_directory_is_none(self):
+        class NotFound(FakeRunner):
+            def __call__(self, argv, cwd=None):
+                if "contents/.github/workflows" in " ".join(argv):
+                    raise run_module.RunError("gh api failed: HTTP 404: Not Found")
+                return super().__call__(argv, cwd)
+        data = replies([], runs=[])
+        data["gh api repos/octo/proj/commits/main"] = commit_reply("2026-10-22T11:59:00Z")
+        self.assertEqual(
+            sprint.default_branch_state(NotFound(data), OWNER, "proj", "main", now=NOW), "none")
+
+    def test_other_api_errors_are_not_swallowed(self):
+        class Broken(FakeRunner):
+            def __call__(self, argv, cwd=None):
+                if "contents/.github/workflows" in " ".join(argv):
+                    raise run_module.RunError("gh api failed: HTTP 500")
+                return super().__call__(argv, cwd)
+        data = replies([], runs=[])
+        data["gh api repos/octo/proj/commits/main"] = commit_reply("2026-10-22T11:59:00Z")
+        with self.assertRaises(run_module.RunError):
+            sprint.default_branch_state(Broken(data), OWNER, "proj", "main", now=NOW)
+
+    def test_no_run_on_an_old_commit_is_none(self):
+        self.assertEqual(self.state(date="2026-10-22T11:50:00Z")[0], "none")
+
+    def test_no_run_on_a_young_commit_is_pending(self):
+        self.assertEqual(self.state(date="2026-10-22T11:57:00Z")[0], "pending")
+
+    def test_unreadable_head_commit_raises(self):
+        data = replies([], runs=[])
+        data["gh api repos/octo/proj/commits/main"] = ""
+        with self.assertRaises(sprint.SnapshotError):
+            sprint.default_branch_state(FakeRunner(data), OWNER, "proj", "main", now=NOW)
+
+    def test_snapshot_reports_pending(self):
+        data = replies([issue(1, "ready")], runs=[run("", "queued")])
+        result = sprint.snapshot(cfg(), FakeRunner(data))
+        self.assertEqual(result["default_branch"]["state"], "pending")
+
+    def test_triggers_on_push(self):
+        yes = ["on: push\n", "on: [pull_request, push]\n", "on:\n  push:\n    branches: [main]\n",
+               "on:\n  - push\n", "'on':\n  push:\n", "on: {push: {branches: [main]}}\n"]
+        no = ["on:\n  pull_request:\n    branches: [main]\n", "on: pull_request\n",
+              "on:\n  workflow_dispatch:\n  pull_request:\n    paths: [push.txt]\n", "", "name: x\n"]
+        for text in yes:
+            self.assertTrue(sprint.triggers_on_push(text), text)
+        for text in no:
+            self.assertFalse(sprint.triggers_on_push(text), text)
