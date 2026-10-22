@@ -45,6 +45,8 @@ relative path inside the repository and must not be under a `protected_paths` en
 
 ### Lifecycle of a plan file
 
+> **Superseded for new plans.** Issue #25 keeps a plan in `refs/plans/<N>` instead of on the issue branch; it is ticked there, pinned and merged in one pass by `merge-pr`, and never removed in a commit. This section describes the older in-flight branch form.
+
 The plan lives only on the issue branch `issue-<N>-<slug>`, never on the default branch's tree.
 
 1. **Refine.** The refiner creates `issue-<N>-<slug>` from the default branch (developers no
@@ -79,6 +81,8 @@ Readers (`sprint-status`, `ready-check`, `baton tasks`, the reviewer) read the p
 
 ### Retiring a plan (merge)
 
+> **Superseded for new plans.** Issue #25 keeps a plan in `refs/plans/<N>` instead of on the issue branch; it is ticked there, pinned and merged in one pass by `merge-pr`, and never removed in a commit. This section describes the older in-flight branch form.
+
 `merge-pr` today checks that the owner's approval covers the head commit. Retiring adds a commit
 after approval, so:
 
@@ -95,6 +99,8 @@ approval stale. Any other change still does. Plan paths are not protected, so th
 `/baton approve` check is unaffected.
 
 If a step after 2 fails, the pinned link is still valid, and re-running `merge-pr` resumes.
+
+> **Superseded for new plans.** Issue #25: a pinned plan commit is reachable from the default branch only through the merge commit, as below; the ref keeps it too until deleted.
 
 **Permanence depends on `--merge`.** The pinned commit is reachable from the default branch only
 because Baton merges with a merge commit. A squash or rebase merge would orphan permalinks
