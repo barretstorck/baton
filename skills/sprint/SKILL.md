@@ -36,6 +36,9 @@ every state is a label.
    from the `Parallel:` line of the milestone description, otherwise from the brief. If the
    request's limit differs from the milestone's, update the milestone description.
    `sprint-status` reports the limit it used as `parallel`.
+   A changed limit only changes `free_slots`. It never changes an order or decision recorded on an
+   issue (in its Decisions, its Pointers or a `Blocked by:` line); see "Dispatch" for a slot that
+   only such an issue could fill.
 5. Check that `baton:baton-developer`, `baton:baton-reviewer` and `baton:baton-refiner` appear in your list of available
    agent types. If one is missing, the plugin was installed or updated after this session
    started: tell the maintainer to restart the session, and do not dispatch another agent type in
@@ -81,6 +84,11 @@ For each entry in `answered`, the maintainer has replied to a blocked issue.
    with a link to the answering comment:
 
        - <the decision, in one sentence>. ([answer](<comment URL>))
+
+   If the decision sets the order of two issues, also add `Blocked by: #N` (the earlier issue) to
+   the later issue's Pointers in the same description edit. `sprint-status` holds an issue on that
+   line and does not read Decisions, so use it instead of prose alone; it releases when the blocker
+   closes, which its merged pull request does.
 
    Write the full new description to a file and update the issue. Keep all earlier decisions.
 3. `baton set-status <N> status:ready`. A developer will resume it from its branch.
@@ -233,6 +241,12 @@ and trims the body. An issue already in development keeps its body plan until it
 
 Look at `held` too: if an issue is held for a reason you can clear (a blocker you can dispatch
 first), order the work accordingly; otherwise leave it.
+
+A free slot is permission to start work, not to go against a recorded order. If the only issue
+that could fill it has Decisions or Pointers saying it comes after another issue, leave the slot
+empty and ask the maintainer on that issue: `baton comment issue <N> orchestrator question <file>`
+and label `needs-maintainer`. This holds whether the slot came from a raised parallel limit or from
+a finished developer.
 
 **Resuming.** A new session cannot tell from its own memory which developers are still running.
 For each `in_dev` issue, compare `git log --oneline origin/<default>..origin/<branch>` with the
