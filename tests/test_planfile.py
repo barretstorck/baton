@@ -300,3 +300,97 @@ class CheckLinkTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+REF = "refs/plans/5"
+LOCAL = "refs/baton/plans/5"
+FETCH = f"git fetch --quiet origin +{REF}:{LOCAL}"
+
+
+class MissingUntilFetched(FakeRunner):
+    """`git show` fails until the plan ref has been fetched."""
+
+    def __call__(self, argv, cwd=None, input=None):
+        out = super().__call__(argv, cwd, input)
+        if argv[1] == "show" and not any(call[1] == "fetch" for call in self.calls):
+            raise RunError("git show failed: missing")
+        return out
+
+
+class PlanRefTest(unittest.TestCase):
+    def test_read_ref_fetches_into_local_ref_then_shows(self):
+        runner = FakeRunner({"git show": "text"})
+        self.assertEqual(planfile.read(runner, REF, PATH), "text")
+        self.assertEqual(runner.lines(),
+                         [FETCH, f"git show --end-of-options {LOCAL}:{PATH}"])
+
+    def test_read_pinned_missing_locally_fetches_the_ref_and_retries(self):
+        runner = MissingUntilFetched({"git show": "text"})
+        self.assertEqual(planfile.read(runner, SHA, PATH), "text")
+        self.assertEqual(runner.lines(), [f"git show --end-of-options {SHA}:{PATH}", FETCH,
+                                          f"git show --end-of-options {SHA}:{PATH}"])
+
+    def test_tip(self):
+        runner = FakeRunner({"git ls-remote": f"{SHA}\t{REF}\n"})
+        self.assertEqual(planfile.tip(runner, 5), SHA)
+        self.assertEqual(runner.lines(), [f"git ls-remote origin {REF}"])
+        self.assertIsNone(planfile.tip(FakeRunner(), 5))
+
+    def test_write_first_commit_has_no_parent(self):
+        runner = FakeRunner({"git hash-object": "b1\n", "git mktree": "t\n",
+                             "git commit-tree": f"{SHA}\n"})
+        self.assertEqual(planfile.write(runner, 5, PATH, "text", "Plan for #5: x"), SHA)
+        lines = runner.lines()
+        self.assertEqual(lines[0], "git hash-object -w --stdin")
+        self.assertEqual(lines.count("git mktree"), 4)
+        self.assertEqual(lines[-2], f"git ls-remote origin {REF}")
+        self.assertEqual(lines[-1], "git commit-tree t -m Plan for #5: x")
+        self.assertFalse(any(call[1] == "fetch" for call in runner.calls))
+        self.assertEqual(runner.inputs[0], "text")
+        self.assertEqual(runner.inputs[1], "100644 blob b1\t5-x.md\n")
+        self.assertEqual(runner.inputs[2], "040000 tree t\tplans\n")
+        self.assertEqual(runner.inputs[3], "040000 tree t\tbaton\n")
+        self.assertEqual(runner.inputs[4], "040000 tree t\tdocs\n")
+
+    def test_write_on_an_existing_ref_has_the_fetched_parent(self):
+        runner = FakeRunner({"git hash-object": "b1\n", "git mktree": "t\n",
+                             "git ls-remote": f"{SHA}\t{REF}\n", "git commit-tree": f"{SHA}\n"})
+        planfile.write(runner, 5, PATH, "text", "Task 2")
+        self.assertEqual(runner.lines()[-2:], [FETCH, f"git commit-tree t -p {LOCAL} -m Task 2"])
+
+    def test_write_refuses_a_path_for_another_issue(self):
+        with self.assertRaises(checklist.TaskError):
+            planfile.write(FakeRunner(), 6, PATH, "text", "m")
+
+    def test_push_is_a_plain_fast_forward(self):
+        runner = FakeRunner()
+        planfile.push(runner, 5, SHA)
+        self.assertEqual(runner.lines(), [f"git push origin {SHA}:{REF}"])
+        with self.assertRaises(checklist.TaskError):
+            planfile.push(runner, 5, "abc")
+
+    def test_link_issue_writes_the_history_page_link(self):
+        runner = Capture("## Context\nx\n")
+        line = planfile.link_issue(runner, "o/r", 5, branch=REF, path=PATH)
+        self.assertEqual(line, f"Plan: [{PATH}](https://github.com/o/r/commits/{REF})")
+        self.assertEqual(runner.written, [f"{line}\n\n## Context\nx\n"])
+
+    def test_pin_writes_the_permalink(self):
+        old = planfile.link_line("o/r", REF, PATH)
+        runner = Capture(f"{old}\n\n## Context\nx\n")
+        runner.replies["git ls-remote"] = f"{SHA}\t{REF}\n"
+        self.assertEqual(planfile.pin(runner, "o/r", 5), SHA)
+        self.assertEqual(runner.written,
+                         [f"{planfile.link_line('o/r', SHA, PATH)}\n\n## Context\nx\n"])
+
+    def test_pin_is_a_no_op_for_pinned_and_branch_links(self):
+        for ref in (SHA, "issue-5-x"):
+            runner = Capture(planfile.link_line("o/r", ref, PATH))
+            self.assertIsNone(planfile.pin(runner, "o/r", 5))
+            self.assertEqual(runner.written, [])
+            self.assertFalse(any("ls-remote" in line for line in runner.lines()))
+
+    def test_pin_without_the_ref_raises(self):
+        runner = Capture(planfile.link_line("o/r", REF, PATH))
+        with self.assertRaises(checklist.TaskError):
+            planfile.pin(runner, "o/r", 5)
