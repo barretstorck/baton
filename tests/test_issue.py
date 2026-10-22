@@ -140,6 +140,27 @@ class BadLinkReadyTest(unittest.TestCase):
                 self.assertEqual(runner.calls, [])
 
 
+REF_HEAD = ("Plan: [docs/baton/plans/5-x.md]"
+            "(https://github.com/o/r/commits/refs/plans/5)\n\n")
+
+
+class RefPlanReadyTest(unittest.TestCase):
+    def problems(self, runner):
+        return issue.ready_problems(make(body=REF_HEAD + SLIM), cfg(), OWNER, runner)
+
+    def test_ref_plan_passes_and_is_read_through_the_ref(self):
+        runner = FakeRunner({"git show --end-of-options refs/baton/plans/5:docs/baton/plans/5-x.md":
+                             FILE})
+        self.assertEqual(self.problems(runner), [])
+        self.assertEqual(runner.lines()[0],
+                         "git fetch --quiet origin +refs/plans/5:refs/baton/plans/5")
+
+    def test_missing_ref_fails(self):
+        found = self.problems(RaisingRunner())
+        self.assertTrue(any("the Plan: link cannot be read" in p for p in found))
+        self.assertFalse(any("Verification" in p or "Plan section" in p for p in found))
+
+
 class LinkedPlanReadyTest(unittest.TestCase):
     def problems(self, body, runner, labels=("type:feature",)):
         return issue.ready_problems(make(body=body, labels=labels), cfg(), OWNER, runner)

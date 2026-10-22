@@ -45,7 +45,7 @@ def ready_problems(issue, cfg, owner, runner=None):
     """Why this issue does not meet the definition of ready; empty when it does.
 
     A non-spike with a `Plan:` link has its Verification and plan read from the linked file
-    (through `runner`); a legacy body plan is read from the body.
+    (through `runner`; a plan ref `refs/plans/<N>` is fetched first); a legacy body plan is read from the body.
     """
     body = issue.get("body") or ""
     parts = sections(body)
