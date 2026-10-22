@@ -16,7 +16,7 @@
 
 Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
 
-- [ ] **1. State that a parallel-limit change does not override a recorded order**
+- [x] **1. State that a parallel-limit change does not override a recorded order**
   - Files: `skills/sprint/SKILL.md`
   - Uses: Start step 4 ("Take the parallel limit from the request...", `:34-37`); step 7 "Dispatch", the paragraph beginning "Look at `held` too" (`:219`)
   - Provides: in Start step 4, a sentence that changing the limit only changes `free_slots`, never an order or decision recorded on an issue; in step 7 beside the `held` paragraph, a rule that when a free slot could only be filled by an issue whose Decisions or Pointers say it comes later, the orchestrator leaves the slot empty and asks the maintainer on that issue (`baton comment issue <N> orchestrator question <file>`, label `needs-maintainer`)
