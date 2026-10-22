@@ -25,7 +25,7 @@ tests at lines 310 and 340, `FakeRunner` from `tests/fakes.py`).
 
 Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
 
-- [ ] **1. A local brief template**
+- [x] **1. A local brief template**
   - Files: `templates/brief.local.md` (new), `tests/test_template.py`
   - Provides: a template with headings `## Hosts`, `## Paths`, `## Local data`, `## Credentials`. Under `## Local data`, a comment says: one `NAME: /absolute/path` per line, data agents may read in place, read-only, never copy; under `## Credentials`: agents never read or copy this section. No real values. Add a test that the template exists and contains `## Local data`.
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_template -v`

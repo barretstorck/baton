@@ -34,6 +34,11 @@ class TemplateTest(unittest.TestCase):
             text = (ROOT / path).read_text().lower()
             self.assertIn("never run `baton task done pr`", text, path)
 
+    def test_local_brief_template_has_local_data_section(self):
+        text = (ROOT / "templates" / "brief.local.md").read_text()
+        self.assertIn("## Local data", text)
+        self.assertIn("## Credentials", text)
+
     def test_sprint_skill_names_orchestrator_role_variable(self):
         text = (ROOT / "skills/sprint/SKILL.md").read_text()
         self.assertIn("BATON_ROLE", text)
