@@ -33,3 +33,7 @@ class TemplateTest(unittest.TestCase):
         for path in ("skills/develop/SKILL.md", "agents/baton-developer.md"):
             text = (ROOT / path).read_text().lower()
             self.assertIn("never run `baton task done pr`", text, path)
+
+    def test_sprint_skill_names_orchestrator_role_variable(self):
+        text = (ROOT / "skills/sprint/SKILL.md").read_text()
+        self.assertIn("BATON_ROLE", text)

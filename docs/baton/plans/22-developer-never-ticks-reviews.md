@@ -35,7 +35,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: `def in_linked_worktree(runner, cwd) -> bool` in `review.py`, true when `git rev-parse --path-format=absolute --git-dir` and `... --git-common-dir` (run with `cwd`) differ. In `cmd_task`'s `pr` branch, when `os.environ.get("BATON_ROLE") != "orchestrator"` and `in_linked_worktree(run.run, os.getcwd())`, print to stderr `baton: warning: task done pr is the orchestrator's; developers report FIXED or DECLINED instead. Set BATON_ROLE=orchestrator to silence this.` then tick as before (exit code unchanged).
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_review -v`, with new tests for `in_linked_worktree` (equal paths false, different true) through `FakeRunner` replies.
 
-- [ ] **3. Orchestrator side: name the contrast and the variable**
+- [x] **3. Orchestrator side: name the contrast and the variable**
   - Files: `skills/sprint/SKILL.md`, `references/github.md`, `tests/test_template.py`
   - Uses: the warning from task 2
   - Provides: in `skills/sprint/SKILL.md` section 8 (lines 248-249) a sentence that only the orchestrator runs `baton task done pr`, from the main checkout, or with `BATON_ROLE=orchestrator` set when it runs from a linked worktree; the same note on the `baton task done pr` entry of the table at `references/github.md:38`. Add a test that `skills/sprint/SKILL.md` contains `BATON_ROLE`.
