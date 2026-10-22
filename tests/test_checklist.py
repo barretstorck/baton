@@ -456,3 +456,92 @@ class LinkedDropTest(unittest.TestCase):
         base, run = self.runner()
         checklist.replace_issue_plan(cfg(), run, 7, "2", "- [ ] **2. B**\n- [ ] **3. C**\n", [])
         self.assertIn("git commit -q -m Replan from task 2", base.lines())
+
+
+class RefPlanTest(unittest.TestCase):
+    """A plan kept at refs/plans/<N>: ticks and replans are commits on that ref."""
+    PATH = "docs/baton/plans/7-x.md"
+    REF = "refs/plans/7"
+    NEW = "c" * 40
+    TEXT = ("## Plan\n\nWritten against: " + SHA + "\n\n- [x] **1. A**\n  - Provides: `f()`\n"
+            "- [ ] **2. B**\n  - Provides: `g()`\n  - Check: none\n- [ ] **3. C**\n")
+
+    def runner(self):
+        link = planfile.link_line("o/r", self.REF, self.PATH)
+        return FakeRunner({
+            "gh issue view 7": json.dumps({"body": link + "\n\n## Context\nx\n"}),
+            "git show": self.TEXT, "git hash-object": "b1\n", "git mktree": "t\n",
+            "git commit-tree": self.NEW + "\n", "git ls-remote": f"{SHA}\t{self.REF}\n"})
+
+    @staticmethod
+    def written(runner):
+        return next(i for c, i in zip(runner.calls, runner.inputs)
+                    if c[:2] == ["git", "hash-object"])
+
+    def tick(self, runner, task, **kwargs):
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            result = checklist.tick_issue(runner, 7, task, **kwargs)
+        return result, out.getvalue()
+
+    def test_tick_commits_to_the_ref_and_leaves_cwd_alone(self):
+        import tempfile
+        runner = self.runner()
+        with tempfile.TemporaryDirectory() as cwd:
+            changed, out = self.tick(runner, "2", cwd=cwd)
+            self.assertEqual(os.listdir(cwd), [])
+        self.assertTrue(changed)
+        lines = runner.lines()
+        self.assertIn("git fetch --quiet origin +refs/plans/7:refs/baton/plans/7", lines)
+        self.assertIn(f"git show --end-of-options refs/baton/plans/7:{self.PATH}", lines)
+        self.assertTrue(any(l.startswith("git commit-tree t -p refs/baton/plans/7 -m Task 2")
+                            for l in lines))
+        self.assertIn("- [x] **2. B**", self.written(runner))
+        self.assertIn("- [ ] **3. C**", self.written(runner))
+        self.assertFalse(any(l.startswith("git push") or "issue edit" in l for l in lines))
+        self.assertIn("plan commit " + self.NEW, out)
+        self.assertIn("push with: git push --atomic origin HEAD:refs/heads/<branch> "
+                      + self.NEW + ":refs/plans/7", out)
+
+    def test_second_tick_is_a_no_op(self):
+        runner = self.runner()
+        changed, out = self.tick(runner, "1")
+        self.assertFalse(changed)
+        self.assertEqual(out, "")
+        self.assertFalse(any("commit-tree" in l or "hash-object" in l for l in runner.lines()))
+
+    def test_as_built_line_goes_under_provides(self):
+        runner = self.runner()
+        self.tick(runner, "2", as_built="`g(x)`")
+        self.assertIn("  - Provides: `g()`\n  - Provides (as built): `g(x)`\n  - Check: none\n",
+                      self.written(runner))
+        self.assertEqual(self.written(runner).count("(as built)"), 1)
+
+    def test_as_built_needs_a_provides_line(self):
+        with self.assertRaises(checklist.TaskError):
+            checklist.add_as_built(self.TEXT, "plan", "3", "x")
+        with self.assertRaises(checklist.TaskError):
+            checklist.add_as_built(self.TEXT, "plan", "9", "x")
+
+    def test_as_built_is_refused_for_other_plans(self):
+        with self.assertRaises(checklist.TaskError):
+            checklist.tick_issue(issue_runner(), 7, "2", as_built="x")
+
+    def test_replace_commits_and_pushes_to_the_ref(self):
+        runner = self.runner()
+        found = checklist.replace_issue_plan(cfg(), runner, 7, "2",
+                                             "- [ ] **2. New B**\n- [ ] **3. New C**\n", [])
+        self.assertEqual([t["title"] for t in found["tasks"]], ["A", "New B", "New C"])
+        lines = runner.lines()
+        self.assertTrue(any(l.startswith("git commit-tree t -p refs/baton/plans/7 "
+                                         "-m Replan from task 2") for l in lines))
+        self.assertEqual(lines[-1], f"git push origin {self.NEW}:refs/plans/7")
+        self.assertFalse(any("issue edit" in l or "worktree" in l for l in lines))
+
+    def test_replace_done_task_is_refused_before_commit(self):
+        runner = self.runner()
+        with self.assertRaises(checklist.TaskError):
+            checklist.replace_issue_plan(cfg(), runner, 7, "1", "- [ ] **1. X**\n", [])
+        self.assertFalse(any("commit-tree" in l or "push" in l for l in runner.lines()))
