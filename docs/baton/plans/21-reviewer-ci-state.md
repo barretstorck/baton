@@ -46,6 +46,6 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: in `skills/review/SKILL.md` step 4, a paragraph saying: run `baton pr-state <PR>`; `draft` is the pull request's own draft state and `ci` is judged on the newest run of each check, so a `skipped` run replaced by a later run does not count; state a pull request is a draft, or that CI did not run, only from that output, never from the first check seen in `gh pr checks` or the rollup; record the output's `draft` and `ci` under "Checked" in the review; add a matching bullet to the skill's `## Never` list. In `references/github.md` add a table row for `baton pr-state <N>` (reviewer: draft state and CI state of a pull request). In `tests/test_template.py` add a test that `skills/review/SKILL.md` contains `baton pr-state`.
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_template -v`
 
-- [ ] **4. Full suite**
+- [x] **4. Full suite**
   - Files: none
   - Check: `PYTHONPATH=lib python3 -m unittest discover -s tests -v`
