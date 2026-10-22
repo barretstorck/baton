@@ -49,6 +49,11 @@ class TemplateTest(unittest.TestCase):
         text = (ROOT / "skills/sprint/SKILL.md").read_text()
         self.assertIn("BATON_ROLE", text)
 
+    def test_sprint_skill_redrafts_on_changes(self):
+        # The skill wraps lines, so compare with whitespace collapsed.
+        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        self.assertIn("gh pr ready <PR> --undo", text)
+
     def test_review_skill_reads_state_from_pr_state(self):
         text = (ROOT / "skills/review/SKILL.md").read_text()
         self.assertIn("baton pr-state", text)

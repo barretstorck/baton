@@ -40,7 +40,7 @@ Written against: ca35e49f8d8ccc60810e48b641d55936677276d0
   - Provides: step 8 and the step 7 fallback say that after the reply the pull request, still a draft, is marked ready by the next pass (step 4), CI runs once, and the reviewer is dispatched only when `ci` is green or `none`; no separate `gh pr ready` call in step 8
   - Check: none (prose; task 3 tests the wording)
 
-- [ ] **3. Document the flow and test the wording**
+- [x] **3. Document the flow and test the wording**
   - Files: `README.md`, `tests/test_template.py`
   - Uses: README section "How a pull request gets merged", items 1 to 3 (`README.md:48-58`); `test_sprint_skill_names_orchestrator_role_variable` (`tests/test_template.py:48`) as the model
   - Provides: a README sentence after item 3 saying a `changes` review turns the pull request back into a draft while its fix tasks are worked, and it is marked ready again after the developer's reply; `test_sprint_skill_redrafts_on_changes` asserting `gh pr ready <PR> --undo` appears in `skills/sprint/SKILL.md`
