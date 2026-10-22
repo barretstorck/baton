@@ -59,6 +59,6 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: a `## Spike prototypes` section between those two with the bullets of #24's last acceptance criterion: where prototypes live and the fetch command; a normal clone does not fetch them and `git push --mirror` from such a clone deletes them on the remote; rulesets cover only branches and tags so anyone with write access can delete a spike ref; a "before making a repository public" checklist (`git ls-remote origin 'refs/spikes/*'`, review or `git push origin --delete refs/spikes/<N>`; a deleted ref breaks its findings link but not the findings text; deleting does not erase the commits, which GitHub can serve by SHA from cached views, forks and old `refs/pull/*` refs, including earlier spike drafts, until GitHub Support runs a garbage collection)
   - Check: none
 
-- [ ] **6. Full verification**
+- [x] **6. Full verification**
   - Files: none
   - Check: `PYTHONPATH=lib python3 -m unittest discover -s tests -v` passes
