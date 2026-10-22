@@ -47,7 +47,7 @@ Tests use `FakeRunner` (`tests/fakes.py`, replies keyed by command-line prefix, 
 
 Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
 
-- [ ] **1. Link formats and validation**
+- [x] **1. Link formats and validation**
   - Files: `lib/baton/planfile.py`, `tests/test_planfile.py`
   - Uses: `link_line(repo, ref, path)` (`lib/baton/planfile.py:26`), `check_link(ref, path, docs_dir=None)` (`:33`), `parse_link(body, docs_dir=None)` (`:80`), `_LINK` (`:15`), `PlanfileTest` (`tests/test_planfile.py:21`) and `BadLinkTest`-style cases at `:240-280`
   - Provides: `ref_name(number) -> str` returning `"refs/plans/<number>"`; `link_line(repo, ref, path)` returns the history-page link when `ref` starts with `refs/plans/` and otherwise the unchanged `/blob/<ref>/<path>` link; `parse_link` returns the `kind` key of Design notes for all three formats; `check_link` accepts `refs/plans/<N>` only when `<N>` is digits and equals the number that starts the path's file name, and still refuses every ref it refused before

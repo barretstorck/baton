@@ -23,7 +23,17 @@ def plan_path(cfg, number, slug):
     return f"{cfg['docs']['dir']}/plans/{number}-{slug}.md"
 
 
+PLAN_REF = "refs/plans/"
+_PLAN_NUMBER = re.compile(r"^(\d+)-")
+
+
+def ref_name(number):
+    return f"{PLAN_REF}{number}"
+
+
 def link_line(repo, ref, path):
+    if ref.startswith(PLAN_REF):
+        return f"Plan: [{path}](https://github.com/{repo}/commits/{ref})"
     return f"Plan: [{path}](https://github.com/{repo}/blob/{ref}/{path})"
 
 
@@ -46,6 +56,14 @@ def check_link(ref, path, docs_dir=None):
         raise checklist.TaskError(
             f"invalid Plan: link, the path {path!r} must be a relative .md file under "
             f"{'/'.join(prefix)}/plans/")
+    if ref.startswith(PLAN_REF):
+        number = ref[len(PLAN_REF):]
+        match = _PLAN_NUMBER.match(parts[-1])
+        if not (number.isascii() and number.isdigit() and match and match.group(1) == number):
+            raise checklist.TaskError(
+                f"invalid Plan: link, the ref {ref!r} must be {PLAN_REF}<N> with <N> the issue "
+                f"number that starts the plan file name")
+        return
     if not (_SHA.match(ref) or (_BRANCH.match(ref) and not ref.startswith("-")
                                 and ".." not in ref and not ref.endswith(("/", ".lock")))):
         raise checklist.TaskError(f"invalid Plan: link, the ref {ref!r} is not a commit sha or a "
@@ -78,7 +96,7 @@ def check_write(root, path):
 
 
 def parse_link(body, docs_dir=None):
-    """{'ref', 'path', 'pinned'} for the body's `Plan:` line, or None.
+    """{'ref', 'path', 'pinned', 'kind'} for the body's `Plan:` line, or None.
 
     Raises TaskError when the line is a link whose ref or path is not safe (see check_link).
     """
@@ -87,13 +105,20 @@ def parse_link(body, docs_dir=None):
         if not match:
             continue
         path, url = match.group("path"), match.group("url")
+        history = url.find("/commits/" + PLAN_REF)
+        if history >= 0:
+            ref = url[history + len("/commits/"):]
+            check_link(ref, path, docs_dir)
+            return {"ref": ref, "path": path, "pinned": False, "kind": "ref"}
         marker = url.find("/blob/")
         if marker < 0 or not url.endswith("/" + path):
             continue
         ref = url[marker + len("/blob/"):-len(path) - 1]
         if ref:
             check_link(ref, path, docs_dir)
-            return {"ref": ref, "path": path, "pinned": bool(_SHA.match(ref))}
+            pinned = bool(_SHA.match(ref))
+            return {"ref": ref, "path": path, "pinned": pinned,
+                    "kind": "pinned" if pinned else "branch"}
     return None
 
 

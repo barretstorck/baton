@@ -27,9 +27,26 @@ class PlanfileTest(unittest.TestCase):
     def test_parse_branch_and_pinned(self):
         body = planfile.link_line("o/r", "issue-5-x", PATH) + "\n\n## Context\n"
         self.assertEqual(planfile.parse_link(body),
-                         {"ref": "issue-5-x", "path": PATH, "pinned": False})
+                         {"ref": "issue-5-x", "path": PATH, "pinned": False,
+                          "kind": "branch"})
         body = planfile.link_line("o/r", SHA, PATH)
-        self.assertEqual(planfile.parse_link(body), {"ref": SHA, "path": PATH, "pinned": True})
+        self.assertEqual(planfile.parse_link(body), {"ref": SHA, "path": PATH, "pinned": True,
+                                              "kind": "pinned"})
+
+    def test_history_page_link_round_trips(self):
+        self.assertEqual(planfile.ref_name(5), "refs/plans/5")
+        line = planfile.link_line("o/r", "refs/plans/5", PATH)
+        self.assertEqual(line, f"Plan: [{PATH}](https://github.com/o/r/commits/refs/plans/5)")
+        self.assertEqual(planfile.parse_link(line + "\n\n## Context\n"),
+                         {"ref": "refs/plans/5", "path": PATH, "pinned": False, "kind": "ref"})
+
+    def test_plan_ref_must_match_the_file_number(self):
+        planfile.check_link("refs/plans/5", PATH)
+        for ref in ("refs/plans/7", "refs/plans/x", "refs/plans/", "refs/plans/5/x"):
+            with self.assertRaises(checklist.TaskError, msg=ref):
+                planfile.check_link(ref, PATH)
+        with self.assertRaises(checklist.TaskError):
+            planfile.parse_link(f"Plan: [{PATH}](https://github.com/o/r/commits/refs/plans/7)")
 
     def test_parse_none(self):
         self.assertIsNone(planfile.parse_link("## Context\nPlan: later\n"))
