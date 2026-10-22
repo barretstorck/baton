@@ -30,7 +30,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: a template with headings `## Hosts`, `## Paths`, `## Local data`, `## Credentials`. Under `## Local data`, a comment says: one `NAME: /absolute/path` per line, data agents may read in place, read-only, never copy; under `## Credentials`: agents never read or copy this section. No real values. Add a test that the template exists and contains `## Local data`.
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_template -v`
 
-- [ ] **2. `baton init` creates the local brief from it**
+- [x] **2. `baton init` creates the local brief from it**
   - Files: `skills/init/SKILL.md`
   - Uses: the template from task 1
   - Provides: step 5 (line 31) says to copy `${CLAUDE_PLUGIN_ROOT}/templates/brief.local.md` to `~/.baton/<owner>-<repo>/brief.local.md` when missing, replacing the sentence that lists the headings, and to ask the maintainer which local data paths (test footage, reference images) agents may use and write them under `## Local data`.
