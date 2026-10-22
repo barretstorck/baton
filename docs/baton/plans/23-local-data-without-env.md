@@ -48,6 +48,6 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: `def _secret_files(path) -> list[str]`, the names of `.env` and `.env.*` files directly in `path`, excluding names ending `.example`, `.sample` or `.template`; when a branch or task worktree is kept, its note also says `it holds <names>; delete it by hand`.
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_merge -v`, with new tests that use a temporary directory as the worktree path (replace `/wt/issue-4` in the fake replies) containing `.env` and `.env.example`: the note names `.env` only; no note mention without it.
 
-- [ ] **5. Full suite**
+- [x] **5. Full suite**
   - Files: none
   - Check: `PYTHONPATH=lib python3 -m unittest discover -s tests -v`
