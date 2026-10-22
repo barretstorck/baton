@@ -83,7 +83,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Provides: no new signatures; behaviour: `ready-check` on a history-page link reads the plan through the ref and reports `the Plan: link cannot be read (...)` when the ref is missing; `sprint-status` `progress.<N>.plan` is computed from the ref plan
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_issue tests.test_sprint -v` with new tests: ref link with a plan passes; ref missing fails (the `FakeRunner` reply for `git fetch` raising `RunError`; see `RaisingRunner` in `tests/test_issue.py`); sprint progress counts ticks from a ref plan
 
-- [ ] **7. merge-pr pins in one pass; review.current**
+- [x] **7. merge-pr pins in one pass; review.current**
   - Files: `lib/baton/merge.py`, `lib/baton/review.py`, `tests/test_merge.py`, `tests/test_review.py`
   - Uses: `_retire_plan(pr, repo, runner, cfg)` (`lib/baton/merge.py:200-244`), `merge(number, cfg, runner, notes=None)` (`:246`), `PlanRetired`, `_linked_plan_path(runner, pr, cfg)` (`lib/baton/review.py:128`), `_only_plan_deleted` (`:144`), `planfile.pin` from task 2, `plan_replies` and the retire tests in `tests/test_merge.py:193-270`
   - Provides: in `merge`, for a `"ref"` link `planfile.pin(...)` runs before `gh pr merge` and the merge goes on in the same call (no `PlanRetired`, no retire commit, no waiting for CI); a missing ref adds a note and does not block; a `"branch"` link still takes the old `_retire_plan` path unchanged; `_linked_plan_path` returns None for a `"ref"` link, so `current` never excludes a plans path for a ref plan and still does for an in-flight branch plan

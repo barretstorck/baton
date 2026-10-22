@@ -134,7 +134,9 @@ def _linked_plan_path(runner, pr, cfg):
                                    cfg.data["docs"]["dir"])
     except (checklist.TaskError, run.RunError, OSError, ValueError, KeyError):
         return None
-    return link["path"] if link else None
+    if link is None or link["kind"] == "ref":
+        return None  # a plan in refs/plans/<N> is never on the branch, so nothing to exclude
+    return link["path"]
 
 
 def _only_plan_deleted(runner, pr, cfg, default_branch, approved):

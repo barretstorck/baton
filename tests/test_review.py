@@ -225,6 +225,24 @@ class LinkedPlanDeletionTest(unittest.TestCase):
                 self.assertFalse(any("gh issue view" in line for line in runner.lines()))
 
 
+class RefPlanTest(unittest.TestCase):
+    REF_BODY = f"Plan: [{PLAN}](https://github.com/o/r/commits/refs/plans/4)\n\nBody."
+
+    def test_a_ref_plan_excludes_no_plans_path(self):
+        runner = plan_runner(DIFF + "-plan\n", f"D\t{PLAN}\n", body=self.REF_BODY)
+        pr = {"number": 9, "headRefOid": NEW, "headRefName": "issue-4-x",
+              "comments": [rev("approve", OLD)],
+              "closingIssuesReferences": [{"number": 4}]}
+        self.assertEqual(review.current(pr, OWNER, cfg(), runner, "main")["state"], "stale")
+        self.assertFalse(any(":(exclude)" in line for line in runner.lines()))
+        self.assertIn(f"git diff --binary base2 {NEW} -- .", runner.lines())
+
+    def test_a_ref_plan_has_no_linked_path(self):
+        runner = plan_runner(DIFF, "", body=self.REF_BODY)
+        pr = {"closingIssuesReferences": [{"number": 4}]}
+        self.assertIsNone(review._linked_plan_path(runner, pr, cfg()))
+
+
 TASKS = "## Tasks\n- [ ] **1.1 Fix it**\n  - Check: none\n"
 
 

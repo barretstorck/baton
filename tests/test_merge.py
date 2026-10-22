@@ -282,6 +282,35 @@ class MergeTest(unittest.TestCase):
         add = next(l for l in lines if l.startswith("git worktree add --detach"))
         self.assertTrue(add.endswith(HEAD))
 
+    TIP = "f" * 40
+
+    def ref_replies(self, tip=None):
+        url = "https://github.com/octo/tool/commits/refs/plans/4"
+        replies = self.replies(make_pr())
+        replies["gh issue view 4 --json body"] = json.dumps(
+            {"body": f"Plan: [{self.PLAN}]({url})\n\n## Context\nx\n"})
+        replies["git ls-remote origin refs/plans/4"] = f"{tip}\trefs/plans/4\n" if tip else ""
+        return replies
+
+    def test_ref_plan_is_pinned_and_merged_in_one_call(self):
+        runner = FakeRunner(self.ref_replies(self.TIP))
+        self.assertEqual(merge.merge(9, make_config(), runner), [])
+        lines = runner.lines()
+        pin = next(i for i, l in enumerate(lines) if l.startswith("gh issue edit 4 --body-file"))
+        done = next(i for i, l in enumerate(lines) if l.startswith("gh pr merge 9 --merge"))
+        self.assertLess(pin, done)
+        self.assertIn(f"gh pr merge 9 --merge --match-head-commit {HEAD}", lines)
+        self.assertFalse(any(" rm " in l or l.startswith(("git push origin HEAD", "git worktree add"))
+                             for l in lines))
+
+    def test_missing_ref_adds_a_note_and_does_not_block(self):
+        runner = FakeRunner(self.ref_replies(None))
+        notes = []
+        self.assertEqual(merge.merge(9, make_config(), runner, notes), [])
+        self.assertTrue(any("not pinned" in n for n in notes))
+        self.assertIn(f"gh pr merge 9 --merge --match-head-commit {HEAD}", runner.lines())
+        self.assertFalse(any(l.startswith("gh issue edit 4 --body-file") for l in runner.lines()))
+
     def test_failed_push_restores_the_link_to_the_branch(self):
         class PushFails(FakeRunner):
             def __call__(self, argv, cwd=None):
