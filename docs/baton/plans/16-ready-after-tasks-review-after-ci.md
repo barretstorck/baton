@@ -17,7 +17,7 @@
 
 Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
 
-- [ ] **1. Report pending for a ready pull request with no checks yet**
+- [x] **1. Report pending for a ready pull request with no checks yet**
   - Files: `lib/baton/sprint.py`, `tests/test_sprint.py`
   - Uses: `merge._check_ci(pr, cfg) -> list[str]` (`lib/baton/merge.py:46`); `cfg.data["merge"]["allow_no_ci"]`
   - Provides: `_pr_ci(pr, cfg)` returns `pending` for an empty `statusCheckRollup` when `allow_no_ci` is false and `none` when it is true; returns `pending` when the only problem is the all-skipped one; unchanged otherwise
