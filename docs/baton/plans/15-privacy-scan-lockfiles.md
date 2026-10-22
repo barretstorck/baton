@@ -38,7 +38,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_githooks`
   - Tests to add, using the existing `make_repo` (empty `privacy_allow`): a four-part version starting with `10.` (built in the test from parts, e.g. `".".join(["10", "1", "2", "3"])`) added to `uv.lock` and to `sub/requirements-dev.txt` passes `pre_commit`; the same line in `a.txt` is reported as `private-ip`; an email, a host path under the home or Users directory and a name ending in the internal-domain suffix `.internal` (both built from parts in the test so the test file itself passes the scan) added to `uv.lock` are each still reported; `pre_push` with a new branch containing the `uv.lock` change passes (model on `PrePushTest.test_new_branch_scans_commits_not_on_remote`); `added_by_file` unit test with two files in one patch, including a `+++ ` line inside a hunk
 
-- [ ] **3. Document the exempt files**
+- [x] **3. Document the exempt files**
   - Files: `README.md`, `templates/brief.md`
   - Uses: `scan.PY_DEPENDENCY_FILES` (task 1)
   - Provides: README sentence (near the rules list, `README.md:107`) saying the git hooks do not report `private-ip` in those basenames while other kinds are still checked; one-line comment next to `privacy_allow` in `templates/brief.md:37` pointing to it

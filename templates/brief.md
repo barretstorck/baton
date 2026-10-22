@@ -35,6 +35,7 @@ docs:
 protected_paths: [".github/", ".baton/", ".claude/"]
 fixtures_paths: []            # the only places new image files may be added
 privacy_allow: []             # literal strings the privacy scan should ignore
+                              # (Python dependency files are already exempt from private-ip: see README)
 budgets: {}
 ---
 # Baton brief
