@@ -340,6 +340,35 @@ class LockTest(unittest.TestCase):
         sprint.lock_release(self.path)
 
 
+class PrCiTests(unittest.TestCase):
+    def ci(self, rollup, allow_no_ci=False):
+        c = cfg()
+        c.data["merge"]["allow_no_ci"] = allow_no_ci
+        return sprint._pr_ci({"statusCheckRollup": rollup}, c)
+
+    @staticmethod
+    def check(conclusion, status="COMPLETED", started="2026-10-22T10:00:00Z"):
+        return {"__typename": "CheckRun", "name": "t", "workflowName": "ci", "status": status,
+                "conclusion": conclusion, "startedAt": started}
+
+    def test_empty_rollup_is_pending_unless_no_ci_is_allowed(self):
+        self.assertEqual(self.ci([]), "pending")
+        self.assertEqual(self.ci([], allow_no_ci=True), "none")
+
+    def test_only_a_skipped_run_is_pending(self):
+        self.assertEqual(self.ci([self.check("SKIPPED")]), "pending")
+
+    def test_skipped_then_success_is_green(self):
+        rollup = [self.check("SKIPPED"), self.check("SUCCESS", started="2026-10-22T11:00:00Z")]
+        self.assertEqual(self.ci(rollup), "green")
+
+    def test_failed_run_is_red(self):
+        self.assertEqual(self.ci([self.check("FAILURE")]), "red")
+
+    def test_unfinished_run_is_pending(self):
+        self.assertEqual(self.ci([self.check("", status="IN_PROGRESS")]), "pending")
+
+
 NOW = datetime(2026, 10, 22, 12, 0, 0, tzinfo=timezone.utc)
 CI_ON_PUSH = "name: ci\non:\n  pull_request:\n  push:\n    branches: [main]\njobs: {}\n"
 WORKFLOWS = "gh api repos/octo/proj/contents/.github/workflows?ref=aaa"

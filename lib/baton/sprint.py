@@ -144,9 +144,10 @@ def overlaps(first, second):
 
 def _pr_ci(pr, cfg, runner=None):
     if not pr.get("statusCheckRollup"):
-        return "none"
+        return "none" if cfg.data["merge"]["allow_no_ci"] else "pending"
     problems = merge._check_ci(pr, cfg, runner)
-    if any("not finished" in problem for problem in problems):
+    if any("not finished" in problem or "every check was skipped" in problem
+           for problem in problems):
         return "pending"
     return "red" if problems else "green"
 

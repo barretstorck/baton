@@ -29,7 +29,7 @@ labels:
     broken-default-branch: "broken-default-branch"
     needs-maintainer: "needs-maintainer"
 merge:
-  allow_no_ci: false          # true only for repositories with no CI at all
+  allow_no_ci: false          # true only for repositories with no CI at all; the reviewer then starts without waiting for CI
 docs:
   dir: docs/baton             # where plans and retrospectives live: relative, no "..", not protected
 protected_paths: [".github/", ".baton/", ".claude/"]
