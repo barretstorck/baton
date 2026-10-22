@@ -22,7 +22,7 @@ Written against: dc7d89f8e49ade16665665d7312fe65a2c9ac435
   - Uses: `merge._check_ci(pr, cfg) -> list[str]` (`lib/baton/merge.py:46`); `cfg.data["merge"]["allow_no_ci"]`
   - Provides: `_pr_ci(pr, cfg)` returns `pending` for an empty `statusCheckRollup` when `allow_no_ci` is false and `none` when it is true; returns `pending` when the only problem is the all-skipped one; unchanged otherwise
   - Check: `PYTHONPATH=lib python3 -m unittest tests.test_sprint`; add tests: empty rollup with allow_no_ci false -> `pending`; with true -> `none`; only a skipped run -> `pending`; skipped plus later success -> `green`; failed run -> `red`
-- [ ] **2. Move the ready step and gate the reviewer on CI in the sprint skill**
+- [x] **2. Move the ready step and gate the reviewer on CI in the sprint skill**
   - Files: `skills/sprint/SKILL.md`
   - Uses: `sprint-status` fields `in_review[].draft`, `.ci`, `.review`, `progress.<N>.plan.next`
   - Provides: in step 4 "Review and merge", a rule before the `review` rules (lines 105-111): not a spike, `progress.<N>.plan.next` null and `draft` true: `gh pr ready <PR>`, look again next pass; the reviewer rule (`none`, `replied`, `stale`) additionally requires `ci` `green`, or `ci` `none` (which only appears when `allow_no_ci` is true); `pending` waits; `red` or `CONFLICTING` follows the existing "Fix CI" dispatch before any review; the `approved` / `not-required` list drops its first sub-step "Still a draft" down to a fallback for a pull request that is still a draft (lines 117-118); step 8 last-task sentence stays `status:in-review` with the next pass doing the ready step
