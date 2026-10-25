@@ -3,7 +3,7 @@
 For every item that enters the conversation (tool result, notification, assistant output, user text)
 estimate its size in tokens, multiply by the number of API calls that re-read it, and sum per kind.
 Usage: python3 -I breakdown.py <transcript.jsonl> [--top N] [--json] [--detail KIND]
-Sizes are character counts rescaled so they add up to the measured context growth (last call minus first).
+Sizes: output tokens are exact; other items are characters scaled so the total matches the measured context growth (see tokens/char).
 """
 import json, re, sys, collections
 
