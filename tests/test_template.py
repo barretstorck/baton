@@ -29,6 +29,25 @@ class TemplateTest(unittest.TestCase):
             meta, _ = frontmatter.split((ROOT / "agents" / f"{name}.md").read_text())
             self.assertIn("\neffort: medium\n", f"\n{meta}\n", name)
 
+    def test_agents_declare_restricted_tools(self):
+        expected = {
+            "baton-developer": "tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch",
+            "baton-reviewer": "tools: Read, Grep, Glob, Bash",
+            "baton-refiner": "tools: Read, Grep, Glob, Bash, Write, WebSearch, WebFetch",
+        }
+        for name, line in expected.items():
+            meta, _ = frontmatter.split((ROOT / "agents" / f"{name}.md").read_text())
+            self.assertIn(line, meta.splitlines(), name)
+            tools = [t.strip() for t in line.split(":", 1)[1].split(",")]
+            for banned in ("Agent", "Skill"):
+                self.assertNotIn(banned, tools, name)
+            self.assertFalse([t for t in tools if t.startswith("mcp__")], name)
+            for web in ("WebSearch", "WebFetch"):
+                if name == "baton-reviewer":
+                    self.assertNotIn(web, tools, name)
+                else:
+                    self.assertIn(web, tools, name)
+
     def test_developer_instructions_forbid_ticking_review_tasks(self):
         for path in ("skills/develop/SKILL.md", "agents/baton-developer.md"):
             text = (ROOT / path).read_text().lower()
