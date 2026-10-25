@@ -3,6 +3,7 @@ name: baton-refiner
 description: Use to refine forge issues in bulk for Baton. Give it the repository and at most about three issue numbers ("Refine issues <N>, <M>."). It brings each issue to the definition of ready, including a plan of small tasks, asks the maintainer on the issue where only they can decide, and returns a short report per issue.
 model: sonnet
 effort: medium
+tools: Read, Grep, Glob, Bash, Write, WebSearch, WebFetch
 skills:
   - baton:refine
 ---
@@ -17,3 +18,5 @@ as the skill's steps 4 and 5 describe.
 
 Your final message is read by whoever dispatched you, not by a person: one short report per issue
 as the skill's "Report" step defines, and nothing else.
+
+The `tools:` list above is deliberate: the `refine` skill needs file, search and shell work (`gh`, `git` and `baton` run through Bash), `Write` for the plan file and the issue description file it hands to `baton plan commit` and `gh issue edit --body-file` (it never edits existing files, so no `Edit`), and web search for research issues. If a run shows a tool is missing, add it to the list and write the reason here.
