@@ -134,16 +134,19 @@ def report(root, since=None, repo=None):
         if not calls:
             continue
         row = rows.setdefault((key, role), {"key": key, "role": role, "agents": 0, "calls": 0,
-                                            "weighted": 0.0, "peak": 0, "large": 0.0})
+                                            "weighted": 0.0, "peak": 0, "large": 0.0,
+                                            "context": 0})
         row["agents"] += 1
         for call in calls:
             row["calls"] += 1
             row["weighted"] += call["weighted"]
             row["peak"] = max(row["peak"], call["context"])
+            row["context"] += call["context"]
             if call["context"] > LARGE:
                 row["large"] += call["weighted"]
             every.append((call["time"], role, call["weighted"]))
     for row in rows.values():
+        row["avg_context"] = round(row.pop("context") / row["calls"]) if row["calls"] else 0
         row["large_share"] = row.pop("large") / row["weighted"] if row["weighted"] else 0.0
 
     windows = []
@@ -162,11 +165,12 @@ def report(root, since=None, repo=None):
 
 
 def table(found):
-    lines = ["| Work | Role | Agents | Calls | Weighted (M) | Peak (K) | Above 250K |",
-             "|---|---|---|---|---|---|---|"]
+    lines = ["| Work | Role | Agents | Calls | Weighted (M) | Peak (K) | Avg ctx (K) | Above 250K |",
+             "|---|---|---|---|---|---|---|---|"]
     for row in found["rows"]:
         lines.append(f"| {row['key']} | {row['role']} | {row['agents']} | {row['calls']} | "
                      f"{row['weighted'] / 1e6:.1f} | {row['peak'] / 1e3:.0f} | "
+                     f"{row['avg_context'] / 1e3:.0f} | "
                      f"{row['large_share']:.0%} |")
     lines += ["", "| Window (UTC) | Weighted (M) | By role |", "|---|---|---|"]
     for window in found["windows"]:

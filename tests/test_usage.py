@@ -71,6 +71,8 @@ class ReportTest(unittest.TestCase):
         task = rows[("issue 12", "task")]
         self.assertEqual((task["agents"], task["calls"]), (1, 2))
         self.assertEqual(task["peak"], 301_010)
+        self.assertEqual(task["avg_context"], 151_010)
+        self.assertEqual(rows[("session s1", "orchestrator")]["avg_context"], 1010)
         big = 10 + 30_000 + 1250 + 500
         small = 10 + 100 + 500
         self.assertAlmostEqual(task["weighted"], big + small)
@@ -115,3 +117,4 @@ class ReportTest(unittest.TestCase):
         text = usage.table(usage.report(self.root))
         self.assertIn("issue 12", text)
         self.assertIn("task", text)
+        self.assertIn("Avg ctx (K)", text)
