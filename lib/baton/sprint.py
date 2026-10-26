@@ -227,7 +227,7 @@ def snapshot(cfg, runner, milestone=None):
         "sprint": None, "open_sprints": open_sprints,
         "default_branch": {"name": branch, "state": state, "grace_ends_in_seconds": grace_left},
         "repair_issue": None, "parallel": 0, "free_slots": 0, "in_dev": [], "in_review": [],
-        "verification": [], "answered": [], "waiting_on_maintainer": [],
+        "verification": [], "re_refine": [], "answered": [], "waiting_on_maintainer": [],
         "dispatchable": [], "held": [], "finished": False, "issues": [], "progress": {},
     }
     if chosen is None:
@@ -305,6 +305,11 @@ def snapshot(cfg, runner, milestone=None):
             busy_files.append(files)
         elif status == "status:verification":
             result["verification"].append(number)
+        elif status == "status:refinement" and item["state"] == "OPEN":
+            pr = pr_for.get(number)
+            if pr and cfg.label("needs-maintainer") not in labels:
+                result["re_refine"].append({"number": number, "pr": pr["number"],
+                                            "draft": pr["isDraft"]})
         elif status == "status:blocked":
             pending = comment.pending_answers(item, owner)
             if pending["answers"]:
