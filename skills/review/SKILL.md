@@ -78,6 +78,8 @@ task by task.
    run replaced by a later run does not count. State that a pull request is a draft, or that CI
    did not run, only from that output, never from the first check seen in `gh pr checks` or the
    rollup. Record the output's `draft` and `ci` under "Checked".
+   `cancelled` means CI did not finish (a run was cancelled, not failed): state it under "Checked", write no
+   fix task for it, and do not approve on it, because the head needs a finished CI run.
 
 5. **Judge.**
    - Every acceptance criterion is met, and nothing outside the issue's scope changed. Work that
@@ -149,7 +151,7 @@ Round <n>. Reviewed <the whole change | the commits since <short sha>> at <short
 ## Checked
 - Acceptance criteria: <each one: met | not met>
 - Verification: `<command>` → <summary line> | not run (<why>)
-- Pull request state: draft <true|false>, ci <green|red|pending|none> (from `baton pr-state`)
+- Pull request state: draft <true|false>, ci <green|red|pending|cancelled|none> (from `baton pr-state`)
 - Earlier tasks: <each: fixed in <sha> | declined: <accepted or not, and why>>
 ```
 
