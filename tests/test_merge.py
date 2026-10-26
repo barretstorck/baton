@@ -491,3 +491,80 @@ class MergeTest(unittest.TestCase):
             merge.merge(9, make_config(), runner)
         self.assertIn("merged", str(caught.exception))
         self.assertIn("baton merge-pr 9", str(caught.exception))
+
+
+def verify_config():
+    cfg = make_config()
+    cfg.data["verify"] = {"command": "make test", "timeout_minutes": 10}
+    return cfg
+
+
+def verified(state, commit=HEAD):
+    body = review.compose("approve", commit, "Round 1.", state)
+    return [{"author": {"login": OWNER}, "body": body}]
+
+
+class VerifyRecordTest(unittest.TestCase):
+    def found(self, comments, cfg=None):
+        return merge.check(make_pr(comments=comments), cfg or verify_config(), OWNER, "main",
+                           FakeRunner())
+
+    def test_not_green_is_refused(self):
+        for state in ("missing", "red", "timeout"):
+            with self.subTest(state=state):
+                found = self.found(verified(state))
+                self.assertTrue(any(f"verification of {HEAD[:7]} is {state} in the latest review; "
+                                    "the reviewer runs baton verify" in p for p in found), found)
+
+    def test_green_is_allowed(self):
+        self.assertEqual(self.found(verified("green")), [])
+
+    def test_no_command_changes_nothing(self):
+        self.assertEqual(self.found(verified("red"), make_config()), [])
+
+    def test_approval_of_an_older_commit_is_missing(self):
+        old = "d" * 40
+        runner = FakeRunner({f"git merge-base origin/main {old}": "b1\n",
+                             f"git merge-base origin/main {HEAD}": "b2\n",
+                             f"git diff --binary b1 {old}": "+a\n",
+                             f"git diff --binary b2 {HEAD}": "+a\n"})
+        pr = make_pr(comments=verified("green", old))
+        found = merge.check(pr, verify_config(), OWNER, "main", runner)
+        self.assertTrue(any(f"verification of {HEAD[:7]} is missing" in p for p in found), found)
+
+
+class VerifyLogsTest(unittest.TestCase):
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.home, ignore_errors=True))
+        old = os.environ.get("BATON_HOME")
+        os.environ["BATON_HOME"] = self.home
+        self.addCleanup(lambda: os.environ.__setitem__("BATON_HOME", old) if old is not None
+                        else os.environ.pop("BATON_HOME", None))
+        self.folder = pathlib.Path(self.home) / "octo-tool" / "logs" / "pr-9"
+        self.folder.mkdir(parents=True)
+        (self.folder / "verify-abc1234-x.log").write_text("out")
+
+    def run_merge(self, pr, notes=None):
+        helper = MergeTest()
+        runner = FakeRunner(helper.replies(pr))
+        return merge.merge(9, make_config(), runner, notes)
+
+    def test_logs_removed_after_a_merge(self):
+        self.assertEqual(self.run_merge(make_pr()), [])
+        self.assertFalse(self.folder.exists())
+
+    def test_logs_removed_on_a_rerun_of_a_merged_pull_request(self):
+        self.run_merge(make_pr(state="MERGED"))
+        self.assertFalse(self.folder.exists())
+
+    def test_logs_kept_when_the_merge_is_refused(self):
+        self.assertTrue(self.run_merge(make_pr(isDraft=True)))
+        self.assertTrue(self.folder.exists())
+
+    def test_removal_failure_is_a_note_not_a_failure(self):
+        from unittest import mock
+        notes = []
+        with mock.patch("baton.verify.remove_logs", side_effect=OSError("busy")):
+            self.assertEqual(self.run_merge(make_pr(), notes), [])
+        self.assertTrue(any("verification logs" in note and "busy" in note for note in notes))

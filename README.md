@@ -113,6 +113,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton labels [--create]` | Check or create the labels Baton uses |
 | `baton set-status <issue> <status:name>` | Switch an issue's status label |
 | `baton install-hooks` | Install the `pre-commit` and `pre-push` privacy hooks |
+| `baton verify <pr> <worktree>` | Run the brief's `verify.command` on the pull request's head; prints the result, the log path and the last 40 lines |
 | `baton merge-pr <number>` | Check the review, CI and the rest, then merge |
 | `baton comment <issue\|pr> <number> <role> <kind> <file \| ->` | Scan, stamp and post an agent comment |
 | `baton review state <pr>` | The pull request's review state at its head commit |
@@ -127,6 +128,25 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton usage [--repo <owner/repo>] [--since <time>] [--json]` | Quota use per issue and role, from local transcripts |
 | `baton sprint-status [milestone]` | The sprint's state and what may be dispatched now, as JSON |
 | `baton lock <acquire\|release>` | Stop two scheduled runs overlapping |
+
+## Full verification
+
+The reviewer runs the repository's full suite with `baton verify`; developers run only each task's `Check:`.
+Set `verify.command` (and `verify.timeout_minutes`) in `.baton/brief.md`. Local verification and CI are two
+settings, which give four cases:
+
+| `verify.command` | `merge.allow_no_ci` | What a merge needs |
+| --- | --- | --- |
+| set | false | a green local verification recorded in the review, and green CI |
+| set | true | a green local verification recorded in the review; no CI exists |
+| empty | false | green CI only |
+| empty | true | neither (not recommended) |
+
+Each run writes its log and a result file to `<BATON_HOME or ~/.baton>/<owner>-<repo>/logs/pr-<number>/`, outside
+every checkout; `baton merge-pr` deletes the folder after a merge. The result goes into the review's marker
+(`baton review post` refuses an approval unless it is `green`), and `baton pr-state` and `baton sprint-status`
+show it as `verify`. With `review.required: false` no review carries the result, so `verify` reads `none`.
+When an approved pull request's head moves only by merging the default branch in, the reviewer re-approves it briefly: it runs `baton verify` again and posts a new review for the new head.
 
 ## Rules the gate enforces in a Baton repository
 

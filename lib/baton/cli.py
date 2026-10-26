@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from . import checklist, comment, config, gate, githooks, issue, labels, merge, planfile, review, run, scan, sprint, usage
+from . import checklist, comment, config, gate, githooks, issue, labels, merge, planfile, review, run, scan, sprint, usage, verify
 
 
 def cmd_config(args):
@@ -145,7 +145,7 @@ def cmd_review(args):
         try:
             body = comment.read_body(path, sys.stdin)
             print(review.post(_require_config(), run.run, int(number), verdict, commit, body,
-                              scan.load_terms(), _owner()))
+                              scan.load_terms(), _owner(), _repo_name().split("/", 1)[1]))
         except (comment.CommentError, review.ReviewError, checklist.TaskError) as error:
             print(f"baton: {error}", file=sys.stderr)
             return 1
@@ -333,6 +333,24 @@ def cmd_pr_state(args):
     return 0
 
 
+def cmd_verify(args):
+    if len(args) != 2 or not args[0].isdigit():
+        print("usage: baton verify <PR> <worktree>", file=sys.stderr)
+        return 64
+    cfg = _require_config()
+    owner, name = _repo_name().split("/", 1)
+    worktree = os.path.abspath(args[1])
+    out = verify.verify(cfg, run.run, int(args[0]), worktree, owner, name)
+    exit_text = "-" if out["exit"] is None else str(out["exit"])
+    print(f"verify {out['result']} commit={out['commit'][:7]} exit={exit_text} "
+          f"duration={out['seconds']}s")
+    print(f"log: {out['log']}")
+    print("--- last 40 lines ---")
+    tail = out["tail"]
+    print(tail if isinstance(tail, str) else "\n".join(tail))
+    return {"green": 0, "red": 1, "timeout": 3}[out["result"]]
+
+
 def cmd_lock(args):
     ttl = 6.0
     if "--ttl-hours" in args:
@@ -374,6 +392,7 @@ COMMANDS = {
     "task": cmd_task,
     "tasks": cmd_tasks,
     "usage": cmd_usage,
+    "verify": cmd_verify,
 }
 
 
@@ -383,7 +402,8 @@ def main(argv):
         return 64
     try:
         return COMMANDS[argv[0]](argv[1:])
-    except (checklist.TaskError, comment.CommentError, review.ReviewError) as error:
+    except (checklist.TaskError, comment.CommentError, review.ReviewError,
+            verify.VerifyError) as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
     except (config.ConfigError, run.RunError, sprint.SnapshotError, ValueError, OSError) as error:

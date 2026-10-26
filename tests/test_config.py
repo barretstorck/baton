@@ -69,6 +69,25 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaises(config.ConfigError):
             config.load(str(make_repo("---\nreview:\n  max_rounds: 0\n---\n")))
 
+    def test_verify_defaults_and_override(self):
+        self.assertEqual(config.DEFAULTS["verify"], {"command": "", "timeout_minutes": 10})
+        self.assertEqual(config.load(str(make_repo("# none\n"))).data["verify"],
+                         {"command": "", "timeout_minutes": 10})
+        cfg = config.load(str(make_repo('---\nverify:\n  command: "make test {worktree}"\n  timeout_minutes: 3\n---\n')))
+        self.assertEqual(cfg.data["verify"], {"command": "make test {worktree}", "timeout_minutes": 3})
+
+    def test_verify_empty_command_line(self):
+        cfg = config.load(str(make_repo('---\nverify:\n  command: ""\n---\n')))
+        self.assertEqual(cfg.data["verify"]["command"], "")
+
+    def test_verify_wrong_types_and_small_timeout(self):
+        for meta in ('verify:\n  command: 5', 'verify:\n  command:', 'verify:\n  timeout_minutes: "10"',
+                     'verify:\n  timeout_minutes: 1.5', 'verify:\n  timeout_minutes: 0',
+                     'verify:\n  timeout_minutes: -2'):
+            with self.subTest(meta=meta):
+                with self.assertRaises(config.ConfigError):
+                    config.load(str(make_repo(f"---\n{meta}\n---\n")))
+
     def test_docs_dir_default_and_override(self):
         self.assertEqual(config.DEFAULTS["docs"], {"dir": "docs/baton"})
         self.assertEqual(config.load(str(make_repo("# none\n"))).data["docs"]["dir"], "docs/baton")

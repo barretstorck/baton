@@ -152,13 +152,23 @@ def _pr_ci(pr, cfg, runner=None):
     return "red" if problems else "green"
 
 
-PR_STATE_FIELDS = "isDraft,statusCheckRollup,headRefOid"  # headRefOid lets _settle settle lagging runs
+PR_STATE_FIELDS = "isDraft,statusCheckRollup,headRefOid,comments"  # headRefOid lets _settle settle lagging runs
 
 
-def pr_state(pr, cfg, runner=None):
-    """The draft state and CI state of one pull request, as sprint-status reads them."""
+def _pr_verify(pr, cfg, runner, owner):
+    """The verification state recorded by the latest review of the pull request's head."""
+    if not cfg.data["verify"]["command"] or not cfg.data["review"]["required"]:
+        return "none"
+    if owner is None:
+        owner = json.loads(runner(["gh", "repo", "view", "--json", "owner"]))["owner"]["login"]
+    return review.verify_state(cfg, pr.get("comments"), owner, pr.get("headRefOid"))
+
+
+def pr_state(pr, cfg, runner=None, owner=None):
+    """The draft, CI and verify state of one pull request, as sprint-status reads them."""
     return {"draft": bool(pr["isDraft"]), "ci": _pr_ci(pr, cfg, runner),
-            "problems": merge._check_ci(pr, cfg, runner)}
+            "problems": merge._check_ci(pr, cfg, runner),
+            "verify": _pr_verify(pr, cfg, runner, owner)}
 
 
 def _pick_sprint(milestones, wanted):
@@ -263,7 +273,8 @@ def snapshot(cfg, runner, milestone=None):
                 "draft": pr["isDraft"] if pr else None,
                 "ci": _pr_ci(pr, cfg, runner) if pr else "none",
                 "mergeable": pr["mergeable"] if pr else None,
-                "review": review_state, "rounds": rounds})
+                "review": review_state, "rounds": rounds,
+                "verify": _pr_verify(pr, cfg, runner, owner) if pr else "none"})
             busy_files.append(files)
         elif status == "status:verification":
             result["verification"].append(number)

@@ -140,6 +140,10 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   review's tasks to a developer, re-draft the pull request as for `changes` (`gh pr ready <PR>
   --undo` when `draft` is false) and work the tasks (step 7).
 - **`approved`**, or `not-required`:
+  0. `approved` with `verify` `missing` (the brief sets `verify.command`; the head moved after the
+     approval, typically by merging the default branch in): dispatch a reviewer for a short
+     re-approval (see "Dispatching a reviewer"), and merge only once the new review shows `verify`
+     `green`. Never run `baton verify` or post a review yourself.
   1. Still a draft (a fallback; normally ready already): `gh pr ready <PR>`. CI starts now; look
      again next pass.
   2. `ci` is `pending`: wait.
@@ -150,7 +154,7 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   4. Green and mergeable: if `review` is `not-required`, check briefly that every acceptance
      criterion is addressed, nothing outside the scope changed, the body has `Closes #<N>` once
      and the verification line is present. Then run `baton merge-pr <PR>` **as a command on its
-     own**. It re-checks the review, CI on the head commit, mergeability, closing references and
+     own**. It re-checks the review (and refuses a head whose review does not record `verify` as `green` when the brief sets `verify.command`), CI on the head commit, mergeability, closing references and
      protected paths, then merges, closes the issue, sets `status:verification` and removes that
      pull request's branch and worktree. Read its output before doing anything else; never chain
      another command after it, and never set a status it did not set. If it says it kept a

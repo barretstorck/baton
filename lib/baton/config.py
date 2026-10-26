@@ -23,6 +23,7 @@ DEFAULTS = {
         "map": {name: name for name in STATUSES + OTHER_LABELS},
     },
     "merge": {"allow_no_ci": False},
+    "verify": {"command": "", "timeout_minutes": 10},
     "docs": {"dir": "docs/baton"},
     "protected_paths": [".github/", ".baton/", ".claude/"],
     "fixtures_paths": [],
@@ -124,5 +125,7 @@ def load(path):
         raise ConfigError(".baton/brief.md: developer.effort must be one of " + ", ".join(EFFORTS))
     if merged["review"]["max_rounds"] < 1:
         raise ConfigError(".baton/brief.md: review.max_rounds must be at least 1")
+    if merged["verify"]["timeout_minutes"] < 1:
+        raise ConfigError(".baton/brief.md: verify.timeout_minutes must be at least 1")
     _check_docs_dir(merged)
     return Config(root=root, data=merged)

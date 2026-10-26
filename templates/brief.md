@@ -30,6 +30,9 @@ labels:
     needs-maintainer: "needs-maintainer"
 merge:
   allow_no_ci: false          # true only for repositories with no CI at all; the reviewer then starts without waiting for CI
+verify:
+  command: ""                 # the full check the reviewer runs on the pull request head, e.g. "cd {worktree} && make test"; {worktree} is the quoted worktree path; empty: no local verification
+  timeout_minutes: 10         # the run is killed after this many minutes and counts as a timeout
 docs:
   dir: docs/baton             # where plans and retrospectives live: relative, no "..", not protected
 protected_paths: [".github/", ".baton/", ".claude/"]
@@ -58,3 +61,15 @@ The exact command that must pass before a pull request is opened:
 ## Conventions
 
 - (branching, commit style, documentation rules)
+
+Local verification and CI are two settings, `verify.command` and `merge.allow_no_ci`, which give four cases:
+
+| `verify.command` | `merge.allow_no_ci` | What a merge needs |
+| --- | --- | --- |
+| set | false | a green local verification recorded in the review, and green CI |
+| set | true | a green local verification recorded in the review; no CI exists |
+| empty | false | green CI only |
+| empty | true | neither (not recommended) |
+
+With `review.required: false` no review carries the verification result, so `verify` reads `none` and
+`baton merge-pr` does not check it. A repository that wants verification enforced keeps reviews on.

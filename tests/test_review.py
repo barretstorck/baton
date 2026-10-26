@@ -41,7 +41,7 @@ class ComposeTest(unittest.TestCase):
     def test_marker_carries_verdict_and_commit(self):
         text = review.compose("changes", NEW, "Fix the off-by-one.")
         self.assertTrue(text.startswith(
-            f"<!-- baton:reviewer:review verdict=changes commit={NEW} -->"))
+            f"<!-- baton:reviewer:review verdict=changes commit={NEW} verify=missing -->"))
         self.assertIn("Fix the off-by-one.", text)
 
     def test_bad_input_is_refused(self):
@@ -339,3 +339,119 @@ class InLinkedWorktreeTests(unittest.TestCase):
         runner = FakeRunner({f"{self.BASE} --git-dir": "/r/.git/worktrees/w\n",
                              f"{self.BASE} --git-common-dir": "/r/.git\n"})
         self.assertTrue(review.in_linked_worktree(runner, "/w"))
+
+
+def vcfg(command="make test", **review_settings):
+    data = copy.deepcopy(config.DEFAULTS)
+    data["review"].update(review_settings)
+    data["verify"]["command"] = command
+    return config.Config(root=pathlib.Path("."), data=data)
+
+
+def _comment(verdict, commit=NEW, verify=None):
+    body = review.compose(verdict, commit, "Round 1.", verify or "missing")
+    if verify is None:
+        body = body.replace(" verify=missing", "")
+    return {"author": {"login": OWNER}, "url": "u", "body": body}
+
+
+class CapturingRunner(FakeRunner):
+    """A runner that keeps the text given to `gh pr comment --body-file`."""
+
+    def __init__(self, replies):
+        super().__init__(replies)
+        self.posted = []
+
+    def __call__(self, argv, cwd=None, input=None):
+        if argv[:3] == ["gh", "pr", "comment"] and "--body-file" in argv:
+            self.posted.append(pathlib.Path(argv[argv.index("--body-file") + 1]).read_text())
+        return super().__call__(argv, cwd, input)
+
+
+def capturing(extra=None):
+    return CapturingRunner({**pr_runner().replies, **(extra or {})})
+
+
+class VerifyMarkerTest(unittest.TestCase):
+    def test_round_trip_each_value(self):
+        for value in review.VERIFY_STATES:
+            with self.subTest(value=value):
+                events = review.history([_comment("approve", verify=value)], OWNER)
+                self.assertEqual(events[0]["verify"], value)
+
+    def test_old_marker_reads_missing(self):
+        old = _comment("approve")
+        self.assertNotIn("verify=", old["body"])
+        self.assertEqual(review.history([old], OWNER)[0]["verify"], "missing")
+
+    def test_unknown_value_is_refused(self):
+        with self.assertRaises(review.ReviewError):
+            review.compose("approve", NEW, "x", "bogus")
+
+    def test_verify_state(self):
+        green = [_comment("approve", verify="green")]
+        self.assertEqual(review.verify_state(cfg(), green, OWNER, NEW), "none")
+        self.assertEqual(review.verify_state(vcfg(required=False), green, OWNER, NEW), "none")
+        self.assertEqual(review.verify_state(vcfg(), green, OWNER, NEW), "green")
+        self.assertEqual(review.verify_state(vcfg(), green, OWNER, OLD), "missing")
+        self.assertEqual(review.verify_state(vcfg(), [], OWNER, NEW), "missing")
+        red = [_comment("changes", verify="red")]
+        self.assertEqual(review.verify_state(vcfg(), red, OWNER, NEW), "red")
+
+
+class PostVerifyTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from baton import verify
+        self.verify = verify
+        self.home = tempfile.mkdtemp()
+
+    def record(self, result, commit=NEW):
+        folder = self.verify.logs_dir(OWNER, "repo", 9, self.home)
+        self.verify.write_result(folder, commit, result, 0 if result == "green" else 1, 3,
+                                 "20260101T000000Z")
+
+    def post(self, verdict, runner, config_=None):
+        body = "Round 1." if verdict == "approve" else TASKS
+        return review.post(config_ or vcfg(), runner, 9, verdict, NEW, body, [], OWNER,
+                           repo="repo", home=self.home)
+
+    def test_approve_refused_without_green(self):
+        for result in (None, "red", "timeout"):
+            with self.subTest(result=result):
+                if result:
+                    self.record(result)
+                runner = capturing()
+                with self.assertRaises(review.ReviewError) as caught:
+                    self.post("approve", runner)
+                self.assertIn(f"verification of {NEW[:7]} is {result or 'missing'}",
+                              str(caught.exception))
+                self.assertEqual(runner.posted, [])
+
+    def test_approve_allowed_when_green_and_marker_says_so(self):
+        self.record("green")
+        runner = capturing()
+        self.post("approve", runner)
+        self.assertIn(" verify=green -->", runner.posted[0])
+
+    def test_result_for_another_commit_does_not_count(self):
+        self.record("green", commit=OLD)
+        with self.assertRaises(review.ReviewError):
+            self.post("approve", capturing())
+
+    def test_approve_without_command_records_none(self):
+        runner = capturing()
+        review.post(cfg(), runner, 9, "approve", NEW, "Round 1.", [], OWNER)
+        self.assertIn(" verify=none -->", runner.posted[0])
+
+    def test_changes_allowed_with_red_and_records_it(self):
+        self.record("red")
+        runner = capturing()
+        self.post("changes", runner)
+        self.assertIn(" verify=red -->", runner.posted[0])
+
+    def test_repo_looked_up_when_not_given(self):
+        self.record("green")
+        runner = capturing({"gh repo view --json name": json.dumps({"name": "repo"})})
+        review.post(vcfg(), runner, 9, "approve", NEW, "Round 1.", [], OWNER, home=self.home)
+        self.assertIn("gh repo view --json name", runner.lines())

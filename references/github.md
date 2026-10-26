@@ -13,7 +13,8 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | The latest agent question and the maintainer's replies | `baton answers <N>` |
 | Open pull requests | `gh pr list --state open --json number,title,headRefName,isDraft,closingIssuesReferences` |
 | A pull request's checks | `gh pr checks <N>` |
-| A pull request's draft state and CI state (reviewer) | `baton pr-state <N>` (JSON: `draft`, `ci`: `green`, `red`, `pending` or `none`, `problems`) |
+| A pull request's draft state and CI state (reviewer) | `baton pr-state <N>` (JSON: `draft`, `ci`: `green`, `red`, `pending` or `none`, `verify`: `none`, `missing`, `green`, `red` or `timeout`, `problems`) |
+| Full verification of a pull request (reviewer) | `baton verify <PR> <worktree>`: runs the brief's `verify.command` in the worktree (at the pull request's head, clean); prints `verify <state> commit=<sha7> exit=<n> duration=<s>s`, `log: <path>` and the last 40 lines; writes nothing to the pull request. Exit 0 green, 1 red or refused, 3 timeout |
 | A pull request's review state | `baton review state <N>`: `none`, `changes`, `replied`, `stale`, `approved` or `escalate` |
 | An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`); reads the plan file from `refs/plans/<N>`, or (older way) on the issue branch, or a legacy `## Plan` in the body |
 | An issue's plan file | the issue's first line is `Plan: [path](link)`. A plan on the ref is read with `git fetch --quiet origin +refs/plans/<N>:refs/baton/plans/<N>`, then `git show refs/baton/plans/<N>:<path>` (the path is in `baton tasks issue <N>`; it is `<docs.dir>/plans/<N>-<slug>.md`, `docs.dir` from `baton config`). Only a plan still on the branch (the older way) is a file in a checkout of `issue-<N>-<slug>`. |

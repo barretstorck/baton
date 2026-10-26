@@ -104,7 +104,8 @@ filters, send long output to a file, chain related commands, wait for a long run
        `DECLINED <reason>`; the orchestrator checks the sha is on the branch and ticks.
 
 5. **Run the task's `Check:`**, and nothing more unless the brief says so. "none" means none. Send
-   long output to a file and read the summary; it must pass.
+   long output to a file and read the summary; it must pass. Never run the repository's full verification
+   suite (the brief's `verify.command`) yourself: the reviewer runs it with `baton verify`.
 
 6. **Commit and push.** Stage the code, `git commit -m "Task <n>: <title>"`, then push the branch
    and the tick together, for every task, task 1 included:
