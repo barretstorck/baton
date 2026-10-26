@@ -377,6 +377,7 @@ class MergeTest(unittest.TestCase):
         lines = runner.lines()
         self.assertIn(f"gh pr merge 9 --merge --match-head-commit {HEAD}", lines)
         self.assertIn("gh issue close 4", lines)
+        self.assertLess(self.comment_index(lines, 4), lines.index("gh issue close 4"))
         self.assertIn("gh issue edit 4 --add-label status:verification --remove-label status:in-review", lines)
         self.assertIn("git worktree remove --force /wt/issue-4", lines)
         self.assertIn("git branch -D issue-4-flag", lines)
@@ -403,10 +404,22 @@ class MergeTest(unittest.TestCase):
             merge.merge(9, make_config(), runner)
         self.assertIsInstance(raised.exception.__cause__, RunError)
 
+    @staticmethod
+    def comment_index(lines, issue):
+        return next(i for i, line in enumerate(lines)
+                    if line.startswith(f"gh issue comment {issue} --body-file"))
+
+    def test_close_posts_an_orchestrator_marker_first(self):
+        runner = FakeRunner(self.replies(make_pr()))
+        merge.merge(9, make_config(), runner)
+        bodies = [call for call in runner.calls if call[:4] == ["gh", "issue", "comment", "4"]]
+        self.assertEqual(len(bodies), 1)
+
     def test_already_closed_issue_is_not_closed_again(self):
         runner = FakeRunner(self.replies(make_pr(), issue_state="CLOSED"))
         merge.merge(9, make_config(), runner)
         self.assertNotIn("gh issue close 4", runner.lines())
+        self.assertFalse(any(line.startswith("gh issue comment 4") for line in runner.lines()))
 
     def test_already_merged_pr_finishes_the_follow_up_steps(self):
         runner = FakeRunner(self.replies(make_pr(state="MERGED", mergeable="UNKNOWN")))
@@ -414,6 +427,7 @@ class MergeTest(unittest.TestCase):
         lines = runner.lines()
         self.assertFalse(any(line.startswith("gh pr merge") for line in lines))
         self.assertIn("gh issue close 4", lines)
+        self.assertLess(self.comment_index(lines, 4), lines.index("gh issue close 4"))
         self.assertIn("git branch -D issue-4-flag", lines)
 
     def test_locked_clean_worktree_is_removed(self):

@@ -10,7 +10,7 @@ import re
 import shutil
 import tempfile
 
-from . import checklist, gate, labels, planfile, review, verify
+from . import checklist, gate, labels, planfile, review, scan, state as item_state, verify
 from .run import RunError
 
 PR_FIELDS = ("number,state,isDraft,mergeable,headRefOid,headRefName,baseRefName,"
@@ -224,7 +224,8 @@ def _after_merge(pr, cfg, runner, notes):
         issue = ref["number"]
         state = json.loads(runner(["gh", "issue", "view", str(issue), "--json", "state"]))["state"]
         if state == "OPEN":
-            runner(["gh", "issue", "close", str(issue)])
+            item_state.change(cfg, runner, "close", "issue", issue, "orchestrator",
+                              f"Merged pull request #{pr['number']}.", scan.load_terms())
         labels.set_status(cfg, runner, issue, "status:verification")
 
     branch = pr["headRefName"]
