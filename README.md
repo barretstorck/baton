@@ -40,7 +40,7 @@ whole issue grows large and expensive: in the second sprint, single developers r
   on the branch from before refs is removed in a commit before the merge.) Sprint retrospectives
   go to `<docs.dir>/retros/`. An older issue with a `## Plan` in its body is still read, and
   `baton plan migrate` moves it to the ref.
-- The reviewer runs **once**, when every task is ticked. What it wants fixed is a `## Tasks`
+- The reviewer runs when every task is ticked and the pull request is ready. What it wants fixed is a `## Tasks`
   checklist in its review, worked the same way, one developer per task.
 - `baton usage` measures the result per issue and role from the local transcripts, and the
   retrospective includes its table.
@@ -50,12 +50,14 @@ whole issue grows large and expensive: in the second sprint, single developers r
 1. Developer agents do the issue's plan, one task each, pushing to the branch; the pull request
    stays a draft.
 2. Once the last plan task is ticked, the orchestrator marks the pull request ready, so CI runs
-   once on the finished work.
-3. The orchestrator dispatches a reviewer agent only when CI on the head commit is green, or
-   straight away when the repository has no CI (`merge.allow_no_ci: true`). While CI is pending
-   it waits; a red CI is fixed by a developer before any review. The reviewer reviews the head
-   commit against the issue and the brief and posts one review: `approve`, or `changes` with a
-   `## Tasks` checklist of what to fix in this pull request, and follow-up issues for the rest.
+   on the finished work, and dispatches a reviewer agent straight away; it does not wait for CI.
+3. The reviewer starts the full verification and a wait for CI in the background, reads the code
+   while they run, then waits once for both. It turns every failure (tests, CI, lint) into a fix
+   task, and classifies each as caused by the change, flaky, failing on the default branch, or
+   environmental. It posts one review: `approve`, or `changes` with a `## Tasks` checklist of
+   what to fix in this pull request and follow-up issues for the rest, or `blocked` when the
+   only failures are default-branch or environment ones. If the same tests fail in two reviews
+   in a row, the pull request goes to the maintainer instead of another fix round.
    A `changes` review turns the pull request back into a draft while its fix tasks are worked,
    and it is marked ready again after the developer's reply, so CI runs once per round.
 4. On `changes`, one developer per task fixes it or declines it with a reason, the orchestrator
@@ -121,7 +123,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton close <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:closed` marker comment with the reason, then close; raw `gh ... close` is refused |
 | `baton reopen <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:reopened` marker comment with the reason, then reopen; raw `gh ... reopen` is refused |
 | `baton review state <pr>` | The pull request's review state at its head commit |
-| `baton review post <pr> <approve\|changes> <sha> <file \| ->` | Post a review of that commit |
+| `baton review post <pr> <approve\|changes\|blocked> <sha> <file \| ->` | Post a review of that commit |
 | `baton answers <issue>` | The latest agent question and the maintainer's replies |
 | `baton ready-check <issue>` | The mechanical half of the definition of ready |
 | `baton tasks <issue\|pr> <number>` | An issue's plan tasks, or the latest review's tasks, as JSON |
