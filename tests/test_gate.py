@@ -86,6 +86,15 @@ class GateTest(unittest.TestCase):
         query = 'mutation { updateIssue(input: {id: "x", state: CLOSED}) { clientMutationId } }'
         self.assertTrue(self._closes(self._api(cmd, q_graphql=query)))
 
+    def test_field_file_on_rest_endpoint_is_not_parsed_as_json(self):
+        cmd = "gh api -X PATCH repos/o/r/issues/5 -F body=@n.md"
+        text = "<!-- baton:developer:status -->\nplain text, not JSON"
+        self.assertEqual(self._api(cmd, n_md=text), [])
+        pull = "gh api -X PATCH repos/o/r/pulls/5 -F body=@n.md"
+        self.assertEqual(self._api(pull, n_md=text), [])
+        state = self._api("gh api -X PATCH repos/o/r/issues/5 -F state=@n.md", n_md="closed")
+        self.assertTrue(self._closes(state))
+
     def test_unreadable_state_payload_is_refused(self):
         missing = self._api("gh api -X PATCH repos/o/r/issues/5 --input missing.json")
         self.assertTrue(any("not found" in p for p in missing))

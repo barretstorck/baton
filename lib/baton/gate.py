@@ -125,7 +125,7 @@ class Item:
     values: list = field(default_factory=list)    # must be literal text
     bodies: list = field(default_factory=list)    # must start with the marker
     files: list = field(default_factory=list)     # (path, is_body)
-    state_files: dict = field(default_factory=dict)  # path -> "rest" | "graphql"
+    state_files: dict = field(default_factory=dict)  # path -> "rest" (--input) | "graphql" | "graphql-input"
     dirs: list = field(default_factory=list)
 
 
@@ -303,6 +303,8 @@ def _inspect_gh_api(call, item):
     kind = "graphql" if graphql else "rest" if state_endpoint else None
     if kind:
         for path, is_input in payload_files:
+            if kind == "rest" and not is_input:
+                continue  # `-F field=@file` is one field's text, not a JSON payload
             item.state_files[path] = "graphql-input" if kind == "graphql" and is_input else kind
     if (state_endpoint and state_field) or (graphql and close_mutation):
         item.problems.append(_CLOSE_MESSAGE)
