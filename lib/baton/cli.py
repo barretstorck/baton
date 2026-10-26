@@ -174,7 +174,7 @@ def cmd_review(args):
             print(f"baton: {error}", file=sys.stderr)
             return 1
         return 0
-    print("usage: baton review state <pr> | baton review post <pr> <approve|changes|blocked> "
+    print("usage: baton review state <pr> | baton review post <pr> <approve|changes|blocked|replan> "
           "<full commit sha> <body-file | ->", file=sys.stderr)
     return 64
 

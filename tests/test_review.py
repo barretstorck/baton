@@ -560,3 +560,96 @@ class PostBlockedTest(unittest.TestCase):
         self.assertEqual(self.post(BLOCKED_BODY, runner), "https://example.com/c/1")
         self.assertEqual(self.post("Cause: environment\n\n## Reason\nNo network.\n"),
                          "https://example.com/c/1")
+
+
+REPLAN_BODY = "## Feedback\nThe plan misreads the second acceptance criterion.\n"
+
+
+def replan(body=REPLAN_BODY, commit=NEW):
+    return {"author": {"login": OWNER}, "url": "u/replan",
+            "body": review.compose("replan", commit, body)}
+
+
+def refine_reply():
+    return {"author": {"login": OWNER}, "url": "u/refine",
+            "body": "<!-- baton:refine:reply -->\n**Baton refine: reply**\n\nPlan rewritten."}
+
+
+class ReplanTest(unittest.TestCase):
+    def test_compose_titles_from_the_table(self):
+        text = review.compose("replan", NEW, REPLAN_BODY)
+        self.assertTrue(text.startswith("<!-- baton:reviewer:review verdict=replan commit="))
+        self.assertIn("**Baton reviewer: review (replan requested, commit bbbbbbb)**", text)
+
+    def test_history_reads_the_refiners_reply(self):
+        events = review.history([replan(), refine_reply()], OWNER)
+        self.assertEqual([e["kind"] for e in events], ["review", "reply"])
+
+    def test_state_replan_and_rounds(self):
+        found = review.state([replan()], OWNER, 2)
+        self.assertEqual((found["state"], found["rounds"]), ("replan", 1))
+        found = review.state([rev("changes"), reply(), replan()], OWNER, 2)
+        self.assertEqual((found["state"], found["rounds"]), ("replan", 2))
+
+    def test_replan_then_the_refiners_reply_is_replied(self):
+        self.assertEqual(review.state([replan(), refine_reply()], OWNER, 2)["state"], "replied")
+
+    def test_replan_outranks_escalate(self):
+        found = review.state([rev("changes"), reply(), rev("changes"), reply(), replan()],
+                             OWNER, 2)
+        self.assertEqual(found["state"], "replan")
+
+    def test_the_count_toward_max_rounds_restarts_after_a_replan(self):
+        before = [rev("changes"), reply(), rev("changes"), reply(), replan(), refine_reply()]
+        found = review.state(before + [rev("changes")], OWNER, 2)
+        self.assertEqual((found["state"], found["rounds"]), ("changes", 4))
+        found = review.state(before + [rev("changes"), reply(), rev("changes")], OWNER, 2)
+        self.assertEqual((found["state"], found["rounds"]), ("escalate", 5))
+
+    def test_two_replans_in_a_row_escalate(self):
+        for between in ([refine_reply()], [], [blocked(), reply()]):
+            with self.subTest(between=len(between)):
+                found = review.state([replan(), *between, replan()], OWNER, 5)
+                self.assertEqual(found["state"], "escalate")
+
+    def test_a_replan_after_a_changes_review_is_not_two_in_a_row(self):
+        found = review.state([replan(), refine_reply(), rev("changes"), reply(), replan()],
+                             OWNER, 5)
+        self.assertEqual(found["state"], "replan")
+
+    def test_no_tasks_after_a_replan(self):
+        self.assertEqual(review.review_tasks({"comments": [changes_with_tasks(), replan()]},
+                                             OWNER)["tasks"], [])
+        runner = pr_runner([changes_with_tasks(), replan()])
+        with self.assertRaises(review.ReviewError):
+            review.tick_review(runner, 9, OWNER, "1.1")
+
+
+class PostReplanTest(unittest.TestCase):
+    def post(self, body, runner=None):
+        return review.post(cfg(), runner or pr_runner(), 9, "replan", NEW, body, [], OWNER)
+
+    def test_refused_bodies(self):
+        for body in ("The plan is wrong.", "## Feedback\n\n## Other\nx", "## Feedback\n",
+                     REPLAN_BODY + "\n## Tasks\n- [ ] **1.1. Fix**\n"):
+            with self.subTest(body=body):
+                runner = pr_runner()
+                with self.assertRaises(review.ReviewError):
+                    self.post(body, runner)
+                self.assertFalse(any("pr comment" in line for line in runner.lines()))
+
+    def test_allowed_with_open_plan_tasks(self):
+        runner = pr_runner(closing=[4], issue_body=PostGateTest.PLAN_OPEN)
+        self.assertEqual(self.post(REPLAN_BODY, runner), "https://example.com/c/1")
+
+    def test_approve_after_a_replan_needs_a_green_result_for_the_new_head(self):
+        import tempfile
+        from baton import verify
+        home = tempfile.mkdtemp()
+        folder = verify.logs_dir(OWNER, "repo", 9, home)
+        verify.write_result(folder, OLD, "green", 0, 3, "20260101T000000Z")
+        runner = pr_runner([replan(commit=OLD), refine_reply()])
+        with self.assertRaises(review.ReviewError) as caught:
+            review.post(vcfg(), runner, 9, "approve", NEW, "Looks right.", [], OWNER,
+                        repo="repo", home=home)
+        self.assertIn(f"verification of {NEW[:7]} is missing", str(caught.exception))

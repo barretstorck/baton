@@ -18,6 +18,7 @@ VERDICTS = {
     "approve": {"title": "approved", "tasks": "none", "round": False},
     "changes": {"title": "changes requested", "tasks": "required", "round": True},
     "blocked": {"title": "blocked", "tasks": "none", "round": False},
+    "replan": {"title": "replan requested", "tasks": "none", "round": True},
 }
 BLOCKED_CAUSES = ("default-branch", "environment")
 VERIFY_STATES = ("green", "red", "timeout", "missing", "none")
@@ -31,6 +32,7 @@ _FAILURE_LINE = re.compile(r"^- (\S+?): *\S")
 _REASON = re.compile(r"^## Reason[ \t]*$", re.M)
 _TASKS = re.compile(r"^## Tasks[ \t]*$", re.M)
 _REPLY = f"{gate.MARKER}developer:reply -->"
+_REFINE_REPLY = f"{gate.MARKER}refine:reply -->"
 _HUNK = re.compile(r"^@@ [^@]* @@.*$")
 _COMMENT_ID = re.compile(r"#issuecomment-(\d+)$")
 
@@ -87,7 +89,7 @@ def history(comments, owner):
                            "cause": _cause(body) if match.group(1) == "blocked" else None,
                            "failures": failure_ids(body),
                            "url": item.get("url")})
-        elif body.startswith(_REPLY):
+        elif body.startswith(_REPLY) or body.startswith(_REFINE_REPLY):
             events.append({"kind": "reply", "url": item.get("url")})
     return events
 
@@ -107,13 +109,15 @@ def verify_state(cfg, comments, owner, head):
 
 
 def state(comments, owner, max_rounds):
-    """none, changes, replied, approved, blocked, repeated or escalate; the rounds so far; the last review.
+    """none, changes, replied, approved, blocked, replan, repeated or escalate; the rounds so far; the last review.
 
     Rounds count the requests for changes since the last approval: an approval
     that went stale starts the count again. A blocked review is no round and
     does not end the count. `repeated` is the last two requests for changes (blocked
     reviews skipped) sharing a failure id; it is checked on the failure lists alone
-    and outranks `escalate`.
+    and outranks `escalate`. A `replan` review is a round, and outranks `escalate` too, unless the
+    review before it (blocked ones skipped) was also `replan`. A re-refinement changes the plan, so
+    the count compared with `max_rounds` restarts: only round reviews after the last `replan` count.
     """
     events = history(comments, owner)
     reviews = [event for event in events if event["kind"] == "review"]
@@ -121,6 +125,8 @@ def state(comments, owner, max_rounds):
         return {"state": "none", "rounds": 0, "review": None}
     last = reviews[-1]
     rounds = 0
+    since_replan = 0
+    seen_replan = False
     changes = []
     for event in reversed(reviews):
         if event["verdict"] == "approve":
@@ -128,6 +134,13 @@ def state(comments, owner, max_rounds):
         if VERDICTS[event["verdict"]]["round"]:
             rounds += 1
             changes.append(event)
+            if event["verdict"] == "replan":
+                seen_replan = True
+            elif not seen_replan:
+                since_replan += 1
+    earlier = [event for event in reviews[:-1] if event["verdict"] != "blocked"]
+    replan_twice = (last["verdict"] == "replan" and bool(earlier)
+                    and earlier[-1]["verdict"] == "replan")
     repeated = (len(changes) >= 2 and last["verdict"] == "changes"
                 and bool(changes[0]["failures"] & changes[1]["failures"]))
     if events[-1]["kind"] == "reply":
@@ -136,9 +149,11 @@ def state(comments, owner, max_rounds):
         name = "approved"
     elif last["verdict"] == "blocked":
         name = "blocked"
+    elif last["verdict"] == "replan":
+        name = "escalate" if replan_twice else "replan"
     elif repeated:
         name = "repeated"
-    elif rounds >= max_rounds:
+    elif since_replan >= max_rounds:
         name = "escalate"
     else:
         name = "changes"
@@ -339,6 +354,16 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, ho
             problems.append("a blocked review has no '## Tasks' section")
         if problems:
             raise ReviewError("cannot post a blocked review: " + "; ".join(problems))
+    elif verdict == "replan":
+        problems = []
+        where = checklist.span(body, "feedback")
+        if where is None or not body[where[0]:where[1]].strip():
+            problems.append("add a non-empty '## Feedback' section saying what in the plan "
+                            "is wrong and why")
+        if _TASKS.search(body):
+            problems.append("a replan review has no '## Tasks' section")
+        if problems:
+            raise ReviewError("cannot post a replan review: " + "; ".join(problems))
     else:
         tasks = checklist.tasks_under(body, "tasks")
         round_ = state(pr.get("comments"), owner, 1 << 30)["rounds"] + 1
