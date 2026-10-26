@@ -127,7 +127,7 @@ class SnapshotTest(unittest.TestCase):
                        issue(5, "ready", "deliverable", files="b.py"),
                        issue(7, "ready", "stretch", files="c.py")], config_=cfg(max_parallel=4))
         self.assertEqual(result["sprint"]["title"], "Sprint 2026-10-01-1")
-        self.assertEqual(result["default_branch"], {"name": "main", "state": "green"})
+        self.assertEqual(result["default_branch"], {"name": "main", "state": "green", "grace_ends_in_seconds": None})
         self.assertEqual(result["dispatchable"], [5, 2, 7])
         self.assertEqual(result["free_slots"], 4)
         self.assertFalse(result["finished"])
@@ -576,6 +576,51 @@ class DefaultBranchStateTest(unittest.TestCase):
         data = replies([issue(1, "ready")], runs=[run("", "queued")])
         result = sprint.snapshot(cfg(), FakeRunner(data))
         self.assertEqual(result["default_branch"]["state"], "pending")
+
+    def status(self, date, runs=(), enabled=None):
+        data = replies([], runs=runs)
+        data["gh api repos/octo/proj/commits/main"] = commit_reply(date)
+        data[WORKFLOWS] = json.dumps([{"name": "ci.yml"}])
+        data[CI_FILE] = CI_ON_PUSH
+        if enabled is not None:
+            data["gh api repos/octo/proj/actions/permissions"] = json.dumps({"enabled": enabled})
+        return sprint.default_branch_status(FakeRunner(data), OWNER, "proj", "main", now=NOW)
+
+    def test_young_commit_without_runs_reports_the_grace_left(self):
+        state, grace = self.status("2026-10-22T11:57:00Z")
+        self.assertEqual((state, grace), ("pending", 120))
+
+    def test_old_commit_has_no_grace(self):
+        self.assertEqual(self.status("2026-10-22T11:50:00Z"), ("none", None))
+
+    def test_a_run_has_no_grace(self):
+        self.assertEqual(self.status("2026-10-22T11:59:00Z", runs=[run("", "queued")]),
+                         ("pending", None))
+
+    def test_disabled_actions_is_none_without_grace(self):
+        self.assertEqual(self.status("2026-10-22T11:59:00Z", enabled=False), ("none", None))
+        self.assertEqual(self.status("2026-10-22T11:59:00Z", enabled=True)[0], "pending")
+
+    def test_actions_enabled_defaults_to_true(self):
+        for reply in ("", "{}", "not json"):
+            runner = FakeRunner({"gh api repos/octo/proj/actions/permissions": reply})
+            self.assertTrue(sprint.actions_enabled(runner, OWNER, "proj"), reply)
+
+    def test_actions_permissions_errors_other_than_404_are_raised(self):
+        class Broken(FakeRunner):
+            def __call__(self, argv, cwd=None):
+                raise run_module.RunError("gh api failed: HTTP 500")
+        with self.assertRaises(run_module.RunError):
+            sprint.actions_enabled(Broken({}), OWNER, "proj")
+
+    def test_snapshot_contains_the_grace_field(self):
+        data = replies([issue(1, "ready")], runs=[])
+        data["gh api repos/octo/proj/commits/main"] = commit_reply("2026-10-22T11:57:00Z")
+        data[WORKFLOWS] = json.dumps([{"name": "ci.yml"}])
+        data[CI_FILE] = CI_ON_PUSH
+        branch = sprint.snapshot(cfg(), FakeRunner(data))["default_branch"]
+        self.assertIn("grace_ends_in_seconds", branch)
+        self.assertEqual(snap([issue(1, "ready")])["default_branch"]["grace_ends_in_seconds"], None)
 
     def test_triggers_on_push(self):
         yes = ["on: push\n", "on: [pull_request, push]\n", "on:\n  push:\n    branches: [main]\n",
