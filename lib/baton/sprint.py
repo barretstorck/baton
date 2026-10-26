@@ -17,6 +17,8 @@ _FAILED = {"failure", "timed_out", "startup_failure", "action_required"}
 _ORDER = re.compile(r"^\s*Order:(.*)$", re.M | re.I)
 _PARALLEL = re.compile(r"^\s*Parallel:\s*(\d+)\s*$", re.M | re.I)
 PUSH_RUN_GRACE_SECONDS = 300
+STALE_MISSING_PATHS = 2  # hold a ready issue whose plan names at least this many missing paths
+BEHIND_LIMIT = 15  # default-branch commits behind that count as far behind
 _ON_LINE = re.compile(r"""^["']?on["']?\s*:(.*)$""")
 _PUSH_WORD = re.compile(r"(?<![\w-])push(?![\w-])")
 ISSUE_FIELDS = "number,title,state,labels,body,author,comments"
@@ -263,6 +265,25 @@ def snapshot(cfg, runner, milestone=None):
 
     ready, busy_files, waiting = [], [], set()
     plan_cache = {}
+    tracked = []  # the default branch's files, fetched once and only when a plan needs them
+
+    def default_branch_files():
+        if not tracked:
+            try:
+                tracked.append(tracked_paths(runner, branch))
+            except RunError:
+                tracked.append(set())
+        return tracked[0]
+
+    def staleness(text, found):
+        if not found or not found["tasks"]:
+            return None
+        files = default_branch_files()
+        named = checklist.named_paths(text)
+        base = found.get("written_against")
+        return {"missing_paths": [path for path in named if path not in files] if files else [],
+                "plan_behind": commits_behind(runner, base, branch) if base else None}
+
     for item in sorted(issues, key=lambda entry: entry["number"]):
         number = item["number"]
         labels = {label["name"] for label in item.get("labels") or []}
@@ -297,6 +318,7 @@ def snapshot(cfg, runner, milestone=None):
                 "review": ({key: fixes[key] for key in ("round", "done", "total", "next")}
                            if fixes and fixes["total"] else None),
                 "review_without_tasks": bool(fixes and fixes["review"] and not fixes["total"]),
+                "stale": staleness(text, found),
             }
         if status == "status:in-dev":
             result["in_dev"].append(number)
@@ -338,6 +360,10 @@ def snapshot(cfg, runner, milestone=None):
         return (0 if repair else 1, {"deliverable": 0, "stretch": 1}.get(tier, 2),
                 order.index(number) if number in order else len(order), number)
 
+    def missing_count(number):
+        stale = (result["progress"].get(str(number)) or {}).get("stale")
+        return len(stale["missing_paths"]) if stale else 0
+
     red = result["default_branch"]["state"] == "red"
     slots = max(result["parallel"] - len(result["in_dev"]), 0)
     result["free_slots"] = slots
@@ -349,6 +375,8 @@ def snapshot(cfg, runner, milestone=None):
             reason = "written by someone other than the maintainer"
         elif red and not repair:
             reason = "default branch is red; only the repair issue may proceed"
+        elif missing_count(number) >= STALE_MISSING_PATHS:
+            reason = f"plan names {missing_count(number)} missing paths; re-refine"
         elif open_blockers:
             reason = "blocked by " + ", ".join(f"#{n}" for n in open_blockers)
         elif any(overlaps(files, other) for other in busy_files):

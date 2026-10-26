@@ -325,8 +325,10 @@ class SnapshotTest(unittest.TestCase):
                           "plan": {"done": 1, "total": 2, "next": "2"},
                           "next_task_url": None,
                           "review": {"round": 1, "done": 0, "total": 1, "next": "1.1"},
-                          "review_without_tasks": False})
+                          "review_without_tasks": False,
+                          "stale": {"missing_paths": [], "plan_behind": None}})
         self.assertEqual(found["progress"]["5"]["plan"], None)
+        self.assertIsNone(found["progress"]["5"]["stale"])
         self.assertTrue(found["progress"]["5"]["unplanned"])
         self.assertFalse(found["progress"]["4"]["unplanned"])
 
@@ -743,6 +745,45 @@ class DefaultBranchStateTest(unittest.TestCase):
         branch = sprint.snapshot(cfg(), FakeRunner(data))["default_branch"]
         self.assertIn("grace_ends_in_seconds", branch)
         self.assertEqual(snap([issue(1, "ready")])["default_branch"]["grace_ends_in_seconds"], None)
+
+    def _stale_snap(self, files_line, status="ready", behind="4\n"):
+        body = ("## Plan\nWritten against: " + "c" * 40 + "\n\n- [ ] **1. A**\n"
+                f"  - Files: {files_line}\n")
+        item = issue(7, status, "deliverable")
+        item["body"] += body
+        extra = {"git ls-tree": "lib/keep.py\n", "git rev-list": behind}
+        runner = FakeRunner(replies([item], extra=extra))
+        return sprint.snapshot(cfg(), runner), runner
+
+    def test_plan_naming_two_missing_paths_is_held(self):
+        result, _ = self._stale_snap("`lib/gone.py`, `lib/also_gone.py`, `lib/keep.py`")
+        self.assertEqual(result["progress"]["7"]["stale"],
+                         {"missing_paths": ["lib/also_gone.py", "lib/gone.py"], "plan_behind": 4})
+        self.assertEqual(result["dispatchable"], [])
+        self.assertEqual(result["held"],
+                         [{"number": 7, "reason": "plan names 2 missing paths; re-refine"}])
+
+    def test_new_files_are_not_counted_missing(self):
+        result, _ = self._stale_snap("`lib/new_a.py` (new), `lib/new_b.py` (new), `lib/keep.py`")
+        self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], [])
+        self.assertEqual(result["dispatchable"], [7])
+
+    def test_one_missing_path_is_only_reported(self):
+        result, _ = self._stale_snap("`lib/gone.py`, `lib/keep.py`")
+        self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], ["lib/gone.py"])
+        self.assertEqual(result["dispatchable"], [7])
+
+    def test_in_dev_issue_with_missing_paths_is_reported_not_held(self):
+        result, _ = self._stale_snap("`lib/gone.py`, `lib/also_gone.py`", status="in-dev")
+        self.assertEqual(len(result["progress"]["7"]["stale"]["missing_paths"]), 2)
+        self.assertEqual(result["held"], [])
+
+    def test_default_branch_files_are_fetched_once_and_only_for_plans(self):
+        _, runner = self._stale_snap("`lib/keep.py`")
+        self.assertEqual(sum(l.startswith("git ls-tree") for l in runner.lines()), 1)
+        runner = FakeRunner(replies([issue(1, "ready")]))
+        sprint.snapshot(cfg(), runner)
+        self.assertFalse([l for l in runner.lines() if l.startswith("git ls-tree")])
 
     def test_tracked_paths_fetches_then_lists(self):
         runner = FakeRunner({"git ls-tree": "a/b.py\nREADME.md\n\n"})
