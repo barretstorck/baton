@@ -59,6 +59,8 @@ _CLOSE_MESSAGE = (
     "closing or reopening directly is not allowed; use `baton close|reopen "
     "<issue|pr> <number> <role> <reason-file>` so a marker comment says who did it and why")
 _API_MERGE = re.compile(r"/pulls/\d+/merge\b")
+_API_STATE_ENDPOINT = re.compile(r"(?:^|/)(?:issues|pulls)/\d+/?(?:\?|$)")
+_API_CLOSE_MUTATION = re.compile(r"\b(?:closeIssue|reopenIssue|closePullRequest|reopenPullRequest)\b")
 _API_COMMENT = re.compile(r"/(?:comments|reviews)(?:/\d+)?(?:/|\?|$)")
 
 
@@ -219,8 +221,11 @@ def _gh_words(args):
 
 def _inspect_gh_api(call, item):
     has_payload = False
+    state_endpoint = graphql = state_field = close_mutation = False
     for flag, value in _options(call.args, _API_FIELD_OPTS | {"--input"}):
         if flag is None:
+            state_endpoint = state_endpoint or bool(_API_STATE_ENDPOINT.search(value))
+            graphql = graphql or value == "graphql"
             if _API_MERGE.search(value):
                 item.problems.append("merging directly is not allowed; use `baton merge-pr <number>`")
             if _API_COMMENT.search(value):
@@ -232,6 +237,8 @@ def _inspect_gh_api(call, item):
             item.files.append((value, False))
             continue
         key, _, content = value.partition("=")
+        state_field = state_field or key in ("state", "state_reason")
+        close_mutation = close_mutation or bool(_API_CLOSE_MUTATION.search(content))
         if flag in _API_TYPED_OPTS and content.startswith("@"):
             item.files.append((content[1:], key == "body"))
             continue
@@ -240,6 +247,8 @@ def _inspect_gh_api(call, item):
         if key == "body":
             item.bodies.append(content)
     item.comment = item.comment and has_payload
+    if (state_endpoint and state_field) or (graphql and close_mutation):
+        item.problems.append(_CLOSE_MESSAGE)
 
 
 def _inspect_gh(call):
