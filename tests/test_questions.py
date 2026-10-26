@@ -102,5 +102,38 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(order([ask(5), ask(2), ask(9)]), [2, 5, 9])
 
 
+class CommandTests(unittest.TestCase):
+    def run_cmd(self, issues):
+        import io
+        import json
+        from contextlib import redirect_stdout
+        from unittest import mock
+        from baton import cli
+        calls = []
+
+        def fake(cmd, *a, **k):
+            calls.append(" ".join(cmd))
+            return json.dumps(issues)
+        out = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli, "_owner", return_value=OWNER), \
+                mock.patch.object(cli.run, "run", fake), redirect_stdout(out):
+            code = cli.cmd_open_questions([])
+        return code, json.loads(out.getvalue()), calls
+
+    def test_prints_sorted_list(self):
+        code, found, calls = self.run_cmd([ask(5), ask(2)])
+        self.assertEqual(code, 0)
+        self.assertEqual([e["number"] for e in found], [2, 5])
+        self.assertIn("gh issue list --state open --limit 300", calls[0])
+
+    def test_prints_empty_list(self):
+        self.assertEqual(self.run_cmd([])[:2], (0, []))
+
+    def test_arguments_exit_64(self):
+        from baton import cli
+        self.assertEqual(cli.cmd_open_questions(["x"]), 64)
+
+
 if __name__ == "__main__":
     unittest.main()
