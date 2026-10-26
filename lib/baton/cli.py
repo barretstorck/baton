@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from . import checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, review, run, scan, sprint, usage, verify
+from . import checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, review, run, scan, sprint, state, usage, verify
 
 
 def cmd_config(args):
@@ -129,6 +129,30 @@ def cmd_comment(args):
         print(f"baton: {error}", file=sys.stderr)
         return 1
     return 0
+
+
+def _change_state(action, args):
+    if len(args) != 4:
+        print(f"usage: baton {action} <issue|pr> <number> <role> <reason-file | ->",
+              file=sys.stderr)
+        return 64
+    target, number, role, path = args
+    try:
+        reason = comment.read_body(path, sys.stdin)
+        print(state.change(_require_config(), run.run, action, target, int(number), role,
+                           reason, scan.load_terms()))
+    except comment.CommentError as error:
+        print(f"baton: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_close(args):
+    return _change_state("close", args)
+
+
+def cmd_reopen(args):
+    return _change_state("reopen", args)
 
 
 def cmd_review(args):
@@ -389,6 +413,7 @@ def cmd_clean(args):
 
 COMMANDS = {
     "clean": cmd_clean,
+    "close": cmd_close,
     "answers": cmd_answers,
     "comment": cmd_comment,
     "ready-check": cmd_ready_check,
@@ -401,6 +426,7 @@ COMMANDS = {
     "merge-pr": cmd_merge_pr,
     "plan": cmd_plan,
     "pr-state": cmd_pr_state,
+    "reopen": cmd_reopen,
     "review": cmd_review,
     "set-status": cmd_set_status,
     "sprint-status": cmd_sprint_status,

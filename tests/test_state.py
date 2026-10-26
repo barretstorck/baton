@@ -1,7 +1,9 @@
 import copy
 import pathlib
 import unittest
-from baton import comment, config, state
+import io
+from unittest import mock
+from baton import cli, comment, config, state
 from tests.fakes import FakeRunner
 
 
@@ -59,6 +61,41 @@ class ChangeTest(unittest.TestCase):
         runner = FakeRunner()
         with self.assertRaises(comment.CommentError):
             state.change(cfg(), runner, "close", "issue", 5, "developer", "see secretword", ["secretword"])
+        self.assertEqual(runner.calls, [])
+
+
+class CommandTest(unittest.TestCase):
+    def test_registered(self):
+        self.assertIs(cli.COMMANDS["close"], cli.cmd_close)
+        self.assertIs(cli.COMMANDS["reopen"], cli.cmd_reopen)
+
+    def test_wrong_arguments_exit_64(self):
+        with mock.patch("sys.stderr", io.StringIO()):
+            self.assertEqual(cli.cmd_close(["issue", "5", "developer"]), 64)
+            self.assertEqual(cli.cmd_reopen([]), 64)
+
+    def test_close_runs_comment_then_close(self):
+        runner = FakeRunner({"gh issue comment": "https://example.com/c/9\n"})
+        out = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.scan, "load_terms", return_value=[]), \
+                mock.patch.object(cli.run, "run", runner), \
+                mock.patch("sys.stdin", io.StringIO("Done.")), \
+                mock.patch("sys.stdout", out):
+            code = cli.main(["close", "issue", "5", "developer", "-"])
+        self.assertEqual(code, 0)
+        self.assertEqual(out.getvalue().strip(), "https://example.com/c/9")
+        self.assertEqual(runner.lines()[-1], "gh issue close 5")
+
+    def test_empty_reason_exits_1(self):
+        runner = FakeRunner()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.scan, "load_terms", return_value=[]), \
+                mock.patch.object(cli.run, "run", runner), \
+                mock.patch("sys.stdin", io.StringIO("  ")), \
+                mock.patch("sys.stderr", io.StringIO()):
+            code = cli.cmd_reopen(["pr", "5", "developer", "-"])
+        self.assertEqual(code, 1)
         self.assertEqual(runner.calls, [])
 
 
