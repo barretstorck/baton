@@ -397,3 +397,18 @@ def lock_release(path):
         os.unlink(str(path))
     except FileNotFoundError:
         pass
+
+
+def tracked_paths(runner, branch):
+    """The files tracked on origin/<branch>, after fetching it."""
+    runner(["git", "fetch", "--quiet", "origin", branch])
+    out = runner(["git", "ls-tree", "-r", "--name-only", f"origin/{branch}"])
+    return {line for line in (out or "").splitlines() if line}
+
+
+def commits_behind(runner, base, branch):
+    """How many commits origin/<branch> has that <base> does not; None when git cannot say."""
+    try:
+        return int(runner(["git", "rev-list", "--count", f"{base}..origin/{branch}"]).strip())
+    except (RunError, ValueError):
+        return None

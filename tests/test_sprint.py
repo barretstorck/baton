@@ -744,6 +744,25 @@ class DefaultBranchStateTest(unittest.TestCase):
         self.assertIn("grace_ends_in_seconds", branch)
         self.assertEqual(snap([issue(1, "ready")])["default_branch"]["grace_ends_in_seconds"], None)
 
+    def test_tracked_paths_fetches_then_lists(self):
+        runner = FakeRunner({"git ls-tree": "a/b.py\nREADME.md\n\n"})
+        self.assertEqual(sprint.tracked_paths(runner, "main"), {"a/b.py", "README.md"})
+        self.assertEqual(runner.lines(), [
+            "git fetch --quiet origin main",
+            "git ls-tree -r --name-only origin/main"])
+
+    def test_commits_behind_counts(self):
+        runner = FakeRunner({"git rev-list": "7\n"})
+        self.assertEqual(sprint.commits_behind(runner, "abc123", "main"), 7)
+        self.assertEqual(runner.lines(), ["git rev-list --count abc123..origin/main"])
+
+    def test_commits_behind_none_on_failure(self):
+        class Failing(FakeRunner):
+            def __call__(self, argv, cwd=None, input=None):
+                raise run_module.RunError("unknown revision")
+        self.assertIsNone(sprint.commits_behind(Failing(), "bad", "main"))
+        self.assertIsNone(sprint.commits_behind(FakeRunner({"git rev-list": "oops"}), "a", "main"))
+
     def test_triggers_on_push(self):
         yes = ["on: push\n", "on: [pull_request, push]\n", "on:\n  push:\n    branches: [main]\n",
                "on:\n  - push\n", "'on':\n  push:\n", "on: {push: {branches: [main]}}\n"]
