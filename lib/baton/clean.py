@@ -1,5 +1,7 @@
 """`baton clean`: remove leftover agent worktrees and stale verification logs."""
 import json
+import os
+import pwd
 import re
 
 from . import run
@@ -58,6 +60,25 @@ def _keep_reason(wt, runner, default_branch):
     return None
 
 
+def foreign_owner(path):
+    """First file under `path` owned by another user, as (file, user), or None."""
+    me = os.getuid()
+    for top, dirs, files in os.walk(path):
+        for name in dirs + files:
+            full = os.path.join(top, name)
+            try:
+                uid = os.lstat(full).st_uid
+            except OSError:
+                continue
+            if uid != me:
+                try:
+                    user = pwd.getpwuid(uid).pw_name
+                except KeyError:
+                    user = str(uid)
+                return full, user
+    return None
+
+
 def clean_worktrees(runner, default_branch, report):
     """Remove leftover agent worktrees; returns (removed, kept, failed) lists of paths."""
     removed, kept, failed = [], [], []
@@ -68,7 +89,16 @@ def clean_worktrees(runner, default_branch, report):
             report(f"kept {wt['path']} : {reason}")
             continue
         force = ["--force", "--force"] if wt["locked"] else ["--force"]
-        runner(["git", "worktree", "remove", *force, wt["path"]])
+        try:
+            runner(["git", "worktree", "remove", *force, wt["path"]])
+        except run.RunError:
+            failed.append(wt["path"])
+            owner = foreign_owner(wt["path"])
+            if owner:
+                report(f"cannot remove {wt['path']}: {owner[0]} is owned by {owner[1]}")
+            else:
+                report(f"cannot remove {wt['path']}: its directory could not be removed")
+            continue
         removed.append(wt["path"])
         report(f"removed {wt['path']}")
     return removed, kept, failed

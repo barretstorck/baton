@@ -1,4 +1,7 @@
+import os
+import tempfile
 import unittest
+from unittest import mock
 
 from baton import clean, run
 from tests.fakes import FakeRunner
@@ -75,6 +78,52 @@ class WorktreeTest(unittest.TestCase):
     def test_worktree_locked_removed_with_double_force(self):
         runner, _, _ = self.go("branch refs/heads/x\nlocked")
         self.assertIn(f"git worktree remove --force --force {WT}", runner.lines())
+
+
+class FailingRemove(FakeRunner):
+    def __call__(self, argv, cwd=None, input=None):
+        if argv[:3] == ["git", "worktree", "remove"]:
+            self.calls.append(argv)
+            raise run.RunError("worktree remove failed")
+        return super().__call__(argv, cwd, input)
+
+
+class OwnerTest(unittest.TestCase):
+    def wt(self, d):
+        return {"path": d, "sha": "b", "branch": "x", "detached": False, "locked": False}
+
+    def test_owner_message_and_failed_list(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "data.bin")
+            open(f, "w").close()
+            out = []
+            with mock.patch.object(clean, "agent_worktrees", return_value=[self.wt(d)]), \
+                    mock.patch("os.getuid", return_value=os.getuid() + 1), \
+                    mock.patch("pwd.getpwuid") as pw:
+                pw.return_value.pw_name = "root"
+                result = clean.clean_worktrees(FailingRemove(), "main", out.append)
+            self.assertEqual(result, ([], [], [d]))
+            self.assertEqual(out, [f"cannot remove {d}: {f} is owned by root"])
+
+    def test_foreign_owner_none_when_all_mine(self):
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "f"), "w").close()
+            self.assertIsNone(clean.foreign_owner(d))
+
+    def test_foreign_owner_finds_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "f")
+            open(f, "w").close()
+            with mock.patch("os.getuid", return_value=os.getuid() + 1):
+                found = clean.foreign_owner(d)
+            self.assertEqual(found[0], f)
+
+    def test_owner_fallback_names_directory(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = []
+            with mock.patch.object(clean, "agent_worktrees", return_value=[self.wt(d)]):
+                clean.clean_worktrees(FailingRemove(), "main", out.append)
+            self.assertIn(f"cannot remove {d}", out[0])
 
 
 if __name__ == "__main__":
