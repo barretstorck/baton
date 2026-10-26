@@ -327,7 +327,9 @@ class SnapshotTest(unittest.TestCase):
                           "next_task_url": None,
                           "review": {"round": 1, "done": 0, "total": 1, "next": "1.1"},
                           "review_without_tasks": False,
-                          "stale": {"missing_paths": [], "plan_behind": 2},
+                          "stale": {"missing_paths": None,
+                                    "path_check_skipped": "the default branch listing is empty",
+                                    "plan_behind": 2},
                           "branch_behind": 2, "merge_first": False})
         self.assertEqual(found["progress"]["5"]["plan"], None)
         self.assertIsNone(found["progress"]["5"]["stale"])
@@ -760,7 +762,8 @@ class DefaultBranchStateTest(unittest.TestCase):
     def test_plan_naming_two_missing_paths_is_held(self):
         result, _ = self._stale_snap("`lib/gone.py`, `lib/also_gone.py`, `lib/keep.py`")
         self.assertEqual(result["progress"]["7"]["stale"],
-                         {"missing_paths": ["lib/also_gone.py", "lib/gone.py"], "plan_behind": 4})
+                         {"missing_paths": ["lib/also_gone.py", "lib/gone.py"],
+                          "path_check_skipped": None, "plan_behind": 4})
         self.assertEqual(result["dispatchable"], [])
         self.assertEqual(result["held"],
                          [{"number": 7, "reason": "plan names 2 missing paths; re-refine"}])
@@ -773,6 +776,37 @@ class DefaultBranchStateTest(unittest.TestCase):
     def test_one_missing_path_is_only_reported(self):
         result, _ = self._stale_snap("`lib/gone.py`, `lib/keep.py`")
         self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], ["lib/gone.py"])
+        self.assertEqual(result["dispatchable"], [7])
+
+    def _plan_item(self):
+        item = issue(7, "ready", "deliverable")
+        item["body"] += ("## Plan\nWritten against: " + "c" * 40 + "\n\n- [ ] **1. A**\n"
+                         "  - Files: `lib/gone.py`, `lib/also_gone.py`\n")
+        return item
+
+    def test_failed_listing_says_the_check_did_not_run(self):
+        class Failing(FakeRunner):
+            def __call__(self, argv, cwd=None, input=None):
+                if argv[:2] == ["git", "ls-tree"]:
+                    raise run_module.RunError("fatal: not a tree object")
+                return super().__call__(argv, cwd=cwd, input=input)
+        runner = Failing(replies([self._plan_item()], extra={"git rev-list": "4\n"}))
+        result = sprint.snapshot(cfg(), runner)
+        stale = result["progress"]["7"]["stale"]
+        self.assertIsNone(stale["missing_paths"])
+        self.assertTrue(stale["path_check_skipped"].startswith("listing the default branch failed"))
+        self.assertEqual(stale["plan_behind"], 4)
+        self.assertEqual(result["dispatchable"], [7])
+        self.assertEqual(result["held"], [])
+
+    def test_empty_listing_says_the_check_did_not_run(self):
+        runner = FakeRunner(replies([self._plan_item()],
+                                    extra={"git ls-tree": "", "git rev-list": "4\n"}))
+        result = sprint.snapshot(cfg(), runner)
+        self.assertEqual(result["progress"]["7"]["stale"],
+                         {"missing_paths": None,
+                          "path_check_skipped": "the default branch listing is empty",
+                          "plan_behind": 4})
         self.assertEqual(result["dispatchable"], [7])
 
     def test_in_dev_issue_with_missing_paths_is_reported_not_held(self):

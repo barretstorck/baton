@@ -315,9 +315,10 @@ both read it; nothing else goes in but the repository and the sprint goal:
 
 Do not paste the issue text, the task brief, your notes or other issues into the prompt.
 
-**Stale plans and far-behind branches.** `progress.<N>.stale` is `{"missing_paths", "plan_behind"}`
-for every issue with a plan: the paths its open tasks name that no longer exist on the default
-branch, and how many default-branch commits the plan's `Written against:` commit lacks.
+**Stale plans and far-behind branches.** `progress.<N>.stale` is
+`{"missing_paths", "path_check_skipped", "plan_behind"}` for every issue with a plan: the paths its
+open tasks name that no longer exist on the default branch (null when the check did not run),
+why the check was skipped (null when it ran), and how many default-branch commits the plan's `Written against:` commit lacks.
 `progress.<N>.branch_behind` is how many default-branch commits the issue's pull request branch
 lacks (null without a pull request), and `progress.<N>.merge_first` is true when that reaches
 `BEHIND_LIMIT` (15).
@@ -325,6 +326,11 @@ lacks (null without a pull request), and `progress.<N>.merge_first` is true when
 - A ready issue `held` as "plan names <n> missing paths; re-refine" is not dispatched to a
   developer. Send it to `baton:baton-refiner` with `Refine issues <N>.` and say in the sprint
   status that you did.
+- When `path_check_skipped` is set (the default branch listing failed or came back empty),
+  `missing_paths` is null and cannot be trusted. Say in the sprint status that the stale-plan check
+  did not run for that issue, and check by hand that the plan's Expected files exist on the default
+  branch before dispatching (or send it to `baton:baton-refiner`). Do not hold the issue only
+  for this.
 - When `merge_first` is true, add one line to the developer prompt, after the repository line
   (an allowed exception to the exact-prompt rule, since the first line stays exact):
 
