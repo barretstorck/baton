@@ -315,6 +315,21 @@ both read it; nothing else goes in but the repository and the sprint goal:
 
 Do not paste the issue text, the task brief, your notes or other issues into the prompt.
 
+**Stale plans and far-behind branches.** `progress.<N>.stale` is `{"missing_paths", "plan_behind"}`
+for every issue with a plan: the paths its open tasks name that no longer exist on the default
+branch, and how many default-branch commits the plan's `Written against:` commit lacks.
+`progress.<N>.branch_behind` is how many default-branch commits the issue's pull request branch
+lacks (null without a pull request), and `progress.<N>.merge_first` is true when that reaches
+`BEHIND_LIMIT` (15).
+
+- A ready issue `held` as "plan names <n> missing paths; re-refine" is not dispatched to a
+  developer. Send it to `baton:baton-refiner` with `Refine issues <N>.` and say in the sprint
+  status that you did.
+- When `merge_first` is true, add one line to the developer prompt, after the repository line
+  (an allowed exception to the exact-prompt rule, since the first line stays exact):
+
+      Start by merging origin/<default>: the branch is <n> commits behind.
+
 **Legacy issues.** An issue whose body has a `## Plan` section and no `Plan:` line is a legacy
 issue. Before you dispatch its first task, while it is not yet in development, run
 `baton plan migrate <N>`; it moves the plan to `refs/plans/<N>`, links it and trims the body.

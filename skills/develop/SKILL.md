@@ -65,6 +65,10 @@ filters, send long output to a file, chain related commands, wait for a long run
    the files no longer match and the brief cannot be followed as written, return `REPLAN`.
    Where an earlier task's `Provides (as built):` line sits under its `Provides:`, read your
    `Uses:` against that line, not the original.
+   If your prompt has the line "Start by merging origin/<default>", or you find the branch at
+   least 15 commits behind `origin/<default>` (`git rev-list --count HEAD..origin/<default>`),
+   begin the task by merging the default branch in and resolving the conflicts, as its own
+   commit, before the task's own work; push it with the task's push.
 
 3. **Get the branch.** The branch `issue-<N>-<short-slug>` is made by task 1 from the default
    branch; the plan is not on it.

@@ -319,14 +319,18 @@ class SnapshotTest(unittest.TestCase):
               "comments": [{"author": {"login": OWNER}, "url": "u#issuecomment-1",
                             "body": review.compose("changes", "d" * 40,
                                                    "## Tasks\n- [ ] **1.1 Fix**\n")}]}
-        found = snap([dev, issue(5, "ready")], prs=[pr])
+        found = sprint.snapshot(cfg(), FakeRunner(replies(
+            [dev, issue(5, "ready")], prs=[pr], extra={"git rev-list": "2\n"})))
         self.assertEqual(found["progress"]["4"],
                          {"pr": 40, "spike": False, "unplanned": False,
                           "plan": {"done": 1, "total": 2, "next": "2"},
                           "next_task_url": None,
                           "review": {"round": 1, "done": 0, "total": 1, "next": "1.1"},
-                          "review_without_tasks": False})
+                          "review_without_tasks": False,
+                          "stale": {"missing_paths": [], "plan_behind": 2},
+                          "branch_behind": 2, "merge_first": False})
         self.assertEqual(found["progress"]["5"]["plan"], None)
+        self.assertIsNone(found["progress"]["5"]["stale"])
         self.assertTrue(found["progress"]["5"]["unplanned"])
         self.assertFalse(found["progress"]["4"]["unplanned"])
 
@@ -743,6 +747,88 @@ class DefaultBranchStateTest(unittest.TestCase):
         branch = sprint.snapshot(cfg(), FakeRunner(data))["default_branch"]
         self.assertIn("grace_ends_in_seconds", branch)
         self.assertEqual(snap([issue(1, "ready")])["default_branch"]["grace_ends_in_seconds"], None)
+
+    def _stale_snap(self, files_line, status="ready", behind="4\n"):
+        body = ("## Plan\nWritten against: " + "c" * 40 + "\n\n- [ ] **1. A**\n"
+                f"  - Files: {files_line}\n")
+        item = issue(7, status, "deliverable")
+        item["body"] += body
+        extra = {"git ls-tree": "lib/keep.py\n", "git rev-list": behind}
+        runner = FakeRunner(replies([item], extra=extra))
+        return sprint.snapshot(cfg(), runner), runner
+
+    def test_plan_naming_two_missing_paths_is_held(self):
+        result, _ = self._stale_snap("`lib/gone.py`, `lib/also_gone.py`, `lib/keep.py`")
+        self.assertEqual(result["progress"]["7"]["stale"],
+                         {"missing_paths": ["lib/also_gone.py", "lib/gone.py"], "plan_behind": 4})
+        self.assertEqual(result["dispatchable"], [])
+        self.assertEqual(result["held"],
+                         [{"number": 7, "reason": "plan names 2 missing paths; re-refine"}])
+
+    def test_new_files_are_not_counted_missing(self):
+        result, _ = self._stale_snap("`lib/new_a.py` (new), `lib/new_b.py` (new), `lib/keep.py`")
+        self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], [])
+        self.assertEqual(result["dispatchable"], [7])
+
+    def test_one_missing_path_is_only_reported(self):
+        result, _ = self._stale_snap("`lib/gone.py`, `lib/keep.py`")
+        self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], ["lib/gone.py"])
+        self.assertEqual(result["dispatchable"], [7])
+
+    def test_in_dev_issue_with_missing_paths_is_reported_not_held(self):
+        result, _ = self._stale_snap("`lib/gone.py`, `lib/also_gone.py`", status="in-dev")
+        self.assertEqual(len(result["progress"]["7"]["stale"]["missing_paths"]), 2)
+        self.assertEqual(result["held"], [])
+
+    def test_default_branch_files_are_fetched_once_and_only_for_plans(self):
+        _, runner = self._stale_snap("`lib/keep.py`")
+        self.assertEqual(sum(l.startswith("git ls-tree") for l in runner.lines()), 1)
+        runner = FakeRunner(replies([issue(1, "ready")]))
+        sprint.snapshot(cfg(), runner)
+        self.assertFalse([l for l in runner.lines() if l.startswith("git ls-tree")])
+
+    def test_tracked_paths_fetches_then_lists(self):
+        runner = FakeRunner({"git ls-tree": "a/b.py\nREADME.md\n\n"})
+        self.assertEqual(sprint.tracked_paths(runner, "main"), {"a/b.py", "README.md"})
+        self.assertEqual(runner.lines(), [
+            "git fetch --quiet origin main",
+            "git ls-tree -r --name-only origin/main"])
+
+    def test_commits_behind_counts(self):
+        runner = FakeRunner({"git rev-list": "7\n"})
+        self.assertEqual(sprint.commits_behind(runner, "abc123", "main"), 7)
+        self.assertEqual(runner.lines(), ["git rev-list --count abc123..origin/main"])
+
+    def test_commits_behind_none_on_failure(self):
+        class Failing(FakeRunner):
+            def __call__(self, argv, cwd=None, input=None):
+                raise run_module.RunError("unknown revision")
+        self.assertIsNone(sprint.commits_behind(Failing(), "bad", "main"))
+        self.assertIsNone(sprint.commits_behind(FakeRunner({"git rev-list": "oops"}), "a", "main"))
+
+    def _behind_snap(self, count, with_pr=True):
+        item = issue(7, "in-dev", "deliverable")
+        prs = [{"number": 70, "headRefName": "issue-7-x", "headRefOid": "d" * 40,
+                "isDraft": True, "mergeable": "MERGEABLE", "statusCheckRollup": [],
+                "closingIssuesReferences": [{"number": 7}], "comments": []}] if with_pr else []
+        runner = FakeRunner(replies([item], prs=prs, extra={"git rev-list": f"{count}\n"}))
+        return sprint.snapshot(cfg(), runner)["progress"]["7"], runner
+
+    def test_fifteen_behind_sets_merge_first(self):
+        found, runner = self._behind_snap(15)
+        self.assertEqual((found["branch_behind"], found["merge_first"]), (15, True))
+        self.assertIn("git rev-list --count refs/baton/branches/issue-7-x..origin/main",
+                      runner.lines())
+        self.assertIn("git fetch --quiet origin +refs/heads/issue-7-x:refs/baton/branches/issue-7-x",
+                      runner.lines())
+
+    def test_three_behind_does_not(self):
+        found, _ = self._behind_snap(3)
+        self.assertEqual((found["branch_behind"], found["merge_first"]), (3, False))
+
+    def test_no_pull_request_gives_none(self):
+        found, _ = self._behind_snap(20, with_pr=False)
+        self.assertEqual((found["branch_behind"], found["merge_first"]), (None, False))
 
     def test_triggers_on_push(self):
         yes = ["on: push\n", "on: [pull_request, push]\n", "on:\n  push:\n    branches: [main]\n",

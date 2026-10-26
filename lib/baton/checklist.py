@@ -160,6 +160,33 @@ def _blocks(section):
     return head, blocks
 
 
+_PATH_LINE = re.compile(r"^\s*[-*]?\s*(?:Files|Uses|Port from):", re.I)
+_TICKED = re.compile(r"`([^`]+)`(\s*\(new\b)?")
+_PATH_EXT = (".py", ".md", ".rs", ".toml", ".yml", ".yaml", ".json", ".sh", ".js", ".ts")
+_LINE_SUFFIX = re.compile(r":\d+(?:-\d+)?$")
+
+
+def named_paths(text):
+    """Sorted, unique paths named on the Files, Uses and Port from lines of unticked tasks."""
+    where = span(text, "plan")
+    if where is None:
+        return []
+    found = set()
+    for block in _blocks(text[where[0]:where[1]])[1]:
+        if block["done"]:
+            continue
+        for line in block["lines"][1:]:
+            if not _PATH_LINE.match(line):
+                continue
+            for token, is_new in _TICKED.findall(line):
+                token = _LINE_SUFFIX.sub("", token.strip())
+                if is_new or " " in token or "<" in token:
+                    continue
+                if "/" in token or token.endswith(_PATH_EXT):
+                    found.add(token)
+    return sorted(found)
+
+
 def _title(block):
     match = _match(block["lines"][0])
     return match.group(3) if match else ""
