@@ -12,8 +12,7 @@ You were dispatched with one of:
 - `Do task <n> of issue <N>.`: one task of the issue's plan (the file its `Plan:` link points to; an older issue has a `## Plan` section in its body);
 - `Do review task <r.n> of pull request <P> (issue <N>).`: one task of the latest code review;
 - `Do spike issue <N>.`: a whole spike (see "Spikes").
-- `Fix CI on pull request <P> (issue <N>).` or `Update pull request <P> (issue <N>).`: see
-  "Keeping a pull request mergeable".
+- `Update pull request <P> (issue <N>).`: see "Keeping a pull request mergeable".
 
 Adapted from the GitLab handbook's
 [engineering basics](https://handbook.gitlab.com/handbook/engineering/workflow/#basics) and the
@@ -147,12 +146,6 @@ filters, send long output to a file, chain related commands, wait for a long run
    review's follow-up issues.
 
 ## Keeping a pull request mergeable
-
-For `Fix CI on pull request <P> (issue <N>).`: check out the branch tip detached, read the failing
-check's log through filters (`gh pr checks <P>`, then `gh run view <id> --log-failed | tail -60`),
-fix the cause, run the failing check's command, commit as `Fix CI: <what>` and push as in step 6.
-For `Fix CI on pull request`, return `DONE <full sha>` with `Issue: #<N>, CI fix`. If the fix
-changes the pull request's own change, the reviewer looks at the new commits.
 
 For `Update pull request <P> (issue <N>).`, follow these steps in order:
 

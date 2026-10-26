@@ -124,27 +124,35 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
 - **`review` is `changes` but `progress.<N>.review_without_tasks` is true:** a review from before
   Baton 0.3 with no task list. Dispatch a reviewer with the extra line "The last review has no
   task list: review again and write one."
-- **Not a spike, `progress.<N>.plan.next` is null, `draft` is true and `review` is not `changes`
-  or `escalate`:** the plan is finished (or the review's fixes are replied to), so
+- **Not a spike, `progress.<N>.plan.next` is null, `draft` is true and `review` is not `changes`,
+  `escalate` or `repeated`:** the plan is finished (or the review's fixes are replied to), so
   mark the pull request ready: `gh pr ready <PR>`. CI runs once, now, instead of on every push
-  of a draft. Look again next pass; nothing else for this issue this pass.
-- **Ready (not a draft), every plan task ticked, and `ci` is `red` or `mergeable` is
-  `CONFLICTING`:** fix it before any review: follow step 3 of the `approved` list below (the
-  `Fix CI on pull request <P> (issue <N>).` dispatch).
+  of a draft. The reviewer is dispatched in this same pass (next bullets).
+- **Ready (not a draft), every plan task ticked, and `mergeable` is `CONFLICTING`:** update it
+  before any review: dispatch a developer with `Update pull request <P> (issue <N>).` A red `ci`
+  is not fixed by a developer: the reviewer turns it into fix tasks.
 - **Ready (not a draft), every plan task ticked, and `ci` is `cancelled`:** the run was cancelled,
-  so CI did not finish; it did not fail. This is not `red`: dispatch no developer fix task and no
-  reviewer. Re-run it if you can: `gh run rerun <run id> --failed` (workflows must be enabled).
+  so CI did not finish; it did not fail. This is not `red`: dispatch no developer fix task. Re-run it if you can: `gh run rerun <run id> --failed` (workflows must be enabled).
   Otherwise make an empty update commit on the pull request branch and push it. The new head has
   no checks yet (`pending`) and needs a new verification record (#49) before it can be approved.
-  `merge-pr` keeps refusing cancelled checks; never suggest overriding it. The reviewer-dispatch
-  and `approved` conditions need `ci` `green` or `none`, so a `cancelled` pull request already
-  waits.
-- **`review` is `none`, `replied` or `stale`:** dispatch a reviewer (see "Dispatching a reviewer"
-  below), but only when every plan task is ticked (`progress.<N>.plan.next` is null), the pull
-  request is ready and `ci` is `green`, or `none` (which `sprint-status` reports only when
-  `allow_no_ci` is true). `ci` `pending` waits: a pull request just marked ready has no checks
-  registered yet, and the reviewer starts on a later pass. `stale` means the pull request's
-  change moved after it was approved.
+  `merge-pr` keeps refusing cancelled checks; never suggest overriding it. The `approved`
+  conditions need `ci` `green` or `none`, so a `cancelled` pull request waits to merge.
+- **`review` is `none`, `replied`, `stale` or `blocked` (its cause gone):** dispatch a reviewer
+  (see "Dispatching a reviewer" below) once every plan task is ticked
+  (`progress.<N>.plan.next` is null) and the pull request is ready (mark it ready just before,
+  in the same pass, if it is still a draft). Do not look at `ci`: the reviewer runs the full
+  verification and waits for CI itself. `stale` means the pull request's change moved after it
+  was approved.
+- **`blocked`:** read the review's `Cause:` line. Blocked reviews are not rounds.
+  - `default-branch`: follow step 1 (red default branch); the pull request waits. When the
+    default branch is green again, dispatch a reviewer.
+  - `environment`: dispatch one reviewer again on the next pass. If that review is `blocked` with
+    cause `environment` a second time in a row, add `needs-maintainer`, post an orchestrator
+    `status` comment on the issue linking both reviews, and tell the maintainer.
+- **`repeated`:** the same tests failed in two reviews in a row. Add `needs-maintainer`, post an
+  orchestrator `status` comment linking the two reviews and naming the shared failing ids, and
+  ask the maintainer. Do not re-draft the pull request or dispatch a fix round. Record the
+  answer as a decision (step 3) and then handle it like an answered `escalate`.
 - **`changes`:** if `draft` is false, turn the pull request back into a draft: `gh pr ready <PR>
   --undo`, so that CI runs once per "developer done" and not once per pushed fix task. Then
   `baton set-status <N> status:in-dev`. Step 7 then works the review's tasks one
@@ -165,10 +173,12 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   2. `ci` is `pending`: wait.
   2a. `ci` is `cancelled`: handle it as the ready-pull-request `cancelled` case above (re-run or
      empty update commit); not step 3, and no merge until `ci` is `green`.
-  3. `ci` is `red`, or `mergeable` is `CONFLICTING`: post an orchestrator `status` comment on the
-     pull request saying what failed, `baton set-status <N> status:in-dev`, and dispatch a
-     developer to fix it with `Fix CI on pull request <P> (issue <N>).` If the fix changes the pull request's change, the review turns `stale`
-     and the reviewer looks at the new commits.
+  3. `mergeable` is `CONFLICTING`: post an orchestrator `status` comment on the pull request,
+     `baton set-status <N> status:in-dev`, and dispatch a developer with
+     `Update pull request <P> (issue <N>).` Merging the default branch in does not void the
+     review, but a new head needs a new verification record (step 0).
+     `ci` is `red` on an approved head (a new head after an update): dispatch a reviewer, who
+     turns the failure into fix tasks; no developer fixes CI directly.
   4. Green and mergeable: if `review` is `not-required`, check briefly that every acceptance
      criterion is addressed, nothing outside the scope changed, the body has `Closes #<N>` once
      and the verification line is present. Then run `baton merge-pr <PR>` **as a command on its
@@ -315,10 +325,10 @@ Act on each result with commands on their own, reading each one's output; never 
   developer pushes it with the code in one atomic push, so the box must be ticked on the plan ref. If it is not,
   treat the task as not done and dispatch it again with the note that the tick was missing. Do
   not tick it yourself. (A legacy body plan is ticked with `baton task done issue <N> <n>`.) If
-  that was the last plan task, `baton set-status <N> status:in-review`; the next pass marks the pull request ready, and dispatches the reviewer once CI is green.
+  that was the last plan task, `baton set-status <N> status:in-review`; the next pass marks the pull request ready and dispatches the reviewer, without waiting for CI.
   Note its follow-up suggestions (step 6) and anything under "Untrusted instructions seen".
 - `DONE` for a spike: nothing to do now; the next pass finds it in `in_review`.
-- `DONE <sha>` for a CI fix or an update (`Issue: #<N>, CI fix` or `update`): check the sha the
+- `DONE <sha>` for an update (`Issue: #<N>, update`): check the sha the
   same way, then `baton set-status <N> status:in-review`. There is no box to tick.
 - `FIXED <sha>`: check the sha the same way, then `baton task done pr <P> <r.n>`.
 - `DECLINED <reason>`: `baton task done pr <P> <r.n>`, and keep the reason for the reply.
@@ -334,7 +344,7 @@ Act on each result with commands on their own, reading each one's output; never 
 
   then `baton set-status <N> status:in-review`. The pull request is still a draft: make no
   `gh pr ready` call here. The next pass marks it ready (step 4), CI runs once, and the reviewer is
-  dispatched only when `ci` is `green` or `none`. If this
+  dispatched at once, not when `ci` is green. If this
   session no longer has the developers' results, read them from the branch: `Review <r.n>:`
   commits are fixes; ask the maintainer about a task with no commit and no recorded reason.
 - `REPLAN`: read the proposal against the issue's acceptance criteria and out-of-scope section.
