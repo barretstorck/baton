@@ -60,6 +60,7 @@ _CLOSE_MESSAGE = (
     "<issue|pr> <number> <role> <reason-file>` so a marker comment says who did it and why")
 _API_MERGE = re.compile(r"/pulls/\d+/merge\b")
 _API_STATE_ENDPOINT = re.compile(r"(?:^|/)(?:issues|pulls)/\d+/?(?:\?|$)")
+_API_STATE_KEY = re.compile(r'"state(?:_reason)?"\s*:')
 _API_CLOSE_MUTATION = re.compile(r"\b(?:closeIssue|reopenIssue|closePullRequest|reopenPullRequest)\b")
 _API_MUTATION = re.compile(r"\bmutation\b")
 _API_STATE_ARG = re.compile(r"(?<![$\w])state(?:Reason)?(?:[\s,]|#[^\n\r]*(?:[\r\n]|$))*:")
@@ -85,6 +86,7 @@ class Item:
     values: list = field(default_factory=list)    # must be literal text
     bodies: list = field(default_factory=list)    # must start with the marker
     files: list = field(default_factory=list)     # (path, is_body)
+    state_files: dict = field(default_factory=dict)  # path -> "rest" | "graphql"
     dirs: list = field(default_factory=list)
 
 
@@ -230,6 +232,7 @@ def _graphql_sets_state(content):
 
 def _inspect_gh_api(call, item):
     has_payload = False
+    payload_files = []
     state_endpoint = graphql = state_field = close_mutation = False
     for flag, value in _options(call.args, _API_FIELD_OPTS | {"--input"}):
         if flag is None:
@@ -244,18 +247,24 @@ def _inspect_gh_api(call, item):
         has_payload = True
         if flag == "--input":
             item.files.append((value, False))
+            payload_files.append(value)
             continue
         key, _, content = value.partition("=")
         state_field = state_field or key in ("state", "state_reason")
         close_mutation = close_mutation or _graphql_sets_state(content)
         if flag in _API_TYPED_OPTS and content.startswith("@"):
             item.files.append((content[1:], key == "body"))
+            payload_files.append(content[1:])
             continue
         item.values.append(content)
         item.texts.append(value)
         if key == "body":
             item.bodies.append(content)
     item.comment = item.comment and has_payload
+    kind = "graphql" if graphql else "rest" if state_endpoint else None
+    if kind:
+        for path in payload_files:
+            item.state_files[path] = kind
     if (state_endpoint and state_field) or (graphql and close_mutation):
         item.problems.append(_CLOSE_MESSAGE)
 
