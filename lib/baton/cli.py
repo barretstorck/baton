@@ -235,10 +235,12 @@ def cmd_task(args):
 def cmd_plan(args):
     drop = "--drop" in args
     args = [a for a in args if a != "--drop"]
-    if len(args) == 4 and args[0] == "replace" and args[1].isdigit() and args[2].isdigit():
+    if (len(args) == 4 and args[0] in ("replace", "insert")
+            and args[1].isdigit() and args[2].isdigit()):
+        insert = args[0] == "insert"
         text = comment.read_body(args[3], sys.stdin)
         found = checklist.replace_issue_plan(_require_config(), run.run, int(args[1]), args[2],
-                                             text, scan.load_terms(), drop=drop)
+                                             text, scan.load_terms(), drop=drop, insert=insert)
         for label, key in (("replaced", "replaced"), ("new", "written")):
             for task_id, title in found[key]:
                 print(f"{label} task {task_id}: {title}")
@@ -288,6 +290,7 @@ def cmd_plan(args):
                                repo["defaultBranchRef"]["name"]))
         return 0
     print("usage: baton plan replace <issue> <from-task> <file | -> [--drop]\n"
+          "       baton plan insert <issue> <before-task> <file | ->\n"
           "       baton plan against <issue> <sha>\n"
           "       baton plan commit <issue> <path> <file | ->\n"
           "       baton plan pin <issue>\n"

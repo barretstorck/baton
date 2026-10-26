@@ -382,7 +382,8 @@ Act on each result with commands on their own, reading each one's output; never 
     ones; read both lists. It refuses fewer new tasks than replaced: pass `--drop` only when a
     later task is meant to go, never to get past the refusal. Post an orchestrator `decision` comment on the issue
     saying which tasks changed and why (quoting the developer's reason), and dispatch the new
-    task `<n>`.
+    task `<n>`. To add a task without replacing any, use `baton plan insert <N> <before-task> <file>`
+    instead of copying and renumbering the later tasks by hand.
   - It would change what the issue promises: post the proposal as an orchestrator `question`
     comment, add `needs-maintainer`, `baton set-status <N> status:blocked`; the issue goes under
     `Needs you`.
