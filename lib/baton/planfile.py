@@ -166,6 +166,34 @@ def read(runner, ref, path):
         raise checklist.TaskError(f"plan file {path} not found at {ref}: {error}")
 
 
+def tick_commits(runner, ref, path):
+    """{task id: "<short sha> <subject>"} of the commit that first ticked each ticked task.
+
+    Only for a `refs/plans/<N>` ref (else empty). Walks the plan ref's history oldest first and
+    parses the file at each commit; the first commit whose version has a task ticked wins.
+    """
+    if not ref.startswith(PLAN_REF):
+        return {}
+    number = _plan_number(ref, path)
+    _fetch_plan(runner, number)
+    log = runner(["git", "log", "--reverse", "--format=%h%x09%H%x09%s", "--end-of-options",
+                  f"{LOCAL_REF}{number}", "--", path])
+    found = {}
+    for line in log.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) < 3:
+            continue
+        short, full, subject = parts
+        try:
+            text = runner(["git", "show", "--end-of-options", f"{full}:{path}"])
+        except RunError:
+            continue
+        for task in (checklist.plan(text) or {}).get("tasks", []):
+            if task["done"] and task["id"] not in found:
+                found[task["id"]] = f"{short} {subject}"
+    return found
+
+
 def tip(runner, number):
     """The sha of `refs/plans/<number>` on the remote, or None when it does not exist."""
     out = runner(["git", "ls-remote", "origin", ref_name(int(number))]).split()

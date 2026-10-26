@@ -80,6 +80,34 @@ class PlanfileTest(unittest.TestCase):
             planfile.read(Missing(), "issue-5-x", PATH)
 
 
+class TickCommitsTest(unittest.TestCase):
+    PLAN = "docs/baton/plans/5-x.md"
+    REF = "refs/plans/5"
+
+    def plan_text(self, ticks):
+        rows = "".join(f"- [{'x' if n in ticks else ' '}] **{n}. T{n}**\n" for n in "123")
+        return f"## Plan\n\nWritten against: {SHA}\n\n{rows}"
+
+    def test_first_commit_that_ticks_each_task(self):
+        c1, c2, c3 = "1" * 40, "2" * 40, "3" * 40
+        log = (f"aaa1111\t{c1}\tPlan\nbbb2222\t{c2}\tTask 1: one\n"
+               f"ccc3333\t{c3}\tTask 2: two\n")
+        runner = FakeRunner({
+            "git log": log,
+            f"git show --end-of-options {c1}:": self.plan_text(""),
+            f"git show --end-of-options {c2}:": self.plan_text("1"),
+            f"git show --end-of-options {c3}:": self.plan_text("12"),
+        })
+        self.assertEqual(planfile.tick_commits(runner, self.REF, self.PLAN),
+                         {"1": "bbb2222 Task 1: one", "2": "ccc3333 Task 2: two"})
+        self.assertTrue(any(l.startswith("git fetch") for l in runner.lines()))
+
+    def test_not_a_plan_ref_is_empty(self):
+        runner = FakeRunner()
+        self.assertEqual(planfile.tick_commits(runner, "issue-5-x", self.PLAN), {})
+        self.assertEqual(runner.calls, [])
+
+
 class Capture(FakeRunner):
     """Records the body written by `gh issue edit`, which is deleted after the call."""
 
