@@ -109,6 +109,52 @@ class TickTest(unittest.TestCase):
         self.assertEqual(new, crlf.replace("- [ ] **1.2", "- [x] **1.2"))
 
 
+class InsertTest(unittest.TestCase):
+    PLAN = f"""## Plan
+Written against: {SHA}
+
+- [x] **1. One**
+  - Files: `a.py`
+- [ ] **2. Two**
+  - Files: `b.py`
+- [ ] **3. Three**
+  - Uses: task 1 and task 2
+- [ ] **4. Four**
+  - Uses: task 4 and Task 3, see task 1.2
+
+## Decisions
+- kept
+"""
+    NEW = "- [ ] **3. Inserted**\n  - Uses: task 3\n"
+
+    def test_renumbers_and_shifts_references(self):
+        body = checklist.replace_plan(self.PLAN, "3", self.NEW, insert=True)
+        found = checklist.plan(body)
+        self.assertEqual([(t["id"], t["title"]) for t in found["tasks"]],
+                         [("1", "One"), ("2", "Two"), ("3", "Inserted"),
+                          ("4", "Three"), ("5", "Four")])
+        self.assertIn("  - Uses: task 3\n- [ ] **4. Three**", body)
+        self.assertIn("  - Uses: task 1 and task 2\n", body)
+        self.assertIn("  - Uses: task 5 and Task 4, see task 1.2\n", body)
+        self.assertTrue(body.endswith("## Decisions\n- kept\n"))
+
+    def test_refuses_when_a_later_task_is_done(self):
+        with self.assertRaises(checklist.TaskError):
+            checklist.replace_plan(self.PLAN, "1", self.NEW, insert=True)
+
+    def test_inserting_after_the_last_task_appends(self):
+        body = checklist.replace_plan(self.PLAN, "5", "- [ ] **5. Last**\n", insert=True)
+        self.assertEqual([t["title"] for t in checklist.plan(body)["tasks"]],
+                         ["One", "Two", "Three", "Four", "Last"])
+        with self.assertRaises(checklist.TaskError):
+            checklist.replace_plan(self.PLAN, "6", "- [ ] **6. Gap**\n", insert=True)
+
+    def test_plan_changes_lists_the_shift(self):
+        replaced, written = checklist.plan_changes(self.PLAN, "3", self.NEW, insert=True)
+        self.assertEqual(replaced, [("3", "Three"), ("4", "Four")])
+        self.assertEqual([i for i, _ in written], ["3", "4", "5"])
+
+
 class ReplaceTest(unittest.TestCase):
     NEW = "- [ ] **2. New second**\n  - Files: `d.py`\n- [ ] **3. New third**\n"
 

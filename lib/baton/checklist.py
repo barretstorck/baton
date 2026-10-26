@@ -165,8 +165,57 @@ def _title(block):
     return match.group(3) if match else ""
 
 
-def plan_changes(text, from_id, new_text):
+_TASK_REF = re.compile(r"\b([Tt]asks?) (\d+)(?!\d|\.\d)")
+
+
+def _shift_refs(line, before, k):
+    return _TASK_REF.sub(
+        lambda m: f"{m.group(1)} {int(m.group(2)) + k}" if int(m.group(2)) >= before else m.group(0),
+        line)
+
+
+def insert_text(text, before, new_text):
+    """The tasks text that inserts `new_text`'s tasks before task `before` of `text`'s plan.
+
+    The new tasks come first, numbered from `before`; the old tasks from `before` on follow,
+    renumbered, with `task <n>` references to tasks at or after `before` shifted in their bodies.
+    Hand the result to `replace_plan` from `before`, which refuses done tasks. References in the
+    inserted text are the author's and are left alone.
+    """
+    where = span(text, "plan")
+    if where is None:
+        raise TaskError("the issue has no '## Plan' section")
+    if not str(before).isdigit() or int(before) < 1:
+        raise TaskError("plan tasks are numbered 1, 2, 3 ...")
+    before = int(before)
+    _, blocks = _blocks(text[where[0]:where[1]])
+    if any(not block["id"].isdigit() for block in blocks):
+        raise TaskError("the plan has a task that is not numbered 1, 2, 3 ...")
+    if before > len(blocks) + 1:
+        raise TaskError(f"the plan has {len(blocks)} task(s); insert before task "
+                        f"{len(blocks) + 1} at most")
+    new_head, new_blocks = _blocks(new_text.replace("\r\n", "\n").strip("\n") + "\n")
+    if any(line.strip() for line in new_head) or not new_blocks:
+        raise TaskError("the new text must start with a task line: - [ ] **<n>. <title>**")
+    k = len(new_blocks)
+    out = []
+    for offset, block in enumerate(new_blocks):
+        lines = list(block["lines"])
+        lines[0] = re.sub(r"\*\*\d+", f"**{before + offset}", lines[0], count=1)
+        out.extend(lines)
+    for block in blocks:
+        if int(block["id"]) < before:
+            continue
+        lines = [_shift_refs(line, before, k) for line in block["lines"]]
+        lines[0] = re.sub(r"\*\*\d+", f"**{int(block['id']) + k}", lines[0], count=1)
+        out.extend(lines)
+    return "".join(out)
+
+
+def plan_changes(text, from_id, new_text, insert=False):
     """(replaced, written): `(id, title)` of the tasks from `from_id` on, and of the new ones."""
+    if insert:
+        new_text = insert_text(text, from_id, new_text)
     where = span(text, "plan")
     if where is None:
         raise TaskError("the issue has no '## Plan' section")
@@ -183,7 +232,7 @@ def _describe(tasks):
     return ", ".join(f"{task_id} ({title})" for task_id, title in tasks)
 
 
-def replace_plan(body, from_id, new_text, drop=False):
+def replace_plan(body, from_id, new_text, drop=False, insert=False):
     """`body` with the plan's tasks from `from_id` on replaced by `new_text`'s tasks.
 
     Refused when the new text has fewer tasks than it replaces, unless `drop`: the tasks
@@ -194,6 +243,8 @@ def replace_plan(body, from_id, new_text, drop=False):
         raise TaskError("the issue has no '## Plan' section")
     if not str(from_id).isdigit():
         raise TaskError("plan tasks are numbered 1, 2, 3 ...")
+    if insert:
+        new_text = insert_text(body, from_id, new_text)
     first = int(from_id)
     start, end = where
     head, blocks = _blocks(body[start:end])
