@@ -145,10 +145,25 @@ class GateTest(unittest.TestCase):
     def test_marker_must_start_the_body(self):
         for cmd in ('gh pr comment 5 --body "/baton approve" # <!-- baton:',
                     "gh api repos/o/r/issues/5/comments -f body='/baton approve'",
-                    "gh pr review 5 --approve",
-                    'gh issue close 5 --comment "done"'):
+                    "gh pr review 5 --approve"):
             with self.subTest(cmd=cmd):
                 self.assertTrue(any("marker" in p for p in gate.decide(cmd, make_repo(), TERMS)))
+
+    def test_raw_close_and_reopen_are_refused(self):
+        for group in ("issue", "pr"):
+            for action in ("close", "reopen"):
+                for tail in ("", ' --comment "done"'):
+                    cmd = f"gh {group} {action} 5{tail}"
+                    with self.subTest(cmd=cmd):
+                        problems = gate.decide(cmd, make_repo(), TERMS)
+                        self.assertTrue(any("use `baton close|reopen" in p for p in problems))
+
+    def test_comment_and_edit_are_not_refused_as_closes(self):
+        for cmd in ("gh issue edit 5 --title t",
+                    "gh issue comment 5 --body \"<!-- baton:developer:status -->\nhi\""):
+            with self.subTest(cmd=cmd):
+                self.assertFalse(any("closing or reopening" in p
+                                     for p in gate.decide(cmd, make_repo(), TERMS)))
 
     def test_inline_heredoc_comment_with_marker_passes(self):
         cmd = ("gh issue comment 3 --body \"$(cat <<'EOF'\n<!-- baton:developer:question -->\n"

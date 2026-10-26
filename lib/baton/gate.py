@@ -51,7 +51,6 @@ _GH_PUBLISH = {
 _GH_COMMENT = {("issue", "comment"), ("pr", "comment"), ("pr", "review")}
 _GH_CLOSE = {("issue", "close"), ("issue", "reopen"), ("pr", "close"), ("pr", "reopen")}
 _GH_BODY_OPTS = {"--body", "-b"}
-_GH_COMMENT_OPTS = {"--comment", "-c"}
 _GH_TEXT_OPTS = {"--title", "-t", "--notes", "-n"}
 _GH_FILE_OPTS = {"--body-file", "-F", "--notes-file"}
 _API_FIELD_OPTS = {"-f", "--raw-field", "-F", "--field"}
@@ -251,12 +250,18 @@ def _inspect_gh(call):
         item.relevant = True
         _inspect_gh_api(call, item)
         return item
+    if (group, action) in _GH_CLOSE:
+        item.relevant = True
+        item.problems.append(
+            "closing or reopening directly is not allowed; use `baton close|reopen "
+            "<issue|pr> <number> <role> <reason-file>` so a marker comment says who did it and why")
+        return item
     if (group, action) not in _GH_PUBLISH:
         return item
 
     item.relevant = True
     item.comment = (group, action) in _GH_COMMENT
-    value_opts = _GH_BODY_OPTS | _GH_COMMENT_OPTS | _GH_TEXT_OPTS | _GH_FILE_OPTS
+    value_opts = _GH_BODY_OPTS | _GH_TEXT_OPTS | _GH_FILE_OPTS
     for flag, value in _options(call.args, value_opts):
         if flag in _GH_FILE_OPTS:
             item.files.append((value, True))
@@ -265,9 +270,6 @@ def _inspect_gh(call):
             item.values.append(value)
         if flag in _GH_BODY_OPTS:
             item.bodies.append(value)
-        if flag in _GH_COMMENT_OPTS and (group, action) in _GH_CLOSE:
-            item.bodies.append(value)
-            item.comment = True
         if not _URL.match(value):
             item.texts.append(value)
     return item
