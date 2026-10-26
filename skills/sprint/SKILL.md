@@ -123,6 +123,14 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
 - **Ready (not a draft), every plan task ticked, and `ci` is `red` or `mergeable` is
   `CONFLICTING`:** fix it before any review: follow step 3 of the `approved` list below (the
   `Fix CI on pull request <P> (issue <N>).` dispatch).
+- **Ready (not a draft), every plan task ticked, and `ci` is `cancelled`:** the run was cancelled,
+  so CI did not finish; it did not fail. This is not `red`: dispatch no developer fix task and no
+  reviewer. Re-run it if you can: `gh run rerun <run id> --failed` (workflows must be enabled).
+  Otherwise make an empty update commit on the pull request branch and push it. The new head has
+  no checks yet (`pending`) and needs a new verification record (#49) before it can be approved.
+  `merge-pr` keeps refusing cancelled checks; never suggest overriding it. The reviewer-dispatch
+  and `approved` conditions need `ci` `green` or `none`, so a `cancelled` pull request already
+  waits.
 - **`review` is `none`, `replied` or `stale`:** dispatch a reviewer (see "Dispatching a reviewer"
   below), but only when every plan task is ticked (`progress.<N>.plan.next` is null), the pull
   request is ready and `ci` is `green`, or `none` (which `sprint-status` reports only when
@@ -147,6 +155,8 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   1. Still a draft (a fallback; normally ready already): `gh pr ready <PR>`. CI starts now; look
      again next pass.
   2. `ci` is `pending`: wait.
+  2a. `ci` is `cancelled`: handle it as the ready-pull-request `cancelled` case above (re-run or
+     empty update commit); not step 3, and no merge until `ci` is `green`.
   3. `ci` is `red`, or `mergeable` is `CONFLICTING`: post an orchestrator `status` comment on the
      pull request saying what failed, `baton set-status <N> status:in-dev`, and dispatch a
      developer to fix it with `Fix CI on pull request <P> (issue <N>).` If the fix changes the pull request's change, the review turns `stale`
