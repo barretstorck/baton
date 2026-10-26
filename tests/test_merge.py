@@ -657,20 +657,24 @@ class CliCleanupTest(unittest.TestCase):
         from unittest import mock
         from baton import cli
 
+        repo = {"owner": {"login": OWNER}, "name": "tool", "defaultBranchRef": {"name": "main"}}
+        pr = make_pr(state="MERGED", closingIssuesReferences=[])
+
         def fake_run(argv, cwd=None, input=None):
             if argv[:3] == ["git", "branch", "-D"]:
                 raise RunError("git branch -D failed: boom")
-            return branch_list_reply
-
-        def fake_merge(number, cfg, runner, notes):
-            if runner(["git", "branch", "--list", "b"]).strip():
-                runner(["git", "branch", "-D", "b"])
-            return []
+            if argv[:3] == ["gh", "repo", "view"]:
+                return json.dumps(repo)
+            if argv[:4] == ["gh", "pr", "view", "9"]:
+                return json.dumps(pr)
+            if argv[:4] == ["git", "branch", "--list", "issue-4-flag"]:
+                return branch_list_reply
+            return ""
 
         err = io.StringIO()
         with mock.patch.object(cli, "_require_config", return_value=make_config()), \
                 mock.patch.object(cli.run, "run", fake_run), \
-                mock.patch.object(cli.merge, "merge", fake_merge), \
+                mock.patch("baton.verify.remove_logs"), \
                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
             code = cli.cmd_merge_pr(["9"])
         return code, err.getvalue()
