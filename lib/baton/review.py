@@ -26,6 +26,8 @@ _REVIEW = re.compile(
     r"^<!-- baton:reviewer:review verdict=(" + "|".join(VERDICTS) + r") commit=([0-9a-f]{40})"
     r"(?: verify=(green|red|timeout|missing|none))? -->")
 _CAUSE = re.compile(r"^Cause: (default-branch|environment)[ \t]*$", re.M)
+_FAILURES = re.compile(r"^## Failures[ \t]*$")
+_FAILURE_LINE = re.compile(r"^- (\S+?): *\S")
 _REASON = re.compile(r"^## Reason[ \t]*$", re.M)
 _TASKS = re.compile(r"^## Tasks[ \t]*$", re.M)
 _REPLY = f"{gate.MARKER}developer:reply -->"
@@ -56,6 +58,21 @@ def _cause(body):
     return found.group(1) if found else None
 
 
+def failure_ids(body):
+    """The ids listed under a `## Failures` heading, one `- <id>: <outcome>` line each."""
+    ids = set()
+    in_section = False
+    for line in (body or "").splitlines():
+        if line.startswith("## "):
+            in_section = bool(_FAILURES.match(line))
+            continue
+        if in_section:
+            found = _FAILURE_LINE.match(line)
+            if found:
+                ids.add(found.group(1))
+    return ids
+
+
 def history(comments, owner):
     """Reviews and replies, oldest first. Only the owner's comments count: agents post as the owner."""
     events = []
@@ -68,6 +85,7 @@ def history(comments, owner):
             events.append({"kind": "review", "verdict": match.group(1),
                            "commit": match.group(2), "verify": match.group(3) or "missing",
                            "cause": _cause(body) if match.group(1) == "blocked" else None,
+                           "failures": failure_ids(body),
                            "url": item.get("url")})
         elif body.startswith(_REPLY):
             events.append({"kind": "reply", "url": item.get("url")})
@@ -89,11 +107,13 @@ def verify_state(cfg, comments, owner, head):
 
 
 def state(comments, owner, max_rounds):
-    """none, changes, replied, approved, blocked or escalate; the rounds so far; the last review.
+    """none, changes, replied, approved, blocked, repeated or escalate; the rounds so far; the last review.
 
     Rounds count the requests for changes since the last approval: an approval
     that went stale starts the count again. A blocked review is no round and
-    does not end the count.
+    does not end the count. `repeated` is the last two requests for changes (blocked
+    reviews skipped) sharing a failure id; it is checked on the failure lists alone
+    and outranks `escalate`.
     """
     events = history(comments, owner)
     reviews = [event for event in events if event["kind"] == "review"]
@@ -101,17 +121,23 @@ def state(comments, owner, max_rounds):
         return {"state": "none", "rounds": 0, "review": None}
     last = reviews[-1]
     rounds = 0
+    changes = []
     for event in reversed(reviews):
         if event["verdict"] == "approve":
             break
         if VERDICTS[event["verdict"]]["round"]:
             rounds += 1
+            changes.append(event)
+    repeated = (len(changes) >= 2 and last["verdict"] == "changes"
+                and bool(changes[0]["failures"] & changes[1]["failures"]))
     if events[-1]["kind"] == "reply":
         name = "replied"
     elif last["verdict"] == "approve":
         name = "approved"
     elif last["verdict"] == "blocked":
         name = "blocked"
+    elif repeated:
+        name = "repeated"
     elif rounds >= max_rounds:
         name = "escalate"
     else:

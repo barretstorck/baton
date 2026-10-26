@@ -497,6 +497,50 @@ class BlockedTest(unittest.TestCase):
             review.tick_review(runner, 9, OWNER, "1.1")
 
 
+def failing(*ids, verdict="changes"):
+    lines = "\n".join(f"- {i}: caused" for i in ids) or "none"
+    return {"author": {"login": OWNER}, "url": "u/failing",
+            "body": review.compose(verdict, NEW, f"Round.\n\n## Failures\n{lines}\n\n## Checked\n- x: y")}
+
+
+class RepeatedTest(unittest.TestCase):
+    def test_failure_ids_parse(self):
+        body = ("## Findings\n- not_a_failure: caused\n\n## Failures\n"
+                "- tests.test_a.A.test_x: caused\n- lint: flaky\n\n## Checked\n- other: caused\n")
+        self.assertEqual(review.failure_ids(body), {"tests.test_a.A.test_x", "lint"})
+        self.assertEqual(review.failure_ids("## Failures\nnone\n"), set())
+        self.assertEqual(review.failure_ids("no section"), set())
+
+    def test_history_carries_failures(self):
+        events = review.history([failing("a", "b"), rev("changes")], OWNER)
+        self.assertEqual([e["failures"] for e in events], [{"a", "b"}, set()])
+
+    def test_shared_id_is_repeated(self):
+        found = review.state([failing("a", "b"), reply(), failing("b", "c")], OWNER, 5)
+        self.assertEqual((found["state"], found["rounds"]), ("repeated", 2))
+
+    def test_disjoint_ids_are_changes(self):
+        found = review.state([failing("a"), reply(), failing("b")], OWNER, 5)
+        self.assertEqual(found["state"], "changes")
+
+    def test_reply_after_the_second_is_replied(self):
+        found = review.state([failing("a"), reply(), failing("a"), reply()], OWNER, 5)
+        self.assertEqual(found["state"], "replied")
+
+    def test_blocked_between_does_not_break_the_pair(self):
+        found = review.state([failing("a"), reply(), blocked(), reply(), failing("a")], OWNER, 5)
+        self.assertEqual((found["state"], found["rounds"]), ("repeated", 2))
+
+    def test_repeated_outranks_escalate(self):
+        found = review.state([failing("a"), reply(), failing("a")], OWNER, 2)
+        self.assertEqual((found["state"], found["rounds"]), ("repeated", 2))
+
+    def test_only_the_last_two_count(self):
+        found = review.state([failing("a"), reply(), failing("a"), reply(), failing("b")],
+                             OWNER, 5)
+        self.assertEqual(found["state"], "changes")
+
+
 class PostBlockedTest(unittest.TestCase):
     def post(self, body, runner=None):
         return review.post(cfg(), runner or pr_runner(), 9, "blocked", NEW, body, [], OWNER)
