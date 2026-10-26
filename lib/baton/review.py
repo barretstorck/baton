@@ -12,12 +12,22 @@ import tempfile
 
 from . import checklist, comment, gate, run, verify as verifylog
 
-VERDICTS = {"approve", "changes"}
+# The one place a verdict is defined. `tasks` is "none" (a `## Tasks` section is
+# refused) or "required"; `round` says whether the verdict counts toward review.max_rounds.
+VERDICTS = {
+    "approve": {"title": "approved", "tasks": "none", "round": False},
+    "changes": {"title": "changes requested", "tasks": "required", "round": True},
+    "blocked": {"title": "blocked", "tasks": "none", "round": False},
+}
+BLOCKED_CAUSES = ("default-branch", "environment")
 VERIFY_STATES = ("green", "red", "timeout", "missing", "none")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _REVIEW = re.compile(
-    r"^<!-- baton:reviewer:review verdict=(approve|changes) commit=([0-9a-f]{40})"
+    r"^<!-- baton:reviewer:review verdict=(" + "|".join(VERDICTS) + r") commit=([0-9a-f]{40})"
     r"(?: verify=(green|red|timeout|missing|none))? -->")
+_CAUSE = re.compile(r"^Cause: (default-branch|environment)[ \t]*$", re.M)
+_REASON = re.compile(r"^## Reason[ \t]*$", re.M)
+_TASKS = re.compile(r"^## Tasks[ \t]*$", re.M)
 _REPLY = f"{gate.MARKER}developer:reply -->"
 _HUNK = re.compile(r"^@@ [^@]* @@.*$")
 _COMMENT_ID = re.compile(r"#issuecomment-(\d+)$")
@@ -31,14 +41,19 @@ def compose(verdict, commit, body, verify="missing"):
     if verify not in VERIFY_STATES:
         raise ReviewError(f"unknown verify state {verify!r}")
     if verdict not in VERDICTS:
-        raise ReviewError(f"unknown verdict {verdict!r}; use approve or changes")
+        raise ReviewError(f"unknown verdict {verdict!r}; use {', '.join(VERDICTS)}")
     if not _SHA.match(commit or ""):
         raise ReviewError("name the reviewed commit by its full 40-character sha")
     if not body.strip():
         raise ReviewError("the review body is empty")
-    title = "approved" if verdict == "approve" else "changes requested"
+    title = VERDICTS[verdict]["title"]
     return (f"{gate.MARKER}reviewer:review verdict={verdict} commit={commit} verify={verify} -->\n"
             f"**Baton reviewer: review ({title}, commit {commit[:7]})**\n\n{body.strip()}\n")
+
+
+def _cause(body):
+    found = _CAUSE.search(body)
+    return found.group(1) if found else None
 
 
 def history(comments, owner):
@@ -52,6 +67,7 @@ def history(comments, owner):
         if match:
             events.append({"kind": "review", "verdict": match.group(1),
                            "commit": match.group(2), "verify": match.group(3) or "missing",
+                           "cause": _cause(body) if match.group(1) == "blocked" else None,
                            "url": item.get("url")})
         elif body.startswith(_REPLY):
             events.append({"kind": "reply", "url": item.get("url")})
@@ -73,10 +89,11 @@ def verify_state(cfg, comments, owner, head):
 
 
 def state(comments, owner, max_rounds):
-    """none, changes, replied, approved or escalate; the rounds so far; the last review.
+    """none, changes, replied, approved, blocked or escalate; the rounds so far; the last review.
 
     Rounds count the requests for changes since the last approval: an approval
-    that went stale starts the count again.
+    that went stale starts the count again. A blocked review is no round and
+    does not end the count.
     """
     events = history(comments, owner)
     reviews = [event for event in events if event["kind"] == "review"]
@@ -87,11 +104,14 @@ def state(comments, owner, max_rounds):
     for event in reversed(reviews):
         if event["verdict"] == "approve":
             break
-        rounds += 1
+        if VERDICTS[event["verdict"]]["round"]:
+            rounds += 1
     if events[-1]["kind"] == "reply":
         name = "replied"
     elif last["verdict"] == "approve":
         name = "approved"
+    elif last["verdict"] == "blocked":
+        name = "blocked"
     elif rounds >= max_rounds:
         name = "escalate"
     else:
@@ -213,7 +233,7 @@ def in_linked_worktree(runner, cwd):
 def review_tasks(pr, owner):
     """The tasks of the latest review when it asks for changes; none after an approval."""
     item, match = _latest_review(pr.get("comments"), owner)
-    if item is None or match.group(1) == "approve":
+    if item is None or VERDICTS[match.group(1)]["tasks"] == "none":
         return {"round": 0, "review": None, "tasks": [], **checklist.progress([])}
     tasks = checklist.tasks_under(item["body"], "tasks")
     rounds = state(pr.get("comments"), owner, 1 << 30)["rounds"]
@@ -225,7 +245,7 @@ def tick_review(runner, number, owner, task_id):
     """Tick a task in the latest review. False when it was already ticked."""
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", "comments"]))
     item, match = _latest_review(pr.get("comments"), owner)
-    if item is None or match.group(1) == "approve":
+    if item is None or VERDICTS[match.group(1)]["tasks"] == "none":
         raise ReviewError(f"the latest review on #{number} asks for no changes")
     new, changed = checklist.tick(item["body"], "tasks", task_id)
     if not changed:
@@ -282,6 +302,17 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, ho
                             f"run baton verify {number} <worktree>")
         if problems:
             raise ReviewError("cannot approve yet: " + "; ".join(problems))
+    elif verdict == "blocked":
+        problems = []
+        if not _CAUSE.search(body):
+            problems.append("name the cause on a line 'Cause: default-branch' or "
+                            "'Cause: environment'")
+        if not _REASON.search(body):
+            problems.append("add a '## Reason' section")
+        if _TASKS.search(body):
+            problems.append("a blocked review has no '## Tasks' section")
+        if problems:
+            raise ReviewError("cannot post a blocked review: " + "; ".join(problems))
     else:
         tasks = checklist.tasks_under(body, "tasks")
         round_ = state(pr.get("comments"), owner, 1 << 30)["rounds"] + 1
