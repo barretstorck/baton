@@ -174,7 +174,8 @@ class SnapshotTest(unittest.TestCase):
         result = snap([issue(1, "in-review", "deliverable")], prs=prs)
         self.assertEqual(result["in_review"], [{"number": 1, "pr": 30, "draft": False,
                                                 "ci": "green", "mergeable": "MERGEABLE",
-                                                "review": "approved", "rounds": 0}])
+                                                "review": "approved", "rounds": 0,
+                                                "verify": "none"}])
 
     def test_lagging_check_run_on_a_finished_workflow_run_is_green(self):
         head = "f" * 40
@@ -380,6 +381,50 @@ class PrCiTests(unittest.TestCase):
 
     def test_unfinished_run_is_pending(self):
         self.assertEqual(self.ci([self.check("", status="IN_PROGRESS")]), "pending")
+
+
+def vcfg(command="make test", required=True):
+    out = cfg()
+    out.data["verify"]["command"] = command
+    out.data["review"]["required"] = required
+    return out
+
+
+HEAD = "f" * 40
+
+
+def reviewed(verify, commit=HEAD):
+    return {"author": {"login": OWNER}, "body": review.compose("approve", commit, "ok", verify)}
+
+
+class VerifyStateTests(unittest.TestCase):
+    def state(self, comments, config_=None, owner=OWNER, runner=None):
+        pr = {"isDraft": False, "statusCheckRollup": [], "headRefOid": HEAD, "comments": comments}
+        return sprint.pr_state(pr, config_ or vcfg(), runner or FakeRunner({}), owner)["verify"]
+
+    def test_none_without_a_command_or_when_reviews_are_off(self):
+        self.assertEqual(self.state([reviewed("green")], vcfg("")), "none")
+        self.assertEqual(self.state([reviewed("green")], vcfg(required=False)), "none")
+
+    def test_missing_without_a_review_or_for_another_head(self):
+        self.assertEqual(self.state([]), "missing")
+        self.assertEqual(self.state([reviewed("green", "a" * 40)]), "missing")
+
+    def test_marker_result_is_read(self):
+        for value in ("green", "red", "timeout"):
+            self.assertEqual(self.state([reviewed(value)]), value)
+
+    def test_owner_is_looked_up_only_when_needed(self):
+        runner = FakeRunner({"gh repo view --json owner": json.dumps({"owner": {"login": OWNER}})})
+        self.assertEqual(self.state([reviewed("red")], owner=None, runner=runner), "red")
+        self.assertEqual(self.state([reviewed("red")], vcfg(""), owner=None), "none")
+
+    def test_in_review_entry_carries_verify(self):
+        pr = {"number": 30, "headRefName": "issue-1-x", "isDraft": False, "mergeable": "MERGEABLE",
+              "headRefOid": HEAD, "comments": [reviewed("timeout")],
+              "closingIssuesReferences": [{"number": 1}], "statusCheckRollup": []}
+        entry = snap([issue(1, "in-review")], config_=vcfg(), prs=[pr])["in_review"][0]
+        self.assertEqual(entry["verify"], "timeout")
 
 
 class PrStateTests(unittest.TestCase):
