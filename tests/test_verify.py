@@ -158,3 +158,55 @@ class ExecuteTest(unittest.TestCase):
 
     def test_timeout(self):
         self.assertIsNone(verify.execute("sleep 5", self._tmp.name, self.log, 1))
+
+
+class CmdVerifyTest(unittest.TestCase):
+    def run_cmd(self, args, out):
+        import contextlib
+        import io
+        from unittest import mock
+        from baton import cli
+        buf, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value={}), \
+                mock.patch.object(cli, "_repo_name", return_value="o/r"), \
+                mock.patch.object(cli.verify, "verify", return_value=out) as v, \
+                contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+            code = cli.cmd_verify(args)
+        return code, buf.getvalue(), err.getvalue(), v
+
+    def result(self, state, exit_status):
+        return {"result": state, "exit": exit_status, "seconds": 7, "commit": SHA,
+                "log": "/logs/x.log", "tail": ["one", "two"]}
+
+    def test_green_output_and_codes(self):
+        code, out, _, v = self.run_cmd(["12", "/w"], self.result("green", 0))
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines(), [
+            "verify green commit=aaaaaaa exit=0 duration=7s", "log: /logs/x.log",
+            "--- last 40 lines ---", "one", "two"])
+        self.assertEqual(v.call_args.args[2:], (12, "/w", "o", "r"))
+
+    def test_red_and_timeout(self):
+        code, out, _, _ = self.run_cmd(["12", "/w"], self.result("red", 2))
+        self.assertEqual(code, 1)
+        self.assertIn("exit=2", out)
+        code, out, _, _ = self.run_cmd(["12", "/w"], self.result("timeout", None))
+        self.assertEqual(code, 3)
+        self.assertIn("exit=-", out)
+
+    def test_usage(self):
+        for args in ([], ["12"], ["x", "/w"], ["1", "/w", "z"]):
+            code, _, err, _ = self.run_cmd(args, self.result("green", 0))
+            self.assertEqual(code, 64)
+            self.assertIn("usage", err)
+
+    def test_main_reports_refusal(self):
+        import io
+        import contextlib
+        from unittest import mock
+        from baton import cli
+        err = io.StringIO()
+        with mock.patch.dict(cli.COMMANDS, {"verify": mock.Mock(side_effect=verify.VerifyError("no"))}), \
+                contextlib.redirect_stderr(err):
+            self.assertEqual(cli.main(["verify", "1", "/w"]), 1)
+        self.assertEqual(err.getvalue().strip(), "baton: no")
