@@ -63,10 +63,15 @@ task by task.
    If the plan is still a file on the branch (the older way), do not review its prose as code,
    and do not flag its ticks or its later removal by `merge-pr`.
 
-4. **Run the verification command** from the plan file's `## Verification` (or the issue, for an
-   older issue or a spike) or the brief, unless the brief says reviewers
-   must not (a long or resource-heavy suite). Never re-run a long suite that CI runs anyway. Send
-   the output to a file and read the summary.
+4. **Run the verification command.** When `verify` in `baton pr-state <PR>` is not `none` (the brief sets
+   `verify.command`), run `baton verify <PR> <worktree>` in the background. It refuses unless the worktree is
+   at the pull request's head and clean. It returns on stdout a summary line, the path of the full log and the last 40
+   lines of output; search that log with `rg -n` or `sed -n` to find and debug failures, and never read it whole.
+   `baton review post` records the result (`green`, `red`, `timeout` or `missing`) in the review's marker and
+   refuses an approval unless it is `green`. Timeouts, repeated rounds and diagnosis follow #62. With no
+   `verify.command`, run the plan's `## Verification` (or the issue's, for an older issue or a spike) unless the
+   brief says reviewers must not; never re-run a long suite that CI runs anyway. Send the output to a file and
+   read the summary.
 
    Read the pull request's draft and CI state with `baton pr-state <PR>`. `draft` is the pull
    request's own draft state and `ci` is judged on the newest run of each check, so a `skipped`
