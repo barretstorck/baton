@@ -174,7 +174,11 @@ class GateTest(unittest.TestCase):
             "gh api graphql -f query='mutation { updateIssue(input: {id: \"X\", stateReason: COMPLETED}) "
             "{ clientMutationId } }'",
             "gh api graphql -f query='mutation($state: IssueState) { updateIssue(input: {id: \"X\", "
-            "state: $state}) { clientMutationId } }' -f state=CLOSED"]
+            "state: $state}) { clientMutationId } }' -f state=CLOSED",
+            "gh api graphql -f query='mutation { updateIssue(input: {id: \"X\", state , : CLOSED}) "
+            "{ clientMutationId } }'",
+            "gh api graphql -f query='mutation { updateIssue(input: {id: \"X\", state # c\n: CLOSED}) "
+            "{ clientMutationId } }'"]
         for endpoint in ("/graphql", "https://api.github.com/graphql"):
             cmds.append(f"gh api {endpoint} -f query='mutation {{ closeIssue(input: {{id: \"X\"}}) "
                         f"{{ clientMutationId }} }}'")
