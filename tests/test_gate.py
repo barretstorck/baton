@@ -67,6 +67,17 @@ class GateTest(unittest.TestCase):
             self.assertTrue(any("not a valid JSON object" in p
                                 for p in self._api(patch, p_json=text)), text)
 
+    def test_input_file_graphql_decoded_query_is_checked(self):
+        cmd = "gh api graphql --input q.json"
+        newline = json.dumps({"query": '\nmutation { updateIssue(input:{id:"x", state:CLOSED}){x} }'})
+        self.assertTrue(self._closes(self._api(cmd, q_json=newline)))
+        escaped = '{"query": "mutation { \\u0063loseIssue(input: {issueId: \\"x\\"}) { x } }"}'
+        self.assertTrue(self._closes(self._api(cmd, q_json=escaped)))
+        readonly = json.dumps({"query": "query { viewer { login } }"})
+        self.assertFalse(self._closes(self._api(cmd, q_json=readonly)))
+        self.assertTrue(any("not a valid JSON object" in p
+                            for p in self._api(cmd, q_json="mutation { closeIssue }")))
+
     def test_input_file_graphql_is_refused(self):
         cmd = "gh api graphql --input q.json"
         body = json.dumps({"query": 'mutation { closeIssue(input: {issueId: "x"}) { clientMutationId } }'})

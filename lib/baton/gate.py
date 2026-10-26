@@ -62,7 +62,7 @@ _API_MERGE = re.compile(r"/pulls/\d+/merge\b")
 _API_STATE_ENDPOINT = re.compile(r"(?:^|/)(?:issues|pulls)/\d+/?(?:\?|$)")
 _STATE_KEYS = ("state", "state_reason")
 _UNPARSABLE_MESSAGE = (
-    "a REST payload file that is not a valid JSON object cannot be checked for state changes; "
+    "a payload file that is not a valid JSON object cannot be checked for state changes; "
     "write valid JSON, or use `baton close` / `baton reopen` to change an issue's state"
 )
 
@@ -84,6 +84,22 @@ def _rest_payload_problem(text):
     if not isinstance(data, dict):
         return _UNPARSABLE_MESSAGE
     return _CLOSE_MESSAGE if _has_state_key(data) else None
+
+
+def _graphql_input_problem(text):
+    """A refusal for a GraphQL `--input` JSON payload whose query closes or reopens, or cannot be read."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return _UNPARSABLE_MESSAGE
+    if not isinstance(data, dict):
+        return _UNPARSABLE_MESSAGE
+    query = data.get("query")
+    if _graphql_sets_state(text) or (isinstance(query, str) and _graphql_sets_state(query)):
+        return _CLOSE_MESSAGE
+    return None
+
+
 _API_CLOSE_MUTATION = re.compile(r"\b(?:closeIssue|reopenIssue|closePullRequest|reopenPullRequest)\b")
 _API_MUTATION = re.compile(r"\bmutation\b")
 _API_STATE_ARG = re.compile(r"(?<![$\w])state(?:Reason)?(?:[\s,]|#[^\n\r]*(?:[\r\n]|$))*:")
@@ -270,14 +286,14 @@ def _inspect_gh_api(call, item):
         has_payload = True
         if flag == "--input":
             item.files.append((value, False))
-            payload_files.append(value)
+            payload_files.append((value, True))
             continue
         key, _, content = value.partition("=")
         state_field = state_field or key in ("state", "state_reason")
         close_mutation = close_mutation or _graphql_sets_state(content)
         if flag in _API_TYPED_OPTS and content.startswith("@"):
             item.files.append((content[1:], key == "body"))
-            payload_files.append(content[1:])
+            payload_files.append((content[1:], False))
             continue
         item.values.append(content)
         item.texts.append(value)
@@ -286,8 +302,8 @@ def _inspect_gh_api(call, item):
     item.comment = item.comment and has_payload
     kind = "graphql" if graphql else "rest" if state_endpoint else None
     if kind:
-        for path in payload_files:
-            item.state_files[path] = kind
+        for path, is_input in payload_files:
+            item.state_files[path] = "graphql-input" if kind == "graphql" and is_input else kind
     if (state_endpoint and state_field) or (graphql and close_mutation):
         item.problems.append(_CLOSE_MESSAGE)
 
@@ -408,6 +424,10 @@ def decide(command, cwd, terms):
             kind = item.state_files.get(path)
             if kind == "graphql" and _graphql_sets_state(text):
                 problems.append(_CLOSE_MESSAGE)
+            elif kind == "graphql-input":
+                problem = _graphql_input_problem(text)
+                if problem:
+                    problems.append(problem)
             elif kind == "rest":
                 problem = _rest_payload_problem(text)
                 if problem:
