@@ -17,6 +17,12 @@ class TemplateTest(unittest.TestCase):
         self.assertLess(text.index("  - Provides:"), text.index("  - Provides (as built):"))
         self.assertLess(text.index("  - Provides (as built):"), text.index("  - Check:"))
 
+    def test_develop_skill_has_scratch_file_rule(self):
+        text = (ROOT / "skills/develop/SKILL.md").read_text()
+        self.assertIn("\n## Scratch files\n", text)
+        self.assertIn("root-owned", text)
+        self.assertLess(text.index("## Scratch files"), text.index("\n## Return\n"))
+
     def test_plugin_files_exist(self):
         for path in (".claude-plugin/plugin.json", "hooks/hooks.json",
                      "skills/init/SKILL.md", "skills/review/SKILL.md", "agents/baton-developer.md",
