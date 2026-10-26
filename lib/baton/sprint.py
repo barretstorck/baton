@@ -265,23 +265,26 @@ def snapshot(cfg, runner, milestone=None):
 
     ready, busy_files, waiting = [], [], set()
     plan_cache = {}
-    tracked = []  # the default branch's files, fetched once and only when a plan needs them
+    tracked = []  # the default branch's (files, reason it could not be listed), fetched once and only when a plan needs them
 
     def default_branch_files():
         if not tracked:
             try:
-                tracked.append(tracked_paths(runner, branch))
-            except RunError:
-                tracked.append(set())
+                files = tracked_paths(runner, branch)
+                reason = None if files else "the default branch listing is empty"
+            except RunError as err:
+                files, reason = set(), f"listing the default branch failed: {err}"
+            tracked.append((files, reason))
         return tracked[0]
 
     def staleness(text, found):
         if not found or not found["tasks"]:
             return None
-        files = default_branch_files()
+        files, skipped = default_branch_files()
         named = checklist.named_paths(text)
         base = found.get("written_against")
-        return {"missing_paths": [path for path in named if path not in files] if files else [],
+        return {"missing_paths": None if skipped else [p for p in named if p not in files],
+                "path_check_skipped": skipped,
                 "plan_behind": commits_behind(runner, base, branch) if base else None}
 
     def behind_default(pr):
@@ -371,7 +374,7 @@ def snapshot(cfg, runner, milestone=None):
 
     def missing_count(number):
         stale = (result["progress"].get(str(number)) or {}).get("stale")
-        return len(stale["missing_paths"]) if stale else 0
+        return len(stale["missing_paths"] or []) if stale else 0
 
     red = result["default_branch"]["state"] == "red"
     slots = max(result["parallel"] - len(result["in_dev"]), 0)

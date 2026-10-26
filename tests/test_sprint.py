@@ -327,7 +327,9 @@ class SnapshotTest(unittest.TestCase):
                           "next_task_url": None,
                           "review": {"round": 1, "done": 0, "total": 1, "next": "1.1"},
                           "review_without_tasks": False,
-                          "stale": {"missing_paths": [], "plan_behind": 2},
+                          "stale": {"missing_paths": None,
+                                    "path_check_skipped": "the default branch listing is empty",
+                                    "plan_behind": 2},
                           "branch_behind": 2, "merge_first": False})
         self.assertEqual(found["progress"]["5"]["plan"], None)
         self.assertIsNone(found["progress"]["5"]["stale"])
@@ -760,7 +762,8 @@ class DefaultBranchStateTest(unittest.TestCase):
     def test_plan_naming_two_missing_paths_is_held(self):
         result, _ = self._stale_snap("`lib/gone.py`, `lib/also_gone.py`, `lib/keep.py`")
         self.assertEqual(result["progress"]["7"]["stale"],
-                         {"missing_paths": ["lib/also_gone.py", "lib/gone.py"], "plan_behind": 4})
+                         {"missing_paths": ["lib/also_gone.py", "lib/gone.py"],
+                          "path_check_skipped": None, "plan_behind": 4})
         self.assertEqual(result["dispatchable"], [])
         self.assertEqual(result["held"],
                          [{"number": 7, "reason": "plan names 2 missing paths; re-refine"}])
