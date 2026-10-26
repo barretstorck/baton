@@ -211,6 +211,32 @@ class IssueForgeTest(unittest.TestCase):
             checklist.issue_plan(issue_runner("## Context\nx\n"), 7)
 
 
+REF_LINK = planfile.link_line("o/r", "refs/plans/7", "docs/baton/plans/7-x.md")
+
+
+class TickedByTest(unittest.TestCase):
+    def plan(self, link, ticked):
+        from unittest import mock
+        runner = issue_runner(link + "\n")
+        with mock.patch.object(planfile, "read", return_value=FILE), \
+                mock.patch.object(planfile, "tick_commits", return_value=ticked):
+            return checklist.issue_plan(runner, 7)
+
+    def test_ref_plan_marks_done_tasks_only(self):
+        found = self.plan(REF_LINK, {"1": "abc1234 Task 1: A"})
+        self.assertEqual(found["tasks"][0]["ticked_by"], "abc1234 Task 1: A")
+        self.assertNotIn("ticked_by", found["tasks"][1])
+
+    def test_branch_plan_has_no_ticked_by(self):
+        found = self.plan(planfile.link_line("o/r", "issue-7-x", "docs/baton/plans/7-x.md"),
+                          {"1": "abc1234 Task 1: A"})
+        self.assertTrue(all("ticked_by" not in t for t in found["tasks"]))
+
+    def test_body_plan_has_no_ticked_by(self):
+        found = checklist.issue_plan(issue_runner(), 7)
+        self.assertTrue(all("ticked_by" not in t for t in found["tasks"]))
+
+
 LINK = planfile.link_line("o/r", "issue-7-x", "docs/baton/plans/7-x.md")
 FILE = "## Pattern\nx\n\n## Plan\n\nWritten against: " + SHA + "\n\n- [x] **1. A**\n- [ ] **2. B**\n"
 

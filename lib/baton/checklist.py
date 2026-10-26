@@ -233,6 +233,7 @@ def plan_source(runner, body, cache=None, docs_dir=None):
 
 
 def issue_plan(runner, number, docs_dir=None):
+    from . import planfile
     text, link = plan_source(runner, issue_body(runner, number), docs_dir=docs_dir)
     found = plan(text)
     if found is None:
@@ -241,6 +242,11 @@ def issue_plan(runner, number, docs_dir=None):
     found["source"] = "file" if link else "body"
     if link:
         found["ref"], found["path"] = link["ref"], link["path"]
+        if link["kind"] == "ref":
+            ticked = planfile.tick_commits(runner, link["ref"], link["path"])
+            for task in found["tasks"]:
+                if task["done"] and task["id"] in ticked:
+                    task["ticked_by"] = ticked[task["id"]]
     return found
 
 
