@@ -62,6 +62,21 @@ def parse(section):
     return tasks
 
 
+def task_line(text, task_id):
+    """1-based line number of task `task_id`'s box in the `## Plan` section of `text`, or None."""
+    text = text or ""
+    where = span(text, "plan")
+    if where is None:
+        return None
+    number = text.count("\n", 0, where[0]) + 1
+    for line in text[where[0]:where[1]].splitlines():
+        match = _match(line)
+        if match and match.group(2) == task_id:
+            return number
+        number += 1
+    return None
+
+
 def tasks_under(text, heading):
     where = span(text, heading)
     return parse(text[where[0]:where[1]]) if where else []

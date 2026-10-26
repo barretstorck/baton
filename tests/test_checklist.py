@@ -70,6 +70,23 @@ class ParseTest(unittest.TestCase):
                          {"done": 1, "total": 3, "next": "2"})
 
 
+class TaskLineTest(unittest.TestCase):
+    def test_line_of_each_task(self):
+        lines = BODY.splitlines()
+        for task_id in ("1", "2", "3"):
+            number = checklist.task_line(BODY, task_id)
+            self.assertTrue(lines[number - 1].startswith(f"- [") and f"**{task_id}." in lines[number - 1])
+
+    def test_unknown_task_or_no_plan(self):
+        self.assertIsNone(checklist.task_line(BODY, "9"))
+        self.assertIsNone(checklist.task_line("## Context\nx\n", "1"))
+        self.assertIsNone(checklist.task_line("", "1"))
+
+    def test_crlf(self):
+        crlf = BODY.replace("\n", "\r\n")
+        self.assertEqual(checklist.task_line(crlf, "2"), checklist.task_line(BODY, "2"))
+
+
 class TickTest(unittest.TestCase):
     def test_ticks_only_that_box(self):
         new, changed = checklist.tick(BODY, "plan", "2")
