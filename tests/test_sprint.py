@@ -778,6 +778,37 @@ class DefaultBranchStateTest(unittest.TestCase):
         self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], ["lib/gone.py"])
         self.assertEqual(result["dispatchable"], [7])
 
+    def _plan_item(self):
+        item = issue(7, "ready", "deliverable")
+        item["body"] += ("## Plan\nWritten against: " + "c" * 40 + "\n\n- [ ] **1. A**\n"
+                         "  - Files: `lib/gone.py`, `lib/also_gone.py`\n")
+        return item
+
+    def test_failed_listing_says_the_check_did_not_run(self):
+        class Failing(FakeRunner):
+            def __call__(self, argv, cwd=None, input=None):
+                if argv[:2] == ["git", "ls-tree"]:
+                    raise run_module.RunError("fatal: not a tree object")
+                return super().__call__(argv, cwd=cwd, input=input)
+        runner = Failing(replies([self._plan_item()], extra={"git rev-list": "4\n"}))
+        result = sprint.snapshot(cfg(), runner)
+        stale = result["progress"]["7"]["stale"]
+        self.assertIsNone(stale["missing_paths"])
+        self.assertTrue(stale["path_check_skipped"].startswith("listing the default branch failed"))
+        self.assertEqual(stale["plan_behind"], 4)
+        self.assertEqual(result["dispatchable"], [7])
+        self.assertEqual(result["held"], [])
+
+    def test_empty_listing_says_the_check_did_not_run(self):
+        runner = FakeRunner(replies([self._plan_item()],
+                                    extra={"git ls-tree": "", "git rev-list": "4\n"}))
+        result = sprint.snapshot(cfg(), runner)
+        self.assertEqual(result["progress"]["7"]["stale"],
+                         {"missing_paths": None,
+                          "path_check_skipped": "the default branch listing is empty",
+                          "plan_behind": 4})
+        self.assertEqual(result["dispatchable"], [7])
+
     def test_in_dev_issue_with_missing_paths_is_reported_not_held(self):
         result, _ = self._stale_snap("`lib/gone.py`, `lib/also_gone.py`", status="in-dev")
         self.assertEqual(len(result["progress"]["7"]["stale"]["missing_paths"]), 2)
