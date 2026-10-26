@@ -246,7 +246,7 @@ def _after_merge(pr, cfg, runner, notes):
             continue
         force = ["--force", "--force"] if locked else ["--force"]
         runner(["git", "worktree", "remove", *force, path])
-    if not keep:
+    if not keep and runner(["git", "branch", "--list", branch]).strip():
         runner(["git", "branch", "-D", branch])
     runner(["git", "push", "origin", "--delete", branch])
 
