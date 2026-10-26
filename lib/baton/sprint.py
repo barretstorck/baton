@@ -215,6 +215,17 @@ def _blocker_open(number, by_number, runner):
         return True
 
 
+def _next_task_url(owner, name, link, text, found):
+    """Link to the next open task's box in a plan kept on a ref, else None."""
+    if not link or link.get("kind") != "ref" or not found or not found["next"]:
+        return None
+    line = checklist.task_line(text, found["next"])
+    if line is None:
+        return None
+    return (f"https://github.com/{owner}/{name}/blob/{link['ref']}/{link['path']}"
+            f"?plain=1#L{line}")
+
+
 def snapshot(cfg, runner, milestone=None):
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     owner, branch = repo["owner"]["login"], repo["defaultBranchRef"]["name"]
@@ -229,6 +240,7 @@ def snapshot(cfg, runner, milestone=None):
         "repair_issue": None, "parallel": 0, "free_slots": 0, "in_dev": [], "in_review": [],
         "verification": [], "re_refine": [], "answered": [], "waiting_on_maintainer": [],
         "dispatchable": [], "held": [], "finished": False, "issues": [], "progress": {},
+        "waiting_links": {},
     }
     if chosen is None:
         return result
@@ -269,10 +281,10 @@ def snapshot(cfg, runner, milestone=None):
                 and item["state"] == "OPEN":
             pr = pr_for.get(number)
             try:
-                text, _ = checklist.plan_source(runner, item.get("body") or "", plan_cache,
+                text, link = checklist.plan_source(runner, item.get("body") or "", plan_cache,
                                                   cfg.data["docs"]["dir"])
             except checklist.TaskError:
-                text = ""
+                text, link = "", None
             found = checklist.plan(text)
             fixes = review.review_tasks(pr, owner) if pr else None
             spike = cfg.label("type:spike") in labels
@@ -281,6 +293,7 @@ def snapshot(cfg, runner, milestone=None):
                 "spike": spike,
                 "unplanned": not spike and not (found and found["tasks"]),
                 "plan": checklist.progress(found["tasks"]) if found else None,
+                "next_task_url": _next_task_url(owner, repo["name"], link, text, found),
                 "review": ({key: fixes[key] for key in ("round", "done", "total", "next")}
                            if fixes and fixes["total"] else None),
                 "review_without_tasks": bool(fixes and fixes["review"] and not fixes["total"]),
@@ -349,6 +362,10 @@ def snapshot(cfg, runner, milestone=None):
         result["held"].append({"number": number, "reason": reason})
 
     result["waiting_on_maintainer"] = sorted(waiting)
+    for number in result["waiting_on_maintainer"]:
+        pending = comment.pending_answers(by_number[number], owner)
+        result["waiting_links"][str(number)] = (
+            pending["question"] if pending["question"] and not pending["answers"] else None)
     result["finished"] = bool(issues) and all(
         entry["status"] == "status:complete" or entry["number"] in waiting
         for entry in result["issues"])
