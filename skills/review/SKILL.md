@@ -121,6 +121,14 @@ task by task.
    If you cannot post at all, put the body in your final report inside a block fenced with
    ```` ```baton-review <approve|changes> <full head sha> ````.
 
+## Re-approval
+
+When the pull request is already `approved` but `verify` reads `missing` because its head moved only by
+merging the default branch in, do a short re-approval: run `baton verify <PR> <worktree>` on the new head,
+check that the merge brought in nothing unexpected (conflict resolutions, files outside the change),
+and post `approve` (or `changes`) for the new head with `baton review post`, which records the new
+`verify` result in the marker.
+
 ## The review body
 
 ```

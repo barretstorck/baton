@@ -140,6 +140,10 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   review's tasks to a developer, re-draft the pull request as for `changes` (`gh pr ready <PR>
   --undo` when `draft` is false) and work the tasks (step 7).
 - **`approved`**, or `not-required`:
+  0. `approved` with `verify` `missing` (the brief sets `verify.command`; the head moved after the
+     approval, typically by merging the default branch in): dispatch a reviewer for a short
+     re-approval (see "Dispatching a reviewer"), and merge only once the new review shows `verify`
+     `green`. Never run `baton verify` or post a review yourself.
   1. Still a draft (a fallback; normally ready already): `gh pr ready <PR>`. CI starts now; look
      again next pass.
   2. `ci` is `pending`: wait.

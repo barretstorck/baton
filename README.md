@@ -146,6 +146,7 @@ Each run writes its log and a result file to `<BATON_HOME or ~/.baton>/<owner>-<
 every checkout; `baton merge-pr` deletes the folder after a merge. The result goes into the review's marker
 (`baton review post` refuses an approval unless it is `green`), and `baton pr-state` and `baton sprint-status`
 show it as `verify`. With `review.required: false` no review carries the result, so `verify` reads `none`.
+When an approved pull request's head moves only by merging the default branch in, the reviewer re-approves it briefly: it runs `baton verify` again and posts a new review for the new head.
 
 ## Rules the gate enforces in a Baton repository
 
