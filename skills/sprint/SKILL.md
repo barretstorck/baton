@@ -198,7 +198,9 @@ For each issue in `verification`:
 - `default_branch.state` is `green` on a commit that includes its merge:
   `baton set-status <N> status:complete`.
 - `pending`: a push run on the head commit is queued or in progress (or just merged and not yet
-  registered); wait and read `sprint-status` again.
+  registered); wait and read `sprint-status` again. While `default_branch.grace_ends_in_seconds`
+  is a number, `pending` only means no run has registered yet and the grace period is still
+  running; it is null in every other case. The state values themselves are unchanged.
 - `none`, which now means no push workflow exists or no run was triggered for that commit (the
   repository runs CI only on pull requests): `merge-pr` already required a green run on the pull
   request's head commit, so set `status:complete` straight away.
