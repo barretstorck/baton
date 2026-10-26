@@ -160,6 +160,15 @@ every checkout; `baton merge-pr` deletes the folder after a merge. The result go
 show it as `verify`. With `review.required: false` no review carries the result, so `verify` reads `none`.
 When an approved pull request's head moves only by merging the default branch in, the reviewer re-approves it briefly: it runs `baton verify` again and posts a new review for the new head.
 
+## Forbidden diff patterns
+
+`forbid_added` in `.baton/brief.md` maps a path glob to a regular expression, for example
+`"pyproject.toml": "per-file-ignores"` (default `{}`). The `pre-commit` and `pre-push` hooks refuse a
+commit or push that adds a line matching the expression in a file matching the glob, and name the
+line; `baton merge-pr` repeats the check over the whole pull request diff. A plan that needs such a
+line says so with `Allows: forbid_added "<glob>"` (the glob as written in `forbid_added`); only
+then is that rule skipped. Inline `# noqa` comments are not judged.
+
 ## Rules the gate enforces in a Baton repository
 
 - Comments posted by agents must start with `<!-- baton:<role>:<kind> -->`.

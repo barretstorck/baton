@@ -20,8 +20,68 @@ def hooks_dir(repo):
 
 def added_text(patch):
     """The lines a patch adds, without diff headers, hunk headers or context."""
-    return "\n".join(line[1:] for line in patch.splitlines()
+    return "\n".join(line[1:] for line in patch.split("\n")
                      if line.startswith("+") and not line.startswith("+++"))
+
+
+_ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11, "\\": 92, '"': 34}
+
+
+def unquote_path(name):
+    """Undo the C-style quoting of a path ("..." with backslash and octal escapes).
+
+    A name that does not start with a double quote is returned as it is. Raises ValueError for
+    a quoted name that cannot be parsed or is not UTF-8.
+    """
+    if not name.startswith('"'):
+        return name
+    if len(name) < 2 or not name.endswith('"'):
+        raise ValueError(name)
+    body, out, i = name[1:-1], bytearray(), 0
+    while i < len(body):
+        ch = body[i]
+        if ch == '"':
+            raise ValueError(name)
+        if ch != "\\":
+            out += ch.encode("utf-8")
+            i += 1
+            continue
+        nxt = body[i + 1:i + 2]
+        if nxt and nxt in "01234567":
+            digits = body[i + 1:i + 4]
+            if len(digits) < 3 or any(d not in "01234567" for d in digits) or int(digits, 8) > 255:
+                raise ValueError(name)
+            out.append(int(digits, 8))
+            i += 4
+        elif nxt in _ESCAPES:
+            out.append(_ESCAPES[nxt])
+            i += 2
+        else:
+            raise ValueError(name)
+    try:
+        return out.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError(name) from None
+
+
+def _new_path(line):
+    """(path, parsed) from a "+++ " header; an unparsable quoted name is kept raw, parsed False."""
+    name = line[4:].rstrip("\r")
+    if not name.startswith('"'):
+        name = name.split("\t")[0]
+    try:
+        name = unquote_path(name)
+    except ValueError:
+        return name, False
+    if name == "/dev/null":
+        return None, True
+    return (name[2:] if name.startswith("b/") else name), True
+
+
+def unparsable_headers(patch):
+    """The raw "+++ " headers whose quoted path cannot be decoded."""
+    return [line for line in patch.split("\n")
+            if line.startswith("+++ ") and not _new_path(line)[1]]
 
 
 def added_by_file(patch):
@@ -39,7 +99,7 @@ def added_by_file(patch):
         if path is not None and added:
             entries.append((path, "\n".join(added)))
 
-    for line in patch.splitlines():
+    for line in patch.split("\n"):
         if line.startswith("diff --git "):
             flush()
             path, added, in_hunk = None, [], False
@@ -47,8 +107,7 @@ def added_by_file(patch):
             if line.startswith("+"):
                 added.append(line[1:])
         elif line.startswith("+++ "):
-            name = line[4:].split("\t")[0]
-            path = None if name == "/dev/null" else name[2:] if name.startswith("b/") else name
+            path = _new_path(line)[0]
         elif line.startswith("@@"):
             in_hunk = True
     flush()
@@ -67,7 +126,27 @@ def _image_problems(cfg, paths):
     return problems
 
 
-def _check(cfg, patch, new_files, terms, messages=""):
+def _forbid_problems(cfg, patch, cwd, branch):
+    rules = cfg.data["forbid_added"]
+    if not rules:
+        return []
+    from . import forbid
+
+    def runner(cmd):
+        return run.run(["git", "-C", str(cwd)] + cmd[1:])
+
+    allowed = forbid.allowed_globs(forbid.plan_text(runner, cfg, branch))
+    return forbid.violations(patch, rules, allowed)
+
+
+def _current_branch(cwd):
+    try:
+        return run.run(["git", "-C", str(cwd), "branch", "--show-current"]).strip()
+    except run.RunError:
+        return ""
+
+
+def _check(cfg, patch, new_files, terms, messages="", cwd=".", branch=""):
     allow = cfg.data["privacy_allow"]
     findings = scan.scan_text("\n".join([messages] + new_files), terms, allow)
     for path, text in added_by_file(patch):
@@ -76,7 +155,7 @@ def _check(cfg, patch, new_files, terms, messages=""):
     kinds = sorted({finding.kind for finding in findings})
     problems = [f"privacy: {kind} in added lines, new file names or commit message"
                 for kind in kinds]
-    return problems + _image_problems(cfg, new_files)
+    return problems + _image_problems(cfg, new_files) + _forbid_problems(cfg, patch, cwd, branch)
 
 
 def _names(output):
@@ -90,7 +169,7 @@ def pre_commit(cwd, terms):
     git = ["git", "-C", cwd, "-c", "core.quotePath=false"]
     patch = run.run(git + ["diff", "--cached", "-U0", "--no-color"])
     new_files = _names(run.run(git + ["diff", "--cached", "--name-only", "--diff-filter=AR"]))
-    return _check(cfg, patch, new_files, terms)
+    return _check(cfg, patch, new_files, terms, cwd=cwd, branch=_current_branch(cwd))
 
 
 def pre_push(cwd, stdin_text, terms):
@@ -103,7 +182,7 @@ def pre_push(cwd, stdin_text, terms):
         parts = line.split()
         if len(parts) != 4:
             continue
-        _, local_sha, _, remote_sha = parts
+        _, local_sha, remote_ref, remote_sha = parts
         if local_sha == ZEROS:
             continue
         revs = [local_sha, "--not", "--remotes"] if remote_sha == ZEROS else [f"{remote_sha}..{local_sha}"]
@@ -111,7 +190,9 @@ def pre_push(cwd, stdin_text, terms):
         messages = run.run(git + ["log", "--format=%B"] + revs)
         new_files = _names(run.run(
             git + ["log", "--diff-filter=AR", "--name-only", "--format="] + revs))
-        problems.extend(_check(cfg, patch, new_files, terms, messages))
+        branch = (remote_ref[len("refs/heads/"):] if remote_ref.startswith("refs/heads/")
+                  else _current_branch(cwd))
+        problems.extend(_check(cfg, patch, new_files, terms, messages, cwd=cwd, branch=branch))
     return sorted(set(problems))
 
 

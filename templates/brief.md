@@ -39,6 +39,7 @@ protected_paths: [".github/", ".baton/", ".claude/"]
 fixtures_paths: []            # the only places new image files may be added
 privacy_allow: []             # literal strings the privacy scan should ignore
                               # (Python dependency files are already exempt from private-ip: see README)
+forbid_added: {}              # path glob: regex; a commit or pull request adding a matching line to a matching file is refused (see Conventions)
 budgets: {}
 ---
 # Baton brief
@@ -75,6 +76,15 @@ command into tasks that delete or move modules.
 ## Conventions
 
 - (branching, commit style, documentation rules)
+
+Forbidden diff patterns go in the front matter as `forbid_added`, a mapping from a path glob to a
+regular expression matched against each added line of the files the glob matches. Quote the regex.
+For example, to refuse a new ruff per-file ignore for a `src/` module:
+
+    forbid_added:
+      "pyproject.toml": '^\s*"src/[^"]*"\s*=\s*\['
+
+A plan task can allow a glob with a line `Allows: forbid_added "<glob>"`.
 
 Local verification and CI are two settings, `verify.command` and `merge.allow_no_ci`, which give four cases:
 

@@ -110,7 +110,10 @@ filters, send long output to a file, chain related commands, wait for a long run
    long output to a file and read the summary; it must pass. Never run the repository's full verification
    suite (the brief's `verify.command`) yourself: the reviewer runs it with `baton verify`.
 
-6. **Commit and push.** Stage the code, `git commit -m "Task <n>: <title>"`, then push the branch
+6. **Commit and push.** If the hook refuses the commit because it adds a line the brief's
+   `forbid_added` forbids, remove that entry; do not bypass the hook or edit the rule. Only an
+   `Allows: forbid_added "<glob>"` line in your task's brief permits it. If you cannot do the task
+   without it, return `QUESTION`. Stage the code, `git commit -m "Task <n>: <title>"`, then push the branch
    and the tick together, for every task, task 1 included:
    `git push --atomic origin HEAD:refs/heads/<branch> <sha>:refs/plans/<N>` (`<sha>` is the commit
    `baton task done` printed). Your checkout is detached, so there is no `-u`. The push only

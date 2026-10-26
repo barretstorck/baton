@@ -34,6 +34,18 @@ class ConfigTest(unittest.TestCase):
         self.assertIn("In Progress", cfg.status_labels())
         self.assertEqual(len(cfg.status_labels()), 7)
 
+    def test_forbid_added_default_and_valid(self):
+        self.assertEqual(config.DEFAULTS["forbid_added"], {})
+        brief = "---\nforbid_added:\n  \"pyproject.toml\": '^\\s*\"src/[^\"]*\"\\s*=\\s*\\['\n---\n"
+        cfg = config.load(str(make_repo(brief)))
+        self.assertEqual(list(cfg.data["forbid_added"]), ["pyproject.toml"])
+
+    def test_forbid_added_invalid_raises(self):
+        for meta in ('forbid_added: []', 'forbid_added:\n  "a": 5', 'forbid_added:\n  "a": "("'):
+            with self.subTest(meta=meta):
+                with self.assertRaises(config.ConfigError):
+                    config.load(str(make_repo(f"---\n{meta}\n---\n")))
+
     def test_bad_front_matter_raises(self):
         with self.assertRaises(config.ConfigError):
             config.load(str(make_repo("---\nnot a mapping\n---\n")))

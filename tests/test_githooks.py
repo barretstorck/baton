@@ -42,6 +42,23 @@ class AddedTextTest(unittest.TestCase):
 
 
 class AddedByFileTest(unittest.TestCase):
+    def test_odd_line_separators_stay_inside_the_added_line(self):
+        for sep in ("\x0c", "\x85", "\u2028"):
+            patch = ("diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -0,0 +1 @@\n"
+                     f"+x{sep}secret\n")
+            self.assertEqual(githooks.added_by_file(patch), [("a.py", f"x{sep}secret")])
+            self.assertEqual(githooks.added_text(patch), f"x{sep}secret")
+
+    def test_quoted_names_are_unquoted(self):
+        patch = ('diff --git "a/caf\\303\\251 \\"x\\".py" "b/caf\\303\\251 \\"x\\".py"\n'
+                 '--- /dev/null\n+++ "b/caf\\303\\251 \\"x\\"\\t.py"\n@@ -0,0 +1 @@\n+bad\n')
+        self.assertEqual(githooks.added_by_file(patch), [('caf\u00e9 "x"\t.py', "bad")])
+
+    def test_unparsable_quoted_name_is_flagged(self):
+        patch = 'diff --git a/x b/x\n--- a/x\n+++ "b/\\377.py"\n@@ -0,0 +1 @@\n+bad\n'
+        self.assertEqual(githooks.unparsable_headers(patch), ['+++ "b/\\377.py"'])
+        self.assertEqual(githooks.added_by_file(patch), [('"b/\\377.py"', "bad")])
+
     def test_splits_per_file_and_keeps_plus_lines_in_hunks(self):
         patch = ("diff --git a/one.txt b/one.txt\n--- a/one.txt\n+++ b/one.txt\n"
                  "@@ -1 +1,2 @@\n-old\n+new\n+++ not a header\n"
@@ -161,6 +178,66 @@ class DependencyFileTest(unittest.TestCase):
         head = git(repo, "rev-parse", "HEAD")
         line = f"refs/heads/main {head} refs/heads/main {ZEROS}\n"
         self.assertEqual(githooks.pre_push(repo, line, TERMS), [])
+
+
+FORBID = '---\nforbid_added:\n  "pyproject.toml": \'^\\s*"src/\'\n---\n'
+PLAN_PATH = "docs/baton/plans/7-x.md"
+ALLOWS = '- [ ] **1. t**\n  - Allows: forbid_added "pyproject.toml"\n'
+
+
+def add_plan(repo, text):
+    write(repo, PLAN_PATH, text)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "plan")
+    git(repo, "update-ref", "refs/plans/7", "HEAD")
+    git(repo, "rm", "-q", PLAN_PATH)
+    git(repo, "commit", "-q", "-m", "unplan")
+
+
+class ForbidTest(unittest.TestCase):
+    def staged(self, branch="issue-7-x", plan=None):
+        repo = make_repo(FORBID)
+        if plan is not None:
+            add_plan(repo, plan)
+        git(repo, "checkout", "-q", "-b", branch)
+        write(repo, "pyproject.toml", '[x]\n"src/a" = [1]\n')
+        git(repo, "add", "-A")
+        return repo
+
+    def test_matching_added_line_blocks(self):
+        problems = githooks.pre_commit(self.staged(), TERMS)
+        self.assertTrue(any("forbidden added line in pyproject.toml" in p for p in problems))
+
+    def test_plan_allowance_passes(self):
+        self.assertEqual(githooks.pre_commit(self.staged(plan=ALLOWS), TERMS), [])
+
+    def test_plan_without_allowance_blocks(self):
+        repo = self.staged(plan="- [ ] **1. t**\n")
+        self.assertTrue(githooks.pre_commit(repo, TERMS))
+
+    def test_detached_head_still_enforces(self):
+        repo = self.staged()
+        git(repo, "commit", "-q", "-m", "c")
+        git(repo, "checkout", "-q", "--detach")
+        write(repo, "pyproject.toml", '[x]\n"src/a" = [1]\n"src/b" = [2]\n')
+        git(repo, "add", "-A")
+        self.assertTrue(githooks.pre_commit(repo, TERMS))
+
+    def test_no_rules_no_change(self):
+        repo = make_repo()
+        write(repo, "pyproject.toml", '"src/a" = [1]\n')
+        git(repo, "add", "-A")
+        self.assertEqual(githooks.pre_commit(repo, TERMS), [])
+
+    def test_push_blocks_and_uses_pushed_branch_allowance(self):
+        repo = self.staged(plan=ALLOWS)
+        git(repo, "commit", "-q", "-m", "c")
+        head = git(repo, "rev-parse", "HEAD")
+        git(repo, "checkout", "-q", "--detach")
+        ok = f"refs/heads/issue-7-x {head} refs/heads/issue-7-x {ZEROS}\n"
+        self.assertEqual(githooks.pre_push(repo, ok, TERMS), [])
+        bad = f"refs/heads/other {head} refs/heads/other {ZEROS}\n"
+        self.assertTrue(any("forbidden" in p for p in githooks.pre_push(repo, bad, TERMS)))
 
 
 class PrePushTest(unittest.TestCase):
