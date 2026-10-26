@@ -382,6 +382,11 @@ def decide(command, cwd, terms):
             texts.append(text)
             if is_body:
                 bodies.append(text)
+            kind = item.state_files.get(path)
+            if kind == "graphql" and _graphql_sets_state(text):
+                problems.append(_CLOSE_MESSAGE)
+            elif kind == "rest" and _API_STATE_KEY.search(text):
+                problems.append(_CLOSE_MESSAGE)
         texts.extend(item.texts)
         if any(not body.strip() for body in bodies):
             problems.append("the body is empty; write the full text first")
