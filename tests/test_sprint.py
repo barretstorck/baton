@@ -177,6 +177,25 @@ class SnapshotTest(unittest.TestCase):
                                                 "review": "approved", "rounds": 0,
                                                 "verify": "none"}])
 
+    def _review_entry(self, bodies):
+        head = "f" * 40
+        comments = [{"author": {"login": OWNER}, "body": review.compose(verdict, head, text)}
+                    for verdict, text in bodies]
+        prs = [{"number": 30, "headRefName": "issue-1-x", "isDraft": False, "mergeable": "MERGEABLE",
+                "headRefOid": head, "comments": comments, "closingIssuesReferences": [{"number": 1}],
+                "statusCheckRollup": []}]
+        return snap([issue(1, "in-review", "deliverable")], prs=prs)["in_review"][0]
+
+    def test_blocked_review_is_reported_and_is_no_round(self):
+        entry = self._review_entry([("changes", "x"),
+                                    ("blocked", "Cause: environment\n\n## Reason\nno network")])
+        self.assertEqual((entry["review"], entry["rounds"]), ("blocked", 1))
+
+    def test_repeated_failure_is_reported(self):
+        failing = "## Failures\n- t1: caused\n"
+        entry = self._review_entry([("changes", failing), ("changes", failing)])
+        self.assertEqual((entry["review"], entry["rounds"]), ("repeated", 2))
+
     def test_lagging_check_run_on_a_finished_workflow_run_is_green(self):
         head = "f" * 40
         prs = [{"number": 30, "headRefName": "issue-1-x", "isDraft": False, "mergeable": "MERGEABLE",
