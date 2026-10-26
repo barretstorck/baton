@@ -27,7 +27,7 @@ def _entries(runner):
         elif line == "detached":
             cur["detached"] = True
         elif line.startswith("locked"):
-            cur["locked"] = True
+            cur["locked"] = line[len("locked"):].strip() or True
         elif line == "":
             entries.append(cur)
             cur = None
@@ -43,8 +43,24 @@ def agent_worktrees(runner):
     return [e for e in entries[1:] if e["path"].startswith(prefix)]
 
 
+def _lock_owner_gone(lock):
+    """True when a lock reason ends in `(pid N)` and no process N is alive."""
+    match = re.search(r"\(pid (\d+)\)\s*$", lock) if isinstance(lock, str) else None
+    if not match:
+        return False
+    try:
+        os.kill(int(match.group(1)), 0)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
 def _keep_reason(wt, runner, default_branch):
     """Why the worktree must stay, or None when it can go."""
+    if wt["locked"] and not _lock_owner_gone(wt["locked"]):
+        return "it is locked"
     match = re.match(r"issue-(\d+)-", wt["branch"] or "")
     if match:
         state = json.loads(runner(["gh", "issue", "view", match.group(1),

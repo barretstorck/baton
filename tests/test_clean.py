@@ -75,8 +75,22 @@ class WorktreeTest(unittest.TestCase):
         self.assertEqual((removed, kept), ([], [WT]))
         self.assertIn("not in main", out[0])
 
-    def test_worktree_locked_removed_with_double_force(self):
-        runner, _, _ = self.go("branch refs/heads/x\nlocked")
+    def test_worktree_locked_by_live_process_is_kept(self):
+        runner, (removed, kept, _), out = self.go(
+            f"branch refs/heads/x\nlocked claude agent a (pid {os.getpid()})")
+        self.assertEqual(kept, [WT])
+        self.assertIn("locked", out[0])
+        self.assertNotIn(f"git worktree remove --force --force {WT}", runner.lines())
+
+    def test_worktree_locked_without_pid_is_kept(self):
+        _, (removed, kept, _), _ = self.go("branch refs/heads/x\nlocked")
+        self.assertEqual(kept, [WT])
+
+    def test_worktree_locked_by_dead_process_removed_with_double_force(self):
+        with mock.patch("baton.clean.os.kill", side_effect=ProcessLookupError):
+            runner, (removed, _, _), _ = self.go(
+                "branch refs/heads/x\nlocked claude agent a (pid 999999)")
+        self.assertEqual(removed, [WT])
         self.assertIn(f"git worktree remove --force --force {WT}", runner.lines())
 
 
