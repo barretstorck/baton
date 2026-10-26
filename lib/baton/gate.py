@@ -55,6 +55,9 @@ _GH_TEXT_OPTS = {"--title", "-t", "--notes", "-n"}
 _GH_FILE_OPTS = {"--body-file", "-F", "--notes-file"}
 _API_FIELD_OPTS = {"-f", "--raw-field", "-F", "--field"}
 _API_TYPED_OPTS = {"-F", "--field"}
+_CLOSE_MESSAGE = (
+    "closing or reopening directly is not allowed; use `baton close|reopen "
+    "<issue|pr> <number> <role> <reason-file>` so a marker comment says who did it and why")
 _API_MERGE = re.compile(r"/pulls/\d+/merge\b")
 _API_COMMENT = re.compile(r"/(?:comments|reviews)(?:/\d+)?(?:/|\?|$)")
 
@@ -252,9 +255,7 @@ def _inspect_gh(call):
         return item
     if (group, action) in _GH_CLOSE:
         item.relevant = True
-        item.problems.append(
-            "closing or reopening directly is not allowed; use `baton close|reopen "
-            "<issue|pr> <number> <role> <reason-file>` so a marker comment says who did it and why")
+        item.problems.append(_CLOSE_MESSAGE)
         return item
     if (group, action) not in _GH_PUBLISH:
         return item
