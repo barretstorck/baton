@@ -243,6 +243,10 @@ def cmd_plan(args):
                 print(f"{label} task {task_id}: {title}")
         print(json.dumps(found, indent=2))
         return 0
+    if len(args) == 3 and args[0] == "against" and args[1].isdigit():
+        checklist.against_issue_plan(_require_config(), run.run, int(args[1]), args[2])
+        print(f"written against {args[2]}")
+        return 0
     if len(args) == 4 and args[0] == "commit" and args[1].isdigit():
         cfg = _require_config()
         number = int(args[1])
@@ -283,6 +287,7 @@ def cmd_plan(args):
                                repo["defaultBranchRef"]["name"]))
         return 0
     print("usage: baton plan replace <issue> <from-task> <file | -> [--drop]\n"
+          "       baton plan against <issue> <sha>\n"
           "       baton plan commit <issue> <path> <file | ->\n"
           "       baton plan pin <issue>\n"
           "       baton plan link <issue> refs/plans/<issue> <path>\n"
