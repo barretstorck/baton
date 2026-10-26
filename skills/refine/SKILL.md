@@ -126,8 +126,8 @@ not in the issue, so the issue stays short for a person to read.
    - `baton plan link <N> refs/plans/<N> <docs.dir>/plans/<N>-<slug>.md` writes the first-line
      `Plan:` link (the ref's history page). Re-run it only if the path changes; ticks and replans
      need no issue edit.
-   - Rewrite the description to the issue template: the `Plan:` line, Context, Acceptance
-     criteria, Out of scope, Pointers with only the `Expected files:` and `Blocked by:` lines, and
+   - Rewrite the description to the issue template: the `Plan:` line, Context, `Diagnosis`
+     (bugs only), Acceptance criteria, Out of scope, Pointers with only the `Expected files:` and `Blocked by:` lines, and
      Decisions. Keep the author's intent and wording where it is clear, and keep every existing
      entry under `## Decisions` with its link. A spike keeps its Verification in the issue and has
      no plan, branch or `Plan:` line. Write the **complete** new description to a file, read it
@@ -178,6 +178,25 @@ branch's checks pass again. Your job is the diagnosis.
    failing job's command.
 5. Mark it `status:ready` regardless of `may_mark_ready`; this issue outranks the rest of the
    sprint.
+
+## Diagnosing a bug
+
+When the issue carries the bug label (`labels.map` in `baton config` gives the real name of
+`type:bug`), reproduce the bug before you plan it. The `broken-default-branch` section above is
+separate and stays as it is.
+
+1. **Try to reproduce it** in your worktree, by a command or, preferably, by a failing test you
+   write there.
+2. **Write `## Diagnosis`** into the description, between Context and Acceptance criteria, with
+   three parts: how it reproduced (the command or test, the expected and the actual result);
+   where the cause is (files and functions); and whether it is a regression, with the commit that
+   introduced it when you find it (`git log -S`; `git bisect run` is allowed).
+3. **Reproduced with a test:** plan task 1 adds that test. This is the one exception to "no code in
+   the plan": write the test's code in task 1's brief. Its `Check:` is that test, and it must fail
+   before the fix. Later tasks make it pass.
+4. **Not reproduced:** the bug is not ready. Post a question as under "Questions" asking the
+   reporter for steps, version and logs, then `baton set-status <N> status:refinement` and add the
+   `needs-maintainer` label.
 
 ## Never
 

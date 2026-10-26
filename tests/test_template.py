@@ -44,6 +44,12 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("throwaway", text)
         self.assertIn("log file", text)
 
+    def test_refine_skill_and_template_cover_bug_diagnosis(self):
+        skill = (ROOT / "skills" / "refine" / "SKILL.md").read_text()
+        self.assertIn("## Diagnosing a bug", skill)
+        issue = (ROOT / "templates" / "issue.md").read_text()
+        self.assertIn("## Diagnosis", issue)
+
     def test_agents_declare_restricted_tools(self):
         expected = {
             "baton-developer": "tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch",
