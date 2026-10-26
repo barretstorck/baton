@@ -10,7 +10,7 @@ import re
 import shutil
 import tempfile
 
-from . import checklist, gate, labels, planfile, review, scan, state as item_state, verify
+from . import checklist, forbid, gate, labels, planfile, review, scan, state as item_state, verify
 from .run import RunError
 
 PR_FIELDS = ("number,state,isDraft,mergeable,headRefOid,headRefName,baseRefName,"
@@ -160,6 +160,11 @@ def check(pr, cfg, owner, default_branch, runner, notes=None):
     if touched and not _approved(pr, owner, runner, default_branch, touched):
         problems.append("protected paths changed without maintainer approval "
                         f"(comment `/baton approve <head commit sha>`): {', '.join(touched)}")
+    rules = cfg.data["forbid_added"]
+    if rules:
+        patch = runner(["gh", "pr", "diff", str(pr["number"])])
+        allowed = forbid.allowed_globs(forbid.plan_text(runner, cfg, pr.get("headRefName", "")))
+        problems.extend(forbid.violations(patch, rules, allowed))
     return problems
 
 

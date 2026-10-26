@@ -166,6 +166,28 @@ class CheckTest(unittest.TestCase):
         body = "Closes #4\n\nDeferred rather than a fix: #55"
         self.assertTrue(any("#55" in p for p in problems(body=body)))
 
+    def _forbid(self, plan=""):
+        diff = ("diff --git a/pyproject.toml b/pyproject.toml\n--- a/pyproject.toml\n"
+                "+++ b/pyproject.toml\n@@ -1,0 +2 @@\n+\"src/x\" = [\"a\"]\n")
+        cfg = make_config(forbid_added={"pyproject.toml": '^\\s*"src/'})
+        runner = FakeRunner({
+            "gh pr diff 9": diff,
+            "git ls-tree --name-only refs/plans/4": "docs/baton/plans/4-flag.md\n",
+            "git show refs/plans/4:docs/baton/plans/4-flag.md": plan})
+        return merge.check(make_pr(), cfg, OWNER, "main", runner)
+
+    def test_forbidden_added_line_is_refused(self):
+        self.assertTrue(any("forbidden added line in pyproject.toml" in p
+                            for p in self._forbid()))
+
+    def test_forbidden_added_line_allowed_by_the_plan(self):
+        self.assertEqual(self._forbid('- Allows: forbid_added "pyproject.toml"\n'), [])
+
+    def test_no_forbid_rules_does_not_fetch_the_diff(self):
+        runner = FakeRunner()
+        merge.check(make_pr(), make_config(), OWNER, "main", runner)
+        self.assertFalse(any(line.startswith("gh pr diff") for line in runner.lines()))
+
     def test_protected_path_needs_approval(self):
         files = [{"path": ".github/workflows/ci.yml"}]
         self.assertTrue(any("protected" in p for p in problems(files=files)))
