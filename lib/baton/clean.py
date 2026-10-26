@@ -3,6 +3,7 @@ import json
 import os
 import pwd
 import re
+import shutil
 
 from . import run
 
@@ -102,3 +103,34 @@ def clean_worktrees(runner, default_branch, report):
         removed.append(wt["path"])
         report(f"removed {wt['path']}")
     return removed, kept, failed
+
+
+def clean_logs(runner, logs_root, report):
+    """Remove `pr-<PR>` log folders whose pull request is closed or merged; returns their names."""
+    removed = []
+    if not os.path.isdir(logs_root):
+        return removed
+    for name in sorted(os.listdir(logs_root)):
+        match = re.fullmatch(r"pr-(\d+)", name)
+        path = os.path.join(logs_root, name)
+        if not match or not os.path.isdir(path):
+            continue
+        try:
+            state = json.loads(runner(["gh", "pr", "view", match.group(1),
+                                       "--json", "state"]))["state"]
+        except (run.RunError, ValueError, KeyError):
+            report(f"kept {path} : pull request state unknown")
+            continue
+        if state not in ("CLOSED", "MERGED"):
+            report(f"kept {path} : pull request #{match.group(1)} is {state.lower()}")
+            continue
+        try:
+            shutil.rmtree(path)
+        except OSError:
+            owner = foreign_owner(path)
+            detail = f"{owner[0]} is owned by {owner[1]}" if owner else "it could not be removed"
+            report(f"cannot remove {path}: {detail}")
+            continue
+        removed.append(name)
+        report(f"removed {path}")
+    return removed

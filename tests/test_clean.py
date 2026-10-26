@@ -126,5 +126,26 @@ class OwnerTest(unittest.TestCase):
             self.assertIn(f"cannot remove {d}", out[0])
 
 
+class LogsTest(unittest.TestCase):
+    def test_logs_removes_closed_and_merged_only(self):
+        runner = FakeRunner({
+            "gh pr view 1": '{"state": "MERGED"}',
+            "gh pr view 2": '{"state": "CLOSED"}',
+            "gh pr view 3": '{"state": "OPEN"}',
+        })
+        with tempfile.TemporaryDirectory() as root:
+            for name in ("pr-1", "pr-2", "pr-3", "notes"):
+                os.makedirs(os.path.join(root, name))
+            lines = []
+            removed = clean.clean_logs(runner, root, lines.append)
+            self.assertEqual(removed, ["pr-1", "pr-2"])
+            self.assertEqual(sorted(os.listdir(root)), ["notes", "pr-3"])
+            self.assertTrue(any("kept" in l and "pr-3" in l for l in lines))
+        self.assertNotIn("gh pr view notes", " ".join(runner.lines()))
+
+    def test_logs_missing_root(self):
+        self.assertEqual(clean.clean_logs(FakeRunner(), "/nonexistent-logs-root", print), [])
+
+
 if __name__ == "__main__":
     unittest.main()
