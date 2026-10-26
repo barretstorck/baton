@@ -172,6 +172,20 @@ def pre_commit(cwd, terms):
     return _check(cfg, patch, new_files, terms, cwd=cwd, branch=_current_branch(cwd))
 
 
+def _pushed_branch(local_ref, remote_ref):
+    """The remote branch name when the local ref names the same issue, else "" (no allowances).
+
+    A hook cannot know the pull request, so the issue is the one the local branch names, and the
+    remote branch must name that issue too, as merge-pr requires of the head branch."""
+    from . import forbid  # lazy: forbid imports this module
+    prefix = "refs/heads/"
+    if not (local_ref.startswith(prefix) and remote_ref.startswith(prefix)):
+        return ""
+    local, remote = local_ref[len(prefix):], remote_ref[len(prefix):]
+    number = forbid.branch_issue(local)
+    return remote if number is not None and number == forbid.branch_issue(remote) else ""
+
+
 def pre_push(cwd, stdin_text, terms):
     cfg = config.load(cwd)
     if cfg is None:
@@ -182,7 +196,7 @@ def pre_push(cwd, stdin_text, terms):
         parts = line.split()
         if len(parts) != 4:
             continue
-        _, local_sha, remote_ref, remote_sha = parts
+        local_ref, local_sha, remote_ref, remote_sha = parts
         if local_sha == ZEROS:
             continue
         revs = [local_sha, "--not", "--remotes"] if remote_sha == ZEROS else [f"{remote_sha}..{local_sha}"]
@@ -190,8 +204,7 @@ def pre_push(cwd, stdin_text, terms):
         messages = run.run(git + ["log", "--format=%B"] + revs)
         new_files = _names(run.run(
             git + ["log", "--diff-filter=AR", "--name-only", "--format="] + revs))
-        branch = (remote_ref[len("refs/heads/"):] if remote_ref.startswith("refs/heads/")
-                  else _current_branch(cwd))
+        branch = _pushed_branch(local_ref, remote_ref)
         problems.extend(_check(cfg, patch, new_files, terms, messages, cwd=cwd, branch=branch))
     return sorted(set(problems))
 
