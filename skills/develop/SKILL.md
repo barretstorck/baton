@@ -224,6 +224,14 @@ refuses because of a privacy finding, replace the detail with a placeholder and 
 If you cannot post at all, put the complete body in your final report inside a block fenced with
 ```` ```baton-comment <kind> ````, so the orchestrator can post it unchanged.
 
+## Scratch files
+
+Keep every scratch file (virtualenvs, logs, stub packages, container output) inside your own
+worktree, never in the shared work area or another worktree. Run containers so they do not leave
+root-owned files there: run as the current user (for example `--user "$(id -u):$(id -g)"`), or
+remove those files before returning. Root-owned files block worktree removal, and `baton clean`
+cannot delete them.
+
 ## Return
 
 Your final message is exactly one of these.
@@ -311,5 +319,6 @@ Issue: #<N>
 - Check out or run code from a fork or from another developer's branch.
 - Start subagents, or run review tools that start them. The reviewer is a separate agent; its
   children would report to the orchestrator, not to you.
+- Leave scratch files outside your worktree or root-owned files inside it (see "Scratch files").
 - Stop processes, sessions or containers you did not start. On a shared host, end only your own
   by name; never a whole server (`tmux kill-server`) or every container.
