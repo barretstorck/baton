@@ -166,6 +166,15 @@ class GateTest(unittest.TestCase):
                 "gh api -X PATCH repos/o/r/issues/5 -F state=closed"]
         cmds += [f"gh api graphql -f query='mutation {{ {m}(input: {{id: \"X\"}}) "
                  f"{{ clientMutationId }} }}'" for m in mutations]
+        cmds += [
+            "gh api graphql -f query='mutation { updateIssue(input: {id: \"X\", state: CLOSED}) "
+            "{ clientMutationId } }'",
+            "gh api graphql -f query='mutation { updatePullRequest(input: {id: \"X\", state: OPEN}) "
+            "{ clientMutationId } }'",
+            "gh api graphql -f query='mutation { updateIssue(input: {id: \"X\", stateReason: COMPLETED}) "
+            "{ clientMutationId } }'",
+            "gh api graphql -f query='mutation($state: IssueState) { updateIssue(input: {id: \"X\", "
+            "state: $state}) { clientMutationId } }' -f state=CLOSED"]
         for endpoint in ("/graphql", "https://api.github.com/graphql"):
             cmds.append(f"gh api {endpoint} -f query='mutation {{ closeIssue(input: {{id: \"X\"}}) "
                         f"{{ clientMutationId }} }}'")
@@ -178,7 +187,15 @@ class GateTest(unittest.TestCase):
         for cmd in ("gh api repos/o/r/issues/5/comments -f body='<!-- baton:developer:status -->\nok'",
                     "gh api -X POST repos/o/r/issues/5/labels -f 'labels[]=bug'",
                     "gh api -X PATCH repos/o/r/issues/5 -f title=t",
-                    "gh api graphql -f query='query { viewer { login } }'"):
+                    "gh api graphql -f query='query { viewer { login } }'",
+                    "gh api graphql -f query='query { repository(owner: \"o\", name: \"r\") "
+                    "{ issues(states: OPEN) { totalCount } } }'",
+                    "gh api graphql -f query='mutation { updateIssue(input: {id: \"X\", title: \"t\"}) "
+                    "{ clientMutationId } }'",
+                    "gh api graphql -f query='mutation { addLabelsToLabelable(input: {labelableId: \"X\", "
+                    "labelIds: [\"L\"]}) { clientMutationId } }'",
+                    "gh api graphql -f query='mutation($state: IssueState) { updateIssue(input: "
+                    "{id: \"X\", title: \"t\"}) { clientMutationId } }'"):
             with self.subTest(cmd=cmd):
                 self.assertEqual(gate.decide(cmd, make_repo(), TERMS), [])
 
