@@ -629,6 +629,17 @@ class RefPlanTest(unittest.TestCase):
         self.assertEqual(lines[-1], f"git push origin {self.NEW}:refs/plans/7")
         self.assertFalse(any("issue edit" in l or "worktree" in l for l in lines))
 
+    def test_insert_commits_the_renumbered_plan_to_the_ref(self):
+        runner = self.runner()
+        found = checklist.replace_issue_plan(cfg(), runner, 7, "3",
+                                             "- [ ] **3. New**\n", [], insert=True)
+        self.assertEqual([t["title"] for t in found["tasks"]], ["A", "B", "New", "C"])
+        lines = runner.lines()
+        self.assertTrue(any(l.startswith("git commit-tree t -p refs/baton/plans/7 "
+                                         "-m Insert 1 task before task 3") for l in lines))
+        self.assertIn("- [ ] **4. C**", self.written(runner))
+        self.assertEqual(lines[-1], f"git push origin {self.NEW}:refs/plans/7")
+
     def test_replace_done_task_is_refused_before_commit(self):
         runner = self.runner()
         with self.assertRaises(checklist.TaskError):

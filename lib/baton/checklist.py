@@ -385,17 +385,24 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None):
     return changed
 
 
-def _replace_in_file(runner, number, link, from_id, new_text, drop=False):
+def _message(from_id, new_text, insert):
+    if not insert:
+        return f"Replan from task {from_id}"
+    k = len(_blocks(new_text.replace("\r\n", "\n"))[1])
+    return f"Insert {k} task{'' if k == 1 else 's'} before task {from_id}"
+
+
+def _replace_in_file(runner, number, link, from_id, new_text, drop=False, insert=False):
     """Commit the replaced tasks to the plan ref, or to the linked branch from a temporary
     detached worktree."""
     from . import planfile
     branch, path = link["ref"], link["path"]
     if link["kind"] == "ref":
         text = planfile.read(runner, branch, path)
-        changes = plan_changes(text, from_id, new_text)
-        new = replace_plan(text, str(from_id), new_text, drop)
+        changes = plan_changes(text, from_id, new_text, insert)
+        new = replace_plan(text, str(from_id), new_text, drop, insert)
         dropped = changes[0][len(changes[1]):]
-        message = f"Replan from task {from_id}"
+        message = _message(from_id, new_text, insert)
         if dropped:
             message += f"\n\nDropped: {_describe(dropped)}"
         planfile.push(runner, number, planfile.write(runner, number, path, new, message))
@@ -410,10 +417,10 @@ def _replace_in_file(runner, number, link, from_id, new_text, drop=False):
             planfile.check_write(tree, path)
             with open(target, newline="") as handle:
                 text = handle.read()
-            changes = plan_changes(text, from_id, new_text)
-            new = replace_plan(text, str(from_id), new_text, drop)
+            changes = plan_changes(text, from_id, new_text, insert)
+            new = replace_plan(text, str(from_id), new_text, drop, insert)
             dropped = changes[0][len(changes[1]):]
-            message = f"Replan from task {from_id}"
+            message = _message(from_id, new_text, insert)
             if dropped:
                 message += f"\n\nDropped: {_describe(dropped)}"
             with open(target, "w", newline="") as handle:
@@ -460,7 +467,8 @@ def against_issue_plan(cfg, runner, number, sha):
     return plan(new)
 
 
-def replace_issue_plan(cfg, runner, number, from_id, new_text, terms, drop=False):
+def replace_issue_plan(cfg, runner, number, from_id, new_text, terms, drop=False,
+                       insert=False):
     """Replace the plan's open tasks from `from_id` on; the new text is scanned first."""
     findings = scan.scan_text(new_text, terms, cfg.data["privacy_allow"])
     if findings:
@@ -468,10 +476,11 @@ def replace_issue_plan(cfg, runner, number, from_id, new_text, terms, drop=False
                         + "; ".join(scan.describe(findings)))
     body, link = _linked(runner, number, cfg.data["docs"]["dir"])
     if link is not None:
-        new, changes = _replace_in_file(runner, number, link, from_id, new_text, drop)
+        new, changes = _replace_in_file(runner, number, link, from_id, new_text, drop,
+                                        insert)
     else:
-        changes = plan_changes(body, from_id, new_text)
-        new = replace_plan(body, str(from_id), new_text, drop)
+        changes = plan_changes(body, from_id, new_text, insert)
+        new = replace_plan(body, str(from_id), new_text, drop, insert)
         _save_issue(runner, number, new)
     found = plan(new)
     found["replaced"], found["written"] = changes
