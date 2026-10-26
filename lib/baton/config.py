@@ -1,5 +1,6 @@
 import copy
 import pathlib
+import re
 from dataclasses import dataclass
 
 from . import frontmatter, run
@@ -28,6 +29,7 @@ DEFAULTS = {
     "protected_paths": [".github/", ".baton/", ".claude/"],
     "fixtures_paths": [],
     "privacy_allow": [],
+    "forbid_added": {},
     "budgets": {},
 }
 
@@ -80,6 +82,16 @@ def _validate(data, defaults, prefix=""):
             _validate(value, default, name + ".")
 
 
+def _check_forbid_added(data):
+    for glob, pattern in data["forbid_added"].items():
+        if not isinstance(pattern, str):
+            raise ConfigError(f".baton/brief.md: forbid_added[{glob!r}] must be a regular expression string")
+        try:
+            re.compile(pattern)
+        except re.error as error:
+            raise ConfigError(f".baton/brief.md: forbid_added[{glob!r}] is not a valid regular expression: {error}") from error
+
+
 def _check_docs_dir(data):
     docs_dir = data["docs"]["dir"]
     path = pathlib.PurePosixPath(docs_dir)
@@ -127,5 +139,6 @@ def load(path):
         raise ConfigError(".baton/brief.md: review.max_rounds must be at least 1")
     if merged["verify"]["timeout_minutes"] < 1:
         raise ConfigError(".baton/brief.md: verify.timeout_minutes must be at least 1")
+    _check_forbid_added(merged)
     _check_docs_dir(merged)
     return Config(root=root, data=merged)
