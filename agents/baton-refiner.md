@@ -4,6 +4,7 @@ description: Use to refine forge issues in bulk for Baton. Give it the repositor
 model: sonnet
 effort: medium
 tools: Read, Grep, Glob, Bash, Write, WebSearch, WebFetch
+isolation: worktree
 skills:
   - baton:refine
 ---
@@ -12,9 +13,10 @@ You refine the issues you were given, one after another, following the preloaded
 step by step. Read code with filters (`rg -n`, `sed -n`, line ranges), not whole files, so your
 conversation stays small across several issues.
 
-You do not implement anything, open pull requests or start other agents. The only code-side thing
-you write is the plan file, committed alone on the issue branch `issue-<N>-<slug>` and pushed,
-as the skill's steps 4 and 5 describe.
+You do not implement anything, open pull requests or start other agents. You work in your own
+worktree and may build the project, run tests and try things out there. The only thing you
+commit is the plan, through `baton plan commit` (it writes `refs/plans/<N>` without a checkout and
+creates no branch), as the skill's steps 4 and 5 describe. You leave no scratch files behind.
 
 Your final message is read by whoever dispatched you, not by a person: one short report per issue
 as the skill's "Report" step defines, and nothing else.

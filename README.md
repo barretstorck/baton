@@ -98,6 +98,8 @@ and `reviewer.model` in the brief change the model, and `developer.effort` (`low
 developer's thinking is about half of its context and every call re-reads that context, so
 thinking is the largest single cost of a sprint. For bulk refinement, dispatch
 `baton-refiner` agents with at most about three issues each.
+The refiner runs in its own worktree, where it can build the project and run quick experiments; for a
+`type:bug` issue it reproduces the bug and writes a `## Diagnosis` section into the description.
 
 Typical use:
 
