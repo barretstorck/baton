@@ -112,8 +112,26 @@ def _commit_age(committed, now):
     return ((now or datetime.now(timezone.utc)) - when).total_seconds()
 
 
-def default_branch_state(runner, owner, repo, branch, now=None):
-    """green, red, pending or none for the default branch's head commit, push runs only."""
+def actions_enabled(runner, owner, repo):
+    """False only when the forge says Actions is disabled; an unreadable reply counts as enabled."""
+    try:
+        text = runner(["gh", "api", f"repos/{owner}/{repo}/actions/permissions"])
+    except RunError as error:
+        if "404" in str(error) or "Not Found" in str(error):
+            return True
+        raise
+    try:
+        data = json.loads(text) if (text or "").strip() else {}
+    except ValueError:
+        return True
+    return not (isinstance(data, dict) and data.get("enabled") is False)
+
+
+def default_branch_status(runner, owner, repo, branch, now=None):
+    """(state, grace_left_seconds) for the default branch's head commit, push runs only.
+
+    state is green, red, pending or none; grace_left is an integer only while pending means
+    "no run yet, inside the grace period", otherwise None."""
     try:
         head = json.loads(runner(["gh", "api", f"repos/{owner}/{repo}/commits/{branch}"]))
         sha = head["sha"]
@@ -124,14 +142,20 @@ def default_branch_state(runner, owner, repo, branch, now=None):
                           "--event", "push", "--limit", "20",
                           "--json", "status,conclusion,headSha,workflowName"], "workflow runs")
     if runs:
-        return branch_state(runs)
+        return branch_state(runs), None
     try:
         age = _commit_age(committed, now)
     except ValueError as error:
         raise SnapshotError(f"could not read the head commit date: {error}") from error
-    if age < PUSH_RUN_GRACE_SECONDS and push_workflow_exists(runner, owner, repo, sha):
-        return "pending"
-    return "none"
+    if (age < PUSH_RUN_GRACE_SECONDS and actions_enabled(runner, owner, repo)
+            and push_workflow_exists(runner, owner, repo, sha)):
+        return "pending", max(1, int(PUSH_RUN_GRACE_SECONDS - age))
+    return "none", None
+
+
+def default_branch_state(runner, owner, repo, branch, now=None):
+    """green, red, pending or none for the default branch's head commit, push runs only."""
+    return default_branch_status(runner, owner, repo, branch, now)[0]
 
 
 def overlaps(first, second):
@@ -196,9 +220,10 @@ def snapshot(cfg, runner, milestone=None):
         runner, ["gh", "api", f"repos/{owner}/{repo['name']}/milestones?state=open&per_page=100"],
         "milestones")
     chosen, open_sprints = _pick_sprint(milestones, milestone)
+    state, grace_left = default_branch_status(runner, owner, repo["name"], branch)
     result = {
         "sprint": None, "open_sprints": open_sprints,
-        "default_branch": {"name": branch, "state": default_branch_state(runner, owner, repo["name"], branch)},
+        "default_branch": {"name": branch, "state": state, "grace_ends_in_seconds": grace_left},
         "repair_issue": None, "parallel": 0, "free_slots": 0, "in_dev": [], "in_review": [],
         "verification": [], "answered": [], "waiting_on_maintainer": [],
         "dispatchable": [], "held": [], "finished": False, "issues": [], "progress": {},
