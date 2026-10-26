@@ -56,7 +56,9 @@ whole issue grows large and expensive: in the second sprint, single developers r
    task, and classifies each as caused by the change, flaky, failing on the default branch, or
    environmental. It posts one review: `approve`, or `changes` with a `## Tasks` checklist of
    what to fix in this pull request and follow-up issues for the rest, or `blocked` when the
-   only failures are default-branch or environment ones. If the same tests fail in two reviews
+   only failures are default-branch or environment ones, or `replan` when the plan itself is the
+   problem: the issue goes back to refinement, the refiner revises the open tasks against the branch,
+   developers continue on the same branch, and a replan counts as a review round. If the same tests fail in two reviews
    in a row, the pull request goes to the maintainer instead of another fix round.
    A `changes` review turns the pull request back into a draft while its fix tasks are worked,
    and it is marked ready again after the developer's reply, so CI runs once per round.
@@ -123,12 +125,13 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton close <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:closed` marker comment with the reason, then close; raw `gh ... close` is refused |
 | `baton reopen <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:reopened` marker comment with the reason, then reopen; raw `gh ... reopen` is refused |
 | `baton review state <pr>` | The pull request's review state at its head commit |
-| `baton review post <pr> <approve\|changes\|blocked> <sha> <file \| ->` | Post a review of that commit |
+| `baton review post <pr> <approve\|changes\|blocked\|replan> <sha> <file \| ->` | Post a review of that commit |
 | `baton answers <issue>` | The latest agent question and the maintainer's replies |
 | `baton ready-check <issue>` | The mechanical half of the definition of ready |
 | `baton tasks <issue\|pr> <number>` | An issue's plan tasks, or the latest review's tasks, as JSON |
 | `baton task done <issue\|pr> <number> <task>` | Tick one task: in the plan file of the current checkout for an issue (the developer commits it), in the review for a pull request (the orchestrator) |
 | `baton plan replace <issue> <from-task> <file \| -> [--drop]` | Replace a plan's open tasks from that number on; a linked plan is committed to its branch and pushed |
+| `baton plan against <issue> <sha>` | Set the `Written against:` commit of a plan on `refs/plans/<N>` (the refiner, after a replan) |
 | `baton plan link <issue> <branch> <path>` / `--at <sha>` | Write the issue's `Plan:` link to the file on the branch, or pin it to a commit |
 | `baton plan migrate <issue> <branch>` | Move a plan from the issue body to a plan file on a new branch |
 | `baton usage [--repo <owner/repo>] [--since <time>] [--json]` | Quota use per issue and role, from local transcripts |
