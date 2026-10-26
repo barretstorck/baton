@@ -323,6 +323,7 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(found["progress"]["4"],
                          {"pr": 40, "spike": False, "unplanned": False,
                           "plan": {"done": 1, "total": 2, "next": "2"},
+                          "next_task_url": None,
                           "review": {"round": 1, "done": 0, "total": 1, "next": "1.1"},
                           "review_without_tasks": False})
         self.assertEqual(found["progress"]["5"]["plan"], None)
@@ -341,6 +342,49 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(found["progress"]["4"]["plan"], {"done": 2, "total": 3, "next": "3"})
         self.assertFalse(found["progress"]["4"]["unplanned"])
         self.assertIn("git fetch --quiet origin +refs/plans/4:refs/baton/plans/4", runner.lines())
+
+    def _ref_plan(self, tasks):
+        dev = issue(4, "in-dev")
+        dev["body"] = ("Plan: [docs/baton/plans/4-a.md]"
+                       "(https://github.com/octo/proj/commits/refs/plans/4)\n\n" + dev["body"])
+        plan = "## Plan\nWritten against: " + "c" * 40 + "\n\n" + tasks
+        extra = {"git show --end-of-options refs/baton/plans/4:docs/baton/plans/4-a.md": plan}
+        return snap([dev], extra=extra)["progress"]["4"]
+
+    def test_next_task_url_links_the_open_task_line(self):
+        found = self._ref_plan("- [x] **1. A**\n- [ ] **2. B**\n")
+        self.assertEqual(found["next_task_url"],
+                         "https://github.com/octo/proj/blob/refs/plans/4/docs/baton/plans/4-a.md"
+                         "?plain=1#L5")
+
+    def test_next_task_url_is_null_without_an_open_task(self):
+        self.assertIsNone(self._ref_plan("- [x] **1. A**\n")["next_task_url"])
+
+    def test_next_task_url_is_null_for_a_plan_without_tasks(self):
+        self.assertIsNone(self._ref_plan("Nothing yet.\n")["next_task_url"])
+
+    def test_next_task_url_is_null_for_an_issue_body_plan(self):
+        dev = issue(4, "in-dev")
+        dev["body"] += "## Plan\nWritten against: " + "c" * 40 + "\n\n- [ ] **1. A**\n"
+        self.assertIsNone(snap([dev])["progress"]["4"]["next_task_url"])
+
+    def test_waiting_links_point_at_the_open_question(self):
+        result = snap([issue(2, "blocked", "deliverable", comments=[comment(OWNER, Q, 3)])])
+        self.assertEqual(result["waiting_links"], {"2": "https://example.com/c/3"})
+
+    def test_waiting_links_are_null_without_a_question(self):
+        result = snap([issue(3, "refinement", "deliverable", "needs-maintainer")])
+        self.assertEqual(result["waiting_on_maintainer"], [3])
+        self.assertEqual(result["waiting_links"], {"3": None})
+
+    def test_waiting_links_are_null_for_an_answered_question(self):
+        answered = [comment(OWNER, Q, 3), comment(OWNER, "Use the second.", 4)]
+        result = snap([issue(2, "refinement", "needs-maintainer", comments=answered)])
+        self.assertEqual(result["waiting_links"], {"2": None})
+
+    def test_waiting_links_cover_needs_maintainer_outside_blocked(self):
+        result = snap([issue(5, "in-dev", "needs-maintainer", comments=[comment(OWNER, Q, 7)])])
+        self.assertEqual(result["waiting_links"], {"5": "https://example.com/c/7"})
 
     def test_resumed_ready_issue_reports_its_next_task(self):
         ready = issue(6, "ready")
