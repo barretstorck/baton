@@ -5,7 +5,8 @@ import tempfile
 from . import gate, scan
 
 ROLES = {"orchestrator", "developer", "refine", "reviewer"}
-KINDS = {"question", "status", "decision", "plan", "review", "findings", "reply"}
+KINDS = {"question", "status", "decision", "plan", "review", "findings", "reply",
+         "closed", "reopened"}
 TARGETS = {"issue", "pr"}
 _QUESTION = ":question -->"
 _DECISION = ":decision -->"

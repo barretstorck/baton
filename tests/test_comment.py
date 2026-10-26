@@ -25,6 +25,13 @@ class ComposeTest(unittest.TestCase):
         self.assertTrue(text.startswith(gate.MARKER))
         self.assertIn("Which mode?", text)
 
+    def test_closed_and_reopened_markers(self):
+        for kind in ("closed", "reopened"):
+            with self.subTest(kind=kind):
+                text = comment.compose("reviewer", kind, "x")
+                self.assertTrue(text.startswith(f"<!-- baton:reviewer:{kind} -->\n"))
+                self.assertIn("x", text)
+
     def test_unknown_role_or_kind_is_rejected(self):
         for role, kind in (("maintainer", "status"), ("developer", "approval")):
             with self.subTest(role=role, kind=kind):

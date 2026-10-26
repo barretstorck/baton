@@ -100,6 +100,13 @@ steps 2 and 3 using that comment's URL.
 
 ### 4. Review and merge
 
+**Closing and reopening.** Every close or reopen of an issue or pull request goes through
+`baton close|reopen <issue|pr> <N> orchestrator <reason-file | ->`; the gate refuses
+`gh ... close|reopen`. The command posts a `baton:<role>:closed` (or `reopened`) marker comment
+with the reason, then closes or reopens. **Reading state:** an issue or pull request that is
+closed with no `baton:<role>:closed` marker comment was closed by the maintainer. Do not reopen
+it without asking.
+
 For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-status`: `plan`
 (the issue's tasks) and `review` (the latest review's tasks).
 
@@ -108,7 +115,8 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   not `none`, run `git ls-remote origin refs/spikes/<N>` and
   `git ls-remote --heads origin 'issue-<N>-*'`: delete the branch with
   `git push origin --delete <branch>` if it still exists; if the ref is missing, report that to
-  the maintainer and do not close the issue. Otherwise set `status:complete` and close the issue.
+  the maintainer and do not close the issue. Otherwise set `status:complete` and close the issue with
+  `baton close issue <N> orchestrator <reason-file | ->` (the reason is the findings summary).
   Spikes are not code-reviewed.
 - **Not a spike and no pull request, or `progress.<N>.plan.next` is set:** the plan is not
   finished (an interrupted task, or a replaced plan). `baton set-status <N> status:in-dev`; step 7

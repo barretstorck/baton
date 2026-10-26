@@ -118,6 +118,8 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton verify <pr> <worktree>` | Run the brief's `verify.command` on the pull request's head; prints the result, the log path and the last 40 lines |
 | `baton merge-pr <number>` | Check the review, CI and the rest, then merge |
 | `baton comment <issue\|pr> <number> <role> <kind> <file \| ->` | Scan, stamp and post an agent comment |
+| `baton close <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:closed` marker comment with the reason, then close; raw `gh ... close` is refused |
+| `baton reopen <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:reopened` marker comment with the reason, then reopen; raw `gh ... reopen` is refused |
 | `baton review state <pr>` | The pull request's review state at its head commit |
 | `baton review post <pr> <approve\|changes> <sha> <file \| ->` | Post a review of that commit |
 | `baton answers <issue>` | The latest agent question and the maintainer's replies |

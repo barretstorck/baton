@@ -30,6 +30,7 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Set an issue's status | `baton set-status <N> status:<name>` (removes the previous status) |
 | Add or remove another label | `gh issue edit <N> --add-label <label>` / `--remove-label <label>`; use the names from `labels.map` in `baton config` |
 | Post a comment | `baton comment <issue\|pr> <N> <role> <kind> -` with the body as an inline heredoc on standard input, or a file path in place of `-`. It scans the text, adds the Baton marker and prints the comment URL. |
+| Close or reopen | `baton close\|reopen <issue\|pr> <N> <role> <reason-file \| ->`: posts a `baton:<role>:closed`/`reopened` marker comment with the reason, then closes or reopens. `gh ... close\|reopen` is refused. An item closed with no such marker was closed by the maintainer: do not reopen it without asking. |
 | Edit an issue description | Write the full new description to a file, then `gh issue edit <N> --body-file <file>` |
 | Create an issue | Write the description to a file, then `gh issue create --title "<title>" --body-file <file> --label <labels>` |
 | Open a draft pull request | `gh pr create --draft --title "<title>" --body-file <file>` with `Closes #<N>` on its own line in the body |
