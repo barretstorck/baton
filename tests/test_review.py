@@ -455,3 +455,108 @@ class PostVerifyTest(unittest.TestCase):
         runner = capturing({"gh repo view --json name": json.dumps({"name": "repo"})})
         review.post(vcfg(), runner, 9, "approve", NEW, "Round 1.", [], OWNER, home=self.home)
         self.assertIn("gh repo view --json name", runner.lines())
+
+
+BLOCKED_BODY = "Cause: default-branch\n\n## Reason\nThe default branch fails the same test.\n"
+
+
+def blocked(body=BLOCKED_BODY, commit=NEW):
+    return {"author": {"login": OWNER}, "url": "u/blocked",
+            "body": review.compose("blocked", commit, body)}
+
+
+class BlockedTest(unittest.TestCase):
+    def test_compose_titles_from_the_table(self):
+        text = review.compose("blocked", NEW, BLOCKED_BODY)
+        self.assertTrue(text.startswith("<!-- baton:reviewer:review verdict=blocked commit="))
+        self.assertIn("**Baton reviewer: review (blocked, commit bbbbbbb)**", text)
+
+    def test_history_carries_the_cause(self):
+        events = review.history([blocked(), blocked("Cause: environment\n## Reason\nx"),
+                                 blocked("## Reason\nno cause"), rev("changes")], OWNER)
+        self.assertEqual([e["cause"] for e in events],
+                         ["default-branch", "environment", None, None])
+
+    def test_state_blocked_then_replied(self):
+        found = review.state([blocked()], OWNER, 2)
+        self.assertEqual((found["state"], found["rounds"]), ("blocked", 0))
+        self.assertEqual(review.state([blocked(), reply()], OWNER, 2)["state"], "replied")
+
+    def test_blocked_is_no_round_and_does_not_end_the_count(self):
+        found = review.state([rev("changes"), reply(), blocked(), reply(), rev("changes")],
+                             OWNER, 3)
+        self.assertEqual((found["state"], found["rounds"]), ("changes", 2))
+        found = review.state([rev("changes"), blocked(), reply()], OWNER, 2)
+        self.assertEqual(found["rounds"], 1)
+
+    def test_no_tasks_after_a_blocked_review(self):
+        self.assertEqual(review.review_tasks({"comments": [changes_with_tasks(), blocked()]},
+                                             OWNER)["tasks"], [])
+        runner = pr_runner([changes_with_tasks(), blocked()])
+        with self.assertRaises(review.ReviewError):
+            review.tick_review(runner, 9, OWNER, "1.1")
+
+
+def failing(*ids, verdict="changes"):
+    lines = "\n".join(f"- {i}: caused" for i in ids) or "none"
+    return {"author": {"login": OWNER}, "url": "u/failing",
+            "body": review.compose(verdict, NEW, f"Round.\n\n## Failures\n{lines}\n\n## Checked\n- x: y")}
+
+
+class RepeatedTest(unittest.TestCase):
+    def test_failure_ids_parse(self):
+        body = ("## Findings\n- not_a_failure: caused\n\n## Failures\n"
+                "- tests.test_a.A.test_x: caused\n- lint: flaky\n\n## Checked\n- other: caused\n")
+        self.assertEqual(review.failure_ids(body), {"tests.test_a.A.test_x", "lint"})
+        self.assertEqual(review.failure_ids("## Failures\nnone\n"), set())
+        self.assertEqual(review.failure_ids("no section"), set())
+
+    def test_history_carries_failures(self):
+        events = review.history([failing("a", "b"), rev("changes")], OWNER)
+        self.assertEqual([e["failures"] for e in events], [{"a", "b"}, set()])
+
+    def test_shared_id_is_repeated(self):
+        found = review.state([failing("a", "b"), reply(), failing("b", "c")], OWNER, 5)
+        self.assertEqual((found["state"], found["rounds"]), ("repeated", 2))
+
+    def test_disjoint_ids_are_changes(self):
+        found = review.state([failing("a"), reply(), failing("b")], OWNER, 5)
+        self.assertEqual(found["state"], "changes")
+
+    def test_reply_after_the_second_is_replied(self):
+        found = review.state([failing("a"), reply(), failing("a"), reply()], OWNER, 5)
+        self.assertEqual(found["state"], "replied")
+
+    def test_blocked_between_does_not_break_the_pair(self):
+        found = review.state([failing("a"), reply(), blocked(), reply(), failing("a")], OWNER, 5)
+        self.assertEqual((found["state"], found["rounds"]), ("repeated", 2))
+
+    def test_repeated_outranks_escalate(self):
+        found = review.state([failing("a"), reply(), failing("a")], OWNER, 2)
+        self.assertEqual((found["state"], found["rounds"]), ("repeated", 2))
+
+    def test_only_the_last_two_count(self):
+        found = review.state([failing("a"), reply(), failing("a"), reply(), failing("b")],
+                             OWNER, 5)
+        self.assertEqual(found["state"], "changes")
+
+
+class PostBlockedTest(unittest.TestCase):
+    def post(self, body, runner=None):
+        return review.post(cfg(), runner or pr_runner(), 9, "blocked", NEW, body, [], OWNER)
+
+    def test_refused_bodies(self):
+        for body in ("## Reason\nNo cause.", "Cause: network\n## Reason\nx",
+                     "cause: environment\n## Reason\nx", "Cause: environment\nNo reason.",
+                     BLOCKED_BODY + "\n## Tasks\n- [ ] **1.1. Fix**\n"):
+            with self.subTest(body=body):
+                runner = pr_runner()
+                with self.assertRaises(review.ReviewError):
+                    self.post(body, runner)
+                self.assertFalse(any("pr comment" in line for line in runner.lines()))
+
+    def test_allowed_with_open_plan_tasks(self):
+        runner = pr_runner(closing=[4], issue_body=PostGateTest.PLAN_OPEN)
+        self.assertEqual(self.post(BLOCKED_BODY, runner), "https://example.com/c/1")
+        self.assertEqual(self.post("Cause: environment\n\n## Reason\nNo network.\n"),
+                         "https://example.com/c/1")

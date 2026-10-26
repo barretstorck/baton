@@ -195,6 +195,12 @@ class CheckTest(unittest.TestCase):
         changes = [{"author": {"login": OWNER}, "body": review.compose("changes", HEAD, "x")}]
         self.assertTrue(any("reviewer approval" in p for p in problems(comments=changes)))
 
+    def test_blocked_review_is_named_in_the_problem(self):
+        body = review.compose("blocked", HEAD, "Cause: environment\n\n## Reason\nno network")
+        found = problems(comments=[{"author": {"login": OWNER}, "body": body}])
+        self.assertTrue(any("no reviewer approval" in p and "(review state: blocked)" in p
+                            for p in found), found)
+
     def test_review_not_required_when_configured(self):
         cfg = make_config(review={"required": False, "max_rounds": 2})
         self.assertEqual(merge.check(make_pr(comments=[]), cfg, OWNER, "main", FakeRunner()), [])
