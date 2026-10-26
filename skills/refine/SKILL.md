@@ -39,7 +39,7 @@ numbers and the repository; collect their reports.
 | Verification | present, not empty (in the plan file; in the issue for a spike) | A command that actually exists in the repository |
 | Type label | one `type:` label | Correct type |
 | Size | none | One outcome; a developer can finish it in one pull request |
-| Plan file (not for spikes) | `Written against:` line and task boxes numbered 1, 2, 3 | Each task is one unit of work with its own check; the briefs name exact files, signatures and line ranges; tasks run in order |
+| Plan file (not for spikes) | `Written against:` line and task boxes numbered 1, 2, 3 | Each task is one unit of work with its own check (a task that deletes or moves a module, or adds a public name to a package `__init__`, checks with the whole `verify` command); the briefs name exact files, signatures and line ranges; tasks run in order |
 
 The issue template is `${CLAUDE_PLUGIN_ROOT}/templates/issue.md`; the plan file template is
 `${CLAUDE_PLUGIN_ROOT}/templates/plan.md`. The plan lives in `<docs.dir>/plans/<N>-<slug>.md`
@@ -88,6 +88,19 @@ not in the issue, so the issue stays short for a person to read.
 
    - The check is only what proves that task done, to save time when the full suite is long. Put
      the full `## Verification` command in its own last task when it is long; CI covers the rest.
+   - A task is risky when its Files line marks a path `(deleted)` or `(moved to <path>)`, or when
+     it adds a public name to a package `__init__`. Its `Check:` is the brief's `verify.command`
+     written out in full. If that command contains `{worktree}`, write it as is and say in the
+     task that the developer replaces `{worktree}` with its own worktree path; there is no
+     fallback to a smaller command in that case. Only when `verify.command` is empty, use the
+     brief's collect-only command plus its architecture and import-rule tests, or else the
+     broadest build or test command the repository has. Developers run only each task's own
+     `Check:`, so the command must be written into it.
+   - When the brief has a "Collect-only check", every task's `Check:` also includes that command,
+     so an import error shows up in the task that caused it.
+   - Before a risky task, the plan updates the modules and tests that still import the deleted or
+     moved name, in an earlier task or the same one. Find them with `rg -n` and name them in
+     Files, so the check can pass.
    - No code in the plan: the developer writes it. Exact names, signatures and line ranges are
      what keep the developer from searching.
    - Someone who has not read the issue's discussion must be able to do each task from its brief,
