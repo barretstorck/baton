@@ -10,7 +10,7 @@ import re
 import shutil
 import tempfile
 
-from . import checklist, gate, labels, planfile, review
+from . import checklist, gate, labels, planfile, review, verify
 from .run import RunError
 
 PR_FIELDS = ("number,state,isDraft,mergeable,headRefOid,headRefName,baseRefName,"
@@ -150,6 +150,10 @@ def check(pr, cfg, owner, default_branch, runner, notes=None):
         if found["state"] != "approved":
             problems.append("no reviewer approval of the change at the head commit "
                             f"(review state: {found['state']})")
+        recorded = review.verify_state(cfg, pr.get("comments"), owner, pr.get("headRefOid"))
+        if recorded not in ("none", "green"):
+            problems.append(f"verification of {pr.get('headRefOid', '')[:7]} is {recorded} in the "
+                            "latest review; the reviewer runs baton verify")
 
     protected = tuple(cfg.data["protected_paths"])
     touched = [f["path"] for f in files if protected and f["path"].startswith(protected)]
@@ -323,4 +327,8 @@ def merge(number, cfg, runner, notes=None):
         raise PostMergeError(
             f"#{number} is merged, but a follow-up step failed ({error}); "
             f"run `baton merge-pr {number}` again to finish") from error
+    try:
+        verify.remove_logs(repo["owner"]["login"], repo["name"], number)
+    except OSError as error:
+        notes.append(f"could not remove the verification logs of #{number} ({error})")
     return []
