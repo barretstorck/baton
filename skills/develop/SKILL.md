@@ -114,6 +114,10 @@ filters, send long output to a file, chain related commands, wait for a long run
    fast-forwards; if it is refused, someone else moved the branch or the plan: return
    `BLOCKED: the branch moved`. Never force-push. (The older way, a plan file on the branch:
    stage the ticked file with the code and `git push origin HEAD:<branch>`.)
+   After the push, run `baton tasks issue <N>` and confirm that your task's `ticked_by` commit is
+   your own `<sha>`; if it is another commit (for example the orchestrator's replan), return
+   `BLOCKED: the plan was ticked by another commit`. A plan on a branch or in the body shows no
+   `ticked_by`; skip this check there.
 
 7. **The last task of the plan** also:
    - fetches and merges the default branch in, resolves conflicts, re-runs its check, pushes;
