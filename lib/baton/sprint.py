@@ -284,6 +284,12 @@ def snapshot(cfg, runner, milestone=None):
         return {"missing_paths": [path for path in named if path not in files] if files else [],
                 "plan_behind": commits_behind(runner, base, branch) if base else None}
 
+    def behind_default(pr):
+        """Default-branch commits missing from the pull request's branch, or None."""
+        if not pr or not pr.get("headRefName"):
+            return None
+        return branch_behind(runner, branch, pr["headRefName"])
+
     for item in sorted(issues, key=lambda entry: entry["number"]):
         number = item["number"]
         labels = {label["name"] for label in item.get("labels") or []}
@@ -309,6 +315,7 @@ def snapshot(cfg, runner, milestone=None):
             found = checklist.plan(text)
             fixes = review.review_tasks(pr, owner) if pr else None
             spike = cfg.label("type:spike") in labels
+            behind = behind_default(pr) if status in ("status:in-dev", "status:in-review") else None
             result["progress"][str(number)] = {
                 "pr": pr["number"] if pr else None,
                 "spike": spike,
@@ -319,6 +326,8 @@ def snapshot(cfg, runner, milestone=None):
                            if fixes and fixes["total"] else None),
                 "review_without_tasks": bool(fixes and fixes["review"] and not fixes["total"]),
                 "stale": staleness(text, found),
+                "branch_behind": behind,
+                "merge_first": behind is not None and behind >= BEHIND_LIMIT,
             }
         if status == "status:in-dev":
             result["in_dev"].append(number)
@@ -440,3 +449,14 @@ def commits_behind(runner, base, branch):
         return int(runner(["git", "rev-list", "--count", f"{base}..origin/{branch}"]).strip())
     except (RunError, ValueError):
         return None
+
+
+def branch_behind(runner, default, branch):
+    """Default-branch commits that origin/<branch> lacks; None when git cannot say."""
+    try:
+        runner(["git", "fetch", "--quiet", "origin", default])
+        runner(["git", "fetch", "--quiet", "origin",
+                f"+refs/heads/{branch}:refs/baton/branches/{branch}"])
+    except RunError:
+        return None
+    return commits_behind(runner, f"refs/baton/branches/{branch}", default)

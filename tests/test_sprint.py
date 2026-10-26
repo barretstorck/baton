@@ -319,14 +319,16 @@ class SnapshotTest(unittest.TestCase):
               "comments": [{"author": {"login": OWNER}, "url": "u#issuecomment-1",
                             "body": review.compose("changes", "d" * 40,
                                                    "## Tasks\n- [ ] **1.1 Fix**\n")}]}
-        found = snap([dev, issue(5, "ready")], prs=[pr])
+        found = sprint.snapshot(cfg(), FakeRunner(replies(
+            [dev, issue(5, "ready")], prs=[pr], extra={"git rev-list": "2\n"})))
         self.assertEqual(found["progress"]["4"],
                          {"pr": 40, "spike": False, "unplanned": False,
                           "plan": {"done": 1, "total": 2, "next": "2"},
                           "next_task_url": None,
                           "review": {"round": 1, "done": 0, "total": 1, "next": "1.1"},
                           "review_without_tasks": False,
-                          "stale": {"missing_paths": [], "plan_behind": None}})
+                          "stale": {"missing_paths": [], "plan_behind": 2},
+                          "branch_behind": 2, "merge_first": False})
         self.assertEqual(found["progress"]["5"]["plan"], None)
         self.assertIsNone(found["progress"]["5"]["stale"])
         self.assertTrue(found["progress"]["5"]["unplanned"])
@@ -803,6 +805,30 @@ class DefaultBranchStateTest(unittest.TestCase):
                 raise run_module.RunError("unknown revision")
         self.assertIsNone(sprint.commits_behind(Failing(), "bad", "main"))
         self.assertIsNone(sprint.commits_behind(FakeRunner({"git rev-list": "oops"}), "a", "main"))
+
+    def _behind_snap(self, count, with_pr=True):
+        item = issue(7, "in-dev", "deliverable")
+        prs = [{"number": 70, "headRefName": "issue-7-x", "headRefOid": "d" * 40,
+                "isDraft": True, "mergeable": "MERGEABLE", "statusCheckRollup": [],
+                "closingIssuesReferences": [{"number": 7}], "comments": []}] if with_pr else []
+        runner = FakeRunner(replies([item], prs=prs, extra={"git rev-list": f"{count}\n"}))
+        return sprint.snapshot(cfg(), runner)["progress"]["7"], runner
+
+    def test_fifteen_behind_sets_merge_first(self):
+        found, runner = self._behind_snap(15)
+        self.assertEqual((found["branch_behind"], found["merge_first"]), (15, True))
+        self.assertIn("git rev-list --count refs/baton/branches/issue-7-x..origin/main",
+                      runner.lines())
+        self.assertIn("git fetch --quiet origin +refs/heads/issue-7-x:refs/baton/branches/issue-7-x",
+                      runner.lines())
+
+    def test_three_behind_does_not(self):
+        found, _ = self._behind_snap(3)
+        self.assertEqual((found["branch_behind"], found["merge_first"]), (3, False))
+
+    def test_no_pull_request_gives_none(self):
+        found, _ = self._behind_snap(20, with_pr=False)
+        self.assertEqual((found["branch_behind"], found["merge_first"]), (None, False))
 
     def test_triggers_on_push(self):
         yes = ["on: push\n", "on: [pull_request, push]\n", "on:\n  push:\n    branches: [main]\n",
