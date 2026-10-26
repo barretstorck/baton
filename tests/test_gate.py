@@ -166,6 +166,9 @@ class GateTest(unittest.TestCase):
                 "gh api -X PATCH repos/o/r/issues/5 -F state=closed"]
         cmds += [f"gh api graphql -f query='mutation {{ {m}(input: {{id: \"X\"}}) "
                  f"{{ clientMutationId }} }}'" for m in mutations]
+        for endpoint in ("/graphql", "https://api.github.com/graphql"):
+            cmds.append(f"gh api {endpoint} -f query='mutation {{ closeIssue(input: {{id: \"X\"}}) "
+                        f"{{ clientMutationId }} }}'")
         for cmd in cmds:
             with self.subTest(cmd=cmd):
                 problems = gate.decide(cmd, make_repo(), TERMS)

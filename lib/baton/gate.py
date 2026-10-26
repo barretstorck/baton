@@ -61,6 +61,7 @@ _CLOSE_MESSAGE = (
 _API_MERGE = re.compile(r"/pulls/\d+/merge\b")
 _API_STATE_ENDPOINT = re.compile(r"(?:^|/)(?:issues|pulls)/\d+/?(?:\?|$)")
 _API_CLOSE_MUTATION = re.compile(r"\b(?:closeIssue|reopenIssue|closePullRequest|reopenPullRequest)\b")
+_API_GRAPHQL = re.compile(r"(?:^|/)graphql/?(?:\?|$)")
 _API_COMMENT = re.compile(r"/(?:comments|reviews)(?:/\d+)?(?:/|\?|$)")
 
 
@@ -225,7 +226,7 @@ def _inspect_gh_api(call, item):
     for flag, value in _options(call.args, _API_FIELD_OPTS | {"--input"}):
         if flag is None:
             state_endpoint = state_endpoint or bool(_API_STATE_ENDPOINT.search(value))
-            graphql = graphql or value == "graphql"
+            graphql = graphql or bool(_API_GRAPHQL.search(value))
             if _API_MERGE.search(value):
                 item.problems.append("merging directly is not allowed; use `baton merge-pr <number>`")
             if _API_COMMENT.search(value):
