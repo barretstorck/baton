@@ -19,6 +19,7 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`); reads the plan file from `refs/plans/<N>`, or (older way) on the issue branch, or a legacy `## Plan` in the body |
 | An issue's plan file | the issue's first line is `Plan: [path](link)`. A plan on the ref is read with `git fetch --quiet origin +refs/plans/<N>:refs/baton/plans/<N>`, then `git show refs/baton/plans/<N>:<path>` (the path is in `baton tasks issue <N>`; it is `<docs.dir>/plans/<N>-<slug>.md`, `docs.dir` from `baton config`). Only a plan still on the branch (the older way) is a file in a checkout of `issue-<N>-<slug>`. |
 | A review's tasks | `baton tasks pr <N>` (the latest review's `## Tasks`; none after an approval) |
+| Clean up leftovers (orchestrator) | `baton clean`: removes agent worktrees under `.claude/worktrees/` that are not on an open issue's branch, have no uncommitted changes and no unmerged commits, and the log folders of closed or merged pull requests; prints `removed`/`kept` lines, exit 1 if one could not be removed |
 | Quota use | `baton usage --repo <owner/repo> [--since <UTC ISO time>] [--json]`: per issue and role, from local transcripts |
 | Repository owner and default branch | `gh repo view --json owner,defaultBranchRef` |
 
