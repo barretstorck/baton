@@ -239,6 +239,50 @@ class ForbidTest(unittest.TestCase):
         bad = f"refs/heads/other {head} refs/heads/other {ZEROS}\n"
         self.assertTrue(any("forbidden" in p for p in githooks.pre_push(repo, bad, TERMS)))
 
+    def pushed(self):
+        repo = self.staged(plan=ALLOWS)
+        git(repo, "commit", "-q", "-m", "c")
+        head = git(repo, "rev-parse", "HEAD")
+        git(repo, "checkout", "-q", "--detach")
+        return repo, head
+
+    def test_push_from_other_issue_branch_does_not_borrow_allowance(self):
+        repo, head = self.pushed()
+        line = f"refs/heads/issue-8-y {head} refs/heads/issue-7-x {ZEROS}\n"
+        self.assertTrue(any("forbidden" in p for p in githooks.pre_push(repo, line, TERMS)))
+
+    def test_push_from_non_issue_local_ref_does_not_borrow_allowance(self):
+        repo, head = self.pushed()
+        for local in ("HEAD", head):
+            line = f"{local} {head} refs/heads/issue-7-x {ZEROS}\n"
+            self.assertTrue(any("forbidden" in p for p in githooks.pre_push(repo, line, TERMS)), local)
+
+    def test_developer_push_of_head_with_matching_plan_ref_gets_allowance(self):
+        repo, head = self.pushed()
+        base = git(repo, "rev-parse", "HEAD~1")
+        lines = (f"HEAD {head} refs/heads/issue-7-x {ZEROS}\n"
+                 f"{base} {base} refs/plans/7 {ZEROS}\n")
+        self.assertEqual(githooks.pre_push(repo, lines, TERMS), [])
+
+    def test_developer_push_with_other_issue_plan_ref_gets_none(self):
+        repo, head = self.pushed()
+        base = git(repo, "rev-parse", "HEAD~1")
+        lines = (f"HEAD {head} refs/heads/issue-7-x {ZEROS}\n"
+                 f"{base} {base} refs/plans/8 {ZEROS}\n")
+        self.assertTrue(any("forbidden" in p for p in githooks.pre_push(repo, lines, TERMS)))
+
+    def test_plan_ref_does_not_rescue_a_local_branch_of_another_issue(self):
+        repo, head = self.pushed()
+        base = git(repo, "rev-parse", "HEAD~1")
+        lines = (f"refs/heads/issue-8-y {head} refs/heads/issue-7-x {ZEROS}\n"
+                 f"{base} {base} refs/plans/7 {ZEROS}\n")
+        self.assertTrue(any("forbidden" in p for p in githooks.pre_push(repo, lines, TERMS)))
+
+    def test_push_with_matching_issue_branch_passes(self):
+        repo, head = self.pushed()
+        line = f"refs/heads/issue-7-x {head} refs/heads/issue-7-x {ZEROS}\n"
+        self.assertEqual(githooks.pre_push(repo, line, TERMS), [])
+
 
 class PrePushTest(unittest.TestCase):
     def test_new_branch_scans_commits_not_on_remote(self):
