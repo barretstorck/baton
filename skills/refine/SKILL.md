@@ -107,6 +107,9 @@ not in the issue, so the issue stays short for a person to read.
      brief's collect-only command plus its architecture and import-rule tests, or else the
      broadest build or test command the repository has. Developers run only each task's own
      `Check:`, so the command must be written into it.
+   - When the brief's `forbid_added` forbids an entry (for example a lint ignore) and a task really
+     must add it, write `Allows: forbid_added "<glob>"` on its own line in that task's brief, with
+     the glob exactly as in `forbid_added`. Otherwise the hooks refuse the developer's commit.
    - When the brief has a "Collect-only check", every task's `Check:` also includes that command,
      so an import error shows up in the task that caused it.
    - Before a risky task, the plan updates the modules and tests that still import the deleted or

@@ -64,6 +64,8 @@ Where a row says "write ... to a file", an inline heredoc works too and needs no
 - No text from stdin, a shell variable or `$(...)` in a title, body or commit message. Inline text
   and inline heredocs (`"$(cat <<'EOF' ... EOF)"`) are fine.
 - No `--no-verify`, `core.hooksPath` or overriding `HOME` or `GIT_*` settings on a commit or push.
+- The hooks refuse a commit or push that adds a line matching the brief's `forbid_added` rules
+  (naming the line), unless the plan has `Allows: forbid_added "<glob>"`. Remove the entry.
 - If the gate reports a privacy finding, replace the detail with a placeholder ("the NAS",
   "family-a/wedding", "the review share"). Never add the detail to `privacy_allow`.
 

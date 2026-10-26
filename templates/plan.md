@@ -22,6 +22,8 @@ Written against: (full commit sha of the default branch the plan was written fro
   - Port from: `path:first-last` (when porting; leave out otherwise)
   - Check: the test or subset that proves this task done, a build, or "none"
 
+(Optional, on its own line in a task: `Allows: forbid_added "<glob>"` lets that task add lines the brief's `forbid_added` rule for `<glob>` otherwise refuses.)
+
 (A task whose Files line marks a path `(deleted)` or `(moved to <path>)`, or that adds a public name to a package `__init__`, uses the whole-suite check described in the refine skill as its `Check:`.)
 
 (Not for spikes. This file is committed to `refs/plans/<N>` by `baton plan commit`, not to a branch. Tasks run in order, one developer each. No code here; the developer writes it.)
