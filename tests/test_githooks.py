@@ -42,6 +42,13 @@ class AddedTextTest(unittest.TestCase):
 
 
 class AddedByFileTest(unittest.TestCase):
+    def test_odd_line_separators_stay_inside_the_added_line(self):
+        for sep in ("\x0c", "\x85", "\u2028"):
+            patch = ("diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -0,0 +1 @@\n"
+                     f"+x{sep}secret\n")
+            self.assertEqual(githooks.added_by_file(patch), [("a.py", f"x{sep}secret")])
+            self.assertEqual(githooks.added_text(patch), f"x{sep}secret")
+
     def test_splits_per_file_and_keeps_plus_lines_in_hunks(self):
         patch = ("diff --git a/one.txt b/one.txt\n--- a/one.txt\n+++ b/one.txt\n"
                  "@@ -1 +1,2 @@\n-old\n+new\n+++ not a header\n"

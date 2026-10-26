@@ -20,7 +20,7 @@ def hooks_dir(repo):
 
 def added_text(patch):
     """The lines a patch adds, without diff headers, hunk headers or context."""
-    return "\n".join(line[1:] for line in patch.splitlines()
+    return "\n".join(line[1:] for line in patch.split("\n")
                      if line.startswith("+") and not line.startswith("+++"))
 
 
@@ -39,7 +39,7 @@ def added_by_file(patch):
         if path is not None and added:
             entries.append((path, "\n".join(added)))
 
-    for line in patch.splitlines():
+    for line in patch.split("\n"):
         if line.startswith("diff --git "):
             flush()
             path, added, in_hunk = None, [], False

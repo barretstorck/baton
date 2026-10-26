@@ -31,6 +31,12 @@ class ViolationsTest(unittest.TestCase):
         p = patch("pyproject.toml", "x = 1", removed=['"src/x.py" = ["E501"]'])
         self.assertEqual(forbid.violations(p, RULES), [])
 
+    def test_unicode_line_separators_do_not_hide_a_line(self):
+        for sep in ("\x0c", "\x0b", "\x1c", "\x85", "\u2028"):
+            with self.subTest(sep=repr(sep)):
+                p = patch("pyproject.toml", sep + '"src/x.py" = ["E501"]')
+                self.assertEqual(len(forbid.violations(p, RULES)), 1)
+
     def test_allowed_glob(self):
         p = patch("pyproject.toml", '"src/x.py" = ["E501"]')
         self.assertEqual(forbid.violations(p, RULES, allowed={"pyproject.toml"}), [])
