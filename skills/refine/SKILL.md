@@ -58,6 +58,13 @@ not in the issue, so the issue stays short for a person to read.
    defines a measurement (a timing, a benchmark, a size, a count), check that it measures what the
    user waits for, for example a whole run's wall time rather than one step's internal timer, and
    say in the acceptance criteria exactly how it is measured.
+   You work in your own worktree, so you may build the project, run its tests, write throwaway
+   files and run quick experiments there, and you may use online research and logs, whatever
+   gives the developer the context they need. You commit nothing but the plan (through
+   `baton plan commit`). Leave no scratch files behind: everything stays inside your worktree,
+   containers run as the current user so they leave no root-owned files (or you remove them
+   before returning). Send long command output to a log file and read it through filters
+   (`tail`, `rg -n`), so your context stays small across the issues of one run.
    If the issue comes from a spike, its Pointers name the spike's `Prototype:` link (from the
    findings comment) as reference material, never as a base branch: the work starts on a fresh
    branch.
@@ -175,6 +182,8 @@ branch's checks pass again. Your job is the diagnosis.
 ## Never
 
 - Start implementing. Refinement ends at a ready description.
+- Commit or push anything but the plan.
+- Leave scratch files outside your worktree.
 - Invent requirements the author did not ask for. Put ideas under a "Suggestions" heading for the
   maintainer.
 - Mark ready an issue written by someone other than the maintainer.
