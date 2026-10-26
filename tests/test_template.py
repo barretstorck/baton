@@ -25,7 +25,8 @@ class TemplateTest(unittest.TestCase):
 
     def test_plugin_files_exist(self):
         for path in (".claude-plugin/plugin.json", "hooks/hooks.json",
-                     "skills/init/SKILL.md", "skills/review/SKILL.md", "agents/baton-developer.md",
+                     "skills/init/SKILL.md", "skills/review/SKILL.md",
+                     "skills/open-questions/SKILL.md", "agents/baton-developer.md",
                      "agents/baton-reviewer.md",
                      "agents/baton-refiner.md", "bin/baton"):
             self.assertTrue((ROOT / path).is_file(), path)

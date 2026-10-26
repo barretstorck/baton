@@ -1,8 +1,9 @@
 import json
 import os
 import sys
+from datetime import datetime, timezone
 
-from . import checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, review, run, scan, sprint, state, usage, verify
+from . import checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, questions, review, run, scan, sprint, state, usage, verify
 
 
 def cmd_config(args):
@@ -332,6 +333,18 @@ def cmd_answers(args):
     return 0
 
 
+def cmd_open_questions(args):
+    if args:
+        print("usage: baton open-questions", file=sys.stderr)
+        return 64
+    cfg = _require_config()
+    issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "300",
+                                 "--json", "number,title,state,labels,body,author,comments"]))
+    found = questions.open_questions(issues, cfg, _owner(), datetime.now(timezone.utc))
+    print(json.dumps(found, indent=2))
+    return 0
+
+
 def cmd_ready_check(args):
     if len(args) != 1 or not args[0].isdigit():
         print("usage: baton ready-check <issue-number>", file=sys.stderr)
@@ -420,6 +433,7 @@ COMMANDS = {
     "clean": cmd_clean,
     "close": cmd_close,
     "answers": cmd_answers,
+    "open-questions": cmd_open_questions,
     "comment": cmd_comment,
     "ready-check": cmd_ready_check,
     "config": cmd_config,

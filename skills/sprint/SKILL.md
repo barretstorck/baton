@@ -51,6 +51,13 @@ A pass reads the current state and acts on everything it finds. Do the steps in 
 start the next pass when something changes: a developer returns, the maintainer speaks, or CI
 finishes. Begin every pass with a fresh `baton sprint-status`.
 
+**With `/baton:open-questions` in the same session.** While the maintainer is going through
+questions with `/baton:open-questions`, keep making passes as usual. Refiners that skill
+dispatches appear under `Running` (an `Issue [#N]` line each), issues answered there appear
+under `Finished` once their decision is recorded, and the update keeps the three-section format
+of "Talking to the maintainer". Answers it records are orchestrator `decision` comments, so the
+"Answers" step below picks them up like any other.
+
 ### 1. Default branch
 
 If `default_branch.state` is `red`, the repair comes before everything else
