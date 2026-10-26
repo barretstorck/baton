@@ -163,6 +163,66 @@ class DependencyFileTest(unittest.TestCase):
         self.assertEqual(githooks.pre_push(repo, line, TERMS), [])
 
 
+FORBID = '---\nforbid_added:\n  "pyproject.toml": \'^\\s*"src/\'\n---\n'
+PLAN_PATH = "docs/baton/plans/7-x.md"
+ALLOWS = '- [ ] **1. t**\n  - Allows: forbid_added "pyproject.toml"\n'
+
+
+def add_plan(repo, text):
+    write(repo, PLAN_PATH, text)
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "plan")
+    git(repo, "update-ref", "refs/plans/7", "HEAD")
+    git(repo, "rm", "-q", PLAN_PATH)
+    git(repo, "commit", "-q", "-m", "unplan")
+
+
+class ForbidTest(unittest.TestCase):
+    def staged(self, branch="issue-7-x", plan=None):
+        repo = make_repo(FORBID)
+        if plan is not None:
+            add_plan(repo, plan)
+        git(repo, "checkout", "-q", "-b", branch)
+        write(repo, "pyproject.toml", '[x]\n"src/a" = [1]\n')
+        git(repo, "add", "-A")
+        return repo
+
+    def test_matching_added_line_blocks(self):
+        problems = githooks.pre_commit(self.staged(), TERMS)
+        self.assertTrue(any("forbidden added line in pyproject.toml" in p for p in problems))
+
+    def test_plan_allowance_passes(self):
+        self.assertEqual(githooks.pre_commit(self.staged(plan=ALLOWS), TERMS), [])
+
+    def test_plan_without_allowance_blocks(self):
+        repo = self.staged(plan="- [ ] **1. t**\n")
+        self.assertTrue(githooks.pre_commit(repo, TERMS))
+
+    def test_detached_head_still_enforces(self):
+        repo = self.staged()
+        git(repo, "commit", "-q", "-m", "c")
+        git(repo, "checkout", "-q", "--detach")
+        write(repo, "pyproject.toml", '[x]\n"src/a" = [1]\n"src/b" = [2]\n')
+        git(repo, "add", "-A")
+        self.assertTrue(githooks.pre_commit(repo, TERMS))
+
+    def test_no_rules_no_change(self):
+        repo = make_repo()
+        write(repo, "pyproject.toml", '"src/a" = [1]\n')
+        git(repo, "add", "-A")
+        self.assertEqual(githooks.pre_commit(repo, TERMS), [])
+
+    def test_push_blocks_and_uses_pushed_branch_allowance(self):
+        repo = self.staged(plan=ALLOWS)
+        git(repo, "commit", "-q", "-m", "c")
+        head = git(repo, "rev-parse", "HEAD")
+        git(repo, "checkout", "-q", "--detach")
+        ok = f"refs/heads/issue-7-x {head} refs/heads/issue-7-x {ZEROS}\n"
+        self.assertEqual(githooks.pre_push(repo, ok, TERMS), [])
+        bad = f"refs/heads/other {head} refs/heads/other {ZEROS}\n"
+        self.assertTrue(any("forbidden" in p for p in githooks.pre_push(repo, bad, TERMS)))
+
+
 class PrePushTest(unittest.TestCase):
     def test_new_branch_scans_commits_not_on_remote(self):
         repo = make_repo()

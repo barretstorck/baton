@@ -67,7 +67,27 @@ def _image_problems(cfg, paths):
     return problems
 
 
-def _check(cfg, patch, new_files, terms, messages=""):
+def _forbid_problems(cfg, patch, cwd, branch):
+    rules = cfg.data["forbid_added"]
+    if not rules:
+        return []
+    from . import forbid
+
+    def runner(cmd):
+        return run.run(["git", "-C", str(cwd)] + cmd[1:])
+
+    allowed = forbid.allowed_globs(forbid.plan_text(runner, cfg, branch))
+    return forbid.violations(patch, rules, allowed)
+
+
+def _current_branch(cwd):
+    try:
+        return run.run(["git", "-C", str(cwd), "branch", "--show-current"]).strip()
+    except run.RunError:
+        return ""
+
+
+def _check(cfg, patch, new_files, terms, messages="", cwd=".", branch=""):
     allow = cfg.data["privacy_allow"]
     findings = scan.scan_text("\n".join([messages] + new_files), terms, allow)
     for path, text in added_by_file(patch):
@@ -76,7 +96,7 @@ def _check(cfg, patch, new_files, terms, messages=""):
     kinds = sorted({finding.kind for finding in findings})
     problems = [f"privacy: {kind} in added lines, new file names or commit message"
                 for kind in kinds]
-    return problems + _image_problems(cfg, new_files)
+    return problems + _image_problems(cfg, new_files) + _forbid_problems(cfg, patch, cwd, branch)
 
 
 def _names(output):
@@ -90,7 +110,7 @@ def pre_commit(cwd, terms):
     git = ["git", "-C", cwd, "-c", "core.quotePath=false"]
     patch = run.run(git + ["diff", "--cached", "-U0", "--no-color"])
     new_files = _names(run.run(git + ["diff", "--cached", "--name-only", "--diff-filter=AR"]))
-    return _check(cfg, patch, new_files, terms)
+    return _check(cfg, patch, new_files, terms, cwd=cwd, branch=_current_branch(cwd))
 
 
 def pre_push(cwd, stdin_text, terms):
@@ -103,7 +123,7 @@ def pre_push(cwd, stdin_text, terms):
         parts = line.split()
         if len(parts) != 4:
             continue
-        _, local_sha, _, remote_sha = parts
+        _, local_sha, remote_ref, remote_sha = parts
         if local_sha == ZEROS:
             continue
         revs = [local_sha, "--not", "--remotes"] if remote_sha == ZEROS else [f"{remote_sha}..{local_sha}"]
@@ -111,7 +131,9 @@ def pre_push(cwd, stdin_text, terms):
         messages = run.run(git + ["log", "--format=%B"] + revs)
         new_files = _names(run.run(
             git + ["log", "--diff-filter=AR", "--name-only", "--format="] + revs))
-        problems.extend(_check(cfg, patch, new_files, terms, messages))
+        branch = (remote_ref[len("refs/heads/"):] if remote_ref.startswith("refs/heads/")
+                  else _current_branch(cwd))
+        problems.extend(_check(cfg, patch, new_files, terms, messages, cwd=cwd, branch=branch))
     return sorted(set(problems))
 
 
