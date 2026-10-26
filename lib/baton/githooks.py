@@ -24,6 +24,66 @@ def added_text(patch):
                      if line.startswith("+") and not line.startswith("+++"))
 
 
+_ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11, "\\": 92, '"': 34}
+
+
+def unquote_path(name):
+    """Undo the C-style quoting of a path ("..." with backslash and octal escapes).
+
+    A name that does not start with a double quote is returned as it is. Raises ValueError for
+    a quoted name that cannot be parsed or is not UTF-8.
+    """
+    if not name.startswith('"'):
+        return name
+    if len(name) < 2 or not name.endswith('"'):
+        raise ValueError(name)
+    body, out, i = name[1:-1], bytearray(), 0
+    while i < len(body):
+        ch = body[i]
+        if ch == '"':
+            raise ValueError(name)
+        if ch != "\\":
+            out += ch.encode("utf-8")
+            i += 1
+            continue
+        nxt = body[i + 1:i + 2]
+        if nxt and nxt in "01234567":
+            digits = body[i + 1:i + 4]
+            if len(digits) < 3 or any(d not in "01234567" for d in digits) or int(digits, 8) > 255:
+                raise ValueError(name)
+            out.append(int(digits, 8))
+            i += 4
+        elif nxt in _ESCAPES:
+            out.append(_ESCAPES[nxt])
+            i += 2
+        else:
+            raise ValueError(name)
+    try:
+        return out.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError(name) from None
+
+
+def _new_path(line):
+    """(path, parsed) from a "+++ " header; an unparsable quoted name is kept raw, parsed False."""
+    name = line[4:].rstrip("\r")
+    if not name.startswith('"'):
+        name = name.split("\t")[0]
+    try:
+        name = unquote_path(name)
+    except ValueError:
+        return name, False
+    if name == "/dev/null":
+        return None, True
+    return (name[2:] if name.startswith("b/") else name), True
+
+
+def unparsable_headers(patch):
+    """The raw "+++ " headers whose quoted path cannot be decoded."""
+    return [line for line in patch.split("\n")
+            if line.startswith("+++ ") and not _new_path(line)[1]]
+
+
 def added_by_file(patch):
     """(path, added lines) for each file a patch changes, by the path on the new side.
 
@@ -47,8 +107,7 @@ def added_by_file(patch):
             if line.startswith("+"):
                 added.append(line[1:])
         elif line.startswith("+++ "):
-            name = line[4:].split("\t")[0]
-            path = None if name == "/dev/null" else name[2:] if name.startswith("b/") else name
+            path = _new_path(line)[0]
         elif line.startswith("@@"):
             in_hunk = True
     flush()

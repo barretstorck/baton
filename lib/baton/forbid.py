@@ -16,7 +16,8 @@ def allowed_globs(plan_text):
 
 def violations(patch, rules, allowed=()):
     """One message per added line that matches a rule whose glob is not allowed."""
-    found = []
+    found = [f"cannot parse the diff header, so its added lines are not checked: {header}"
+             for header in githooks.unparsable_headers(patch)]
     for path, added in githooks.added_by_file(patch):
         for glob, pattern in rules.items():
             if glob in allowed or not fnmatch.fnmatch(path, glob):

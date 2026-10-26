@@ -37,6 +37,19 @@ class ViolationsTest(unittest.TestCase):
                 p = patch("pyproject.toml", sep + '"src/x.py" = ["E501"]')
                 self.assertEqual(len(forbid.violations(p, RULES)), 1)
 
+    def test_quoted_header_is_unquoted_before_matching(self):
+        p = ('diff --git "a/caf\\303\\251.py" "b/caf\\303\\251.py"\n--- "a/caf\\303\\251.py"\n'
+             '+++ "b/caf\\303\\251.py"\n@@ -0,0 +1 @@\n+bad\n')
+        out = forbid.violations(p, {"*.py": "^bad$"})
+        self.assertEqual(out, ["forbidden added line in caf\u00e9.py: bad"])
+
+    def test_unparsable_header_is_reported(self):
+        for name in ('"b/bad\\xff.py"', '"b/\\377.py"', '"b/bad\\9.py"', '"b/open.py'):
+            with self.subTest(name=name):
+                p = f"diff --git a/x b/x\n--- a/x\n+++ {name}\n@@ -0,0 +1 @@\n+bad\n"
+                out = forbid.violations(p, {"*.py": "^bad$"})
+                self.assertTrue(any(name in line for line in out), out)
+
     def test_allowed_glob(self):
         p = patch("pyproject.toml", '"src/x.py" = ["E501"]')
         self.assertEqual(forbid.violations(p, RULES, allowed={"pyproject.toml"}), [])

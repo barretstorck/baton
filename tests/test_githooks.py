@@ -49,6 +49,16 @@ class AddedByFileTest(unittest.TestCase):
             self.assertEqual(githooks.added_by_file(patch), [("a.py", f"x{sep}secret")])
             self.assertEqual(githooks.added_text(patch), f"x{sep}secret")
 
+    def test_quoted_names_are_unquoted(self):
+        patch = ('diff --git "a/caf\\303\\251 \\"x\\".py" "b/caf\\303\\251 \\"x\\".py"\n'
+                 '--- /dev/null\n+++ "b/caf\\303\\251 \\"x\\"\\t.py"\n@@ -0,0 +1 @@\n+bad\n')
+        self.assertEqual(githooks.added_by_file(patch), [('caf\u00e9 "x"\t.py', "bad")])
+
+    def test_unparsable_quoted_name_is_flagged(self):
+        patch = 'diff --git a/x b/x\n--- a/x\n+++ "b/\\377.py"\n@@ -0,0 +1 @@\n+bad\n'
+        self.assertEqual(githooks.unparsable_headers(patch), ['+++ "b/\\377.py"'])
+        self.assertEqual(githooks.added_by_file(patch), [('"b/\\377.py"', "bad")])
+
     def test_splits_per_file_and_keeps_plus_lines_in_hunks(self):
         patch = ("diff --git a/one.txt b/one.txt\n--- a/one.txt\n+++ b/one.txt\n"
                  "@@ -1 +1,2 @@\n-old\n+new\n+++ not a header\n"
