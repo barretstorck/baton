@@ -383,8 +383,8 @@ def cmd_clean(args):
         print(line, file=sys.stderr if line.startswith("cannot remove") else sys.stdout)
 
     _, _, failed = clean.clean_worktrees(run.run, repo["defaultBranchRef"]["name"], report)
-    clean.clean_logs(run.run, str(logs_root), print)
-    return 1 if failed else 0
+    _, failed_logs = clean.clean_logs(run.run, str(logs_root), report)
+    return 1 if failed or failed_logs else 0
 
 
 COMMANDS = {

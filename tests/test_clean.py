@@ -151,24 +151,25 @@ class LogsTest(unittest.TestCase):
             for name in ("pr-1", "pr-2", "pr-3", "notes"):
                 os.makedirs(os.path.join(root, name))
             lines = []
-            removed = clean.clean_logs(runner, root, lines.append)
+            removed, failed = clean.clean_logs(runner, root, lines.append)
+            self.assertEqual(failed, [])
             self.assertEqual(removed, ["pr-1", "pr-2"])
             self.assertEqual(sorted(os.listdir(root)), ["notes", "pr-3"])
             self.assertTrue(any("kept" in l and "pr-3" in l for l in lines))
         self.assertNotIn("gh pr view notes", " ".join(runner.lines()))
 
     def test_logs_missing_root(self):
-        self.assertEqual(clean.clean_logs(FakeRunner(), "/nonexistent-logs-root", print), [])
+        self.assertEqual(clean.clean_logs(FakeRunner(), "/nonexistent-logs-root", print), ([], []))
 
 
 class CmdCleanTest(unittest.TestCase):
-    def run_cmd(self, failed):
+    def run_cmd(self, failed, failed_logs=()):
         from baton import cli
         runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}}'})
         with mock.patch.object(cli, "_require_config"), \
                 mock.patch.object(cli.run, "run", runner), \
                 mock.patch.object(cli.clean, "clean_worktrees", return_value=([], [], failed)), \
-                mock.patch.object(cli.clean, "clean_logs", return_value=[]) as logs:
+                mock.patch.object(cli.clean, "clean_logs", return_value=([], list(failed_logs))) as logs:
             code = cli.cmd_clean([])
         return code, logs
 
@@ -180,6 +181,28 @@ class CmdCleanTest(unittest.TestCase):
     def test_exit_one_when_removal_failed(self):
         code, _ = self.run_cmd(["/x"])
         self.assertEqual(code, 1)
+
+    def test_exit_one_when_log_removal_failed(self):
+        code, _ = self.run_cmd([], ["/logs/pr-1"])
+        self.assertEqual(code, 1)
+
+    def test_log_rmtree_failure_reports_and_exits_one(self):
+        import io
+        import pathlib
+        from baton import cli
+        runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}}',
+                             "gh pr view 1": '{"state": "MERGED"}'})
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "pr-1"))
+            with mock.patch.object(cli, "_require_config"), \
+                    mock.patch.object(cli.run, "run", runner), \
+                    mock.patch.object(cli.verify, "logs_dir", return_value=pathlib.Path(root) / "pr-0"), \
+                    mock.patch.object(cli.clean, "clean_worktrees", return_value=([], [], [])), \
+                    mock.patch.object(clean.shutil, "rmtree", side_effect=OSError("denied")), \
+                    mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+                code = cli.cmd_clean([])
+            self.assertEqual(code, 1)
+            self.assertIn("cannot remove", err.getvalue())
 
 
 if __name__ == "__main__":

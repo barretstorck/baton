@@ -122,10 +122,10 @@ def clean_worktrees(runner, default_branch, report):
 
 
 def clean_logs(runner, logs_root, report):
-    """Remove `pr-<PR>` log folders whose pull request is closed or merged; returns their names."""
-    removed = []
+    """Remove `pr-<PR>` log folders whose pull request is closed or merged; returns (removed names, failed paths)."""
+    removed, failed = [], []
     if not os.path.isdir(logs_root):
-        return removed
+        return removed, failed
     for name in sorted(os.listdir(logs_root)):
         match = re.fullmatch(r"pr-(\d+)", name)
         path = os.path.join(logs_root, name)
@@ -146,7 +146,8 @@ def clean_logs(runner, logs_root, report):
             owner = foreign_owner(path)
             detail = f"{owner[0]} is owned by {owner[1]}" if owner else "it could not be removed"
             report(f"cannot remove {path}: {detail}")
+            failed.append(path)
             continue
         removed.append(name)
         report(f"removed {path}")
-    return removed
+    return removed, failed
