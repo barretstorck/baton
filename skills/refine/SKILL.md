@@ -58,6 +58,13 @@ not in the issue, so the issue stays short for a person to read.
    defines a measurement (a timing, a benchmark, a size, a count), check that it measures what the
    user waits for, for example a whole run's wall time rather than one step's internal timer, and
    say in the acceptance criteria exactly how it is measured.
+   You work in your own worktree, so you may build the project, run its tests, write throwaway
+   files and run quick experiments there, and you may use online research and logs, whatever
+   gives the developer the context they need. You commit nothing but the plan (through
+   `baton plan commit`). Leave no scratch files behind: everything stays inside your worktree,
+   containers run as the current user so they leave no root-owned files (or you remove them
+   before returning). Send long command output to a log file and read it through filters
+   (`tail`, `rg -n`), so your context stays small across the issues of one run.
    If the issue comes from a spike, its Pointers name the spike's `Prototype:` link (from the
    findings comment) as reference material, never as a base branch: the work starts on a fresh
    branch.
@@ -119,8 +126,8 @@ not in the issue, so the issue stays short for a person to read.
    - `baton plan link <N> refs/plans/<N> <docs.dir>/plans/<N>-<slug>.md` writes the first-line
      `Plan:` link (the ref's history page). Re-run it only if the path changes; ticks and replans
      need no issue edit.
-   - Rewrite the description to the issue template: the `Plan:` line, Context, Acceptance
-     criteria, Out of scope, Pointers with only the `Expected files:` and `Blocked by:` lines, and
+   - Rewrite the description to the issue template: the `Plan:` line, Context, `Diagnosis`
+     (bugs only), Acceptance criteria, Out of scope, Pointers with only the `Expected files:` and `Blocked by:` lines, and
      Decisions. Keep the author's intent and wording where it is clear, and keep every existing
      entry under `## Decisions` with its link. A spike keeps its Verification in the issue and has
      no plan, branch or `Plan:` line. Write the **complete** new description to a file, read it
@@ -172,9 +179,30 @@ branch's checks pass again. Your job is the diagnosis.
 5. Mark it `status:ready` regardless of `may_mark_ready`; this issue outranks the rest of the
    sprint.
 
+## Diagnosing a bug
+
+When the issue carries the bug label (`labels.map` in `baton config` gives the real name of
+`type:bug`), reproduce the bug before you plan it. The `broken-default-branch` section above is
+separate and stays as it is.
+
+1. **Try to reproduce it** in your worktree, by a command or, preferably, by a failing test you
+   write there.
+2. **Write `## Diagnosis`** into the description, between Context and Acceptance criteria, with
+   three parts: how it reproduced (the command or test, the expected and the actual result);
+   where the cause is (files and functions); and whether it is a regression, with the commit that
+   introduced it when you find it (`git log -S`; `git bisect run` is allowed).
+3. **Reproduced with a test:** plan task 1 adds that test. This is the one exception to "no code in
+   the plan": write the test's code in task 1's brief. Its `Check:` is that test, and it must fail
+   before the fix. Later tasks make it pass.
+4. **Not reproduced:** the bug is not ready. Post a question as under "Questions" asking the
+   reporter for steps, version and logs, then `baton set-status <N> status:refinement` and add the
+   `needs-maintainer` label.
+
 ## Never
 
 - Start implementing. Refinement ends at a ready description.
+- Commit or push anything but the plan.
+- Leave scratch files outside your worktree.
 - Invent requirements the author did not ask for. Put ideas under a "Suggestions" heading for the
   maintainer.
 - Mark ready an issue written by someone other than the maintainer.

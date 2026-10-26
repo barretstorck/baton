@@ -35,6 +35,21 @@ class TemplateTest(unittest.TestCase):
             meta, _ = frontmatter.split((ROOT / "agents" / f"{name}.md").read_text())
             self.assertIn("\neffort: medium\n", f"\n{meta}\n", name)
 
+    def test_refiner_runs_in_own_worktree(self):
+        meta, _ = frontmatter.split((ROOT / "agents" / "baton-refiner.md").read_text())
+        self.assertIn("isolation: worktree", meta.splitlines())
+
+    def test_refine_skill_allows_running_code(self):
+        text = (ROOT / "skills" / "refine" / "SKILL.md").read_text()
+        self.assertIn("throwaway", text)
+        self.assertIn("log file", text)
+
+    def test_refine_skill_and_template_cover_bug_diagnosis(self):
+        skill = (ROOT / "skills" / "refine" / "SKILL.md").read_text()
+        self.assertIn("## Diagnosing a bug", skill)
+        issue = (ROOT / "templates" / "issue.md").read_text()
+        self.assertIn("## Diagnosis", issue)
+
     def test_agents_declare_restricted_tools(self):
         expected = {
             "baton-developer": "tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch",

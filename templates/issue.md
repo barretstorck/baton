@@ -4,6 +4,10 @@ Plan: [path of the plan file](link to the plan ref's history page, `refs/plans/<
 
 What is wrong or missing, and why it matters. Check a claim about current behaviour or past measurements against the code or a linked comment, or mark it unverified and name its source (for example "per the developer of #N").
 
+## Diagnosis
+
+<!-- Only refined bugs have this section: how it reproduced, where the cause is, whether it is a regression. -->
+
 ## Acceptance criteria
 
 - [ ] A result that can be checked objectively
