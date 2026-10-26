@@ -250,7 +250,9 @@ cannot delete them.
 
 ## Return
 
-Your final message is exactly one of these.
+Your final message starts with exactly one result line: `DONE <full sha>`, `FIXED <full sha>`,
+`DECLINED <reason>`, `REPLAN`, `QUESTION:` or `BLOCKED:`. A one-word or placeholder report, or a
+summary without a result line, is not a result. Your final message is exactly one of these.
 
 A plan task:
 

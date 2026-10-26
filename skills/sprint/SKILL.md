@@ -349,7 +349,8 @@ Act on each result with commands on their own, reading each one's output; never 
   the issue afresh. Some: leave it `status:in-dev` for a resume. In both cases tell the maintainer
   when the limit resets, as the result gives it, or that the reset time is unknown. Do not
   dispatch the task again before then.
-- Anything else, or it stopped without a result (a rate limit, a restart): check the branch for
+- Anything else, a report with no result line (empty, a placeholder, a summary), or it stopped
+  without a result (a rate limit, a restart): check the branch for
   the task's commit (see "Resuming" in step 7) and, for a spike, its status comments. If the work
   is incomplete, dispatch the same task again once; a spike continues from its latest status
   comment. If it fails the same way again, set
