@@ -52,6 +52,20 @@ The exact command that must pass before a pull request is opened:
 
     (fill in, for example: scripts/test.sh)
 
+## Collect-only check
+
+Optional. A command that imports every test module without running it, for example
+`pytest --co -q` (fill in, or delete this section):
+
+    (fill in, or leave empty)
+
+Architecture and import-rule tests, if the project has any (optional):
+
+    (fill in, or leave empty)
+
+The refiner puts the collect-only command into every plan task's `Check:`, and the whole `verify`
+command into tasks that delete or move modules.
+
 ## Definition of done
 
 - The verification command passes.
