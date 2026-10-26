@@ -589,3 +589,39 @@ class VerifyLogsTest(unittest.TestCase):
         with mock.patch("baton.verify.remove_logs", side_effect=OSError("busy")):
             self.assertEqual(self.run_merge(make_pr(), notes), [])
         self.assertTrue(any("verification logs" in note and "busy" in note for note in notes))
+
+
+class CliCleanupTest(unittest.TestCase):
+    def run_cli(self, branch_list_reply):
+        import contextlib
+        import io
+        from unittest import mock
+        from baton import cli
+
+        def fake_run(argv, cwd=None, input=None):
+            if argv[:3] == ["git", "branch", "-D"]:
+                raise RunError("git branch -D failed: boom")
+            return branch_list_reply
+
+        def fake_merge(number, cfg, runner, notes):
+            if runner(["git", "branch", "--list", "b"]).strip():
+                runner(["git", "branch", "-D", "b"])
+            return []
+
+        err = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=make_config()), \
+                mock.patch.object(cli.run, "run", fake_run), \
+                mock.patch.object(cli.merge, "merge", fake_merge), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = cli.cmd_merge_pr(["9"])
+        return code, err.getvalue()
+
+    def test_real_delete_failure_of_an_existing_branch_is_reported(self):
+        code, err = self.run_cli("  b\n")
+        self.assertEqual(code, 0)
+        self.assertIn("cleanup skipped: git branch -D failed", err)
+
+    def test_missing_branch_prints_nothing(self):
+        code, err = self.run_cli("")
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
