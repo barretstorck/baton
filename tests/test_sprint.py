@@ -382,6 +382,26 @@ class PrCiTests(unittest.TestCase):
     def test_unfinished_run_is_pending(self):
         self.assertEqual(self.ci([self.check("", status="IN_PROGRESS")]), "pending")
 
+    def named(self, name, conclusion, status="COMPLETED"):
+        return {**self.check(conclusion, status=status), "name": name}
+
+    def test_only_cancelled_runs_are_cancelled(self):
+        self.assertEqual(self.ci([self.check("CANCELLED")]), "cancelled")
+        self.assertEqual(self.ci([self.named("a", "CANCELLED"), self.named("b", "CANCELLED")]),
+                         "cancelled")
+
+    def test_cancelled_with_another_failure_is_red(self):
+        self.assertEqual(self.ci([self.named("a", "CANCELLED"), self.named("b", "FAILURE")]), "red")
+        self.assertEqual(self.ci([self.named("a", "CANCELLED"), self.named("b", "TIMED_OUT")]), "red")
+
+    def test_cancelled_with_an_unfinished_run_is_pending(self):
+        rollup = [self.named("a", "CANCELLED"), self.named("b", "", status="IN_PROGRESS")]
+        self.assertEqual(self.ci(rollup), "pending")
+
+    def test_cancelled_then_a_later_success_is_green(self):
+        rollup = [self.check("CANCELLED"), self.check("SUCCESS", started="2026-10-22T11:00:00Z")]
+        self.assertEqual(self.ci(rollup), "green")
+
 
 def vcfg(command="make test", required=True):
     out = cfg()
@@ -446,6 +466,11 @@ class PrStateTests(unittest.TestCase):
         self.assertTrue(result["draft"])
         self.assertEqual(result["ci"], "pending")
         self.assertTrue(any("skipped" in problem for problem in result["problems"]))
+
+    def test_cancelled_check_shows_as_cancelled(self):
+        result = self.state([self.check("CANCELLED")])
+        self.assertEqual(result["ci"], "cancelled")
+        self.assertTrue(result["problems"])
 
     def test_draft_with_a_passing_check_is_still_a_draft(self):
         result = self.state([self.check("SUCCESS")], draft=True)

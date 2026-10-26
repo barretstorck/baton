@@ -13,7 +13,7 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | The latest agent question and the maintainer's replies | `baton answers <N>` |
 | Open pull requests | `gh pr list --state open --json number,title,headRefName,isDraft,closingIssuesReferences` |
 | A pull request's checks | `gh pr checks <N>` |
-| A pull request's draft state and CI state (reviewer) | `baton pr-state <N>` (JSON: `draft`, `ci`: `green`, `red`, `pending` or `none`, `verify`: `none`, `missing`, `green`, `red` or `timeout`, `problems`) |
+| A pull request's draft state and CI state (reviewer) | `baton pr-state <N>` (JSON: `draft`, `ci`: `green`, `red`, `cancelled` (only cancelled checks failed: CI did not finish), `pending` or `none`, `verify`: `none`, `missing`, `green`, `red` or `timeout`, `problems`) |
 | Full verification of a pull request (reviewer) | `baton verify <PR> <worktree>`: runs the brief's `verify.command` in the worktree (at the pull request's head, clean); prints `verify <state> commit=<sha7> exit=<n> duration=<s>s`, `log: <path>` and the last 40 lines; writes nothing to the pull request. Exit 0 green, 1 red or refused, 3 timeout |
 | A pull request's review state | `baton review state <N>`: `none`, `changes`, `replied`, `stale`, `approved` or `escalate` |
 | An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`); reads the plan file from `refs/plans/<N>`, or (older way) on the issue branch, or a legacy `## Plan` in the body |

@@ -173,6 +173,8 @@ def _pr_ci(pr, cfg, runner=None):
     if any("not finished" in problem or "every check was skipped" in problem
            for problem in problems):
         return "pending"
+    if problems and all(problem.endswith(" concluded CANCELLED") for problem in problems):
+        return "cancelled"
     return "red" if problems else "green"
 
 
