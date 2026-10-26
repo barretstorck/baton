@@ -142,6 +142,12 @@ Written against: {SHA}
         with self.assertRaises(checklist.TaskError):
             checklist.replace_plan(self.PLAN, "1", self.NEW, insert=True)
 
+    def test_shifts_every_number_in_a_task_list(self):
+        plan = self.PLAN.replace("task 4 and Task 3, see task 1.2",
+                                 "tasks 2 and 3, tasks 1, 2 and 3, see task 1.2")
+        body = checklist.replace_plan(plan, "2", "- [ ] **2. Inserted**\n", insert=True)
+        self.assertIn("  - Uses: tasks 3 and 4, tasks 1, 3 and 4, see task 1.2\n", body)
+
     def test_inserting_after_the_last_task_appends(self):
         body = checklist.replace_plan(self.PLAN, "5", "- [ ] **5. Last**\n", insert=True)
         self.assertEqual([t["title"] for t in checklist.plan(body)["tasks"]],

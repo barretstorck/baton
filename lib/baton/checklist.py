@@ -165,13 +165,22 @@ def _title(block):
     return match.group(3) if match else ""
 
 
-_TASK_REF = re.compile(r"\b([Tt]asks?) (\d+)(?!\d|\.\d)")
+_NUM = r"\d+(?!\d|\.\d)"
+# "task 3", "tasks 2 and 3", "tasks 1, 2 and 4": the number after the word and any listed after it.
+_TASK_REF = re.compile(rf"\b[Tt]asks? {_NUM}(?:(?:,\s*|,?\s+and\s+){_NUM})*")
+_NUM_RE = re.compile(_NUM)
 
 
 def _shift_refs(line, before, k):
-    return _TASK_REF.sub(
-        lambda m: f"{m.group(1)} {int(m.group(2)) + k}" if int(m.group(2)) >= before else m.group(0),
-        line)
+    def shift_num(m):
+        n = int(m.group(0))
+        return str(n + k) if n >= before else m.group(0)
+
+    def shift_ref(m):
+        word, _, rest = m.group(0).partition(" ")
+        return f"{word} {_NUM_RE.sub(shift_num, rest)}"
+
+    return _TASK_REF.sub(shift_ref, line)
 
 
 def insert_text(text, before, new_text):
