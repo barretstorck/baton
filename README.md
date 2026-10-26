@@ -127,6 +127,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton plan migrate <issue> <branch>` | Move a plan from the issue body to a plan file on a new branch |
 | `baton usage [--repo <owner/repo>] [--since <time>] [--json]` | Quota use per issue and role, from local transcripts |
 | `baton sprint-status [milestone]` | The sprint's state and what may be dispatched now, as JSON |
+| `baton clean` | Remove leftover agent worktrees (kept: an open issue's branch, uncommitted changes, unmerged detached work) and the log folders of closed or merged pull requests; exit 1 if a worktree could not be removed |
 | `baton lock <acquire\|release>` | Stop two scheduled runs overlapping |
 
 ## Full verification

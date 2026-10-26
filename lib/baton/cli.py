@@ -2,7 +2,7 @@ import json
 import os
 import sys
 
-from . import checklist, comment, config, gate, githooks, issue, labels, merge, planfile, review, run, scan, sprint, usage, verify
+from . import checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, review, run, scan, sprint, usage, verify
 
 
 def cmd_config(args):
@@ -373,7 +373,22 @@ def cmd_lock(args):
     return 64
 
 
+def cmd_clean(args):
+    _require_config()
+    repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
+    owner, name = repo["nameWithOwner"].split("/", 1)
+    logs_root = verify.logs_dir(owner, name, 0).parent
+
+    def report(line):
+        print(line, file=sys.stderr if line.startswith("cannot remove") else sys.stdout)
+
+    _, _, failed = clean.clean_worktrees(run.run, repo["defaultBranchRef"]["name"], report)
+    clean.clean_logs(run.run, str(logs_root), print)
+    return 1 if failed else 0
+
+
 COMMANDS = {
+    "clean": cmd_clean,
     "answers": cmd_answers,
     "comment": cmd_comment,
     "ready-check": cmd_ready_check,

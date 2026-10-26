@@ -147,5 +147,26 @@ class LogsTest(unittest.TestCase):
         self.assertEqual(clean.clean_logs(FakeRunner(), "/nonexistent-logs-root", print), [])
 
 
+class CmdCleanTest(unittest.TestCase):
+    def run_cmd(self, failed):
+        from baton import cli
+        runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}}'})
+        with mock.patch.object(cli, "_require_config"), \
+                mock.patch.object(cli.run, "run", runner), \
+                mock.patch.object(cli.clean, "clean_worktrees", return_value=([], [], failed)), \
+                mock.patch.object(cli.clean, "clean_logs", return_value=[]) as logs:
+            code = cli.cmd_clean([])
+        return code, logs
+
+    def test_exit_zero_when_nothing_failed(self):
+        code, logs = self.run_cmd([])
+        self.assertEqual(code, 0)
+        self.assertTrue(logs.call_args[0][1].endswith("o-r/logs"))
+
+    def test_exit_one_when_removal_failed(self):
+        code, _ = self.run_cmd(["/x"])
+        self.assertEqual(code, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
