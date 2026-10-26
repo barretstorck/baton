@@ -145,7 +145,7 @@ def cmd_review(args):
         try:
             body = comment.read_body(path, sys.stdin)
             print(review.post(_require_config(), run.run, int(number), verdict, commit, body,
-                              scan.load_terms(), _owner()))
+                              scan.load_terms(), _owner(), _repo_name().split("/", 1)[1]))
         except (comment.CommentError, review.ReviewError, checklist.TaskError) as error:
             print(f"baton: {error}", file=sys.stderr)
             return 1

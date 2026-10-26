@@ -89,6 +89,7 @@ def verify(cfg, runner, number, worktree, owner, repo, execute=execute, now=None
     request's head, or if it has uncommitted changes to tracked files.
     Writes nothing to the pull request.
     """
+    cfg = getattr(cfg, "data", cfg)
     command = cfg["verify"]["command"]
     if not command:
         raise VerifyError("verify.command is empty in .baton/brief.md; nothing to run")

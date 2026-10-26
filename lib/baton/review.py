@@ -10,12 +10,14 @@ import os
 import re
 import tempfile
 
-from . import checklist, comment, gate, run
+from . import checklist, comment, gate, run, verify as verifylog
 
 VERDICTS = {"approve", "changes"}
+VERIFY_STATES = ("green", "red", "timeout", "missing", "none")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _REVIEW = re.compile(
-    r"^<!-- baton:reviewer:review verdict=(approve|changes) commit=([0-9a-f]{40}) -->")
+    r"^<!-- baton:reviewer:review verdict=(approve|changes) commit=([0-9a-f]{40})"
+    r"(?: verify=(green|red|timeout|missing|none))? -->")
 _REPLY = f"{gate.MARKER}developer:reply -->"
 _HUNK = re.compile(r"^@@ [^@]* @@.*$")
 _COMMENT_ID = re.compile(r"#issuecomment-(\d+)$")
@@ -25,7 +27,9 @@ class ReviewError(Exception):
     pass
 
 
-def compose(verdict, commit, body):
+def compose(verdict, commit, body, verify="missing"):
+    if verify not in VERIFY_STATES:
+        raise ReviewError(f"unknown verify state {verify!r}")
     if verdict not in VERDICTS:
         raise ReviewError(f"unknown verdict {verdict!r}; use approve or changes")
     if not _SHA.match(commit or ""):
@@ -33,7 +37,7 @@ def compose(verdict, commit, body):
     if not body.strip():
         raise ReviewError("the review body is empty")
     title = "approved" if verdict == "approve" else "changes requested"
-    return (f"{gate.MARKER}reviewer:review verdict={verdict} commit={commit} -->\n"
+    return (f"{gate.MARKER}reviewer:review verdict={verdict} commit={commit} verify={verify} -->\n"
             f"**Baton reviewer: review ({title}, commit {commit[:7]})**\n\n{body.strip()}\n")
 
 
@@ -47,10 +51,25 @@ def history(comments, owner):
         match = _REVIEW.match(body)
         if match:
             events.append({"kind": "review", "verdict": match.group(1),
-                           "commit": match.group(2), "url": item.get("url")})
+                           "commit": match.group(2), "verify": match.group(3) or "missing",
+                           "url": item.get("url")})
         elif body.startswith(_REPLY):
             events.append({"kind": "reply", "url": item.get("url")})
     return events
+
+
+def verify_state(cfg, comments, owner, head):
+    """The verification result recorded by the latest review of `head`.
+
+    none when no verify command is set or reviews are not required; missing
+    when the latest review is of another commit or has no result.
+    """
+    if not cfg.data["verify"]["command"] or not cfg.data["review"]["required"]:
+        return "none"
+    reviews = [event for event in history(comments, owner) if event["kind"] == "review"]
+    if reviews and reviews[-1]["commit"] == head:
+        return reviews[-1]["verify"]
+    return "missing"
 
 
 def state(comments, owner, max_rounds):
@@ -237,13 +256,19 @@ def _open_work(runner, pr, owner):
     return problems
 
 
-def post(cfg, runner, number, verdict, commit, body, terms, owner):
+def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, home=None):
     """Post a review of `commit`.
 
     Refuses if the branch moved while it was reviewed, if an approval would
     leave tasks open, or if a request for changes has no task list for its round.
     """
-    text = compose(verdict, commit, body)
+    verify = "none"
+    if cfg.data["verify"]["command"]:
+        if repo is None:
+            repo = json.loads(runner(["gh", "repo", "view", "--json", "name"]))["name"]
+        found = verifylog.latest_result(owner, repo, number, commit, home)
+        verify = found["result"] if found else "missing"
+    text = compose(verdict, commit, body, verify)
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json",
                             "headRefOid,comments,closingIssuesReferences"]))
     head = pr["headRefOid"]
@@ -252,6 +277,9 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner):
                           "review the new commits and post again")
     if verdict == "approve":
         problems = _open_work(runner, pr, owner)
+        if verify not in ("green", "none"):
+            problems.append(f"verification of {commit[:7]} is {verify}; "
+                            f"run baton verify {number} <worktree>")
         if problems:
             raise ReviewError("cannot approve yet: " + "; ".join(problems))
     else:
