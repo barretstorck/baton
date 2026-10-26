@@ -254,6 +254,7 @@ class MergeTest(unittest.TestCase):
             "gh issue view 4 --json labels": json.dumps({"labels": [{"name": "status:in-review"}]}),
             "git worktree list": "worktree /repo\nbranch refs/heads/main\n\n"
                                  "worktree /wt/issue-4\nbranch refs/heads/issue-4-flag\n",
+            "git branch --list issue-4-flag": "  issue-4-flag\n",
         }
 
     PLAN = "docs/baton/plans/4-flag.md"
@@ -381,6 +382,26 @@ class MergeTest(unittest.TestCase):
         self.assertIn("git branch -D issue-4-flag", lines)
         self.assertIn("git push origin --delete issue-4-flag", lines)
         self.assertFalse(any("/repo" in line and "remove" in line for line in lines))
+
+    def test_missing_local_branch_is_not_deleted(self):
+        replies = self.replies(make_pr())
+        replies["git branch --list issue-4-flag"] = ""
+        runner = FakeRunner(replies)
+        self.assertEqual(merge.merge(9, make_config(), runner), [])
+        self.assertFalse(any(line.startswith("git branch -D") for line in runner.lines()))
+        self.assertIn("git push origin --delete issue-4-flag", runner.lines())
+
+    def test_failed_delete_of_an_existing_branch_propagates(self):
+        inner = FakeRunner(self.replies(make_pr()))
+
+        def runner(argv, cwd=None, input=None):
+            if argv[:3] == ["git", "branch", "-D"]:
+                raise RunError("git branch -D failed")
+            return inner(argv, cwd, input)
+
+        with self.assertRaises(merge.PostMergeError) as raised:
+            merge.merge(9, make_config(), runner)
+        self.assertIsInstance(raised.exception.__cause__, RunError)
 
     def test_already_closed_issue_is_not_closed_again(self):
         runner = FakeRunner(self.replies(make_pr(), issue_state="CLOSED"))
