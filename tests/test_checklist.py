@@ -692,3 +692,28 @@ class WrittenAgainstTest(unittest.TestCase):
         with self.assertRaises(checklist.TaskError):
             checklist.against_issue_plan(cfg(), runner, 7, self.NEW)
         self.assertFalse(any(l.startswith("git push") for l in runner.lines()))
+
+
+class NamedPathsTest(unittest.TestCase):
+    def test_open_tasks_only_and_filtering(self):
+        text = f"""## Plan
+Written against: {SHA}
+
+- [x] **1. Done**
+  - Files: `done.py`
+- [ ] **2. Open**
+  - Files: `lib/a.py`, `tests/new_test.py` (new), `README.md`
+  - Uses: `f(x) -> int` (`lib/b.py:12-30`), `span(text, heading)`, `<placeholder>.py`
+  - Port from: `ref/c.rs:5`
+  - Check: `tests/test_zzz.py`
+- [ ] **3. Other**
+  - Files: `lib/a.py`, `Makefile`
+
+## Decisions
+- `outside.py`
+"""
+        self.assertEqual(checklist.named_paths(text),
+                         ["README.md", "lib/a.py", "lib/b.py", "ref/c.rs"])
+
+    def test_no_plan(self):
+        self.assertEqual(checklist.named_paths("## Context\nx"), [])
