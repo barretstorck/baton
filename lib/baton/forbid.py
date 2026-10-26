@@ -28,14 +28,20 @@ def violations(patch, rules, allowed=()):
     return found
 
 
-def plan_text(runner, cfg, branch):
-    """The plan file for the issue a branch `issue-<N>-...` belongs to, or "" if none."""
+def branch_issue(branch):
+    """The issue number of a branch named `issue-<N>-...`, or None."""
     match = _BRANCH.match(branch or "")
-    if not match:
+    return int(match.group(1)) if match else None
+
+
+def plan_text(runner, cfg, branch, number=None):
+    """The plan file of issue `number` (default: the one the branch `issue-<N>-...` names), or ""."""
+    if number is None:
+        number = branch_issue(branch)
+    if number is None:
         return ""
-    number = match.group(1)
     folder = f"{cfg.data['docs']['dir']}/plans/"
-    for ref in (f"refs/plans/{number}", f"refs/baton/plans/{number}"):
+    for ref in (f"refs/baton/plans/{number}", f"refs/plans/{number}"):
         try:
             names = runner(["git", "ls-tree", "--name-only", ref, folder]).split()
             name = next(n for n in names if n.rsplit("/", 1)[-1].startswith(f"{number}-"))

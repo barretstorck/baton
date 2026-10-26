@@ -61,7 +61,16 @@ class PlanTextTest(unittest.TestCase):
                 return "docs/baton/plans/7-slug.md\n"
             return "PLAN"
         self.assertEqual(forbid.plan_text(runner, make_config(), "issue-7-slug"), "PLAN")
-        self.assertEqual(calls[1], ["git", "show", "refs/plans/7:docs/baton/plans/7-slug.md"])
+        self.assertEqual(calls[1], ["git", "show", "refs/baton/plans/7:docs/baton/plans/7-slug.md"])
+
+    def test_explicit_number_wins_over_branch(self):
+        calls = []
+
+        def runner(argv):
+            calls.append(argv)
+            return "docs/baton/plans/5-s.md\n" if argv[1] == "ls-tree" else "PLAN"
+        self.assertEqual(forbid.plan_text(runner, make_config(), "issue-7-slug", 5), "PLAN")
+        self.assertIn("refs/baton/plans/5", " ".join(calls[0]))
 
     def test_missing_ref(self):
         def runner(argv):

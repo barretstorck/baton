@@ -163,9 +163,31 @@ def check(pr, cfg, owner, default_branch, runner, notes=None):
     rules = cfg.data["forbid_added"]
     if rules:
         patch = runner(["gh", "pr", "diff", str(pr["number"])])
-        allowed = forbid.allowed_globs(forbid.plan_text(runner, cfg, pr.get("headRefName", "")))
+        allowed = _allowances(pr, closing, cfg, runner, problems)
         problems.extend(forbid.violations(patch, rules, allowed))
     return problems
+
+
+def _allowances(pr, closing, cfg, runner, problems):
+    """Globs the plan allows, taken from the one issue the pull request closes.
+
+    The branch name alone is not trusted: it must name that same issue, or the pull
+    request gets no allowances.
+    """
+    if len(closing) != 1:
+        return set()
+    number = next(iter(closing))
+    branch = pr.get("headRefName", "")
+    if forbid.branch_issue(branch) != number:
+        problems.append(f"branch {branch} does not belong to the issue the pull request "
+                        f"closes (#{number}); no forbid_added allowances apply")
+        return set()
+    try:
+        runner(["git", "fetch", "--quiet", "origin",
+                f"+refs/plans/{number}:refs/baton/plans/{number}"])
+    except RunError:
+        pass
+    return forbid.allowed_globs(forbid.plan_text(runner, cfg, branch, number))
 
 
 def _worktree_for(branch, runner):
