@@ -158,6 +158,30 @@ class GateTest(unittest.TestCase):
                         problems = gate.decide(cmd, make_repo(), TERMS)
                         self.assertTrue(any("use `baton close|reopen" in p for p in problems))
 
+    def test_api_state_changes_and_close_mutations_are_refused(self):
+        mutations = ("closeIssue", "reopenIssue", "closePullRequest", "reopenPullRequest")
+        cmds = ["gh api -X PATCH repos/o/r/issues/5 -f state=closed",
+                "gh api -X PATCH repos/o/r/pulls/5 -f state=open",
+                "gh api -X PATCH repos/o/r/issues/5 -f state=closed -f state_reason=completed",
+                "gh api -X PATCH repos/o/r/issues/5 -F state=closed"]
+        cmds += [f"gh api graphql -f query='mutation {{ {m}(input: {{id: \"X\"}}) "
+                 f"{{ clientMutationId }} }}'" for m in mutations]
+        for endpoint in ("/graphql", "https://api.github.com/graphql"):
+            cmds.append(f"gh api {endpoint} -f query='mutation {{ closeIssue(input: {{id: \"X\"}}) "
+                        f"{{ clientMutationId }} }}'")
+        for cmd in cmds:
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, make_repo(), TERMS)
+                self.assertTrue(any("use `baton close|reopen" in p for p in problems))
+
+    def test_api_comments_labels_edits_and_queries_are_not_refused(self):
+        for cmd in ("gh api repos/o/r/issues/5/comments -f body='<!-- baton:developer:status -->\nok'",
+                    "gh api -X POST repos/o/r/issues/5/labels -f 'labels[]=bug'",
+                    "gh api -X PATCH repos/o/r/issues/5 -f title=t",
+                    "gh api graphql -f query='query { viewer { login } }'"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, make_repo(), TERMS), [])
+
     def test_comment_and_edit_are_not_refused_as_closes(self):
         for cmd in ("gh issue edit 5 --title t",
                     "gh issue comment 5 --body \"<!-- baton:developer:status -->\nhi\""):
