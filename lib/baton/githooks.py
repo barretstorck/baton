@@ -172,18 +172,34 @@ def pre_commit(cwd, terms):
     return _check(cfg, patch, new_files, terms, cwd=cwd, branch=_current_branch(cwd))
 
 
-def _pushed_branch(local_ref, remote_ref):
-    """The remote branch name when the local ref names the same issue, else "" (no allowances).
+def _pushed_branch(local_ref, remote_ref, plan_numbers=()):
+    """The remote branch name when the push is tied to the issue it names, else "" (no allowances).
 
     A hook cannot know the pull request, so the issue is the one the local branch names, and the
-    remote branch must name that issue too, as merge-pr requires of the head branch."""
+    remote branch must name that issue too, as merge-pr requires of the head branch. A local ref
+    that is not a branch (`HEAD` from a detached worktree) names no issue; the developer's atomic
+    push then carries a `refs/plans/<N>` line, and N must be the remote branch's issue."""
     from . import forbid  # lazy: forbid imports this module
     prefix = "refs/heads/"
-    if not (local_ref.startswith(prefix) and remote_ref.startswith(prefix)):
+    if not remote_ref.startswith(prefix):
         return ""
-    local, remote = local_ref[len(prefix):], remote_ref[len(prefix):]
-    number = forbid.branch_issue(local)
-    return remote if number is not None and number == forbid.branch_issue(remote) else ""
+    remote = remote_ref[len(prefix):]
+    number = forbid.branch_issue(remote)
+    if number is None:
+        return ""
+    if local_ref.startswith(prefix):
+        return remote if forbid.branch_issue(local_ref[len(prefix):]) == number else ""
+    return remote if number in plan_numbers else ""
+
+
+def _pushed_plan_numbers(rows):
+    """The issue numbers of the `refs/plans/<N>` refs a push updates."""
+    numbers = set()
+    for _local, _sha, remote_ref, _remote_sha in rows:
+        tail = remote_ref[len("refs/plans/"):] if remote_ref.startswith("refs/plans/") else ""
+        if tail.isdigit():
+            numbers.add(int(tail))
+    return numbers
 
 
 def pre_push(cwd, stdin_text, terms):
@@ -192,11 +208,9 @@ def pre_push(cwd, stdin_text, terms):
         return []
     git = ["git", "-C", cwd, "-c", "core.quotePath=false"]
     problems = []
-    for line in stdin_text.splitlines():
-        parts = line.split()
-        if len(parts) != 4:
-            continue
-        local_ref, local_sha, remote_ref, remote_sha = parts
+    rows = [parts for parts in (line.split() for line in stdin_text.splitlines()) if len(parts) == 4]
+    plan_numbers = _pushed_plan_numbers(rows)
+    for local_ref, local_sha, remote_ref, remote_sha in rows:
         if local_sha == ZEROS:
             continue
         revs = [local_sha, "--not", "--remotes"] if remote_sha == ZEROS else [f"{remote_sha}..{local_sha}"]
@@ -204,7 +218,7 @@ def pre_push(cwd, stdin_text, terms):
         messages = run.run(git + ["log", "--format=%B"] + revs)
         new_files = _names(run.run(
             git + ["log", "--diff-filter=AR", "--name-only", "--format="] + revs))
-        branch = _pushed_branch(local_ref, remote_ref)
+        branch = _pushed_branch(local_ref, remote_ref, plan_numbers)
         problems.extend(_check(cfg, patch, new_files, terms, messages, cwd=cwd, branch=branch))
     return sorted(set(problems))
 
