@@ -50,6 +50,14 @@ class TemplateTest(unittest.TestCase):
         issue = (ROOT / "templates" / "issue.md").read_text()
         self.assertIn("## Diagnosis", issue)
 
+    def test_refine_skill_and_agent_cover_re_refine(self):
+        skill = (ROOT / "skills" / "refine" / "SKILL.md").read_text()
+        self.assertIn("## Re-refining after a review", skill)
+        self.assertIn("Re-refine issue", skill)
+        self.assertIn("baton plan against", skill)
+        agent = (ROOT / "agents" / "baton-refiner.md").read_text()
+        self.assertIn("Re-refine issue", agent)
+
     def test_agents_declare_restricted_tools(self):
         expected = {
             "baton-developer": "tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch",

@@ -363,6 +363,37 @@ def _replace_in_file(runner, number, link, from_id, new_text, drop=False):
     return new, changes
 
 
+_AGAINST_LINE = re.compile(r"^([ \t]*Written against:[ \t]*)\S.*$", re.M)
+_FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+def set_written_against(text, sha):
+    """`text` with the `Written against:` line inside `## Plan` pointing at `sha`."""
+    if not _FULL_SHA.match(sha or ""):
+        raise TaskError(f"written-against needs a full 40-character commit sha, got {sha!r}")
+    found = span(text, "plan")
+    if found is None:
+        raise TaskError("the plan has no '## Plan' section")
+    start, end = found
+    match = _AGAINST_LINE.search(text, start, end)
+    if match is None:
+        raise TaskError("the plan has no 'Written against:' line under '## Plan'")
+    return text[:match.start()] + match.group(1) + sha + text[match.end():]
+
+
+def against_issue_plan(cfg, runner, number, sha):
+    """Set `Written against:` on the plan kept at `refs/plans/<N>`: one commit, pushed."""
+    from . import planfile
+    _, link = _linked(runner, number, cfg.data["docs"]["dir"])
+    if link is None or link["kind"] != "ref":
+        raise TaskError(f"issue #{number}'s plan is not on refs/plans/{number}")
+    text = planfile.read(runner, link["ref"], link["path"])
+    new = set_written_against(text, sha)
+    planfile.push(runner, number, planfile.write(
+        runner, number, link["path"], new, f"Re-refine: written against {sha[:7]}"))
+    return plan(new)
+
+
 def replace_issue_plan(cfg, runner, number, from_id, new_text, terms, drop=False):
     """Replace the plan's open tasks from `from_id` on; the new text is scanned first."""
     findings = scan.scan_text(new_text, terms, cfg.data["privacy_allow"])

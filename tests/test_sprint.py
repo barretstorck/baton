@@ -191,6 +191,40 @@ class SnapshotTest(unittest.TestCase):
                                     ("blocked", "Cause: environment\n\n## Reason\nno network")])
         self.assertEqual((entry["review"], entry["rounds"]), ("blocked", 1))
 
+    def test_replan_review_is_reported_and_counts_as_a_round(self):
+        entry = self._review_entry([("changes", "## Tasks\n- [ ] r1.1 x\n"),
+                                    ("replan", "## Feedback\nThe plan is wrong.")])
+        self.assertEqual((entry["review"], entry["rounds"]), ("replan", 2))
+
+    def test_replan_followed_by_the_refiner_reply_is_replied(self):
+        head = "f" * 40
+        comments = [{"author": {"login": OWNER},
+                     "body": review.compose("replan", head, "## Feedback\nThe plan is wrong.")},
+                    {"author": {"login": OWNER}, "body": "<!-- baton:refine:reply -->\nreplanned"}]
+        prs = [{"number": 30, "headRefName": "issue-1-x", "isDraft": False, "mergeable": "MERGEABLE",
+                "headRefOid": head, "comments": comments, "closingIssuesReferences": [{"number": 1}],
+                "statusCheckRollup": []}]
+        entry = snap([issue(1, "in-review", "deliverable")], prs=prs)["in_review"][0]
+        self.assertEqual((entry["review"], entry["rounds"]), ("replied", 1))
+
+    def test_re_refine_lists_refinement_issues_with_an_open_pull_request(self):
+        def pr(number, issue_number, draft):
+            return {"number": number, "headRefName": f"issue-{issue_number}-x", "isDraft": draft,
+                    "mergeable": "MERGEABLE", "headRefOid": "f" * 40, "comments": [],
+                    "closingIssuesReferences": [{"number": issue_number}], "statusCheckRollup": []}
+        found = snap([issue(9, "refinement", "deliverable"),
+                      issue(4, "refinement", "deliverable"),
+                      issue(5, "refinement", "deliverable"),
+                      issue(6, "refinement", "deliverable", "needs-maintainer"),
+                      issue(7, "refinement", "deliverable", state="CLOSED")],
+                     prs=[pr(40, 4, True), pr(41, 6, False), pr(42, 7, False), pr(43, 9, False)])
+        self.assertEqual(found["re_refine"], [{"number": 4, "pr": 40, "draft": True},
+                                              {"number": 9, "pr": 43, "draft": False}])
+
+    def test_re_refine_key_is_present_without_a_sprint(self):
+        result = sprint.snapshot(cfg(), FakeRunner(replies([], milestones=[])))
+        self.assertEqual(result["re_refine"], [])
+
     def test_repeated_failure_is_reported(self):
         failing = "## Failures\n- t1: caused\n"
         entry = self._review_entry([("changes", failing), ("changes", failing)])

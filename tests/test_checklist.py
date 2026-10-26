@@ -571,3 +571,44 @@ class RefPlanTest(unittest.TestCase):
         with self.assertRaises(checklist.TaskError):
             checklist.replace_issue_plan(cfg(), runner, 7, "1", "- [ ] **1. X**\n", [])
         self.assertFalse(any("commit-tree" in l or "push" in l for l in runner.lines()))
+
+
+class WrittenAgainstTest(unittest.TestCase):
+    NEW = "d" * 40
+
+    def test_changes_only_the_line_and_keeps_boxes(self):
+        text = RefPlanTest.TEXT + "\n## Other\nWritten against: " + SHA + "\n"
+        new = checklist.set_written_against(text, self.NEW)
+        self.assertEqual(new, text.replace(f"Written against: {SHA}\n\n- [x]",
+                                           f"Written against: {self.NEW}\n\n- [x]", 1))
+        self.assertEqual(new.count(SHA), 1)
+        self.assertEqual(checklist.plan(new)["tasks"], checklist.plan(text)["tasks"])
+
+    def test_refusals(self):
+        for sha in ("abc", "g" * 40, SHA.upper()):
+            with self.subTest(sha=sha), self.assertRaises(checklist.TaskError):
+                checklist.set_written_against(RefPlanTest.TEXT, sha)
+        with self.assertRaises(checklist.TaskError):
+            checklist.set_written_against("- [ ] **1. A**\n", self.NEW)
+        with self.assertRaises(checklist.TaskError):
+            checklist.set_written_against("## Plan\n\n- [ ] **1. A**\n", self.NEW)
+
+    def test_ref_plan_commits_once_and_pushes(self):
+        runner = RefPlanTest().runner()
+        found = checklist.against_issue_plan(cfg(), runner, 7, self.NEW)
+        self.assertEqual(len(found["tasks"]), 3)
+        lines = runner.lines()
+        self.assertEqual(sum(l.startswith("git commit-tree") for l in lines), 1)
+        self.assertTrue(any("-m Re-refine: written against ddddddd" in l for l in lines))
+        self.assertIn(f"Written against: {self.NEW}", RefPlanTest.written(runner))
+        self.assertEqual(lines[-1], f"git push origin {RefPlanTest.NEW}:refs/plans/7")
+        self.assertFalse(any("issue edit" in l for l in lines))
+
+    def test_branch_or_body_plan_is_refused(self):
+        with self.assertRaises(checklist.TaskError):
+            checklist.against_issue_plan(cfg(), issue_runner(), 7, self.NEW)
+        link = planfile.link_line("o/r", "issue-7-x", "docs/baton/plans/7-x.md")
+        runner = FakeRunner({"gh issue view 7": json.dumps({"body": link + "\n"})})
+        with self.assertRaises(checklist.TaskError):
+            checklist.against_issue_plan(cfg(), runner, 7, self.NEW)
+        self.assertFalse(any(l.startswith("git push") for l in runner.lines()))
