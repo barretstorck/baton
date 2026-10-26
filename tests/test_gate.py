@@ -5,6 +5,7 @@ import os
 import pathlib
 import subprocess
 import tempfile
+import time
 import unittest
 from baton import gate
 
@@ -186,6 +187,14 @@ class GateTest(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 problems = gate.decide(cmd, make_repo(), TERMS)
                 self.assertTrue(any("use `baton close|reopen" in p for p in problems))
+
+    def test_api_state_pattern_does_not_backtrack_catastrophically(self):
+        for query in ("state#" + " " * 5000, "state#" + "," * 5000, "state" + "# " * 2000,
+                      "state" + " ," * 3000 + "#", "stateReason#" + " ," * 3000):
+            with self.subTest(query=query[:20]):
+                start = time.monotonic()
+                self.assertIsNone(gate._API_STATE_ARG.search(query))
+                self.assertLess(time.monotonic() - start, 1.0)
 
     def test_api_comments_labels_edits_and_queries_are_not_refused(self):
         for cmd in ("gh api repos/o/r/issues/5/comments -f body='<!-- baton:developer:status -->\nok'",
