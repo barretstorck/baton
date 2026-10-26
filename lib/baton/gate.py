@@ -60,7 +60,30 @@ _CLOSE_MESSAGE = (
     "<issue|pr> <number> <role> <reason-file>` so a marker comment says who did it and why")
 _API_MERGE = re.compile(r"/pulls/\d+/merge\b")
 _API_STATE_ENDPOINT = re.compile(r"(?:^|/)(?:issues|pulls)/\d+/?(?:\?|$)")
-_API_STATE_KEY = re.compile(r'"state(?:_reason)?"\s*:')
+_STATE_KEYS = ("state", "state_reason")
+_UNPARSABLE_MESSAGE = (
+    "a REST payload file that is not a valid JSON object cannot be checked for state changes; "
+    "write valid JSON, or use `baton close` / `baton reopen` to change an issue's state"
+)
+
+
+def _has_state_key(value):
+    if isinstance(value, dict):
+        return any(key in _STATE_KEYS or _has_state_key(item) for key, item in value.items())
+    if isinstance(value, list):
+        return any(_has_state_key(item) for item in value)
+    return False
+
+
+def _rest_payload_problem(text):
+    """A refusal for a REST payload file that sets state, or cannot be shown not to."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return _UNPARSABLE_MESSAGE
+    if not isinstance(data, dict):
+        return _UNPARSABLE_MESSAGE
+    return _CLOSE_MESSAGE if _has_state_key(data) else None
 _API_CLOSE_MUTATION = re.compile(r"\b(?:closeIssue|reopenIssue|closePullRequest|reopenPullRequest)\b")
 _API_MUTATION = re.compile(r"\bmutation\b")
 _API_STATE_ARG = re.compile(r"(?<![$\w])state(?:Reason)?(?:[\s,]|#[^\n\r]*(?:[\r\n]|$))*:")
@@ -385,8 +408,10 @@ def decide(command, cwd, terms):
             kind = item.state_files.get(path)
             if kind == "graphql" and _graphql_sets_state(text):
                 problems.append(_CLOSE_MESSAGE)
-            elif kind == "rest" and _API_STATE_KEY.search(text):
-                problems.append(_CLOSE_MESSAGE)
+            elif kind == "rest":
+                problem = _rest_payload_problem(text)
+                if problem:
+                    problems.append(problem)
         texts.extend(item.texts)
         if any(not body.strip() for body in bodies):
             problems.append("the body is empty; write the full text first")

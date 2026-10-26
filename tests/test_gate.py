@@ -57,6 +57,16 @@ class GateTest(unittest.TestCase):
         pull = "gh api -X PATCH repos/o/r/pulls/5 --input p.json"
         self.assertTrue(self._closes(self._api(pull, p_json='{"state_reason": "completed"}')))
 
+    def test_input_file_state_bypasses_are_refused(self):
+        patch = "gh api -X PATCH repos/o/r/issues/5 --input p.json"
+        escaped = self._api(patch, p_json='{"\\u0073tate": "closed"}')
+        self.assertTrue(self._closes(escaped))
+        nested = self._api(patch, p_json='{"a": [{"b": {"state_reason": "completed"}}]}')
+        self.assertTrue(self._closes(nested))
+        for text in ('{"title": ', '["state"]', '"state"'):
+            self.assertTrue(any("not a valid JSON object" in p
+                                for p in self._api(patch, p_json=text)), text)
+
     def test_input_file_graphql_is_refused(self):
         cmd = "gh api graphql --input q.json"
         body = json.dumps({"query": 'mutation { closeIssue(input: {issueId: "x"}) { clientMutationId } }'})
