@@ -132,6 +132,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton tasks <issue\|pr> <number>` | An issue's plan tasks, or the latest review's tasks, as JSON |
 | `baton task done <issue\|pr> <number> <task>` | Tick one task: in the plan file of the current checkout for an issue (the developer commits it), in the review for a pull request (the orchestrator) |
 | `baton plan replace <issue> <from-task> <file \| -> [--drop]` | Replace a plan's open tasks from that number on; a linked plan is committed to its branch and pushed |
+| `baton plan insert <issue> <before-task> <file \| ->` | Insert new tasks before that task number; later open tasks are renumbered (and their `task <n>` references shifted) |
 | `baton plan against <issue> <sha>` | Set the `Written against:` commit of a plan on `refs/plans/<N>` (the refiner, after a replan) |
 | `baton plan link <issue> <branch> <path>` / `--at <sha>` | Write the issue's `Plan:` link to the file on the branch, or pin it to a commit |
 | `baton plan migrate <issue> <branch>` | Move a plan from the issue body to a plan file on a new branch |

@@ -165,8 +165,66 @@ def _title(block):
     return match.group(3) if match else ""
 
 
-def plan_changes(text, from_id, new_text):
+_NUM = r"\d+(?!\d|\.\d)"
+# "task 3", "tasks 2 and 3", "tasks 1, 2 and 4": the number after the word and any listed after it.
+_TASK_REF = re.compile(rf"\b[Tt]asks? {_NUM}(?:(?:,\s*|,?\s+and\s+){_NUM})*")
+_NUM_RE = re.compile(_NUM)
+
+
+def _shift_refs(line, before, k):
+    def shift_num(m):
+        n = int(m.group(0))
+        return str(n + k) if n >= before else m.group(0)
+
+    def shift_ref(m):
+        word, _, rest = m.group(0).partition(" ")
+        return f"{word} {_NUM_RE.sub(shift_num, rest)}"
+
+    return _TASK_REF.sub(shift_ref, line)
+
+
+def insert_text(text, before, new_text):
+    """The tasks text that inserts `new_text`'s tasks before task `before` of `text`'s plan.
+
+    The new tasks come first, numbered from `before`; the old tasks from `before` on follow,
+    renumbered, with `task <n>` references to tasks at or after `before` shifted in their bodies.
+    Hand the result to `replace_plan` from `before`, which refuses done tasks. References in the
+    inserted text are the author's and are left alone.
+    """
+    where = span(text, "plan")
+    if where is None:
+        raise TaskError("the issue has no '## Plan' section")
+    if not str(before).isdigit() or int(before) < 1:
+        raise TaskError("plan tasks are numbered 1, 2, 3 ...")
+    before = int(before)
+    _, blocks = _blocks(text[where[0]:where[1]])
+    if any(not block["id"].isdigit() for block in blocks):
+        raise TaskError("the plan has a task that is not numbered 1, 2, 3 ...")
+    if before > len(blocks) + 1:
+        raise TaskError(f"the plan has {len(blocks)} task(s); insert before task "
+                        f"{len(blocks) + 1} at most")
+    new_head, new_blocks = _blocks(new_text.replace("\r\n", "\n").strip("\n") + "\n")
+    if any(line.strip() for line in new_head) or not new_blocks:
+        raise TaskError("the new text must start with a task line: - [ ] **<n>. <title>**")
+    k = len(new_blocks)
+    out = []
+    for offset, block in enumerate(new_blocks):
+        lines = list(block["lines"])
+        lines[0] = re.sub(r"\*\*\d+", f"**{before + offset}", lines[0], count=1)
+        out.extend(lines)
+    for block in blocks:
+        if int(block["id"]) < before:
+            continue
+        lines = [_shift_refs(line, before, k) for line in block["lines"]]
+        lines[0] = re.sub(r"\*\*\d+", f"**{int(block['id']) + k}", lines[0], count=1)
+        out.extend(lines)
+    return "".join(out)
+
+
+def plan_changes(text, from_id, new_text, insert=False):
     """(replaced, written): `(id, title)` of the tasks from `from_id` on, and of the new ones."""
+    if insert:
+        new_text = insert_text(text, from_id, new_text)
     where = span(text, "plan")
     if where is None:
         raise TaskError("the issue has no '## Plan' section")
@@ -183,7 +241,7 @@ def _describe(tasks):
     return ", ".join(f"{task_id} ({title})" for task_id, title in tasks)
 
 
-def replace_plan(body, from_id, new_text, drop=False):
+def replace_plan(body, from_id, new_text, drop=False, insert=False):
     """`body` with the plan's tasks from `from_id` on replaced by `new_text`'s tasks.
 
     Refused when the new text has fewer tasks than it replaces, unless `drop`: the tasks
@@ -194,6 +252,8 @@ def replace_plan(body, from_id, new_text, drop=False):
         raise TaskError("the issue has no '## Plan' section")
     if not str(from_id).isdigit():
         raise TaskError("plan tasks are numbered 1, 2, 3 ...")
+    if insert:
+        new_text = insert_text(body, from_id, new_text)
     first = int(from_id)
     start, end = where
     head, blocks = _blocks(body[start:end])
@@ -334,17 +394,24 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None):
     return changed
 
 
-def _replace_in_file(runner, number, link, from_id, new_text, drop=False):
+def _message(from_id, new_text, insert):
+    if not insert:
+        return f"Replan from task {from_id}"
+    k = len(_blocks(new_text.replace("\r\n", "\n"))[1])
+    return f"Insert {k} task{'' if k == 1 else 's'} before task {from_id}"
+
+
+def _replace_in_file(runner, number, link, from_id, new_text, drop=False, insert=False):
     """Commit the replaced tasks to the plan ref, or to the linked branch from a temporary
     detached worktree."""
     from . import planfile
     branch, path = link["ref"], link["path"]
     if link["kind"] == "ref":
         text = planfile.read(runner, branch, path)
-        changes = plan_changes(text, from_id, new_text)
-        new = replace_plan(text, str(from_id), new_text, drop)
+        changes = plan_changes(text, from_id, new_text, insert)
+        new = replace_plan(text, str(from_id), new_text, drop, insert)
         dropped = changes[0][len(changes[1]):]
-        message = f"Replan from task {from_id}"
+        message = _message(from_id, new_text, insert)
         if dropped:
             message += f"\n\nDropped: {_describe(dropped)}"
         planfile.push(runner, number, planfile.write(runner, number, path, new, message))
@@ -359,10 +426,10 @@ def _replace_in_file(runner, number, link, from_id, new_text, drop=False):
             planfile.check_write(tree, path)
             with open(target, newline="") as handle:
                 text = handle.read()
-            changes = plan_changes(text, from_id, new_text)
-            new = replace_plan(text, str(from_id), new_text, drop)
+            changes = plan_changes(text, from_id, new_text, insert)
+            new = replace_plan(text, str(from_id), new_text, drop, insert)
             dropped = changes[0][len(changes[1]):]
-            message = f"Replan from task {from_id}"
+            message = _message(from_id, new_text, insert)
             if dropped:
                 message += f"\n\nDropped: {_describe(dropped)}"
             with open(target, "w", newline="") as handle:
@@ -409,7 +476,8 @@ def against_issue_plan(cfg, runner, number, sha):
     return plan(new)
 
 
-def replace_issue_plan(cfg, runner, number, from_id, new_text, terms, drop=False):
+def replace_issue_plan(cfg, runner, number, from_id, new_text, terms, drop=False,
+                       insert=False):
     """Replace the plan's open tasks from `from_id` on; the new text is scanned first."""
     findings = scan.scan_text(new_text, terms, cfg.data["privacy_allow"])
     if findings:
@@ -417,10 +485,11 @@ def replace_issue_plan(cfg, runner, number, from_id, new_text, terms, drop=False
                         + "; ".join(scan.describe(findings)))
     body, link = _linked(runner, number, cfg.data["docs"]["dir"])
     if link is not None:
-        new, changes = _replace_in_file(runner, number, link, from_id, new_text, drop)
+        new, changes = _replace_in_file(runner, number, link, from_id, new_text, drop,
+                                        insert)
     else:
-        changes = plan_changes(body, from_id, new_text)
-        new = replace_plan(body, str(from_id), new_text, drop)
+        changes = plan_changes(body, from_id, new_text, insert)
+        new = replace_plan(body, str(from_id), new_text, drop, insert)
         _save_issue(runner, number, new)
     found = plan(new)
     found["replaced"], found["written"] = changes
