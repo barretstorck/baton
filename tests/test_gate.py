@@ -300,6 +300,40 @@ class GateTest(unittest.TestCase):
         git_c = gate.decide('git -C "$X" commit -F clean.md', repo, TERMS)
         self.assertTrue(any("absolute path" in p for p in git_c), git_c)
 
+    def test_cd_variants_mark_directory_unknown(self):
+        repo = make_repo()
+        clean = pathlib.Path(repo, "clean.md")
+        clean.write_text("fine text\n")
+        pathlib.Path(repo, "sub").mkdir()
+        for prefix in ("cd -P sub && ", "cd -- sub && ", "pushd -P sub && ", "builtin cd sub && ",
+                       "builtin pushd sub && ", "popd && ", "cd a b && ", "cd 's*' && ",
+                       "cd 's?b' && ", "cd 's[u]b' && ", "cd 's{u,x}b' && "):
+            with self.subTest(prefix=prefix):
+                rel = gate.decide(prefix + "gh issue create --title t --body-file clean.md",
+                                  repo, TERMS)
+                self.assertTrue(any("absolute path" in p for p in rel), rel)
+                ab = gate.decide(f"{prefix}gh issue create --title t --body-file {clean}",
+                                 repo, TERMS)
+                self.assertEqual(ab, [])
+
+    def test_cd_option_cannot_hide_a_private_payload(self):
+        repo = make_repo()
+        pathlib.Path(repo, "sub").mkdir()
+        pathlib.Path(repo, "sub", "clean.md").write_text("host 192.168." + "7.7\n")
+        pathlib.Path(repo, "clean.md").write_text("fine text\n")
+        problems = gate.decide("cd -P sub && gh issue create --title t --body-file clean.md",
+                               repo, TERMS)
+        self.assertTrue(problems)
+
+    def test_cd_with_one_literal_path_is_still_known(self):
+        repo = make_repo()
+        pathlib.Path(repo, "sub").mkdir()
+        pathlib.Path(repo, "sub", "b.md").write_text("fine\n")
+        for prog in ("cd", "pushd"):
+            with self.subTest(prog=prog):
+                self.assertEqual(
+                    gate.decide(f"{prog} sub && gh issue create --title t -F b.md", repo, TERMS), [])
+
     def test_literal_cd_and_no_cd_still_read_relative_paths(self):
         repo = make_repo()
         pathlib.Path(repo, "sub").mkdir()
