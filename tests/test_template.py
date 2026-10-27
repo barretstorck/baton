@@ -106,3 +106,18 @@ class TemplateTest(unittest.TestCase):
     def test_review_skill_reads_state_from_pr_state(self):
         text = (ROOT / "skills/review/SKILL.md").read_text()
         self.assertIn("baton pr-state", text)
+
+    def test_review_skill_fixes_goal_gaps_here(self):
+        text = " ".join((ROOT / "skills/review/SKILL.md").read_text().split())
+        self.assertIn("defeats the issue's goal", text)
+        self.assertIn("never proposed as a follow-up", text)
+        self.assertIn("`critical` security and privacy problems", text)
+        self.assertIn("does not test what it claims", text)
+
+    def test_review_skill_sets_aside_minor(self):
+        text = " ".join((ROOT / "skills/review/SKILL.md").read_text().split())
+        self.assertIn("**Set aside** any other `minor` problem", text)
+        self.assertIn("one line under `## Set aside`", text)
+        self.assertIn("**[critical|important]** <title>", text)
+        self.assertIn("- [<severity>] <title>", text)
+        self.assertNotIn("**[minor]**", text)
