@@ -124,3 +124,125 @@ def edit_milestone(cfg, runner, ref, terms, title=None, description=None, due_on
         if value is not None and value != "":
             argv += ["-f", f"{key}={value}"]
     return runner(argv).strip()
+
+
+class UsageError(CommentError):
+    """Bad command-line usage; the message is the usage line."""
+
+
+_ISSUE_CREATE = ("usage: baton issue create --title <t> [--label <l>]... "
+                 "[--milestone <title>] <body-file | ->")
+_EDIT = ("usage: baton {t} edit <N> [--title <t>] [--body-file <file | ->] [--add-label <l>]... "
+         "[--remove-label <l>]... [--milestone <title> | --remove-milestone]")
+_PR_CREATE = "usage: baton pr create --title <t> [--draft] <body-file | ->"
+_PR_READY = "usage: baton pr ready <N> [--undo]"
+_MS_CREATE = "usage: baton milestone create --title <t> [--description <d>] [--due-on <ISO date>]"
+_MS_EDIT = ("usage: baton milestone edit <number | title> [--title <t>] [--description <d>] "
+            "[--due-on <date>] [--state open|closed]")
+
+
+def _parse(argv, spec, usage):
+    """Split argv into options (per spec: flag -> (key, 'one'|'many'|'flag')) and positionals."""
+    opts = {key: [] for key, kind in spec.values() if kind == "many"}
+    positional = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        i += 1
+        if arg != "-" and arg.startswith("-"):
+            flag, eq, value = arg.partition("=")
+            if flag not in spec:
+                raise UsageError(usage)
+            key, kind = spec[flag]
+            if kind == "flag":
+                if eq:
+                    raise UsageError(usage)
+                opts[key] = True
+                continue
+            if not eq:
+                if i >= len(argv):
+                    raise UsageError(usage)
+                value = argv[i]
+                i += 1
+            if kind == "many":
+                opts[key].append(value)
+            else:
+                opts[key] = value
+        else:
+            positional.append(arg)
+    return opts, positional
+
+
+def _number(text, usage):
+    if not text.isdigit():
+        raise UsageError(usage)
+    return int(text)
+
+
+def _parse_edit(target, argv):
+    usage = _EDIT.format(t=target)
+    spec = {"--title": ("title", "one"), "--body-file": ("body_source", "one"),
+            "--add-label": ("add_labels", "many"), "--remove-label": ("remove_labels", "many"),
+            "--milestone": ("milestone", "one"), "--remove-milestone": ("remove_milestone", "flag")}
+    opts, pos = _parse(argv, spec, usage)
+    if len(pos) != 1:
+        raise UsageError(usage)
+    if opts.get("milestone") and opts.get("remove_milestone"):
+        raise UsageError(usage)
+    opts.setdefault("remove_milestone", False)
+    opts["action"] = "edit"
+    opts["number"] = _number(pos[0], usage)
+    return opts
+
+
+def parse_issue(argv):
+    if not argv or argv[0] not in ("create", "edit"):
+        raise UsageError(_ISSUE_CREATE + "\n" + _EDIT.format(t="issue"))
+    if argv[0] == "edit":
+        return _parse_edit("issue", argv[1:])
+    spec = {"--title": ("title", "one"), "--label": ("labels", "many"),
+            "--milestone": ("milestone", "one")}
+    opts, pos = _parse(argv[1:], spec, _ISSUE_CREATE)
+    if len(pos) != 1 or not opts.get("title"):
+        raise UsageError(_ISSUE_CREATE)
+    opts.update(action="create", body_source=pos[0])
+    opts.setdefault("milestone", None)
+    return opts
+
+
+def parse_pr(argv):
+    if not argv or argv[0] not in ("create", "edit", "ready"):
+        raise UsageError("\n".join([_PR_CREATE, _EDIT.format(t="pr"), _PR_READY]))
+    if argv[0] == "edit":
+        return _parse_edit("pr", argv[1:])
+    if argv[0] == "ready":
+        opts, pos = _parse(argv[1:], {"--undo": ("undo", "flag")}, _PR_READY)
+        if len(pos) != 1:
+            raise UsageError(_PR_READY)
+        return {"action": "ready", "number": _number(pos[0], _PR_READY),
+                "undo": bool(opts.get("undo"))}
+    opts, pos = _parse(argv[1:], {"--title": ("title", "one"), "--draft": ("draft", "flag")},
+                       _PR_CREATE)
+    if len(pos) != 1 or not opts.get("title"):
+        raise UsageError(_PR_CREATE)
+    return {"action": "create", "title": opts["title"], "draft": bool(opts.get("draft")),
+            "body_source": pos[0]}
+
+
+def parse_milestone(argv):
+    if not argv or argv[0] not in ("create", "edit"):
+        raise UsageError(_MS_CREATE + "\n" + _MS_EDIT)
+    spec = {"--title": ("title", "one"), "--description": ("description", "one"),
+            "--due-on": ("due_on", "one")}
+    if argv[0] == "create":
+        opts, pos = _parse(argv[1:], spec, _MS_CREATE)
+        if pos or not opts.get("title"):
+            raise UsageError(_MS_CREATE)
+        opts.update(action="create")
+        return opts
+    spec["--state"] = ("state", "one")
+    opts, pos = _parse(argv[1:], spec, _MS_EDIT)
+    if len(pos) != 1 or opts.get("state", "open") not in ("open", "closed"):
+        raise UsageError(_MS_EDIT)
+    opts.update(action="edit", ref=pos[0])
+    return opts

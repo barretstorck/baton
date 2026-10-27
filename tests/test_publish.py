@@ -110,5 +110,45 @@ class MilestoneTest(unittest.TestCase):
             publish.edit_milestone(cfg(), r, "1", [], state="weird")
 
 
+class ParseTest(unittest.TestCase):
+    def test_issue_create(self):
+        o = publish.parse_issue(["create", "--title", "T", "--label", "a", "--label=b",
+                                 "--milestone", "M", "-"])
+        self.assertEqual((o["title"], o["labels"], o["milestone"], o["body_source"]),
+                         ("T", ["a", "b"], "M", "-"))
+
+    def test_issue_create_needs_title_and_body(self):
+        for argv in (["create", "f"], ["create", "--title", "T"], [], ["x"],
+                     ["create", "--bogus", "--title", "T", "f"], ["create", "--title"]):
+            with self.assertRaises(publish.UsageError):
+                publish.parse_issue(argv)
+
+    def test_edit(self):
+        o = publish.parse_pr(["edit", "5", "--add-label", "x", "--remove-label", "y",
+                              "--body-file", "-", "--remove-milestone"])
+        self.assertEqual((o["number"], o["add_labels"], o["remove_labels"], o["body_source"],
+                          o["remove_milestone"]), (5, ["x"], ["y"], "-", True))
+        for argv in (["edit"], ["edit", "x"], ["edit", "5", "--milestone", "M",
+                                               "--remove-milestone"]):
+            with self.assertRaises(publish.UsageError):
+                publish.parse_issue(argv)
+
+    def test_pr_create_and_ready(self):
+        o = publish.parse_pr(["create", "--title", "T", "--draft", "f"])
+        self.assertTrue(o["draft"])
+        self.assertEqual(publish.parse_pr(["ready", "3", "--undo"]),
+                         {"action": "ready", "number": 3, "undo": True})
+        with self.assertRaises(publish.UsageError):
+            publish.parse_pr(["ready"])
+
+    def test_milestone(self):
+        o = publish.parse_milestone(["create", "--title", "T", "--due-on", "2026-01-01"])
+        self.assertEqual(o["due_on"], "2026-01-01")
+        o = publish.parse_milestone(["edit", "v1", "--state", "closed"])
+        self.assertEqual((o["ref"], o["state"]), ("v1", "closed"))
+        with self.assertRaises(publish.UsageError):
+            publish.parse_milestone(["edit", "v1", "--state", "bad"])
+
+
 if __name__ == "__main__":
     unittest.main()
