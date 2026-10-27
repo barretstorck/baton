@@ -443,19 +443,29 @@ def _unscannable(value):
     return "$(" in value and not value.startswith(_INLINE_HEREDOC)
 
 
+def _dynamic(value):
+    """True when a directory argument is built by the shell, so where it points is unknown."""
+    return "$" in value or "`" in value
+
+
 def _read(path, bases):
-    """Return (text, problem) for a file a command publishes."""
+    """Return (texts, problem) for a file a command publishes: the text in every base that holds it."""
     if path == "-":
-        return None, "a body read from stdin cannot be scanned; pass --body or a file path"
+        return [], "a body read from stdin cannot be scanned; pass --body or a file path"
+    texts, seen = [], set()
     for base in bases:
         full = os.path.join(base, os.path.expanduser(path))
-        if os.path.isfile(full):
-            if os.path.getsize(full) > _MAX_FILE:
-                return None, f"body file {path} is too large to scan"
-            with open(full, errors="replace") as handle:
-                return handle.read(), None
-    return None, (f"body file {path} not found, so it cannot be scanned; "
-                  "write it in an earlier step")
+        if not os.path.isfile(full) or os.path.realpath(full) in seen:
+            continue
+        seen.add(os.path.realpath(full))
+        if os.path.getsize(full) > _MAX_FILE:
+            return [], f"body file {path} is too large to scan"
+        with open(full, errors="replace") as handle:
+            texts.append(handle.read())
+    if texts:
+        return texts, None
+    return [], (f"body file {path} not found, so it cannot be scanned; "
+                "write it in an earlier step")
 
 
 def _find_config(dirs):
@@ -470,11 +480,16 @@ def _find_config(dirs):
 def decide(command, cwd, terms):
     calls = [_call(words) for words in _invocations(tokenize(command))]
     dirs, items = [cwd], []
+    cwd_unknown = False
     for call in calls:
-        if call.program in ("cd", "pushd") and call.args:
-            dirs.append(os.path.join(cwd, os.path.expanduser(call.args[0])))
+        if call.program in ("cd", "pushd"):
+            if not call.args or call.args[0] == "-" or _dynamic(call.args[0]):
+                cwd_unknown = True
+            if call.args:
+                dirs.append(os.path.join(cwd, os.path.expanduser(call.args[0])))
         elif call.program == "git":
             item = _inspect_git(call)
+            cwd_unknown = cwd_unknown or any(_dynamic(path) for path in item.dirs)
             dirs.extend(os.path.join(cwd, os.path.expanduser(path)) for path in item.dirs)
             items.append(item)
         elif call.program == "gh":
@@ -503,24 +518,29 @@ def decide(command, cwd, terms):
                             "scanned; pass it literally, as an inline heredoc, or as a file")
         bodies = [_heredoc_text(body) for body in item.bodies]
         for path, is_body in item.files:
-            text, problem = _read(path, bases)
+            if cwd_unknown and path != "-" and not os.path.isabs(os.path.expanduser(path)):
+                problems.append(f"body file {path} is relative and the working directory cannot be "
+                                "worked out (cd to a variable, substitution or `-`); use an absolute path")
+                continue
+            file_texts, problem = _read(path, bases)
             if problem:
                 problems.append(problem)
                 continue
-            texts.append(text)
-            if is_body:
-                bodies.append(text)
             kind = item.state_files.get(path)
-            if kind == "graphql" and _graphql_sets_state(text):
-                problems.append(_CLOSE_MESSAGE)
-            elif kind == "graphql-input":
-                problem = _graphql_input_problem(text)
-                if problem:
-                    problems.append(problem)
-            elif kind == "rest":
-                problem = _rest_payload_problem(text)
-                if problem:
-                    problems.append(problem)
+            for text in file_texts:
+                texts.append(text)
+                if is_body:
+                    bodies.append(text)
+                if kind == "graphql" and _graphql_sets_state(text):
+                    problems.append(_CLOSE_MESSAGE)
+                elif kind == "graphql-input":
+                    problem = _graphql_input_problem(text)
+                    if problem:
+                        problems.append(problem)
+                elif kind == "rest":
+                    problem = _rest_payload_problem(text)
+                    if problem:
+                        problems.append(problem)
         texts.extend(item.texts)
         if any(not body.strip() for body in bodies):
             problems.append("the body is empty; write the full text first")
