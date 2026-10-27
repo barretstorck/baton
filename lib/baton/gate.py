@@ -83,7 +83,18 @@ _DATA_PROGRAMS = {
     "[", "true", "false", "stat", "file", "du", "df", "mkdir", "rm", "cp", "mv", "touch",
     "ln", "chmod", "readlink", "realpath", "pwd", "cd", "pushd", "popd", "which", "type",
     "export", "declare", "typeset", "readonly", "local", "unset", "set", "exit", "return",
+    "jq", "column", "nl", "fold", "fmt", "expand", "unexpand", "rev",
+    "tac", "paste", "join", "comm", "od", "xxd", "hexdump", "strings", "md5sum", "sha1sum",
+    "sha256sum", "cksum", "seq", "date", "sleep", "yes", "expr", "tsort", "shuf", "pr",
 }
+_FIND_RUNNERS = {"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprintf", "-fls"}
+_SED_RUNS = re.compile(
+    r"(?:^|[;{}\n/\d$!\s])e(?:\s|$|;|\})"
+    r"|s(.)(?:\\.|(?!\1).)*\1(?:\\.|(?!\1).)*\1[gpiImM0-9w]*e")
+_AWKS = {"awk", "gawk", "mawk"}
+_CHECKED = {"sed", "find"} | _AWKS
+_EXPORTERS = {"export", "declare", "typeset", "readonly", "local"}
+_NAME = re.compile(r"^([A-Za-z_]\w*)(?:\[[^\]]*\])?(?:\+?=.*)?$", re.S)
 _ALIAS = "aliases and --config-env can run gh or git behind the gate; not allowed here"
 _BYPASS = "git hook bypass (--no-verify, -n, core.hooksPath or an overridden environment) is not allowed here"
 _NOT_PLAIN = "git publishing must be a plain command in the repository's own directory"
@@ -149,12 +160,33 @@ def _invocations(tokens):
         yield current
 
 
+def _bad_name(name):
+    return name in _BAD_ENV_NAMES or (name.startswith("GIT_") and name not in _SAFE_GIT_ENV)
+
+
 def _bad_env(word):
     match = _ASSIGNMENT.match(word)
-    if not match:
-        return False
-    name = match.group(1)
-    return name in _BAD_ENV_NAMES or (name.startswith("GIT_") and name not in _SAFE_GIT_ENV)
+    return bool(match) and _bad_name(match.group(1))
+
+
+def _bad_export(words):
+    """True if an export-like command names a bad variable, bare, with a subscript or assigned."""
+    for word in words:
+        match = _NAME.match(word)
+        if match and _bad_name(match.group(1)):
+            return True
+    return False
+
+
+def _runs_programs(call):
+    """True if a sed script or find expression can start a program."""
+    if call.program == "find":
+        return any(arg in _FIND_RUNNERS for arg in call.args)
+    if call.program in _AWKS:
+        return any("system" in arg or "|" in arg for arg in call.args)
+    if call.program == "sed":
+        return any(_SED_RUNS.search(arg) for arg in call.args if not arg.startswith("--"))
+    return False
 
 
 def _skip_options(words, index, wrapper):
@@ -221,6 +253,8 @@ def _call(words):
             index += 1
         elif wrapper in _WRAPPERS:
             start = index + 1
+            if wrapper in _EXPORTERS and _bad_export(words[start:]):
+                bad_env = True
             index, known = _skip_options(words, start, wrapper)
             unknown = unknown or not known
             if wrapper == "env" and not known:
@@ -487,7 +521,11 @@ def decide(command, cwd, terms):
             item = _inspect_git(call)
             if item.relevant:
                 items.append(item)
-        elif (call.program and call.program not in _DATA_PROGRAMS
+        elif (call.program and (call.program not in _DATA_PROGRAMS)
+                and call.program not in _CHECKED
+                and any(_GH_OR_GIT.search(arg) for arg in call.args)):
+            problems.append(_WRAPPER_MESSAGE)
+        elif (call.program in _CHECKED and _runs_programs(call)
                 and any(_GH_OR_GIT.search(arg) for arg in call.args)):
             problems.append(_WRAPPER_MESSAGE)
     for item in items:

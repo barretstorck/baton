@@ -153,6 +153,29 @@ class GateTest(unittest.TestCase):
                 self.assertEqual(gate.decide(cmd, plain, TERMS), [])
         self.assertEqual(gate.decide("git push", tempfile.mkdtemp(), TERMS), [])
 
+    def test_everyday_read_and_search_commands_are_allowed(self):
+        repo = make_repo()
+        for cmd in ("sed 's/git/x/' f", "sed -n '/git/p' f", "awk '/git/ {print}' f",
+                    "find . -name '*.git'", "jq '.git' f", "column -t | grep git"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [])
+
+    def test_sed_and_find_that_run_programs_are_refused(self):
+        repo = make_repo()
+        for cmd in ("find . -exec git push \\;", "find . -name x -delete -o -name git",
+                    "sed 's/x/git push/e' f", "sed '1e git push' f"):
+            with self.subTest(cmd=cmd):
+                self.assertTrue(gate.decide(cmd, repo, TERMS))
+
+    def test_bare_export_of_a_bad_name_is_refused(self):
+        repo = make_repo()
+        for cmd in ("declare -x GIT_DIR; git push", "export GIT_DIR && git push",
+                    "typeset -x GIT_DIR[0]=x; git push", "readonly HOME; git push",
+                    "export A BATON_PRIVATE_TERMS; git push", "local GIT_DIR; git push"):
+            with self.subTest(cmd=cmd):
+                self.assertTrue(gate.decide(cmd, repo, TERMS))
+        self.assertEqual(gate.decide("export FOO; git push", repo, TERMS), [])
+
     def test_same_commands_are_refused_with_a_brief_in_cwd(self):
         repo = make_repo()
         for cmd in ("gh issue comment 5 --body x", "bash -c 'git log'",
