@@ -108,6 +108,14 @@ class TemplateTest(unittest.TestCase):
         text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
         self.assertIn("gh pr ready <PR> --undo", text)
 
+    def test_sprint_skill_files_follow_ups_by_severity(self):
+        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        self.assertIn("File each by its severity", text)
+        self.assertIn("`critical`: joins the open sprint as `deliverable`", text)
+        self.assertIn("`important`: joins the open sprint as `stretch`", text)
+        self.assertIn("`minor`: not filed", text)
+        self.assertIn("`critical` ones", text)
+
     def test_review_skill_reads_state_from_pr_state(self):
         text = (ROOT / "skills/review/SKILL.md").read_text()
         self.assertIn("baton pr-state", text)
