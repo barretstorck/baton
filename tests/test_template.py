@@ -17,6 +17,11 @@ class TemplateTest(unittest.TestCase):
         self.assertLess(text.index("  - Provides:"), text.index("  - Provides (as built):"))
         self.assertLess(text.index("  - Provides (as built):"), text.index("  - Check:"))
 
+    def test_develop_skill_limits_outgrows_decline(self):
+        text = " ".join((ROOT / "skills/develop/SKILL.md").read_text().split())
+        self.assertIn("cannot be declined as \"outgrows the issue\"", text)
+        self.assertIn("name the evidence", text)
+
     def test_develop_skill_has_scratch_file_rule(self):
         text = (ROOT / "skills/develop/SKILL.md").read_text()
         self.assertIn("\n## Scratch files\n", text)

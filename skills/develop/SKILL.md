@@ -148,6 +148,9 @@ filters, send long output to a file, chain related commands, wait for a long run
    - **decline it** with a technical reason (it is wrong, or it contradicts the issue or a
      decision, or the fix belongs in a follow-up because it outgrows the issue): return
      `DECLINED`. No agreement for show, and no fixes you believe are wrong.
+   A task that fixes a gap in the issue's own goal (as the reviewer's step 7 defines it) cannot
+   be declined as "outgrows the issue": decline it only as wrong or as contradicting the issue or
+   a decision, and name the evidence (the file and line, or the decision).
    Either way, never run `baton task done pr`: the orchestrator ticks review tasks from your result.
 4. Do not post a reply: the orchestrator writes it from your result. Do not implement the
    review's follow-up issues.
