@@ -286,6 +286,17 @@ class GateTest(unittest.TestCase):
                 problems = gate.decide(cmd, make_repo(), TERMS)
                 self.assertTrue(any("use `baton close|reopen" in p for p in problems))
 
+    def test_graphql_query_from_file_fails_closed_on_unverifiable_variables(self):
+        base = "gh api graphql -F query=@q.graphql "
+        for tail in ("-F i=@v.json", "-f i=notjson"):
+            with self.subTest(tail=tail):
+                problems = gate.decide(base + tail, make_repo(), TERMS)
+                self.assertTrue(any("use `baton close|reopen" in p for p in problems))
+        for tail in ("-F 'i[title]=t'", "-f 'i[body]=b' -F 'i[n]=3'"):
+            with self.subTest(tail=tail):
+                problems = gate.decide(base + tail, make_repo(), TERMS)
+                self.assertFalse(any("use `baton close|reopen" in p for p in problems))
+
     def test_api_state_pattern_does_not_backtrack_catastrophically(self):
         for query in ("state#" + " " * 5000, "state#" + "," * 5000, "state" + "# " * 2000,
                       "state" + " ," * 3000 + "#", "stateReason#" + " ," * 3000):

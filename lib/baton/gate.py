@@ -311,11 +311,23 @@ def _unverifiable_input_variable(queries, fields):
     return False
 
 
+def _unverifiable_file_query_fields(fields):
+    """True when the query is read from a file (unseen) and a variable field is not bracketed or inline JSON."""
+    for key, content in fields:
+        if key == "query" or key.endswith("]"):
+            continue
+        try:
+            json.loads(content)
+        except ValueError:
+            return True
+    return False
+
+
 def _inspect_gh_api(call, item):
     has_payload = False
     payload_files = []
     state_endpoint = graphql = state_field = close_mutation = variable_state = False
-    queries, fields = [], []
+    queries, fields, file_query = [], [], False
     for flag, value in _options(call.args, _API_FIELD_OPTS | {"--input"}):
         if flag is None:
             state_endpoint = state_endpoint or bool(_API_STATE_ENDPOINT.search(value))
@@ -335,8 +347,11 @@ def _inspect_gh_api(call, item):
         state_field = state_field or key in ("state", "state_reason")
         close_mutation = close_mutation or _graphql_sets_state(content)
         fields.append((key, content))
-        if key == "query" and not content.startswith("@"):
-            queries.append(content)
+        if key == "query":
+            if content.startswith("@"):
+                file_query = True
+            else:
+                queries.append(content)
         variable_state = (variable_state or bool(_API_STATE_KEY.search(key))
                           or (not content.startswith("@") and _json_sets_state(content)))
         if flag in _API_TYPED_OPTS and content.startswith("@"):
@@ -354,7 +369,8 @@ def _inspect_gh_api(call, item):
             if kind == "rest" and not is_input:
                 continue  # `-F field=@file` is one field's text, not a JSON payload
             item.state_files[path] = "graphql-input" if kind == "graphql" and is_input else kind
-    unverifiable = graphql and _unverifiable_input_variable(queries, fields)
+    unverifiable = graphql and (_unverifiable_input_variable(queries, fields)
+                                or (file_query and _unverifiable_file_query_fields(fields)))
     if (state_endpoint and state_field) or (graphql and (close_mutation or variable_state or unverifiable)):
         item.problems.append(_CLOSE_MESSAGE)
 
