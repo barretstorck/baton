@@ -76,8 +76,8 @@ class GateTest(unittest.TestCase):
     def test_non_publishing_command_is_ignored(self):
         self.assertEqual(gate.decide(f"ls {IP}", make_repo(), TERMS), [])
 
-    def test_raw_writes_are_refused_in_a_baton_directory_and_elsewhere(self):
-        for directory in (make_repo(), make_repo(brief=None), tempfile.mkdtemp()):
+    def test_raw_writes_are_refused_in_a_baton_directory(self):
+        for directory in (make_repo(),):
             for cmd, use in RAW_WRITES:
                 with self.subTest(cmd=cmd, directory=bool(directory)):
                     problems = gate.decide(cmd, directory, TERMS)
@@ -100,7 +100,7 @@ class GateTest(unittest.TestCase):
                     "sudo gh issue close 5", "true | gh issue edit 1 --title t",
                     "env -i gh issue edit 1 --title t"):
             with self.subTest(cmd=cmd):
-                self.assertTrue(gate.decide(cmd, make_repo(brief=None), TERMS))
+                self.assertTrue(gate.decide(cmd, make_repo(), TERMS))
 
     def test_wrappers_that_hide_gh_or_git_are_refused(self):
         for cmd in ('bash -c "gh issue edit 1"', "sh -c 'gh issue edit 1'", "xargs gh issue edit",
@@ -144,12 +144,37 @@ class GateTest(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertEqual(gate.decide(cmd, repo, TERMS), [])
 
-    def test_git_publishing_without_a_brief_is_refused(self):
-        repo = make_repo(brief=None)
-        for cmd in ("git commit -m x", "git push", "git tag v1", 'git commit -m "fix"'):
+    def test_outside_a_baton_repository_everything_is_allowed(self):
+        plain = make_repo(brief=None)
+        for cmd in ("git commit -m x", "git push", "git tag v1", "gh issue comment 5 --body x",
+                    "bash -c 'git log'", "sed 's/git/x/' f", "python3 -c 'f(\"git\")'",
+                    "cd /nowhere/at/all && gh pr merge 5", "cd $SOMEWHERE && git push"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, plain, TERMS), [])
+        self.assertEqual(gate.decide("git push", tempfile.mkdtemp(), TERMS), [])
+
+    def test_same_commands_are_refused_with_a_brief_in_cwd(self):
+        repo = make_repo()
+        for cmd in ("gh issue comment 5 --body x", "bash -c 'git log'",
+                    "git commit -m Z --no-verify"):
+            with self.subTest(cmd=cmd):
+                self.assertTrue(gate.decide(cmd, repo, TERMS))
+
+    def test_a_named_directory_with_a_brief_brings_the_rules(self):
+        baton, plain = make_repo(), make_repo(brief=None)
+        for cmd in (f"cd {baton} && gh issue comment 5 --body x",
+                    f"pushd {baton} && gh issue comment 5 --body x",
+                    f"git -C {baton} commit -m x && gh issue comment 5 --body x"):
+            with self.subTest(cmd=cmd):
+                self.assertTrue(gate.decide(cmd, plain, TERMS))
+
+    def test_an_unresolvable_directory_is_refused_in_a_baton_repository(self):
+        repo = make_repo()
+        for cmd in ("cd $DIR && gh issue comment 5 --body x", "cd ~bob && ls",
+                    "git -C $DIR log", "pushd /tmp/*/x"):
             with self.subTest(cmd=cmd):
                 problems = gate.decide(cmd, repo, TERMS)
-                self.assertTrue(any("no Baton brief" in p for p in problems), problems)
+                self.assertTrue(any("cannot be resolved" in p for p in problems), problems)
 
     def test_brief_is_looked_up_from_cwd_only(self):
         repo = make_repo()
@@ -157,7 +182,6 @@ class GateTest(unittest.TestCase):
         self.assertEqual(gate.decide("git commit -m x", os.path.join(repo, "sub"), TERMS), [])
         other = tempfile.mkdtemp()
         self.assertTrue(gate.decide(f"cd {repo} && git commit -m x", other, TERMS))
-        self.assertTrue(gate.decide("git commit -m x", other, TERMS))
 
     def test_no_verify_is_blocked(self):
         for cmd in ("git commit --no-verify -m x", "git push --no-verify",
@@ -241,7 +265,7 @@ class GateTest(unittest.TestCase):
         for cmd in ("sudo -u root gh issue comment 1 -b x", "env -u FOO gh pr create -t x -b y",
                     "env -C dir gh issue close 1", "sudo -g grp gh pr ready 5"):
             with self.subTest(cmd=cmd):
-                problems = gate.decide(cmd, make_repo(brief=None), TERMS)
+                problems = gate.decide(cmd, make_repo(), TERMS)
                 self.assertTrue(any("baton" in p for p in problems), problems)
 
     def test_unknown_wrapper_option_before_gh_or_git_is_refused(self):

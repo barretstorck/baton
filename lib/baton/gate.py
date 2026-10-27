@@ -424,8 +424,55 @@ def _is_evaluator(program):
     return program in _EVALUATORS or program.startswith("python")
 
 
+def _named_directories(calls):
+    """Directories a command names: cd and pushd arguments, and git -C values."""
+    names = []
+    for call in calls:
+        args = call.args
+        if call.program == "builtin" and args and args[0] in _DIRECTORY_COMMANDS:
+            args = args[1:]
+        elif call.program not in _DIRECTORY_COMMANDS and call.program != "git":
+            continue
+        if call.program == "git":
+            options, _, _ = _git_parts(args)
+            for flag, value in options:
+                if flag == "-C":
+                    names.append(value)
+                elif flag.startswith("-C") and not flag.startswith("--"):
+                    names.append(flag[2:])
+        else:
+            operands = [a for a in args if a != "--" and not (a.startswith("-") and len(a) > 1)]
+            if operands:
+                names.append(operands[0])
+    return names
+
+
+def _literal(name):
+    if re.search(r"[$`*?\[]", name):
+        return False
+    return not (name.startswith("~") and name != "~" and not name.startswith("~/"))
+
+
+def _has_brief(path):
+    try:
+        return config.load(path) is not None
+    except config.ConfigError:
+        return True
+    except OSError:
+        return False
+
+
 def decide(command, cwd, terms):
     calls = [_call(words) for words in _invocations(tokenize(command))]
+    named = _named_directories(calls)
+    if not _has_brief(cwd):
+        literal = [os.path.join(cwd, os.path.expanduser(name)) for name in named
+                   if _literal(name)]
+        if not any(_has_brief(path) for path in literal):
+            return []
+    elif any(not _literal(name) for name in named):
+        return ["a directory named by the command cannot be resolved (variable, "
+                "substitution, glob or ~user); name it literally"]
     problems, items = [], []
     moves = any(_changes_directory(call) for call in calls)
     for call in calls:
