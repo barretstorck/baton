@@ -11,7 +11,8 @@
 | Issues completed | |
 | Pull requests merged | |
 | Issues carried over (`missed`) | |
-| Follow-up issues filed | |
+| Follow-up issues filed (critical / important) | |
+| Problems fixed in review instead of filed | |
 | Default branch at the end | |
 
 ## Delivered
