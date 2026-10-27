@@ -134,3 +134,10 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("**[critical|important]** <title>", text)
         self.assertIn("- [<severity>] <title>", text)
         self.assertNotIn("**[minor]**", text)
+
+    def test_retro_counts_follow_ups_by_severity(self):
+        retro = (ROOT / "templates/retro.md").read_text()
+        self.assertIn("Follow-up issues filed (critical / important)", retro)
+        self.assertIn("Problems fixed in review instead of filed", retro)
+        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        self.assertIn("Fill the two follow-up rows from the sprint's review comments", text)
