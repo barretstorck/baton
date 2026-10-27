@@ -294,8 +294,19 @@ def _gh_words(args):
     return (words + ["", ""])[:2]
 
 
+_QUERY_DELETE = {0xFEFF: None, 0x200B: None, 0x2060: None}
+
+
+def _normalise_query(content):
+    """Delete BOM and zero-width characters; turn every other space except LF and CR into a plain space."""
+    content = content.translate(_QUERY_DELETE)
+    # LF and CR stay: they end a GraphQL `#` comment.
+    return "".join(" " if ch.isspace() and ch not in "\n\r" else ch for ch in content)
+
+
 def _graphql_sets_state(content):
     """True for a close/reopen mutation, or any mutation passing a `state:` argument."""
+    content = _normalise_query(content)
     return bool(_API_CLOSE_MUTATION.search(content)
                 or (_API_MUTATION.search(content) and _API_STATE_ARG.search(content)))
 
