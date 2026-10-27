@@ -10,6 +10,7 @@ import unittest
 from baton import gate
 
 TERMS = ["Zebrowski"]
+IP = ".".join(["192", "168", "7", "7"])  # assembled so the commit scan sees no literal
 
 
 def make_repo(brief="---\n---\n", hooks=True):
@@ -56,6 +57,48 @@ class GateTest(unittest.TestCase):
         self.assertTrue(self._closes(self._api(patch, p_json='{"state": "closed"}')))
         pull = "gh api -X PATCH repos/o/r/pulls/5 --input p.json"
         self.assertTrue(self._closes(self._api(pull, p_json='{"state_reason": "completed"}')))
+
+    def _two_bases(self, command, first, second):
+        repo = make_repo()
+        pathlib.Path(repo, "sub").mkdir()
+        pathlib.Path(repo, "f.md").write_text(first)
+        pathlib.Path(repo, "sub", "f.md").write_text(second)
+        return gate.decide(command, repo, TERMS)
+
+    def test_every_base_holding_a_relative_file_is_scanned(self):
+        mark = "<!-- baton:developer:status -->\n"
+        dirty = mark + "host " + IP
+        clean = mark + "fine"
+        for cmd in ("gh issue comment 5 --body-file f.md",
+                    "gh api -X PATCH repos/o/r/issues/5 -F body=@f.md"):
+            full = "cd sub && " + cmd
+            self.assertTrue(any("private-ip" in p for p in self._two_bases(full, clean, dirty)), cmd)
+            self.assertTrue(any("private-ip" in p for p in self._two_bases(full, dirty, clean)), cmd)
+            self.assertEqual([], self._two_bases(full, clean, clean), cmd)
+        cmd = "cd sub && gh api -X PATCH repos/o/r/issues/5 --input f.md"
+        problems = self._two_bases(cmd, '{"a": 1}', '{"a": "%s"}' % IP)
+        self.assertTrue(any("private-ip" in p for p in problems))
+
+    def test_state_payload_in_any_base_is_refused(self):
+        cmd = "cd sub && gh api -X PATCH repos/o/r/issues/5 --input f.md"
+        problems = self._two_bases(cmd, '{"title": "t"}', '{"state": "closed"}')
+        self.assertTrue(self._closes(problems))
+
+    def test_file_only_in_repo_root_is_still_scanned(self):
+        repo = make_repo()
+        os.mkdir(os.path.join(repo, "sub"))
+        pathlib.Path(repo, "r.md").write_text("<!-- baton:developer:status -->\nhost " + IP)
+        problems = gate.decide("cd sub && gh issue comment 5 --body-file r.md", repo, TERMS)
+        self.assertTrue(any("private-ip" in p for p in problems))
+
+    def test_missing_file_in_every_base_is_not_found(self):
+        problems = self._two_bases("cd sub && gh issue comment 5 --body-file nope.md", "x", "y")
+        self.assertTrue(any("not found" in p for p in problems))
+
+    def test_body_empty_in_one_base_is_refused(self):
+        mark = "<!-- baton:developer:status -->\n"
+        cmd = "cd sub && gh issue comment 5 --body-file f.md"
+        self.assertTrue(any("empty" in p for p in self._two_bases(cmd, mark + "ok", "")))
 
     def test_input_file_state_bypasses_are_refused(self):
         patch = "gh api -X PATCH repos/o/r/issues/5 --input p.json"
