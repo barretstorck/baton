@@ -126,6 +126,14 @@ class CurrentTest(unittest.TestCase):
     def pr(self, comments, head=NEW):
         return {"number": 9, "headRefOid": head, "headRefName": "issue-4-x", "comments": comments}
 
+    def test_state_with_failures_serializes_to_json(self):
+        body = review.compose("changes", NEW, "Round 1.\n\n## Failures\n- some_test: caused\n")
+        comment = {"author": {"login": OWNER}, "url": "u/c", "body": body}
+        found = review.current(self.pr([comment]), OWNER, cfg(), FakeRunner(), "main")
+        text = json.dumps(found, default=review.json_default)
+        self.assertIn("some_test", text)
+        self.assertEqual(json.loads(text)["review"]["failures"], ["some_test"])
+
     def test_approval_of_the_head_is_approved(self):
         runner = FakeRunner()
         found = review.current(self.pr([rev("approve")]), OWNER, cfg(), runner, "main")
