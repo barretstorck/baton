@@ -294,14 +294,17 @@ def _gh_words(args):
     return (words + ["", ""])[:2]
 
 
-_QUERY_DELETE = {0xFEFF: None, 0x200B: None, 0x2060: None}
+_QUERY_TO_SPACE = {0xFEFF, 0x200B, 0x2060}
 
 
 def _normalise_query(content):
-    """Delete BOM and zero-width characters; turn every other space except LF and CR into a plain space."""
-    content = content.translate(_QUERY_DELETE)
+    """Turn BOM, zero-width characters and every other space except LF and CR into a plain space.
+
+    A space can only add matches, never remove them: deleting would join tokens GraphQL reads apart.
+    """
     # LF and CR stay: they end a GraphQL `#` comment.
-    return "".join(" " if ch.isspace() and ch not in "\n\r" else ch for ch in content)
+    return "".join(" " if (ord(ch) in _QUERY_TO_SPACE or ch.isspace()) and ch not in "\n\r" else ch
+                   for ch in content)
 
 
 def _graphql_sets_state(content):

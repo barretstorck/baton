@@ -283,6 +283,9 @@ class GateTest(unittest.TestCase):
         for ch in ("﻿", " ", " ", "​", "⁠"):
             cmds.append("gh api graphql -f query='mutation { updateIssue(input: {id: \"X\", state"
                         + ch + ": CLOSED}) { clientMutationId } }'")
+        for ch in ("\ufeff", "\u200b", "\u2060"):
+            cmds.append("gh api graphql -f query='mutation { updateIssue(input: {id: $x" + ch
+                        + "state:CLOSED}) { clientMutationId } }'")
         cmds.append("gh api graphql -f query='﻿mutation { closeIssue(input: {id: \"X\"}) "
                     "{ clientMutationId } }'")
         q = ("gh api graphql -f query='mutation($i: UpdateIssueInput!) "
@@ -346,7 +349,7 @@ class GateTest(unittest.TestCase):
                 self.assertEqual(gate.decide(cmd, make_repo(), TERMS), [])
 
     def test_normalise_query(self):
-        for raw, want in (("a﻿b​c⁠d", "abcd"),
+        for raw, want in (("a﻿b​c⁠d", "a b c d"),
                           ("a b c\td", "a b c d"),
                           ("a # c\n\r b", "a # c\n\r b"),
                           ("plain query", "plain query")):
