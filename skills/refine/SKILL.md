@@ -138,7 +138,7 @@ not in the issue, so the issue stays short for a person to read.
      Decisions. Keep the author's intent and wording where it is clear, and keep every existing
      entry under `## Decisions` with its link. A spike keeps its Verification in the issue and has
      no plan, branch or `Plan:` line. Write the **complete** new description to a file, read it
-     back, then `gh issue edit <N> --body-file <file>`. Never edit a description in place with
+     back, then `baton issue edit <N> --body-file <file>`. Never edit a description in place with
      `sed` or a partial body. Afterwards read the issue back and check nothing was lost, including
      the `Plan:` line. Do not put private details in it.
 

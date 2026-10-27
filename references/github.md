@@ -29,13 +29,14 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Step | Command |
 |---|---|
 | Set an issue's status | `baton set-status <N> status:<name>` (removes the previous status) |
-| Add or remove another label | `gh issue edit <N> --add-label <label>` / `--remove-label <label>`; use the names from `labels.map` in `baton config` |
+| Add or remove another label | `baton issue edit <N> --add-label <label>` / `--remove-label <label>`; use the names from `labels.map` in `baton config` |
 | Post a comment | `baton comment <issue\|pr> <N> <role> <kind> -` with the body as an inline heredoc on standard input, or a file path in place of `-`. It scans the text, adds the Baton marker and prints the comment URL. |
 | Close or reopen | `baton close\|reopen <issue\|pr> <N> <role> <reason-file \| ->`: posts a `baton:<role>:closed`/`reopened` marker comment with the reason, then closes or reopens. `gh ... close\|reopen` is refused. An item closed with no such marker was closed by the maintainer: do not reopen it without asking. |
-| Edit an issue description | Write the full new description to a file, then `gh issue edit <N> --body-file <file>` |
-| Create an issue | Write the description to a file, then `gh issue create --title "<title>" --body-file <file> --label <labels>` |
-| Open a draft pull request | `gh pr create --draft --title "<title>" --body-file <file>` with `Closes #<N>` on its own line in the body |
-| Mark a pull request ready | `gh pr ready <N>` (the orchestrator, once the review is approved) |
+| Edit an issue description | Write the full new description to a file, then `baton issue edit <N> --body-file <file>` (it scans the text and refuses an empty body) |
+| Edit a pull request | `baton pr edit <N>` takes the same options as `baton issue edit` (`--title`, `--body-file`, `--add-label`, `--remove-label`, `--milestone`) |
+| Create an issue | Write the description to a file, then `baton issue create --title "<title>" --label <label> <file>` (repeat `--label`; `-` reads the body from standard input) |
+| Open a draft pull request | `baton pr create --draft --title "<title>" <file>` with `Closes #<N>` on its own line in the body |
+| Mark a pull request ready | `baton pr ready <N>`, or `baton pr ready <N> --undo` to turn it back into a draft (the orchestrator, once the review is approved) |
 | Post a review | `baton review post <N> <approve\|changes\|blocked\|replan> <full head sha> -` with the body as an inline heredoc. It refuses if the head moved. `blocked` needs a `Cause: default-branch` or `Cause: environment` line and a `## Reason` section, takes no `## Tasks`, and does not count as a review round. `replan` needs a non-empty `## Feedback` section, takes no `## Tasks`, and counts as a round. Failures are listed under `## Failures` as `- <id>: <caused\|default-branch\|flaky\|environment>`. |
 | Answer a review | `baton comment pr <N> developer reply -`, one line per task (orchestrator, from the developers' results) |
 | Commit a plan | `baton plan commit <N> <path> <file\|->` (refiner): commits the plan file to `refs/plans/<N>` (no checkout needed) and pushes it |
@@ -46,6 +47,7 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Replace a plan's open tasks | `baton plan replace <N> <from-task> <file> [--drop]` (orchestrator only; refuses fewer new tasks than replaced unless `--drop`; a plan on the ref is committed to `refs/plans/<N>` and pushed; a plan on a branch is committed to the issue branch and pushed) |
 | Insert tasks into a plan | `baton plan insert <N> <before-task> <file>` (orchestrator only; the new tasks go before that number, later open tasks are renumbered with their `task <n>` references; done tasks are refused; `total + 1` appends; stored like `replace`) |
 | Set a plan's `Written against:` | `baton plan against <N> <full sha>` (refiner; a plan on `refs/plans/<N>` only; committed and pushed) |
+| Create or edit a milestone | `baton milestone create --title <t> [--description <d>] [--due-on <ISO date>]`; `baton milestone edit <number or title> [--title <t>] [--description <d>] [--due-on <date>] [--state open\|closed]` |
 | Merge | `baton merge-pr <N>` only. `gh pr merge` is refused. |
 
 Roles: `orchestrator`, `developer`, `refine`, `reviewer`. Kinds: `question`, `status`,
