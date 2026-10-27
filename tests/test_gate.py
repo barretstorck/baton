@@ -78,6 +78,32 @@ class GateTest(unittest.TestCase):
         self.assertTrue(any("not a valid JSON object" in p
                             for p in self._api(cmd, q_json="mutation { closeIssue }")))
 
+    def test_input_file_graphql_variables_with_state_key_are_refused(self):
+        cmd = "gh api graphql --input q.json"
+        q = "mutation($i: UpdateIssueInput!) { updateIssue(input: $i) { clientMutationId } }"
+        for variables in ({"i": {"state": "CLOSED"}}, {"a": [{"b": {"stateReason": "x"}}]},
+                          {"i": {"state_reason": "x"}}):
+            payload = json.dumps({"query": q, "variables": variables})
+            self.assertTrue(self._closes(self._api(cmd, q_json=payload)), variables)
+        for payload in (json.dumps({"query": q, "variables": {"i": {"title": "t", "id": "X"}}}),
+                        json.dumps({"query": "query { viewer { login } }", "state": "x",
+                                    "variables": {"n": 1}})):
+            self.assertFalse(self._closes(self._api(cmd, q_json=payload)), payload)
+        self.assertNotIn(gate._CLOSE_MESSAGE, self._api(cmd, q_json="not json"))
+
+    def test_input_file_graphql_string_variables_are_checked(self):
+        cmd = "gh api graphql --input q.json"
+        q = "mutation($i: UpdateIssueInput!) { updateIssue(input: $i) { clientMutationId } }"
+
+        def run(variables):
+            return self._api(cmd, q_json=json.dumps({"query": q, "variables": variables}))
+        self.assertTrue(self._closes(run(json.dumps({"i": {"state": "CLOSED"}}))))
+        self.assertIn(gate._UNPARSABLE_MESSAGE, run("not json"))
+        self.assertIn(gate._UNPARSABLE_MESSAGE, run("[1]"))
+        self.assertIn(gate._UNPARSABLE_MESSAGE, run(5))
+        self.assertIn(gate._UNPARSABLE_MESSAGE, run([{"i": {"state": "x"}}]))
+        self.assertEqual([], run(json.dumps({"i": {"title": "t"}})))
+
     def test_input_file_graphql_is_refused(self):
         cmd = "gh api graphql --input q.json"
         body = json.dumps({"query": 'mutation { closeIssue(input: {issueId: "x"}) { clientMutationId } }'})
@@ -254,6 +280,17 @@ class GateTest(unittest.TestCase):
             "{ clientMutationId } }'",
             "gh api graphql -f query='mutation { updateIssue(input: {id: \"X\", state #c\r: CLOSED}) "
             "{ clientMutationId } }'"]
+        q = ("gh api graphql -f query='mutation($i: UpdateIssueInput!) "
+             "{ updateIssue(input: $i) { clientMutationId } }' ")
+        cmds += [q + "-F 'i[state]=CLOSED'", q + "-F 'i[stateReason]=COMPLETED'",
+                 q + "-F 'i[state_reason]=completed'", q + "-F 'i[input][state]=CLOSED'",
+                 q + "-f i='{\"id\":\"X\",\"state\":\"CLOSED\"}'",
+                 q + "-F i=@vars.json", q + "-f i=notjson", q + "--input vars.json"]
+        for sep in ("input, : $i", "input,: $i", "input :, $i", "input:# c\n$i", "input # c\n: $i",
+                    "input:\r# c\r\n,$i", "input: $ i", "input: $,i", "input: $# c\ni"):
+            qs = ("gh api graphql -f query='mutation($i: UpdateIssueInput!) { updateIssue("
+                  + sep + ") { clientMutationId } }' ")
+            cmds += [qs + "-f i=notjson", qs + "-F i=@vars.json"]
         for endpoint in ("/graphql", "https://api.github.com/graphql"):
             cmds.append(f"gh api {endpoint} -f query='mutation {{ closeIssue(input: {{id: \"X\"}}) "
                         f"{{ clientMutationId }} }}'")
@@ -261,6 +298,17 @@ class GateTest(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 problems = gate.decide(cmd, make_repo(), TERMS)
                 self.assertTrue(any("use `baton close|reopen" in p for p in problems))
+
+    def test_graphql_query_from_file_fails_closed_on_unverifiable_variables(self):
+        base = "gh api graphql -F query=@q.graphql "
+        for tail in ("-F i=@v.json", "-f i=notjson"):
+            with self.subTest(tail=tail):
+                problems = gate.decide(base + tail, make_repo(), TERMS)
+                self.assertTrue(any("use `baton close|reopen" in p for p in problems))
+        for tail in ("-F 'i[title]=t'", "-f 'i[body]=b' -F 'i[n]=3'"):
+            with self.subTest(tail=tail):
+                problems = gate.decide(base + tail, make_repo(), TERMS)
+                self.assertFalse(any("use `baton close|reopen" in p for p in problems))
 
     def test_api_state_pattern_does_not_backtrack_catastrophically(self):
         for query in ("state#" + " " * 5000, "state#" + "," * 5000, "state" + "# " * 2000,
@@ -282,7 +330,10 @@ class GateTest(unittest.TestCase):
                     "gh api graphql -f query='mutation { addLabelsToLabelable(input: {labelableId: \"X\", "
                     "labelIds: [\"L\"]}) { clientMutationId } }'",
                     "gh api graphql -f query='mutation($state: IssueState) { updateIssue(input: "
-                    "{id: \"X\", title: \"t\"}) { clientMutationId } }'"):
+                    "{id: \"X\", title: \"t\"}) { clientMutationId } }'",
+                    "gh api graphql -f query='mutation($i: UpdateIssueInput!) { updateIssue(input: $i) "
+                    "{ clientMutationId } }' -F 'i[title]=t' -F 'i[id]=X'",
+                    "gh api -X PATCH repos/o/r/issues/5 -f 'i[state]=x' -f title=t"):
             with self.subTest(cmd=cmd):
                 self.assertEqual(gate.decide(cmd, make_repo(), TERMS), [])
 

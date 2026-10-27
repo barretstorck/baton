@@ -75,6 +75,24 @@ def _has_state_key(value):
     return False
 
 
+def _json_sets_state(text):
+    """True when `text` parses as JSON with a state key (`state`, `stateReason`, `state_reason`) at any depth."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return False
+    return _has_graphql_state_key(data)
+
+
+def _has_graphql_state_key(value):
+    if isinstance(value, dict):
+        return any(key in ("state", "stateReason", "state_reason") or _has_graphql_state_key(item)
+                   for key, item in value.items())
+    if isinstance(value, list):
+        return any(_has_graphql_state_key(item) for item in value)
+    return False
+
+
 def _rest_payload_problem(text):
     """A refusal for a REST payload file that sets state, or cannot be shown not to."""
     try:
@@ -97,12 +115,25 @@ def _graphql_input_problem(text):
     query = data.get("query")
     if _graphql_sets_state(text) or (isinstance(query, str) and _graphql_sets_state(query)):
         return _CLOSE_MESSAGE
+    variables = data.get("variables")
+    if isinstance(variables, str):
+        try:
+            variables = json.loads(variables)
+        except ValueError:
+            return _UNPARSABLE_MESSAGE
+    if variables is not None and not isinstance(variables, dict):
+        return _UNPARSABLE_MESSAGE
+    if _has_graphql_state_key(variables):
+        return _CLOSE_MESSAGE
     return None
 
 
 _API_CLOSE_MUTATION = re.compile(r"\b(?:closeIssue|reopenIssue|closePullRequest|reopenPullRequest)\b")
 _API_MUTATION = re.compile(r"\bmutation\b")
 _API_STATE_ARG = re.compile(r"(?<![$\w])state(?:Reason)?(?:[\s,]|#[^\n\r]*(?:[\r\n]|$))*:")
+_API_STATE_KEY = re.compile(r"\[(?:state|stateReason|state_reason)\]$")
+_GQL_IGN = r"(?:[\s,]|#[^\n\r]*(?:[\r\n]|$))*"
+_API_INPUT_VAR = re.compile(r"\binput" + _GQL_IGN + ":" + _GQL_IGN + r"\$" + _GQL_IGN + r"(\w+)")
 _API_GRAPHQL = re.compile(r"(?:^|/)graphql/?(?:\?|$)")
 _API_COMMENT = re.compile(r"/(?:comments|reviews)(?:/\d+)?(?:/|\?|$)")
 
@@ -269,10 +300,42 @@ def _graphql_sets_state(content):
                 or (_API_MUTATION.search(content) and _API_STATE_ARG.search(content)))
 
 
+def _unverifiable_input_variable(queries, fields):
+    """True when a mutation passes `input: $name` and `name` is not visible as bracketed fields or JSON."""
+    for query in queries:
+        if not _API_MUTATION.search(query):
+            continue
+        for name in _API_INPUT_VAR.findall(query):
+            plain = [content for key, content in fields if key == name]
+            bracketed = any(key.startswith(name + "[") for key, _ in fields)
+            if plain:
+                for content in plain:
+                    try:
+                        json.loads(content)
+                    except ValueError:
+                        return True
+            elif not bracketed:
+                return True
+    return False
+
+
+def _unverifiable_file_query_fields(fields):
+    """True when the query is read from a file (unseen) and a variable field is not bracketed or inline JSON."""
+    for key, content in fields:
+        if key == "query" or key.endswith("]"):
+            continue
+        try:
+            json.loads(content)
+        except ValueError:
+            return True
+    return False
+
+
 def _inspect_gh_api(call, item):
     has_payload = False
     payload_files = []
-    state_endpoint = graphql = state_field = close_mutation = False
+    state_endpoint = graphql = state_field = close_mutation = variable_state = False
+    queries, fields, file_query = [], [], False
     for flag, value in _options(call.args, _API_FIELD_OPTS | {"--input"}):
         if flag is None:
             state_endpoint = state_endpoint or bool(_API_STATE_ENDPOINT.search(value))
@@ -291,6 +354,14 @@ def _inspect_gh_api(call, item):
         key, _, content = value.partition("=")
         state_field = state_field or key in ("state", "state_reason")
         close_mutation = close_mutation or _graphql_sets_state(content)
+        fields.append((key, content))
+        if key == "query":
+            if content.startswith("@"):
+                file_query = True
+            else:
+                queries.append(content)
+        variable_state = (variable_state or bool(_API_STATE_KEY.search(key))
+                          or (not content.startswith("@") and _json_sets_state(content)))
         if flag in _API_TYPED_OPTS and content.startswith("@"):
             item.files.append((content[1:], key == "body"))
             payload_files.append((content[1:], False))
@@ -306,7 +377,9 @@ def _inspect_gh_api(call, item):
             if kind == "rest" and not is_input:
                 continue  # `-F field=@file` is one field's text, not a JSON payload
             item.state_files[path] = "graphql-input" if kind == "graphql" and is_input else kind
-    if (state_endpoint and state_field) or (graphql and close_mutation):
+    unverifiable = graphql and (_unverifiable_input_variable(queries, fields)
+                                or (file_query and _unverifiable_file_query_fields(fields)))
+    if (state_endpoint and state_field) or (graphql and (close_mutation or variable_state or unverifiable)):
         item.problems.append(_CLOSE_MESSAGE)
 
 
