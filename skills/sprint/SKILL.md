@@ -275,9 +275,17 @@ the findings comment it came from (`gh issue view <N> --comments`). If you canno
 few commands, write in the issue's Context that the claim is **unverified** and name its source
 ("per the developer of #N"). Do not repeat an agent's claim as fact.
 
-- It joins **this** sprint only if it serves the sprint goal: add it to the milestone, run
-  `baton:refine` on it as a subagent, and it is dispatched once ready.
-- Otherwise leave it out of the sprint for the maintainer to prioritise.
+File each by its severity (`critical`, `important`, `minor`; the review's own words):
+
+- `critical`: joins the open sprint as `deliverable` (add it to the milestone), is refined with
+  `baton:refine` as a subagent at once, and is dispatched once ready.
+- `important`: joins the open sprint as `stretch` when the maintainer's sprint rules let
+  follow-ups join (the brief or the milestone description), or when it serves the sprint goal;
+  otherwise it is filed in `status:refinement`, out of the sprint, for the maintainer to prioritise.
+- `minor`: not filed.
+
+A developer's suggestion has no severity. Treat it as `important` only if it names a security,
+privacy, data-loss or performance problem; otherwise as `minor`.
 
 ### 7. Dispatch
 
@@ -446,7 +454,7 @@ is running:
 
 1. Write the retrospective from `${CLAUDE_PLUGIN_ROOT}/templates/retro.md` to
    `<docs.dir>/retros/<sprint title>.md` on a branch, and open a pull request for it. Fill it from the
-   forge: merged pull requests, decisions with their links, what was carried over. Be specific
+   forge: merged pull requests, decisions with their links, what was carried over. Fill the two follow-up rows from the sprint's review comments: the follow-ups filed, counted as `critical` / `important`, and the problems the reviews fixed in the pull request instead of filing them. Be specific
    about what went wrong, what it cost, and the root cause. Add a "Quota use" section with the
    table from `baton usage --repo <owner>/<repo> --since <the sprint's first dispatch, as UTC ISO time>`: it holds only
    issue numbers and counts. Name the issues whose tasks still grew large (peak over 250K) and
@@ -480,8 +488,9 @@ answer the maintainer left on an issue overnight. Everything above applies, with
 4. **Take the stricter path whenever something is flagged.** A developer reporting untrusted
    instructions, a pull request touching protected paths, an escalated review, a fix that failed
    once already, a budget over its limit: label `needs-maintainer`, comment, and leave it.
-5. **Do not pull follow-up issues into the sprint.** File them in `status:refinement` and leave
-   the choice to the maintainer.
+5. **Follow-ups stay out of the sprint, except `critical` ones.** A `critical` follow-up still
+   joins as `deliverable` with the `needs-maintainer` label and a comment saying why. File the
+   others in `status:refinement` and leave the choice to the maintainer.
 6. **Keep making passes** while developers are running or issues can be dispatched. Developers
    you start must finish inside this run.
 7. **End:** when nothing is running and nothing can be dispatched, run `baton lock release` and

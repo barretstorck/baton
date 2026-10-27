@@ -17,6 +17,11 @@ class TemplateTest(unittest.TestCase):
         self.assertLess(text.index("  - Provides:"), text.index("  - Provides (as built):"))
         self.assertLess(text.index("  - Provides (as built):"), text.index("  - Check:"))
 
+    def test_develop_skill_limits_outgrows_decline(self):
+        text = " ".join((ROOT / "skills/develop/SKILL.md").read_text().split())
+        self.assertIn("cannot be declined as \"outgrows the issue\"", text)
+        self.assertIn("name the evidence", text)
+
     def test_develop_skill_has_scratch_file_rule(self):
         text = (ROOT / "skills/develop/SKILL.md").read_text()
         self.assertIn("\n## Scratch files\n", text)
@@ -103,6 +108,36 @@ class TemplateTest(unittest.TestCase):
         text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
         self.assertIn("gh pr ready <PR> --undo", text)
 
+    def test_sprint_skill_files_follow_ups_by_severity(self):
+        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        self.assertIn("File each by its severity", text)
+        self.assertIn("`critical`: joins the open sprint as `deliverable`", text)
+        self.assertIn("`important`: joins the open sprint as `stretch`", text)
+        self.assertIn("`minor`: not filed", text)
+        self.assertIn("`critical` ones", text)
+
     def test_review_skill_reads_state_from_pr_state(self):
         text = (ROOT / "skills/review/SKILL.md").read_text()
         self.assertIn("baton pr-state", text)
+
+    def test_review_skill_fixes_goal_gaps_here(self):
+        text = " ".join((ROOT / "skills/review/SKILL.md").read_text().split())
+        self.assertIn("defeats the issue's goal", text)
+        self.assertIn("never proposed as a follow-up", text)
+        self.assertIn("`critical` security and privacy problems", text)
+        self.assertIn("does not test what it claims", text)
+
+    def test_review_skill_sets_aside_minor(self):
+        text = " ".join((ROOT / "skills/review/SKILL.md").read_text().split())
+        self.assertIn("**Set aside** any other `minor` problem", text)
+        self.assertIn("one line under `## Set aside`", text)
+        self.assertIn("**[critical|important]** <title>", text)
+        self.assertIn("- [<severity>] <title>", text)
+        self.assertNotIn("**[minor]**", text)
+
+    def test_retro_counts_follow_ups_by_severity(self):
+        retro = (ROOT / "templates/retro.md").read_text()
+        self.assertIn("Follow-up issues filed (critical / important)", retro)
+        self.assertIn("Problems fixed in review instead of filed", retro)
+        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        self.assertIn("Fill the two follow-up rows from the sprint's review comments", text)
