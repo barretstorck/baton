@@ -106,7 +106,7 @@ class TemplateTest(unittest.TestCase):
     def test_sprint_skill_redrafts_on_changes(self):
         # The skill wraps lines, so compare with whitespace collapsed.
         text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
-        self.assertIn("gh pr ready <PR> --undo", text)
+        self.assertIn("baton pr ready <PR> --undo", text)
 
     def test_sprint_skill_files_follow_ups_by_severity(self):
         text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())

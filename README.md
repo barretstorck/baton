@@ -145,6 +145,9 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton verify <pr> <worktree>` | Run the brief's `verify.command` on the pull request's head; prints the result, the log path and the last 40 lines |
 | `baton merge-pr <number>` | Check the review, CI and the rest, then merge |
 | `baton comment <issue\|pr> <number> <role> <kind> <file \| ->` | Scan, stamp and post an agent comment |
+| `baton issue create\|edit ...` | Create an issue, or edit its title, description, labels or milestone; scans the text first |
+| `baton pr create\|edit\|ready ...` | Open a (draft) pull request, edit it, or mark it ready (`--undo` back to draft) |
+| `baton milestone create\|edit ...` | Create a milestone, or edit its title, description, due date or state |
 | `baton close <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:closed` marker comment with the reason, then close; raw `gh ... close` is refused |
 | `baton reopen <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:reopened` marker comment with the reason, then reopen; raw `gh ... reopen` is refused |
 | `baton review state <pr>` | The pull request's review state at its head commit |
@@ -195,20 +198,27 @@ then is that rule skipped. Inline `# noqa` comments are not judged.
 ## Rules the gate enforces in a Baton repository
 
 - Comments posted by agents must start with `<!-- baton:<role>:<kind> -->`.
-- Comment and issue text must be literal: inline, an inline heredoc, or a file written in an
-  earlier step. Text from stdin, a variable or command substitution is refused.
-- `gh pr merge` is refused; use `baton merge-pr <number>`.
+- Raw forge writes are refused from any directory, and the message names the `baton` command to
+  use instead (`baton comment`, `baton issue`, `baton pr`, `baton milestone`, `baton review post`,
+  `baton close|reopen`, `baton merge-pr`, `baton labels`, `baton set-status`). `gh` is allowed
+  only for reads (`view`, `list`, `checks`, `diff`, ...); any other `gh api` call is refused
+  unless it is a plain GET.
+- A shell or evaluator (`bash -c`, `xargs`, `eval`, `python -c`) that mentions `gh` or `git` is
+  refused, because the gate cannot tell whether it writes to the forge.
+- A git publish (`commit`, `push`, `tag`) must be a plain command in the repository's own
+  directory: no `cd`, no `-C`, no `-c` option. The brief is found from the working directory
+  only; without one the command is refused.
 - Git hooks cannot be skipped (`--no-verify`, `core.hooksPath`).
 - A pull request that touches a protected path needs a maintainer comment
   `/baton approve <commit sha>` (at least 7 characters of the sha), naming the head commit or an
   earlier one with the same changes to the protected paths.
-- Empty bodies are refused, so a failed edit cannot blank an issue description.
+- The `baton` write commands scan their text and refuse empty bodies, so a failed edit cannot blank an issue description.
 - The git hooks do not report `private-ip` in Python dependency files (matched by basename:
   `uv.lock`, `poetry.lock`, `pdm.lock`, `Pipfile.lock`, `requirements*.txt`, `requirements*.in`,
   `constraints*.txt`, `pylock*.toml`), where four-part package versions look like addresses. Email,
   host-path, internal-domain and private terms are still checked in those files.
 
-The gate guards against mistakes. It is not a sandbox: it only sees `gh` and `git` commands.
+The gate guards against mistakes. It is not a sandbox: it only sees `gh` and `git` commands, and cannot see through every wrapper.
 
 ## Tests
 

@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
-from . import checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, questions, review, run, scan, sprint, state, usage, verify
+from . import checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, publish, questions, review, run, scan, sprint, state, usage, verify
 
 
 def cmd_config(args):
@@ -132,6 +132,65 @@ def cmd_comment(args):
     return 0
 
 
+def _publish_cmd(parse, args, act):
+    try:
+        opts = parse(args)
+    except publish.UsageError as error:
+        print(str(error), file=sys.stderr)
+        return 64
+    try:
+        out = act(opts, _require_config(), scan.load_terms())
+    except comment.CommentError as error:
+        print(f"baton: {error}", file=sys.stderr)
+        return 1
+    if out:
+        print(out)
+    return 0
+
+
+def _body(opts):
+    source = opts.get("body_source")
+    return None if source is None else comment.read_body(source, sys.stdin)
+
+
+def _edit(target, opts, cfg, terms):
+    publish.edit(cfg, run.run, target, opts["number"], terms, title=opts.get("title"),
+                 body=_body(opts), add_labels=opts["add_labels"],
+                 remove_labels=opts["remove_labels"], milestone=opts.get("milestone"),
+                 remove_milestone=opts["remove_milestone"])
+    return None
+
+
+def cmd_issue(args):
+    def act(o, cfg, terms):
+        if o["action"] == "create":
+            return publish.create_issue(cfg, run.run, o["title"], _body(o), o["labels"],
+                                        o["milestone"], terms)
+        return _edit("issue", o, cfg, terms)
+    return _publish_cmd(publish.parse_issue, args, act)
+
+
+def cmd_pr(args):
+    def act(o, cfg, terms):
+        if o["action"] == "create":
+            return publish.create_pr(cfg, run.run, o["title"], _body(o), o["draft"], terms)
+        if o["action"] == "ready":
+            return publish.ready_pr(run.run, o["number"], o["undo"])
+        return _edit("pr", o, cfg, terms)
+    return _publish_cmd(publish.parse_pr, args, act)
+
+
+def cmd_milestone(args):
+    def act(o, cfg, terms):
+        if o["action"] == "create":
+            return publish.create_milestone(cfg, run.run, o["title"], o.get("description"),
+                                            o.get("due_on"), terms)
+        return publish.edit_milestone(cfg, run.run, o["ref"], terms, title=o.get("title"),
+                                      description=o.get("description"), due_on=o.get("due_on"),
+                                      state=o.get("state"))
+    return _publish_cmd(publish.parse_milestone, args, act)
+
+
 def _change_state(action, args):
     if len(args) != 4:
         print(f"usage: baton {action} <issue|pr> <number> <role> <reason-file | ->",
@@ -163,7 +222,8 @@ def cmd_review(args):
         pr = json.loads(run.run(["gh", "pr", "view", args[1], "--json",
                                  "number,headRefName,headRefOid,comments"]))
         print(json.dumps(review.current(pr, repo["owner"]["login"], cfg, run.run,
-                                        repo["defaultBranchRef"]["name"]), indent=2))
+                                        repo["defaultBranchRef"]["name"]),
+                         indent=2, default=review.json_default))
         return 0
     if len(args) == 5 and args[0] == "post" and args[1].isdigit():
         _, number, verdict, commit, path = args
@@ -443,10 +503,13 @@ COMMANDS = {
     "gate": cmd_gate,
     "git-hook": cmd_git_hook,
     "install-hooks": cmd_install_hooks,
+    "issue": cmd_issue,
     "labels": cmd_labels,
     "lock": cmd_lock,
     "merge-pr": cmd_merge_pr,
+    "milestone": cmd_milestone,
     "plan": cmd_plan,
+    "pr": cmd_pr,
     "pr-state": cmd_pr_state,
     "reopen": cmd_reopen,
     "review": cmd_review,

@@ -21,4 +21,4 @@ creates no branch), as the skill's steps 4 and 5 describe. For `Re-refine issue 
 Your final message is read by whoever dispatched you, not by a person: one short report per issue
 as the skill's "Report" step defines, and nothing else.
 
-The `tools:` list above is deliberate: the `refine` skill needs file, search and shell work (`gh`, `git` and `baton` run through Bash), `Write` for the plan file and the issue description file it hands to `baton plan commit` and `gh issue edit --body-file` (it never edits existing files, so no `Edit`), and web search for research issues. If a run shows a tool is missing, add it to the list and write the reason here.
+The `tools:` list above is deliberate: the `refine` skill needs file, search and shell work (`gh`, `git` and `baton` run through Bash), `Write` for the plan file and the issue description file it hands to `baton plan commit` and `baton issue edit --body-file` (it never edits existing files, so no `Edit`), and web search for research issues. If a run shows a tool is missing, add it to the list and write the reason here.

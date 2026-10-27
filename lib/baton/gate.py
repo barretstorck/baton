@@ -1,11 +1,14 @@
 """Decide whether a Bash command may publish to the forge.
 
 Runs as a Claude Code PreToolUse hook. The command is split into shell
-words, each `gh` and `git` invocation is inspected, and the text it would
-publish is scanned. Text the gate cannot see (stdin, command substitution,
-variables, missing files) is refused rather than assumed clean. Diffs are
-scanned by the git hooks (githooks.py), which this gate requires to be
-installed and not bypassed.
+words and each `gh` and `git` invocation is inspected. It predicts nothing
+about the shell: every `gh` write is refused wherever it runs, and the
+`baton` commands (which scan their own text) do the writing. `git commit`,
+`push` and `tag` must be plain commands in the repository's own directory,
+and their messages are scanned. Text the gate cannot see (stdin, command
+substitution, variables, missing files) is refused rather than assumed
+clean. Diffs are scanned by the git hooks (githooks.py), which this gate
+requires to be installed and not bypassed.
 
 This guards against mistakes and nudged agents. It is not a sandbox: a
 program that talks to the forge without `gh` or `git` is outside its view.
@@ -24,15 +27,36 @@ HOOK_TAG = githooks.HOOK_TAG
 _MAX_FILE = 1_000_000
 
 _PUNCTUATION = set("();<>|&")
-_WRAPPERS = {"env", "command", "sudo", "exec", "time", "nohup", "export"}
-_ASSIGNMENT = re.compile(r"^[A-Za-z_]\w*=")
-_BAD_ENV = re.compile(r"^(?:GIT_CONFIG\w*|GIT_DIR|GIT_WORK_TREE|BATON_PRIVATE_TERMS|HOME)=")
+# wrapper -> (short flags without a value, short flags that take a value,
+#             long flags without a value, long flags that take a value)
+_WRAPPERS = {
+    "env": ("i0v", "uCS", {"--ignore-environment", "--null", "--debug"},
+            {"--unset", "--chdir", "--split-string"}),
+    "command": ("pvV", "", set(), set()),
+    "sudo": ("AbEeHKklnPSsVvi", "ugphCrtTUDR", {"--background", "--preserve-env", "--login",
+                                                 "--non-interactive", "--shell", "--set-home"},
+             {"--user", "--group", "--host", "--prompt", "--close-from", "--role", "--type",
+              "--chdir", "--chroot"}),
+    "exec": ("cl", "a", set(), set()),
+    "time": ("pv", "fo", {"--portability", "--verbose", "--append"}, {"--format", "--output"}),
+    "nohup": ("", "", set(), set()),
+    "export": ("nfp", "", set(), set()),
+    "declare": ("xrfFgpaAilunt", "", set(), set()),
+    "typeset": ("xrfFgpaAilunt", "", set(), set()),
+    "readonly": ("afpA", "", set(), set()),
+    "local": ("xrafFgpAilunt", "", set(), set()),
+}
+_ASSIGNMENT = re.compile(r"^([A-Za-z_]\w*)\+?=")
+_SAFE_GIT_ENV = {"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE",
+                 "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_COMMITTER_DATE"}
+_BAD_ENV_NAMES = {"HOME", "XDG_CONFIG_HOME", "BATON_PRIVATE_TERMS"}
 _URL = re.compile(r"^(?:[\w.+-]+://|[\w.-]+@[\w.-]+:)")
 _VARIABLE = re.compile(r"^\$\{?\w+\}?$")
 _INLINE_HEREDOC = "$(cat <<"
 _HEREDOC = re.compile(r"""^\$\(cat <<-?\s*['"]?(\w+)['"]?\n(.*)\n\1\s*\)\s*$""", re.S)
 
-_GIT_VALUE_OPTS = {"-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
+_GIT_VALUE_OPTS = {"-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path",
+                   "--config-env"}
 _COMMIT_VALUE_OPTS = {
     "-m", "-F", "-C", "-c", "-t", "--message", "--file", "--author", "--date",
     "--reuse-message", "--reedit-message", "--fixup", "--squash", "--template",
@@ -41,101 +65,54 @@ _COMMIT_VALUE_OPTS = {
 _GIT_MESSAGE_OPTS = {"-m", "--message"}
 _GIT_FILE_OPTS = {"-F", "--file"}
 
-_GH_PUBLISH = {
-    ("issue", "create"), ("issue", "comment"), ("issue", "edit"), ("issue", "close"),
-    ("issue", "reopen"), ("pr", "create"), ("pr", "comment"), ("pr", "edit"),
-    ("pr", "review"), ("pr", "close"), ("pr", "reopen"), ("release", "create"),
-    ("release", "edit"), ("label", "create"), ("label", "edit"), ("repo", "edit"),
-    ("repo", "create"), ("gist", "create"), ("gist", "edit"),
+_GH_READ_ACTIONS = {"view", "list", "status", "checks", "diff", "download", "checkout",
+                    "search", "browse", "watch"}
+_GH_READ_GROUPS = {"", "status", "search", "help"}
+_METHOD_OPTS = {"-X", "--method"}
+_EVALUATORS = {"bash", "sh", "zsh", "dash", "eval", "xargs", "source", ".", "node", "perl", "ruby"}
+_GH_OR_GIT = re.compile(r"\b(?:gh|git)\b")
+_DIRECTORY_COMMANDS = ("cd", "pushd", "popd")
+_PLAIN_GIT_OPTS = {"--git-dir", "--work-tree", "--exec-path", "--namespace", "--config-env"}
+_API_VALUE_OPTS = {"--jq", "-q", "-H", "--header", "--hostname", "--cache", "--template", "-t"}
+_API_PLAIN_OPTS = {"--paginate", "--slurp", "--silent", "--include", "-i", "--verbose"}
+# Programs that only read or write data and never start another program from their
+# arguments; any other program whose arguments mention gh or git is a possible launcher.
+_DATA_PROGRAMS = {
+    "baton", "echo", "printf", "cat", "rg", "grep", "egrep", "fgrep", "ls", "head", "tail",
+    "wc", "sort", "uniq", "cut", "tr", "diff", "cmp", "tee", "basename", "dirname", "test",
+    "[", "true", "false", "stat", "file", "du", "df", "mkdir", "rm", "cp", "mv", "touch",
+    "ln", "chmod", "readlink", "realpath", "pwd", "cd", "pushd", "popd", "which", "type",
+    "export", "declare", "typeset", "readonly", "local", "unset", "set", "exit", "return",
+    "jq", "column", "nl", "fold", "fmt", "expand", "unexpand", "rev",
+    "tac", "paste", "join", "comm", "od", "xxd", "hexdump", "strings", "md5sum", "sha1sum",
+    "sha256sum", "cksum", "seq", "date", "sleep", "yes", "expr", "tsort", "shuf", "pr",
 }
-_GH_COMMENT = {("issue", "comment"), ("pr", "comment"), ("pr", "review")}
-_GH_CLOSE = {("issue", "close"), ("issue", "reopen"), ("pr", "close"), ("pr", "reopen")}
-_GH_BODY_OPTS = {"--body", "-b"}
-_GH_TEXT_OPTS = {"--title", "-t", "--notes", "-n"}
-_GH_FILE_OPTS = {"--body-file", "-F", "--notes-file"}
-_API_FIELD_OPTS = {"-f", "--raw-field", "-F", "--field"}
-_API_TYPED_OPTS = {"-F", "--field"}
-_CLOSE_MESSAGE = (
-    "closing or reopening directly is not allowed; use `baton close|reopen "
-    "<issue|pr> <number> <role> <reason-file>` so a marker comment says who did it and why")
-_API_MERGE = re.compile(r"/pulls/\d+/merge\b")
-_API_STATE_ENDPOINT = re.compile(r"(?:^|/)(?:issues|pulls)/\d+/?(?:\?|$)")
-_STATE_KEYS = ("state", "state_reason")
-_UNPARSABLE_MESSAGE = (
-    "a payload file that is not a valid JSON object cannot be checked for state changes; "
-    "write valid JSON, or use `baton close` / `baton reopen` to change an issue's state"
-)
-
-
-def _has_state_key(value):
-    if isinstance(value, dict):
-        return any(key in _STATE_KEYS or _has_state_key(item) for key, item in value.items())
-    if isinstance(value, list):
-        return any(_has_state_key(item) for item in value)
-    return False
-
-
-def _json_sets_state(text):
-    """True when `text` parses as JSON with a state key (`state`, `stateReason`, `state_reason`) at any depth."""
-    try:
-        data = json.loads(text)
-    except ValueError:
-        return False
-    return _has_graphql_state_key(data)
-
-
-def _has_graphql_state_key(value):
-    if isinstance(value, dict):
-        return any(key in ("state", "stateReason", "state_reason") or _has_graphql_state_key(item)
-                   for key, item in value.items())
-    if isinstance(value, list):
-        return any(_has_graphql_state_key(item) for item in value)
-    return False
-
-
-def _rest_payload_problem(text):
-    """A refusal for a REST payload file that sets state, or cannot be shown not to."""
-    try:
-        data = json.loads(text)
-    except ValueError:
-        return _UNPARSABLE_MESSAGE
-    if not isinstance(data, dict):
-        return _UNPARSABLE_MESSAGE
-    return _CLOSE_MESSAGE if _has_state_key(data) else None
-
-
-def _graphql_input_problem(text):
-    """A refusal for a GraphQL `--input` JSON payload whose query closes or reopens, or cannot be read."""
-    try:
-        data = json.loads(text)
-    except ValueError:
-        return _UNPARSABLE_MESSAGE
-    if not isinstance(data, dict):
-        return _UNPARSABLE_MESSAGE
-    query = data.get("query")
-    if _graphql_sets_state(text) or (isinstance(query, str) and _graphql_sets_state(query)):
-        return _CLOSE_MESSAGE
-    variables = data.get("variables")
-    if isinstance(variables, str):
-        try:
-            variables = json.loads(variables)
-        except ValueError:
-            return _UNPARSABLE_MESSAGE
-    if variables is not None and not isinstance(variables, dict):
-        return _UNPARSABLE_MESSAGE
-    if _has_graphql_state_key(variables):
-        return _CLOSE_MESSAGE
-    return None
-
-
-_API_CLOSE_MUTATION = re.compile(r"\b(?:closeIssue|reopenIssue|closePullRequest|reopenPullRequest)\b")
-_API_MUTATION = re.compile(r"\bmutation\b")
-_API_STATE_ARG = re.compile(r"(?<![$\w])state(?:Reason)?(?:[\s,]|#[^\n\r]*(?:[\r\n]|$))*:")
-_API_STATE_KEY = re.compile(r"\[(?:state|stateReason|state_reason)\]$")
-_GQL_IGN = r"(?:[\s,]|#[^\n\r]*(?:[\r\n]|$))*"
-_API_INPUT_VAR = re.compile(r"\binput" + _GQL_IGN + ":" + _GQL_IGN + r"\$" + _GQL_IGN + r"(\w+)")
-_API_GRAPHQL = re.compile(r"(?:^|/)graphql/?(?:\?|$)")
-_API_COMMENT = re.compile(r"/(?:comments|reviews)(?:/\d+)?(?:/|\?|$)")
+_FIND_RUNNERS = {"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprintf", "-fls"}
+_SED_RUNS = re.compile(
+    r"(?:^|[;{}\n/\d$!\s])e(?:\s|$|;|\})"
+    r"|s(.)(?:\\.|(?!\1).)*\1(?:\\.|(?!\1).)*\1[gpiImM0-9w]*e")
+_AWKS = {"awk", "gawk", "mawk"}
+_CHECKED = {"sed", "find"} | _AWKS
+_EXPORTERS = {"export", "declare", "typeset", "readonly", "local"}
+_NAME = re.compile(r"^([A-Za-z_]\w*)(?:\[[^\]]*\])?(?:\+?=.*)?$", re.S)
+_ALIAS = "aliases and --config-env can run gh or git behind the gate; not allowed here"
+_BYPASS = "git hook bypass (--no-verify, -n, core.hooksPath or an overridden environment) is not allowed here"
+_NOT_PLAIN = "git publishing must be a plain command in the repository's own directory"
+_WRAPPER_MESSAGE = "cannot tell whether this writes to the forge"
+_NO_BRIEF = "no Baton brief found from the working directory; cannot check this command"
+_NO_COMMAND = "no baton command does this; ask the maintainer"
+_USE = {
+    ("issue", "comment"): "baton comment", ("pr", "comment"): "baton comment",
+    ("issue", "create"): "baton issue create", ("issue", "edit"): "baton issue edit",
+    ("pr", "create"): "baton pr create", ("pr", "edit"): "baton pr edit",
+    ("pr", "ready"): "baton pr ready", ("pr", "review"): "baton review post",
+    ("issue", "close"): "baton close|reopen <issue|pr> <number> <role> <reason-file>",
+    ("issue", "reopen"): "baton close|reopen <issue|pr> <number> <role> <reason-file>",
+    ("pr", "close"): "baton close|reopen <issue|pr> <number> <role> <reason-file>",
+    ("pr", "reopen"): "baton close|reopen <issue|pr> <number> <role> <reason-file>",
+    ("pr", "merge"): "baton merge-pr <number>", ("label", "create"): "baton labels",
+    ("label", "edit"): "baton labels", ("label", "delete"): "baton labels",
+}
 
 
 @dataclass
@@ -143,21 +120,20 @@ class Call:
     program: str
     args: list
     bad_env: bool
+    unknown_option: bool = False
 
 
 @dataclass
 class Item:
-    """What one gh or git invocation would publish."""
+    """What one git invocation would publish."""
     relevant: bool = False
-    git_publish: bool = False
-    comment: bool = False
+    publish: bool = False     # commit, push or tag
+    hooked: bool = False      # commit or push: the hooks must be installed
+    plain: bool = True
     problems: list = field(default_factory=list)
     texts: list = field(default_factory=list)     # scanned
     values: list = field(default_factory=list)    # must be literal text
-    bodies: list = field(default_factory=list)    # must start with the marker
-    files: list = field(default_factory=list)     # (path, is_body)
-    state_files: dict = field(default_factory=dict)  # path -> "rest" (--input) | "graphql" | "graphql-input"
-    dirs: list = field(default_factory=list)
+    files: list = field(default_factory=list)     # message files
 
 
 def tokenize(command):
@@ -184,15 +160,111 @@ def _invocations(tokens):
         yield current
 
 
-def _call(words):
-    bad_env, index = False, 0
-    while index < len(words) and (
-            _ASSIGNMENT.match(words[index]) or os.path.basename(words[index]) in _WRAPPERS):
-        bad_env = bad_env or bool(_BAD_ENV.match(words[index]))
+def _bad_name(name):
+    return name in _BAD_ENV_NAMES or (name.startswith("GIT_") and name not in _SAFE_GIT_ENV)
+
+
+def _bad_env(word):
+    match = _ASSIGNMENT.match(word)
+    return bool(match) and _bad_name(match.group(1))
+
+
+def _bad_export(words):
+    """True if an export-like command names a bad variable, bare, with a subscript or assigned."""
+    for word in words:
+        match = _NAME.match(word)
+        if match and _bad_name(match.group(1)):
+            return True
+    return False
+
+
+def _runs_programs(call):
+    """True if a sed script or find expression can start a program."""
+    if call.program == "find":
+        return any(arg in _FIND_RUNNERS for arg in call.args)
+    if call.program in _AWKS:
+        return any("system" in arg or "|" in arg for arg in call.args)
+    if call.program == "sed":
+        return any(_SED_RUNS.search(arg) for arg in call.args if not arg.startswith("--"))
+    return False
+
+
+def _skip_options(words, index, wrapper):
+    """Skip a wrapper's options (and their values); return (index, all options known)."""
+    short_plain, short_value, long_plain, long_value = _WRAPPERS[wrapper]
+    known = True
+    while index < len(words) and words[index].startswith("-") and len(words[index]) > 1:
+        word = words[index]
         index += 1
+        if word == "--":
+            break
+        if word.startswith("--"):
+            name = word.split("=", 1)[0]
+            if name in long_value:
+                if wrapper == "env" and name == "--split-string":
+                    value = word.split("=", 1)[1] if "=" in word else (
+                        words[index] if index < len(words) else "")
+                    if _GH_OR_GIT.search(value):
+                        known = False
+                if "=" not in word:
+                    index += 1
+            elif name not in long_plain:
+                known = False
+            continue
+        for position, char in enumerate(word[1:], 1):
+            if char in short_value:
+                if wrapper == "env" and char == "S":
+                    value = word[position + 1:] or (words[index] if index < len(words) else "")
+                    if _GH_OR_GIT.search(value):
+                        known = False
+                if position == len(word) - 1:
+                    index += 1
+                break
+            if char not in short_plain:
+                known = False
+                break
+    return index, known
+
+
+def _split_hit(words, start, end):
+    """True if an env -S / --split-string value in words[start:end] mentions gh or git."""
+    for position in range(start, end):
+        word = words[position]
+        if word.startswith("--split-string"):
+            value = word.split("=", 1)[1] if "=" in word else (
+                words[position + 1] if position + 1 < end else "")
+        elif word.startswith("-") and not word.startswith("--") and "S" in word:
+            tail = word[word.index("S") + 1:]
+            value = tail or (words[position + 1] if position + 1 < end else "")
+        else:
+            continue
+        if _GH_OR_GIT.search(value):
+            return True
+    return False
+
+
+def _call(words):
+    bad_env, unknown, split_hit, index = False, False, False, 0
+    while index < len(words):
+        word = words[index]
+        wrapper = os.path.basename(word)
+        if _ASSIGNMENT.match(word):
+            bad_env = bad_env or _bad_env(word)
+            index += 1
+        elif wrapper in _WRAPPERS:
+            start = index + 1
+            if wrapper in _EXPORTERS and _bad_export(words[start:]):
+                bad_env = True
+            index, known = _skip_options(words, start, wrapper)
+            unknown = unknown or not known
+            if wrapper == "env" and not known:
+                split_hit = split_hit or _split_hit(words, start, index)
+        else:
+            break
+    unknown = unknown and (split_hit or any(_GH_OR_GIT.search(w) for w in words[index:]))
     if index >= len(words):
-        return Call("", [], bad_env)
-    return Call(os.path.basename(words[index]), words[index + 1:], bad_env)
+        return Call("", [], bad_env, unknown)
+    return Call(os.path.basename(words[index]), words[index + 1:], bad_env, unknown)
 
 
 def _options(args, value_opts):
@@ -253,26 +325,33 @@ def _commit_skips_hooks(rest):
 def _inspect_git(call):
     item = Item()
     options, sub, rest = _git_parts(call.args)
-    item.dirs = [value for flag, value in options if flag == "-C"]
     sets_hooks_path = any("core.hookspath" in f"{flag}{value}".lower() for flag, value in options)
-    bypass = "git hook bypass (--no-verify, -n, core.hooksPath or an overridden environment) is not allowed here"
 
     if sub == "config" and any(word.lower().startswith("core.hookspath") for word in rest):
         item.relevant = True
-        item.problems.append(bypass)
+        item.problems.append(_BYPASS)
+    if (any(f"{flag}{value}".lower().lstrip("-c").startswith("alias.")
+            or flag.split("=", 1)[0] == "--config-env" for flag, value in options)
+            or (sub == "config" and any(w.lower().lstrip("-").startswith("alias.") for w in rest))):
+        item.relevant = True
+        item.problems.append(_ALIAS)
     if sub not in ("commit", "push", "tag"):
         return item
 
-    item.relevant = True
-    item.git_publish = sub in ("commit", "push")
+    item.relevant = item.publish = True
+    item.hooked = sub in ("commit", "push")
+    item.plain = not any(
+        flag.split("=", 1)[0] in _PLAIN_GIT_OPTS
+        or (not flag.startswith("--") and flag[:2] in ("-C", "-c"))
+        for flag, _ in options)
     if (sets_hooks_path or call.bad_env
             or any(word.lower().startswith("--no-v") for word in rest)
             or (sub == "commit" and _commit_skips_hooks(rest))):
-        item.problems.append(bypass)
+        item.problems.append(_BYPASS)
 
     for flag, value in _options(rest, _GIT_MESSAGE_OPTS | _GIT_FILE_OPTS):
         if flag in _GIT_FILE_OPTS and sub != "push":
-            item.files.append((value, False))
+            item.files.append(value)
         elif flag in _GIT_MESSAGE_OPTS:
             item.values.append(value)
             item.texts.append(value)
@@ -294,141 +373,53 @@ def _gh_words(args):
     return (words + ["", ""])[:2]
 
 
-_QUERY_TO_SPACE = {0xFEFF, 0x200B, 0x2060}
-
-
-def _normalise_query(content):
-    """Turn BOM, zero-width characters and every other space except LF and CR into a plain space.
-
-    A space can only add matches, never remove them: deleting would join tokens GraphQL reads apart.
-    """
-    # LF and CR stay: they end a GraphQL `#` comment.
-    return "".join(" " if (ord(ch) in _QUERY_TO_SPACE or ch.isspace()) and ch not in "\n\r" else ch
-                   for ch in content)
-
-
-def _graphql_sets_state(content):
-    """True for a close/reopen mutation, or any mutation passing a `state:` argument."""
-    content = _normalise_query(content)
-    return bool(_API_CLOSE_MUTATION.search(content)
-                or (_API_MUTATION.search(content) and _API_STATE_ARG.search(content)))
-
-
-def _unverifiable_input_variable(queries, fields):
-    """True when a mutation passes `input: $name` and `name` is not visible as bracketed fields or JSON."""
-    for query in queries:
-        if not _API_MUTATION.search(query):
-            continue
-        for name in _API_INPUT_VAR.findall(query):
-            plain = [content for key, content in fields if key == name]
-            bracketed = any(key.startswith(name + "[") for key, _ in fields)
-            if plain:
-                for content in plain:
-                    try:
-                        json.loads(content)
-                    except ValueError:
-                        return True
-            elif not bracketed:
-                return True
-    return False
-
-
-def _unverifiable_file_query_fields(fields):
-    """True when the query is read from a file (unseen) and a variable field is not bracketed or inline JSON."""
-    for key, content in fields:
-        if key == "query" or key.endswith("]"):
-            continue
-        try:
-            json.loads(content)
-        except ValueError:
-            return True
-    return False
-
-
-def _inspect_gh_api(call, item):
-    has_payload = False
-    payload_files = []
-    state_endpoint = graphql = state_field = close_mutation = variable_state = False
-    queries, fields, file_query = [], [], False
-    for flag, value in _options(call.args, _API_FIELD_OPTS | {"--input"}):
-        if flag is None:
-            state_endpoint = state_endpoint or bool(_API_STATE_ENDPOINT.search(value))
-            graphql = graphql or bool(_API_GRAPHQL.search(value))
-            if _API_MERGE.search(value):
-                item.problems.append("merging directly is not allowed; use `baton merge-pr <number>`")
-            if _API_COMMENT.search(value):
-                item.comment = True
-            item.texts.append(value)
-            continue
-        has_payload = True
-        if flag == "--input":
-            item.files.append((value, False))
-            payload_files.append((value, True))
-            continue
-        key, _, content = value.partition("=")
-        state_field = state_field or key in ("state", "state_reason")
-        close_mutation = close_mutation or _graphql_sets_state(content)
-        fields.append((key, content))
-        if key == "query":
-            if content.startswith("@"):
-                file_query = True
+def _api_problem(args):
+    """Why a `gh api` call is refused, or None when it is a plain read of one endpoint."""
+    endpoints, index, seen_api = 0, 0, False
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        if not arg.startswith("-") or arg == "-":
+            if not seen_api:
+                seen_api = True
             else:
-                queries.append(content)
-        variable_state = (variable_state or bool(_API_STATE_KEY.search(key))
-                          or (not content.startswith("@") and _json_sets_state(content)))
-        if flag in _API_TYPED_OPTS and content.startswith("@"):
-            item.files.append((content[1:], key == "body"))
-            payload_files.append((content[1:], False))
+                endpoints += 1
             continue
-        item.values.append(content)
-        item.texts.append(value)
-        if key == "body":
-            item.bodies.append(content)
-    item.comment = item.comment and has_payload
-    kind = "graphql" if graphql else "rest" if state_endpoint else None
-    if kind:
-        for path, is_input in payload_files:
-            if kind == "rest" and not is_input:
-                continue  # `-F field=@file` is one field's text, not a JSON payload
-            item.state_files[path] = "graphql-input" if kind == "graphql" and is_input else kind
-    unverifiable = graphql and (_unverifiable_input_variable(queries, fields)
-                                or (file_query and _unverifiable_file_query_fields(fields)))
-    if (state_endpoint and state_field) or (graphql and (close_mutation or variable_state or unverifiable)):
-        item.problems.append(_CLOSE_MESSAGE)
+        name = arg.split("=", 1)[0]
+        takes_value = name in _METHOD_OPTS | _API_VALUE_OPTS and (arg.startswith("--") or name == arg)
+        if takes_value:
+            if "=" in arg and arg.startswith("--"):
+                value = arg.split("=", 1)[1]
+            else:
+                value = args[index] if index < len(args) else ""
+                index += 1
+            if name in _METHOD_OPTS and value.upper() != "GET":
+                return f"`gh api` with method {value.upper() or '(none)'} writes to the forge"
+        elif arg not in _API_PLAIN_OPTS:
+            return f"`gh api` option {name} is not a plain read"
+    if endpoints != 1:
+        return "`gh api` must name exactly one endpoint"
+    return None
 
 
-def _inspect_gh(call):
-    item = Item()
+def _gh_problems(call):
     group, action = _gh_words(call.args)
-    if (group, action) == ("pr", "merge"):
-        item.relevant = True
-        item.problems.append("merging directly is not allowed; use `baton merge-pr <number>`")
-        return item
     if group == "api":
-        item.relevant = True
-        _inspect_gh_api(call, item)
-        return item
-    if (group, action) in _GH_CLOSE:
-        item.relevant = True
-        item.problems.append(_CLOSE_MESSAGE)
-        return item
-    if (group, action) not in _GH_PUBLISH:
-        return item
-
-    item.relevant = True
-    item.comment = (group, action) in _GH_COMMENT
-    value_opts = _GH_BODY_OPTS | _GH_TEXT_OPTS | _GH_FILE_OPTS
-    for flag, value in _options(call.args, value_opts):
-        if flag in _GH_FILE_OPTS:
-            item.files.append((value, True))
-            continue
-        if flag is not None:
-            item.values.append(value)
-        if flag in _GH_BODY_OPTS:
-            item.bodies.append(value)
-        if not _URL.match(value):
-            item.texts.append(value)
-    return item
+        problem = _api_problem(call.args)
+        if problem is None:
+            return []
+        return [f"{problem}; use the fitting baton command (`baton comment`, "
+                "`baton issue create|edit`, `baton pr create|edit|ready`, "
+                "`baton milestone create|edit`, `baton review post`, `baton close|reopen`, "
+                "`baton merge-pr`, `baton labels`, `baton set-status`); otherwise "
+                + _NO_COMMAND]
+    if (action in _GH_READ_ACTIONS and group) or group in _GH_READ_GROUPS:
+        return []
+    command = _USE.get((group, action))
+    what = f"gh {group} {action}".strip()
+    if command is None:
+        return [f"`{what}` is not allowed here; {_NO_COMMAND}"]
+    return [f"`{what}` is not allowed here; use `{command}`"]
 
 
 def _heredoc_text(value):
@@ -443,123 +434,132 @@ def _unscannable(value):
     return "$(" in value and not value.startswith(_INLINE_HEREDOC)
 
 
-def _dynamic(value):
-    """True when a directory argument is built by the shell, so where it points is unknown."""
-    return "$" in value or "`" in value
-
-
-def _literal_cd(args):
-    """True for exactly one plain directory argument: no option, glob, brace or expansion."""
-    return (len(args) == 1 and not args[0].startswith("-")
-            and not any(char in args[0] for char in "$`*?[{"))
-
-
-def _read(path, bases):
-    """Return (texts, problem) for a file a command publishes: the text in every base that holds it."""
+def _read(path, base):
+    """Return (text, problem) for a message file a git command publishes, read relative to `base`."""
     if path == "-":
-        return [], "a body read from stdin cannot be scanned; pass --body or a file path"
-    texts, seen = [], set()
-    for base in bases:
-        full = os.path.join(base, os.path.expanduser(path))
-        if not os.path.isfile(full) or os.path.realpath(full) in seen:
+        return None, "a body read from stdin cannot be scanned; pass --body or a file path"
+    full = os.path.join(base, os.path.expanduser(path))
+    if not os.path.isfile(full):
+        return None, (f"body file {path} not found, so it cannot be scanned; "
+                      "write it in an earlier step")
+    if os.path.getsize(full) > _MAX_FILE:
+        return None, f"body file {path} is too large to scan"
+    with open(full, errors="replace") as handle:
+        return handle.read(), None
+
+
+def _changes_directory(call):
+    if call.program in _DIRECTORY_COMMANDS:
+        return True
+    return call.program == "builtin" and bool(call.args) and call.args[0] in _DIRECTORY_COMMANDS
+
+
+def _is_evaluator(program):
+    return program in _EVALUATORS or program.startswith("python")
+
+
+def _named_directories(calls):
+    """Directories a command names: cd and pushd arguments, and git -C values."""
+    names = []
+    for call in calls:
+        args = call.args
+        if call.program == "builtin" and args and args[0] in _DIRECTORY_COMMANDS:
+            args = args[1:]
+        elif call.program not in _DIRECTORY_COMMANDS and call.program != "git":
             continue
-        seen.add(os.path.realpath(full))
-        if os.path.getsize(full) > _MAX_FILE:
-            return [], f"body file {path} is too large to scan"
-        with open(full, errors="replace") as handle:
-            texts.append(handle.read())
-    if texts:
-        return texts, None
-    return [], (f"body file {path} not found, so it cannot be scanned; "
-                "write it in an earlier step")
+        if call.program == "git":
+            options, _, _ = _git_parts(args)
+            for flag, value in options:
+                if flag == "-C":
+                    names.append(value)
+                elif flag.startswith("-C") and not flag.startswith("--"):
+                    names.append(flag[2:])
+        else:
+            operands = [a for a in args if a != "--" and not (a.startswith("-") and len(a) > 1)]
+            if operands:
+                names.append(operands[0])
+    return names
 
 
-def _find_config(dirs):
-    for directory in dirs:
-        if os.path.isdir(directory):
-            cfg = config.load(directory)
-            if cfg is not None:
-                return cfg
-    return None
+def _literal(name):
+    if re.search(r"[$`*?\[]", name):
+        return False
+    return not (name.startswith("~") and name != "~" and not name.startswith("~/"))
+
+
+def _has_brief(path):
+    try:
+        return config.load(path) is not None
+    except config.ConfigError:
+        return True
+    except OSError:
+        return False
 
 
 def decide(command, cwd, terms):
     calls = [_call(words) for words in _invocations(tokenize(command))]
-    dirs, items = [cwd], []
-    cwd_unknown = False
+    named = _named_directories(calls)
+    if not _has_brief(cwd):
+        literal = [os.path.join(cwd, os.path.expanduser(name)) for name in named
+                   if _literal(name)]
+        if not any(_has_brief(path) for path in literal):
+            return []
+    elif any(not _literal(name) for name in named):
+        return ["a directory named by the command cannot be resolved (variable, "
+                "substitution, glob or ~user); name it literally"]
+    problems, items = [], []
+    moves = any(_changes_directory(call) for call in calls)
     for call in calls:
-        program, args, builtin = call.program, call.args, False
-        if program == "builtin" and args and args[0] in ("cd", "pushd", "popd"):
-            program, args, builtin = args[0], args[1:], True
-        if program in ("cd", "pushd", "popd"):
-            if builtin or program == "popd" or not _literal_cd(args):
-                cwd_unknown = True
-            operands = [arg for arg in args if not arg.startswith("-") or arg == "-"]
-            if operands and program != "popd":
-                dirs.append(os.path.join(cwd, os.path.expanduser(operands[-1])))
+        if call.unknown_option:
+            problems.append(_WRAPPER_MESSAGE)
+        if _is_evaluator(call.program):
+            if any(_GH_OR_GIT.search(arg) for arg in call.args):
+                problems.append(_WRAPPER_MESSAGE)
+        elif call.program == "gh":
+            problems.extend(_gh_problems(call))
         elif call.program == "git":
             item = _inspect_git(call)
-            cwd_unknown = cwd_unknown or any(_dynamic(path) for path in item.dirs)
-            dirs.extend(os.path.join(cwd, os.path.expanduser(path)) for path in item.dirs)
-            items.append(item)
-        elif call.program == "gh":
-            items.append(_inspect_gh(call))
-    items = [item for item in items if item.relevant]
-    if not items:
-        return []
-
-    try:
-        cfg = _find_config(dirs)
-    except config.ConfigError as error:
-        return [f"{error}. Fix the brief before publishing."]
-    if cfg is None:
-        return []
-
-    problems, texts = [], []
-    bases = dirs + [str(cfg.root)]
-    git_publish = any(item.git_publish for item in items)
-    if git_publish and any(call.bad_env for call in calls):
-        problems.append("git hook bypass (--no-verify, -n, core.hooksPath or an overridden "
-                        "environment) is not allowed here")
+            if item.relevant:
+                items.append(item)
+        elif (call.program and (call.program not in _DATA_PROGRAMS)
+                and call.program not in _CHECKED
+                and any(_GH_OR_GIT.search(arg) for arg in call.args)):
+            problems.append(_WRAPPER_MESSAGE)
+        elif (call.program in _CHECKED and _runs_programs(call)
+                and any(_GH_OR_GIT.search(arg) for arg in call.args)):
+            problems.append(_WRAPPER_MESSAGE)
     for item in items:
         problems.extend(item.problems)
+    publishing = [item for item in items if item.publish]
+    if not publishing:
+        return list(dict.fromkeys(problems))
+
+    if moves or not all(item.plain for item in publishing):
+        problems.append(_NOT_PLAIN)
+    if any(call.bad_env for call in calls):
+        problems.append(_BYPASS)
+    try:
+        cfg = config.load(cwd)
+    except config.ConfigError as error:
+        problems.append(f"{error}. Fix the brief before publishing.")
+        return list(dict.fromkeys(problems))
+    if cfg is None:
+        problems.append(_NO_BRIEF)
+        return list(dict.fromkeys(problems))
+
+    texts = []
+    for item in publishing:
         if any(_unscannable(value) for value in item.values):
             problems.append("text built from a variable or command substitution cannot be "
                             "scanned; pass it literally, as an inline heredoc, or as a file")
-        bodies = [_heredoc_text(body) for body in item.bodies]
-        for path, is_body in item.files:
-            if cwd_unknown and path != "-" and not os.path.isabs(os.path.expanduser(path)):
-                problems.append(f"body file {path} is relative and the working directory cannot be "
-                                "worked out (cd to a variable, substitution or `-`); use an absolute path")
-                continue
-            file_texts, problem = _read(path, bases)
+        for path in item.files:
+            text, problem = _read(path, cwd)
             if problem:
                 problems.append(problem)
-                continue
-            kind = item.state_files.get(path)
-            for text in file_texts:
+            else:
                 texts.append(text)
-                if is_body:
-                    bodies.append(text)
-                if kind == "graphql" and _graphql_sets_state(text):
-                    problems.append(_CLOSE_MESSAGE)
-                elif kind == "graphql-input":
-                    problem = _graphql_input_problem(text)
-                    if problem:
-                        problems.append(problem)
-                elif kind == "rest":
-                    problem = _rest_payload_problem(text)
-                    if problem:
-                        problems.append(problem)
-        texts.extend(item.texts)
-        if any(not body.strip() for body in bodies):
-            problems.append("the body is empty; write the full text first")
-        if item.comment and not (bodies and all(
-                body.lstrip().startswith(MARKER) for body in bodies)):
-            problems.append("agent comments need a body that starts with the Baton marker "
-                            "<!-- baton:<role>:<kind> -->")
-
-    if git_publish and not githooks.installed(cfg.root):
+        texts.extend(_heredoc_text(text) for text in item.texts)
+    if any(item.hooked for item in publishing) and not githooks.installed(cfg.root):
         problems.append("Baton git hooks are not installed; run `baton install-hooks`")
 
     findings = scan.scan_text("\n".join(texts), terms, cfg.data["privacy_allow"])

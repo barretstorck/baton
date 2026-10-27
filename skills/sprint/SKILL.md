@@ -34,7 +34,7 @@ every state is a label.
    continue here.
 4. Take the parallel limit from the request if it gives one ("use up to 4 subagents"), otherwise
    from the `Parallel:` line of the milestone description, otherwise from the brief. If the
-   request's limit differs from the milestone's, update the milestone description.
+   request's limit differs from the milestone's, update the milestone description (`baton milestone edit <title> --description <text>`).
    `sprint-status` reports the limit it used as `parallel`.
    A changed limit only changes `free_slots`. It never changes an order or decision recorded on an
    issue (in its Decisions, its Pointers or a `Blocked by:` line); see "Dispatch" for a slot that
@@ -109,8 +109,7 @@ steps 2 and 3 using that comment's URL.
 ### 4. Review and merge
 
 **Closing and reopening.** Every close or reopen of an issue or pull request goes through
-`baton close|reopen <issue|pr> <N> orchestrator <reason-file | ->`; the gate refuses
-`gh ... close|reopen`. The command posts a `baton:<role>:closed` (or `reopened`) marker comment
+`baton close|reopen <issue|pr> <N> orchestrator <reason-file | ->`; a raw close or reopen with `gh` is refused by the gate. The command posts a `baton:<role>:closed` (or `reopened`) marker comment
 with the reason, then closes or reopens. **Reading state:** an issue or pull request that is
 closed with no `baton:<role>:closed` marker comment was closed by the maintainer. Do not reopen
 it without asking.
@@ -134,14 +133,14 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   task list: review again and write one."
 - **Not a spike, `progress.<N>.plan.next` is null, `draft` is true and `review` is not `changes`,
   `replan`, `escalate` or `repeated`:** the plan is finished (or the review's fixes are replied to), so
-  mark the pull request ready: `gh pr ready <PR>`. CI runs once, now, instead of on every push
+  mark the pull request ready: `baton pr ready <PR>`. CI runs once, now, instead of on every push
   of a draft. The reviewer is dispatched in this same pass (next bullets).
 - **Ready (not a draft), every plan task ticked, and `mergeable` is `CONFLICTING`:** update it
   before any review: dispatch a developer with `Update pull request <P> (issue <N>).` A red `ci`
   is not fixed by a developer: the reviewer turns it into fix tasks.
 - **Ready (not a draft), every plan task ticked, and `ci` is `cancelled`:** the run was cancelled,
-  so CI did not finish; it did not fail. This is not `red`: dispatch no developer fix task. Re-run it if you can: `gh run rerun <run id> --failed` (workflows must be enabled).
-  Otherwise make an empty update commit on the pull request branch and push it. The new head has
+  so CI did not finish; it did not fail. This is not `red`: dispatch no developer fix task. No `baton` command re-runs a workflow (a raw `gh run rerun` is refused), so
+  make an empty update commit on the pull request branch and push it. The new head has
   no checks yet (`pending`) and needs a new verification record (#49) before it can be approved.
   `merge-pr` keeps refusing cancelled checks; never suggest overriding it. The `approved`
   conditions need `ci` `green` or `none`, so a `cancelled` pull request waits to merge.
@@ -161,14 +160,14 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   orchestrator `status` comment linking the two reviews and naming the shared failing ids, and
   put the issue under `Needs you`. Do not re-draft the pull request or dispatch a fix round. Record the
   answer as a decision (step 3) and then handle it like an answered `escalate`.
-- **`changes`:** if `draft` is false, turn the pull request back into a draft: `gh pr ready <PR>
+- **`changes`:** if `draft` is false, turn the pull request back into a draft: `baton pr ready <PR>
   --undo`, so that CI runs once per "developer done" and not once per pushed fix task. Then
   `baton set-status <N> status:in-dev`. Step 7 then works the review's tasks one
   at a time, and step 8 posts the reply when the last one is ticked. This takes a developer slot.
 - **`replan`:** the reviewer says the plan, not the code, is the problem, and the pull request
   has no refiner's reply yet. Run each as a command on its own:
   1. `baton set-status <N> status:refinement` (the issue keeps its milestone).
-  2. `gh pr ready <PR> --undo`, only when `draft` is false.
+  2. `baton pr ready <PR> --undo`, only when `draft` is false.
   3. An orchestrator `status` comment on the issue linking the review:
      `baton comment issue <N> orchestrator status <file>`.
   4. Dispatch `baton:baton-refiner` in the background, with exactly:
@@ -180,7 +179,7 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   posts a `refine` `reply` on the pull request; step 7 then dispatches the next task as for a
   resumed issue, and the reviewer comes back after the last one, as after any reply.
 - **Each entry in `re_refine`** (an issue in `status:refinement` with an open pull request and no
-  `needs-maintainer`; a session died after step 3 of `replan`): `gh pr ready <PR> --undo` if
+  `needs-maintainer`; a session died after step 3 of `replan`): `baton pr ready <PR> --undo` if
   `draft` is false, and dispatch the same refiner prompt, unless a refiner for that issue is
   already running in this session. The refiner's work is safe to repeat.
 - **`escalate`:** the review rounds in the brief are used up and the reviewer still asks for
@@ -188,14 +187,14 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   be). Add `needs-maintainer`, post an orchestrator `status` comment on the issue linking the
   last review and the last reply, saying what the two disagree about; the issue goes under
   `Needs you`. When the maintainer answers, record it as a decision (step 3); if the answer sends the
-  review's tasks to a developer, re-draft the pull request as for `changes` (`gh pr ready <PR>
+  review's tasks to a developer, re-draft the pull request as for `changes` (`baton pr ready <PR>
   --undo` when `draft` is false) and work the tasks (step 7).
 - **`approved`**, or `not-required`:
   0. `approved` with `verify` `missing` (the brief sets `verify.command`; the head moved after the
      approval, typically by merging the default branch in): dispatch a reviewer for a short
      re-approval (see "Dispatching a reviewer"), and merge only once the new review shows `verify`
      `green`. Never run `baton verify` or post a review yourself.
-  1. Still a draft (a fallback; normally ready already): `gh pr ready <PR>`. CI starts now; look
+  1. Still a draft (a fallback; normally ready already): `baton pr ready <PR>`. CI starts now; look
      again next pass.
   2. `ci` is `pending`: wait.
   2a. `ci` is `cancelled`: handle it as the ready-pull-request `cancelled` case above (re-run or
@@ -277,7 +276,7 @@ few commands, write in the issue's Context that the claim is **unverified** and 
 
 File each by its severity (`critical`, `important`, `minor`; the review's own words):
 
-- `critical`: joins the open sprint as `deliverable` (add it to the milestone), is refined with
+- `critical`: joins the open sprint as `deliverable` (`baton issue edit <N> --milestone "<title>"`), is refined with
   `baton:refine` as a subagent at once, and is dispatched once ready.
 - `important`: joins the open sprint as `stretch` when the maintainer's sprint rules let
   follow-ups join (the brief or the milestone description), or when it serves the sprint goal;
@@ -400,7 +399,7 @@ Act on each result with commands on their own, reading each one's output; never 
       EOF
 
   then `baton set-status <N> status:in-review`. The pull request is still a draft: make no
-  `gh pr ready` call here. The next pass marks it ready (step 4), CI runs once, and the reviewer is
+  `baton pr ready` call here. The next pass marks it ready (step 4), CI runs once, and the reviewer is
   dispatched at once, not when `ci` is green. If this
   session no longer has the developers' results, read them from the branch: `Review <r.n>:`
   commits are fixes; ask on the issue about a task with no commit: post an orchestrator `question` comment and add `needs-maintainer` (it goes under `Needs you`) and no recorded reason.
@@ -463,10 +462,10 @@ is running:
    same pull request, which the maintainer must approve because `.baton/` is protected. A change
    to Baton itself is written up for the maintainer; never edit the plugin's files.
 3. For each unfinished issue: remove it from the milestone and add the label
-   `missed:<sprint title>` ([GitLab's milestone cleanup](https://handbook.gitlab.com/handbook/engineering/workflow/#milestone-cleanup)).
+   `missed:<sprint title>` (`baton issue edit <N> --remove-milestone --add-label missed:<title>`) ([GitLab's milestone cleanup](https://handbook.gitlab.com/handbook/engineering/workflow/#milestone-cleanup)).
    Create the label if it does not exist.
 4. List spike prototypes in the retrospective.
-5. Close the milestone.
+5. Close the milestone: `baton milestone edit <title> --state closed`.
 6. End with a regular, full response, not the three-section update. This is the only point in a
    sprint where details are given in the session. Give: what was delivered and what was carried
    over (each with links), the decisions made, what went wrong and its root cause, quota use, the
