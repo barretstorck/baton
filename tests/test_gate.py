@@ -280,6 +280,14 @@ class GateTest(unittest.TestCase):
             "{ clientMutationId } }'",
             "gh api graphql -f query='mutation { updateIssue(input: {id: \"X\", state #c\r: CLOSED}) "
             "{ clientMutationId } }'"]
+        for ch in ("﻿", " ", " ", "​", "⁠"):
+            cmds.append("gh api graphql -f query='mutation { updateIssue(input: {id: \"X\", state"
+                        + ch + ": CLOSED}) { clientMutationId } }'")
+        for ch in ("\ufeff", "\u200b", "\u2060"):
+            cmds.append("gh api graphql -f query='mutation { updateIssue(input: {id: $x" + ch
+                        + "state:CLOSED}) { clientMutationId } }'")
+        cmds.append("gh api graphql -f query='﻿mutation { closeIssue(input: {id: \"X\"}) "
+                    "{ clientMutationId } }'")
         q = ("gh api graphql -f query='mutation($i: UpdateIssueInput!) "
              "{ updateIssue(input: $i) { clientMutationId } }' ")
         cmds += [q + "-F 'i[state]=CLOSED'", q + "-F 'i[stateReason]=COMPLETED'",
@@ -333,9 +341,20 @@ class GateTest(unittest.TestCase):
                     "{id: \"X\", title: \"t\"}) { clientMutationId } }'",
                     "gh api graphql -f query='mutation($i: UpdateIssueInput!) { updateIssue(input: $i) "
                     "{ clientMutationId } }' -F 'i[title]=t' -F 'i[id]=X'",
-                    "gh api -X PATCH repos/o/r/issues/5 -f 'i[state]=x' -f title=t"):
+                    "gh api -X PATCH repos/o/r/issues/5 -f 'i[state]=x' -f title=t",
+                    "gh api graphql -f query='﻿mutation { updateIssue(input: {id: \"X\", "
+                    "title : \"t\"}) { clientMutationId } }'",
+                    "gh api graphql -f query='query﻿{ viewer { login } }'"):
             with self.subTest(cmd=cmd):
                 self.assertEqual(gate.decide(cmd, make_repo(), TERMS), [])
+
+    def test_normalise_query(self):
+        for raw, want in (("a﻿b​c⁠d", "a b c d"),
+                          ("a b c\td", "a b c d"),
+                          ("a # c\n\r b", "a # c\n\r b"),
+                          ("plain query", "plain query")):
+            with self.subTest(raw=raw):
+                self.assertEqual(gate._normalise_query(raw), want)
 
     def test_comment_and_edit_are_not_refused_as_closes(self):
         for cmd in ("gh issue edit 5 --title t",
