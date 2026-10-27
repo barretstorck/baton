@@ -8,17 +8,40 @@ The workflow is adapted from the GitLab handbook's
 [Engineering Workflow](https://handbook.gitlab.com/handbook/engineering/workflow/) and
 [Product Development Flow](https://handbook.gitlab.com/handbook/product-development/how-we-work/product-development-flow/).
 
-The review loop is adapted from the [superpowers](https://github.com/obra/superpowers) plugin's
-code-review skills, and plans of small tasks from its `writing-plans` skill.
+The review loop is adapted from the [superpowers](https://github.com/obra/superpowers) plugin by
+Jesse Vincent (MIT): its code-review skills, plans of small tasks from its `writing-plans` skill,
+and a fresh developer per task from its plan-execution skills. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-- Design: [docs/superpowers/specs/2026-10-01-baton-design.md](docs/superpowers/specs/2026-10-01-baton-design.md)
-- Plans: [docs/superpowers/plans/](docs/superpowers/plans/)
+- Original design and plans (kept as history): [docs/superpowers/](docs/superpowers/)
 
 ## Status
 
-Two sprints have run on a real repository. Version 0.2.0 added the designated reviewer;
-version 0.4.0 works each issue as a plan of small tasks, to keep a sprint inside a subscription's
-quota.
+Baton is young and changes quickly; it is developed in its own sprints. It has run sprints on
+several real repositories, all on GitHub. See the latest version in
+[.claude-plugin/plugin.json](.claude-plugin/plugin.json).
+
+## Install
+
+Requirements: [Claude Code](https://docs.claude.com/en/docs/claude-code), `git`, the
+[GitHub CLI](https://cli.github.com/) (`gh`) signed in to an account that can push to your
+repository, and Python 3 (CI tests 3.12). Only GitHub is supported as the forge for now.
+
+    claude plugin marketplace add barretstorck/baton
+    claude plugin install baton@baton
+
+Then, in Claude Code inside your repository, run `/baton:init` to write `.baton/brief.md`, create
+the labels and install the git hooks, and `/baton:sprint-plan` to plan a first sprint.
+
+## Safety
+
+Baton's agents act with **your** `gh` and `git` credentials: they push branches, comment, label,
+and merge pull requests. The publish gate and the git hooks catch mistakes (private details in
+published text, state changes without a marker comment), but they are not a sandbox; see
+[Rules the gate enforces](#rules-the-gate-enforces-in-a-baton-repository) and
+[SECURITY.md](SECURITY.md). Only issues written or marked ready by the maintainer enter a sprint,
+and only the maintainer's comments count as answers. Try it on a repository you can afford to
+experiment on first.
 
 ## Plans of small tasks
 
@@ -190,3 +213,9 @@ The gate guards against mistakes. It is not a sandbox: it only sees `gh` and `gi
 ## Tests
 
     PYTHONPATH=lib python3 -m unittest discover -s tests -v
+
+## Contributing and licence
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md). Baton is released under the
+[MIT License](LICENSE); material adapted from other projects is listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
