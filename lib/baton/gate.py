@@ -60,6 +60,46 @@ _CLOSE_MESSAGE = (
     "<issue|pr> <number> <role> <reason-file>` so a marker comment says who did it and why")
 _API_MERGE = re.compile(r"/pulls/\d+/merge\b")
 _API_STATE_ENDPOINT = re.compile(r"(?:^|/)(?:issues|pulls)/\d+/?(?:\?|$)")
+_STATE_KEYS = ("state", "state_reason")
+_UNPARSABLE_MESSAGE = (
+    "a payload file that is not a valid JSON object cannot be checked for state changes; "
+    "write valid JSON, or use `baton close` / `baton reopen` to change an issue's state"
+)
+
+
+def _has_state_key(value):
+    if isinstance(value, dict):
+        return any(key in _STATE_KEYS or _has_state_key(item) for key, item in value.items())
+    if isinstance(value, list):
+        return any(_has_state_key(item) for item in value)
+    return False
+
+
+def _rest_payload_problem(text):
+    """A refusal for a REST payload file that sets state, or cannot be shown not to."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return _UNPARSABLE_MESSAGE
+    if not isinstance(data, dict):
+        return _UNPARSABLE_MESSAGE
+    return _CLOSE_MESSAGE if _has_state_key(data) else None
+
+
+def _graphql_input_problem(text):
+    """A refusal for a GraphQL `--input` JSON payload whose query closes or reopens, or cannot be read."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return _UNPARSABLE_MESSAGE
+    if not isinstance(data, dict):
+        return _UNPARSABLE_MESSAGE
+    query = data.get("query")
+    if _graphql_sets_state(text) or (isinstance(query, str) and _graphql_sets_state(query)):
+        return _CLOSE_MESSAGE
+    return None
+
+
 _API_CLOSE_MUTATION = re.compile(r"\b(?:closeIssue|reopenIssue|closePullRequest|reopenPullRequest)\b")
 _API_MUTATION = re.compile(r"\bmutation\b")
 _API_STATE_ARG = re.compile(r"(?<![$\w])state(?:Reason)?(?:[\s,]|#[^\n\r]*(?:[\r\n]|$))*:")
@@ -85,6 +125,7 @@ class Item:
     values: list = field(default_factory=list)    # must be literal text
     bodies: list = field(default_factory=list)    # must start with the marker
     files: list = field(default_factory=list)     # (path, is_body)
+    state_files: dict = field(default_factory=dict)  # path -> "rest" (--input) | "graphql" | "graphql-input"
     dirs: list = field(default_factory=list)
 
 
@@ -230,6 +271,7 @@ def _graphql_sets_state(content):
 
 def _inspect_gh_api(call, item):
     has_payload = False
+    payload_files = []
     state_endpoint = graphql = state_field = close_mutation = False
     for flag, value in _options(call.args, _API_FIELD_OPTS | {"--input"}):
         if flag is None:
@@ -244,18 +286,26 @@ def _inspect_gh_api(call, item):
         has_payload = True
         if flag == "--input":
             item.files.append((value, False))
+            payload_files.append((value, True))
             continue
         key, _, content = value.partition("=")
         state_field = state_field or key in ("state", "state_reason")
         close_mutation = close_mutation or _graphql_sets_state(content)
         if flag in _API_TYPED_OPTS and content.startswith("@"):
             item.files.append((content[1:], key == "body"))
+            payload_files.append((content[1:], False))
             continue
         item.values.append(content)
         item.texts.append(value)
         if key == "body":
             item.bodies.append(content)
     item.comment = item.comment and has_payload
+    kind = "graphql" if graphql else "rest" if state_endpoint else None
+    if kind:
+        for path, is_input in payload_files:
+            if kind == "rest" and not is_input:
+                continue  # `-F field=@file` is one field's text, not a JSON payload
+            item.state_files[path] = "graphql-input" if kind == "graphql" and is_input else kind
     if (state_endpoint and state_field) or (graphql and close_mutation):
         item.problems.append(_CLOSE_MESSAGE)
 
@@ -373,6 +423,17 @@ def decide(command, cwd, terms):
             texts.append(text)
             if is_body:
                 bodies.append(text)
+            kind = item.state_files.get(path)
+            if kind == "graphql" and _graphql_sets_state(text):
+                problems.append(_CLOSE_MESSAGE)
+            elif kind == "graphql-input":
+                problem = _graphql_input_problem(text)
+                if problem:
+                    problems.append(problem)
+            elif kind == "rest":
+                problem = _rest_payload_problem(text)
+                if problem:
+                    problems.append(problem)
         texts.extend(item.texts)
         if any(not body.strip() for body in bodies):
             problems.append("the body is empty; write the full text first")

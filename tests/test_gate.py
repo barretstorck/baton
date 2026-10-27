@@ -42,6 +42,78 @@ class GateTest(unittest.TestCase):
         problems = gate.decide("gh issue comment 5 --body-file body.md", repo, TERMS)
         self.assertTrue(any("private-term" in p for p in problems))
 
+    def _api(self, command, **files):
+        repo = make_repo()
+        for name, text in files.items():
+            pathlib.Path(repo, name.replace("_", ".")).write_text(text)
+        return gate.decide(command, repo, TERMS)
+
+    def _closes(self, problems):
+        return any("baton close" in p for p in problems)
+
+    def test_input_file_state_is_refused(self):
+        patch = "gh api -X PATCH repos/o/r/issues/5 --input p.json"
+        self.assertTrue(self._closes(self._api(patch, p_json='{"state": "closed"}')))
+        pull = "gh api -X PATCH repos/o/r/pulls/5 --input p.json"
+        self.assertTrue(self._closes(self._api(pull, p_json='{"state_reason": "completed"}')))
+
+    def test_input_file_state_bypasses_are_refused(self):
+        patch = "gh api -X PATCH repos/o/r/issues/5 --input p.json"
+        escaped = self._api(patch, p_json='{"\\u0073tate": "closed"}')
+        self.assertTrue(self._closes(escaped))
+        nested = self._api(patch, p_json='{"a": [{"b": {"state_reason": "completed"}}]}')
+        self.assertTrue(self._closes(nested))
+        for text in ('{"title": ', '["state"]', '"state"'):
+            self.assertTrue(any("not a valid JSON object" in p
+                                for p in self._api(patch, p_json=text)), text)
+
+    def test_input_file_graphql_decoded_query_is_checked(self):
+        cmd = "gh api graphql --input q.json"
+        newline = json.dumps({"query": '\nmutation { updateIssue(input:{id:"x", state:CLOSED}){x} }'})
+        self.assertTrue(self._closes(self._api(cmd, q_json=newline)))
+        escaped = '{"query": "mutation { \\u0063loseIssue(input: {issueId: \\"x\\"}) { x } }"}'
+        self.assertTrue(self._closes(self._api(cmd, q_json=escaped)))
+        readonly = json.dumps({"query": "query { viewer { login } }"})
+        self.assertFalse(self._closes(self._api(cmd, q_json=readonly)))
+        self.assertTrue(any("not a valid JSON object" in p
+                            for p in self._api(cmd, q_json="mutation { closeIssue }")))
+
+    def test_input_file_graphql_is_refused(self):
+        cmd = "gh api graphql --input q.json"
+        body = json.dumps({"query": 'mutation { closeIssue(input: {issueId: "x"}) { clientMutationId } }'})
+        self.assertTrue(self._closes(self._api(cmd, q_json=body)))
+        cmd = "gh api graphql -F query=@q.graphql"
+        query = 'mutation { updateIssue(input: {id: "x", state: CLOSED}) { clientMutationId } }'
+        self.assertTrue(self._closes(self._api(cmd, q_graphql=query)))
+
+    def test_field_file_on_rest_endpoint_is_not_parsed_as_json(self):
+        cmd = "gh api -X PATCH repos/o/r/issues/5 -F body=@n.md"
+        text = "<!-- baton:developer:status -->\nplain text, not JSON"
+        self.assertEqual(self._api(cmd, n_md=text), [])
+        pull = "gh api -X PATCH repos/o/r/pulls/5 -F body=@n.md"
+        self.assertEqual(self._api(pull, n_md=text), [])
+        state = self._api("gh api -X PATCH repos/o/r/issues/5 -F state=@n.md", n_md="closed")
+        self.assertTrue(self._closes(state))
+
+    def test_unreadable_state_payload_is_refused(self):
+        missing = self._api("gh api -X PATCH repos/o/r/issues/5 --input missing.json")
+        self.assertTrue(any("not found" in p for p in missing))
+        stdin = self._api("gh api -X PATCH repos/o/r/issues/5 --input -")
+        self.assertTrue(any("stdin" in p for p in stdin))
+
+    def test_other_input_files_are_allowed(self):
+        title = self._api("gh api -X PATCH repos/o/r/issues/5 --input p.json", p_json='{"title": "t"}')
+        self.assertFalse(self._closes(title))
+        comment = self._api("gh api repos/o/r/issues/5/comments --input c.json",
+                            c_json='{"body": "<!-- baton:developer:status -->\nok"}')
+        self.assertFalse(self._closes(comment))
+        labels = self._api("gh api -X POST repos/o/r/issues/5/labels --input l.json",
+                           l_json='{"labels": ["bug"]}')
+        self.assertFalse(self._closes(labels))
+        read = self._api("gh api graphql -F query=@q.graphql",
+                         q_graphql="query { viewer { login } }")
+        self.assertFalse(self._closes(read))
+
     def test_heredoc_body_is_scanned(self):
         cmd = "gh issue create --title t --body \"$(cat <<'EOF'\nmail alice@corp-mail.test\nEOF\n)\""
         self.assertTrue(any("email" in p for p in gate.decide(cmd, make_repo(), TERMS)))
