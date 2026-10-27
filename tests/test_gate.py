@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from unittest import mock
 from baton import gate
 
 TERMS = ["Zebrowski"]
@@ -374,6 +375,22 @@ class GateTest(unittest.TestCase):
         self.assertEqual(
             gate.decide(f"export CDPATH=/x && cd {repo}/sub && gh issue create --title t -F b.md",
                         repo, TERMS), [])
+
+    def test_inherited_or_appended_cdpath_marks_directory_unknown(self):
+        repo = make_repo()
+        clean = pathlib.Path(repo, "clean.md")
+        clean.write_text("fine text\n")
+        pathlib.Path(repo, "sub").mkdir()
+        tail = "gh issue create --title t -F clean.md"
+        with mock.patch.dict(os.environ, {"CDPATH": "/x"}):
+            rel = gate.decide("cd sub && " + tail, repo, TERMS)
+            self.assertTrue(any("absolute path" in p for p in rel), rel)
+            self.assertEqual(gate.decide(
+                f"cd {repo}/sub && gh issue create --title t -F {clean}", repo, TERMS), [])
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CDPATH", None)
+            rel = gate.decide("CDPATH+=/x cd sub && " + tail, repo, TERMS)
+            self.assertTrue(any("absolute path" in p for p in rel), rel)
 
     def test_literal_cd_and_no_cd_still_read_relative_paths(self):
         repo = make_repo()

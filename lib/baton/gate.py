@@ -486,7 +486,8 @@ def _find_config(dirs):
 def decide(command, cwd, terms):
     words_list = list(_invocations(tokenize(command)))
     calls = [_call(words) for words in words_list]
-    cdpath = any(re.match(r"CDPATH=", word) for words in words_list for word in words)
+    cdpath = bool(os.environ.get("CDPATH")) or any(
+        re.match(r"CDPATH\+?=", word) for words in words_list for word in words)
     dirs, items, current = [cwd], [], cwd
     cwd_unknown = False
     for call in calls:
