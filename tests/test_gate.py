@@ -192,6 +192,51 @@ class GateTest(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertEqual(gate.decide(cmd, make_repo(), TERMS), [])
 
+    def test_gh_api_is_allowed_only_as_a_plain_read(self):
+        repo = make_repo()
+        refused = (
+            "gh api -iXPOST repos/o/r/issues -f title=x",
+            "gh api -XPOST repos/o/r/issues",
+            "gh api repos/o/r/issues -ftitle=x",
+            "gh api repos/o/r/issues --field title=x",
+            "gh api repos/o/r/issues --input body.json",
+            "gh api -X PATCH repos/o/r/milestones/1",
+            "gh api --method=DELETE repos/o/r/issues/1",
+            "gh api repos/o/r/issues repos/o/r/pulls",
+            "gh api",
+        )
+        for command in refused:
+            with self.subTest(command=command):
+                self.assertTrue(gate.decide(command, repo, TERMS))
+        allowed = (
+            "gh api repos/o/r/issues --jq '.[].number'",
+            "gh api -X GET repos/o/r/pulls --paginate",
+            "gh api --method=GET -H 'Accept: x' repos/o/r/pulls --slurp -q .",
+        )
+        for command in allowed:
+            with self.subTest(command=command):
+                self.assertEqual(gate.decide(command, repo, TERMS), [])
+
+    def test_launchers_and_git_aliases_that_can_run_gh_or_git_are_refused(self):
+        repo = make_repo()
+        refused = (
+            "find . -name x -exec gh issue comment 1 -b x \\;",
+            "timeout 5 gh pr create -t x -b y",
+            "nice gh issue close 1",
+            """awk 'BEGIN{system("gh issue close 1")}'""",
+            "fish -c 'gh issue close 1'",
+            "ksh -c 'gh issue close 1'",
+            "git -c alias.p='!gh issue comment 1 -b x' p",
+            "git --config-env=core.hooksPath=X commit -m a",
+            "git config alias.p '!gh issue close 1'",
+        )
+        for command in refused:
+            with self.subTest(command=command):
+                self.assertTrue(gate.decide(command, repo, TERMS))
+        for command in ("timeout 5 ls", "ls .git", "rg git lib", "git status"):
+            with self.subTest(command=command):
+                self.assertEqual(gate.decide(command, repo, TERMS), [])
+
     def test_wrapper_options_with_values_are_skipped(self):
         for cmd in ("sudo -u root gh issue comment 1 -b x", "env -u FOO gh pr create -t x -b y",
                     "env -C dir gh issue close 1", "sudo -g grp gh pr ready 5"):

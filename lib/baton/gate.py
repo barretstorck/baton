@@ -55,7 +55,8 @@ _VARIABLE = re.compile(r"^\$\{?\w+\}?$")
 _INLINE_HEREDOC = "$(cat <<"
 _HEREDOC = re.compile(r"""^\$\(cat <<-?\s*['"]?(\w+)['"]?\n(.*)\n\1\s*\)\s*$""", re.S)
 
-_GIT_VALUE_OPTS = {"-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
+_GIT_VALUE_OPTS = {"-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path",
+                   "--config-env"}
 _COMMIT_VALUE_OPTS = {
     "-m", "-F", "-C", "-c", "-t", "--message", "--file", "--author", "--date",
     "--reuse-message", "--reedit-message", "--fixup", "--squash", "--template",
@@ -68,12 +69,22 @@ _GH_READ_ACTIONS = {"view", "list", "status", "checks", "diff", "download", "che
                     "search", "browse", "watch"}
 _GH_READ_GROUPS = {"", "status", "search", "help"}
 _METHOD_OPTS = {"-X", "--method"}
-_API_BODY_OPTS = {"-f", "-F", "--raw-field", "--field", "--input"}
-_MUTATION = re.compile(r"mutation", re.I)
 _EVALUATORS = {"bash", "sh", "zsh", "dash", "eval", "xargs", "source", ".", "node", "perl", "ruby"}
 _GH_OR_GIT = re.compile(r"\b(?:gh|git)\b")
 _DIRECTORY_COMMANDS = ("cd", "pushd", "popd")
-_PLAIN_GIT_OPTS = {"--git-dir", "--work-tree", "--exec-path", "--namespace"}
+_PLAIN_GIT_OPTS = {"--git-dir", "--work-tree", "--exec-path", "--namespace", "--config-env"}
+_API_VALUE_OPTS = {"--jq", "-q", "-H", "--header", "--hostname", "--cache", "--template", "-t"}
+_API_PLAIN_OPTS = {"--paginate", "--slurp", "--silent", "--include", "-i", "--verbose"}
+# Programs that only read or write data and never start another program from their
+# arguments; any other program whose arguments mention gh or git is a possible launcher.
+_DATA_PROGRAMS = {
+    "baton", "echo", "printf", "cat", "rg", "grep", "egrep", "fgrep", "ls", "head", "tail",
+    "wc", "sort", "uniq", "cut", "tr", "diff", "cmp", "tee", "basename", "dirname", "test",
+    "[", "true", "false", "stat", "file", "du", "df", "mkdir", "rm", "cp", "mv", "touch",
+    "ln", "chmod", "readlink", "realpath", "pwd", "cd", "pushd", "popd", "which", "type",
+    "export", "declare", "typeset", "readonly", "local", "unset", "set", "exit", "return",
+}
+_ALIAS = "aliases and --config-env can run gh or git behind the gate; not allowed here"
 _BYPASS = "git hook bypass (--no-verify, -n, core.hooksPath or an overridden environment) is not allowed here"
 _NOT_PLAIN = "git publishing must be a plain command in the repository's own directory"
 _WRAPPER_MESSAGE = "cannot tell whether this writes to the forge"
@@ -256,6 +267,11 @@ def _inspect_git(call):
     if sub == "config" and any(word.lower().startswith("core.hookspath") for word in rest):
         item.relevant = True
         item.problems.append(_BYPASS)
+    if (any(f"{flag}{value}".lower().lstrip("-c").startswith("alias.")
+            or flag.split("=", 1)[0] == "--config-env" for flag, value in options)
+            or (sub == "config" and any(w.lower().lstrip("-").startswith("alias.") for w in rest))):
+        item.relevant = True
+        item.problems.append(_ALIAS)
     if sub not in ("commit", "push", "tag"):
         return item
 
@@ -295,14 +311,31 @@ def _gh_words(args):
 
 
 def _api_problem(args):
-    """Why a `gh api` call is refused, or None when it is a plain read."""
-    for flag, value in _options(args, _METHOD_OPTS | _API_BODY_OPTS):
-        if flag in _METHOD_OPTS and value.upper() != "GET":
-            return f"`gh api` with method {value.upper() or '(none)'} writes to the forge"
-        if flag in _API_BODY_OPTS:
-            return "`gh api` with fields or an input file writes to the forge"
-    if any(_MUTATION.search(arg) for arg in args):
-        return "`gh api` with a GraphQL mutation writes to the forge"
+    """Why a `gh api` call is refused, or None when it is a plain read of one endpoint."""
+    endpoints, index, seen_api = 0, 0, False
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        if not arg.startswith("-") or arg == "-":
+            if not seen_api:
+                seen_api = True
+            else:
+                endpoints += 1
+            continue
+        name = arg.split("=", 1)[0]
+        takes_value = name in _METHOD_OPTS | _API_VALUE_OPTS and (arg.startswith("--") or name == arg)
+        if takes_value:
+            if "=" in arg and arg.startswith("--"):
+                value = arg.split("=", 1)[1]
+            else:
+                value = args[index] if index < len(args) else ""
+                index += 1
+            if name in _METHOD_OPTS and value.upper() != "GET":
+                return f"`gh api` with method {value.upper() or '(none)'} writes to the forge"
+        elif arg not in _API_PLAIN_OPTS:
+            return f"`gh api` option {name} is not a plain read"
+    if endpoints != 1:
+        return "`gh api` must name exactly one endpoint"
     return None
 
 
@@ -378,6 +411,9 @@ def decide(command, cwd, terms):
             item = _inspect_git(call)
             if item.relevant:
                 items.append(item)
+        elif (call.program and call.program not in _DATA_PROGRAMS
+                and any(_GH_OR_GIT.search(arg) for arg in call.args)):
+            problems.append(_WRAPPER_MESSAGE)
     for item in items:
         problems.extend(item.problems)
     publishing = [item for item in items if item.publish]
