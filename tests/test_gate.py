@@ -209,6 +209,9 @@ class GateTest(unittest.TestCase):
                     "BATON_PRIVATE_TERMS=/dev/null git commit -m x",
                     "HOME=/tmp git push", "GIT_DIR+=/x git push", "HOME+=/x git push",
                     "GIT_CONFIG_COUNT+=1 git commit -m x",
+                    "XDG_CONFIG_HOME=/x git push", "GIT_EXEC_PATH=/x git push", "XDG_CONFIG_HOME+=/x git push",
+                    "declare HOME=/x; git push", "typeset HOME=/x; git push", "readonly HOME=/x; git push",
+                    "local HOME=/x; git push", "declare GIT_DIR=/x && git commit -m x",
                     "export GIT_CONFIG_GLOBAL=/dev/null && git commit -m x"):
             with self.subTest(cmd=cmd):
                 self.assertTrue(any("bypass" in p for p in gate.decide(cmd, make_repo(), TERMS)))

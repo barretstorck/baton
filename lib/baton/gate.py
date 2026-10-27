@@ -24,9 +24,10 @@ HOOK_TAG = githooks.HOOK_TAG
 _MAX_FILE = 1_000_000
 
 _PUNCTUATION = set("();<>|&")
-_WRAPPERS = {"env", "command", "sudo", "exec", "time", "nohup", "export"}
+_WRAPPERS = {"env", "command", "sudo", "exec", "time", "nohup", "export",
+              "declare", "typeset", "readonly", "local"}
 _ASSIGNMENT = re.compile(r"^[A-Za-z_]\w*\+?=")
-_BAD_ENV = re.compile(r"^(?:GIT_CONFIG\w*|GIT_DIR|GIT_WORK_TREE|BATON_PRIVATE_TERMS|HOME)\+?=")
+_BAD_ENV = re.compile(r"^(?:GIT_CONFIG\w*|GIT_DIR|GIT_EXEC_PATH|XDG_CONFIG_HOME|GIT_WORK_TREE|BATON_PRIVATE_TERMS|HOME)\+?=")
 _URL = re.compile(r"^(?:[\w.+-]+://|[\w.-]+@[\w.-]+:)")
 _VARIABLE = re.compile(r"^\$\{?\w+\}?$")
 _INLINE_HEREDOC = "$(cat <<"
