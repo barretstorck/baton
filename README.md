@@ -201,7 +201,8 @@ then is that rule skipped. Inline `# noqa` comments are not judged.
 - Raw forge writes are refused from any directory, and the message names the `baton` command to
   use instead (`baton comment`, `baton issue`, `baton pr`, `baton milestone`, `baton review post`,
   `baton close|reopen`, `baton merge-pr`, `baton labels`, `baton set-status`). `gh` is allowed
-  only for reads (`view`, `list`, `checks`, `diff`, ...); `gh api` only as a plain GET.
+  only for reads (`view`, `list`, `checks`, `diff`, ...); any other `gh api` call is refused
+  unless it is a plain GET.
 - A shell or evaluator (`bash -c`, `xargs`, `eval`, `python -c`) that mentions `gh` or `git` is
   refused, because the gate cannot tell whether it writes to the forge.
 - A git publish (`commit`, `push`, `tag`) must be a plain command in the repository's own
