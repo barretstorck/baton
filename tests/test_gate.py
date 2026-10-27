@@ -287,7 +287,7 @@ class GateTest(unittest.TestCase):
                  q + "-f i='{\"id\":\"X\",\"state\":\"CLOSED\"}'",
                  q + "-F i=@vars.json", q + "-f i=notjson", q + "--input vars.json"]
         for sep in ("input, : $i", "input,: $i", "input :, $i", "input:# c\n$i", "input # c\n: $i",
-                    "input:\r# c\r\n,$i"):
+                    "input:\r# c\r\n,$i", "input: $ i", "input: $,i", "input: $# c\ni"):
             qs = ("gh api graphql -f query='mutation($i: UpdateIssueInput!) { updateIssue("
                   + sep + ") { clientMutationId } }' ")
             cmds += [qs + "-f i=notjson", qs + "-F i=@vars.json"]
