@@ -251,6 +251,17 @@ class GateTest(unittest.TestCase):
                 self.assertTrue(any("cannot tell" in p for p in problems), problems)
         self.assertEqual(gate.decide("env --weird ls", make_repo(), TERMS), [])
 
+    def test_env_split_string_is_inspected(self):
+        for cmd in ("env -S 'gh issue comment 1 -b x'", "env --split-string='gh pr merge 5'",
+                    "env --split-string 'git push origin main'", "env -S'git push'",
+                    "env -iS 'gh issue comment 1 -b x'"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, make_repo(), TERMS)
+                self.assertTrue(any("cannot tell" in p for p in problems), problems)
+        for cmd in ("env -S 'echo hi'", "env --split-string='echo hi'"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, make_repo(), TERMS), [])
+
     def test_push_dry_run_flag_is_not_a_bypass(self):
         self.assertEqual(gate.decide("git push -n origin main", make_repo(), TERMS), [])
 

@@ -169,6 +169,11 @@ def _skip_options(words, index, wrapper):
         if word.startswith("--"):
             name = word.split("=", 1)[0]
             if name in long_value:
+                if wrapper == "env" and name == "--split-string":
+                    value = word.split("=", 1)[1] if "=" in word else (
+                        words[index] if index < len(words) else "")
+                    if _GH_OR_GIT.search(value):
+                        known = False
                 if "=" not in word:
                     index += 1
             elif name not in long_plain:
@@ -176,6 +181,10 @@ def _skip_options(words, index, wrapper):
             continue
         for position, char in enumerate(word[1:], 1):
             if char in short_value:
+                if wrapper == "env" and char == "S":
+                    value = word[position + 1:] or (words[index] if index < len(words) else "")
+                    if _GH_OR_GIT.search(value):
+                        known = False
                 if position == len(word) - 1:
                     index += 1
                 break
@@ -185,8 +194,25 @@ def _skip_options(words, index, wrapper):
     return index, known
 
 
+def _split_hit(words, start, end):
+    """True if an env -S / --split-string value in words[start:end] mentions gh or git."""
+    for position in range(start, end):
+        word = words[position]
+        if word.startswith("--split-string"):
+            value = word.split("=", 1)[1] if "=" in word else (
+                words[position + 1] if position + 1 < end else "")
+        elif word.startswith("-") and not word.startswith("--") and "S" in word:
+            tail = word[word.index("S") + 1:]
+            value = tail or (words[position + 1] if position + 1 < end else "")
+        else:
+            continue
+        if _GH_OR_GIT.search(value):
+            return True
+    return False
+
+
 def _call(words):
-    bad_env, unknown, index = False, False, 0
+    bad_env, unknown, split_hit, index = False, False, False, 0
     while index < len(words):
         word = words[index]
         wrapper = os.path.basename(word)
@@ -194,11 +220,14 @@ def _call(words):
             bad_env = bad_env or _bad_env(word)
             index += 1
         elif wrapper in _WRAPPERS:
-            index, known = _skip_options(words, index + 1, wrapper)
+            start = index + 1
+            index, known = _skip_options(words, start, wrapper)
             unknown = unknown or not known
+            if wrapper == "env" and not known:
+                split_hit = split_hit or _split_hit(words, start, index)
         else:
             break
-    unknown = unknown and any(_GH_OR_GIT.search(w) for w in words[index:])
+    unknown = unknown and (split_hit or any(_GH_OR_GIT.search(w) for w in words[index:]))
     if index >= len(words):
         return Call("", [], bad_env, unknown)
     return Call(os.path.basename(words[index]), words[index + 1:], bad_env, unknown)
