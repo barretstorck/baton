@@ -443,6 +443,11 @@ def _unscannable(value):
     return "$(" in value and not value.startswith(_INLINE_HEREDOC)
 
 
+def _dynamic(value):
+    """True when a directory argument is built by the shell, so where it points is unknown."""
+    return "$" in value or "`" in value
+
+
 def _read(path, bases):
     """Return (texts, problem) for a file a command publishes: the text in every base that holds it."""
     if path == "-":
@@ -475,11 +480,16 @@ def _find_config(dirs):
 def decide(command, cwd, terms):
     calls = [_call(words) for words in _invocations(tokenize(command))]
     dirs, items = [cwd], []
+    cwd_unknown = False
     for call in calls:
-        if call.program in ("cd", "pushd") and call.args:
-            dirs.append(os.path.join(cwd, os.path.expanduser(call.args[0])))
+        if call.program in ("cd", "pushd"):
+            if not call.args or call.args[0] == "-" or _dynamic(call.args[0]):
+                cwd_unknown = True
+            if call.args:
+                dirs.append(os.path.join(cwd, os.path.expanduser(call.args[0])))
         elif call.program == "git":
             item = _inspect_git(call)
+            cwd_unknown = cwd_unknown or any(_dynamic(path) for path in item.dirs)
             dirs.extend(os.path.join(cwd, os.path.expanduser(path)) for path in item.dirs)
             items.append(item)
         elif call.program == "gh":
@@ -508,6 +518,10 @@ def decide(command, cwd, terms):
                             "scanned; pass it literally, as an inline heredoc, or as a file")
         bodies = [_heredoc_text(body) for body in item.bodies]
         for path, is_body in item.files:
+            if cwd_unknown and path != "-" and not os.path.isabs(os.path.expanduser(path)):
+                problems.append(f"body file {path} is relative and the working directory cannot be "
+                                "worked out (cd to a variable, substitution or `-`); use an absolute path")
+                continue
             file_texts, problem = _read(path, bases)
             if problem:
                 problems.append(problem)

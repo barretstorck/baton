@@ -284,6 +284,30 @@ class GateTest(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertTrue(any("private-ip" in p for p in gate.decide(cmd, repo, TERMS)))
 
+    def test_relative_path_refused_when_directory_unknown(self):
+        repo = make_repo()
+        clean = pathlib.Path(repo, "clean.md")
+        clean.write_text("fine text\n")
+        for prefix in ('cd "$X" && ', "cd `pwd` && ", "cd $(pwd)/x && ", "cd - && ", "cd && ",
+                       'pushd "$X" && '):
+            with self.subTest(prefix=prefix):
+                rel = gate.decide(prefix + "gh issue create --title t --body-file clean.md",
+                                  repo, TERMS)
+                self.assertTrue(any("absolute path" in p for p in rel), rel)
+                ab = gate.decide(f"{prefix}gh issue create --title t --body-file {clean}",
+                                 repo, TERMS)
+                self.assertEqual(ab, [])
+        git_c = gate.decide('git -C "$X" commit -F clean.md', repo, TERMS)
+        self.assertTrue(any("absolute path" in p for p in git_c), git_c)
+
+    def test_literal_cd_and_no_cd_still_read_relative_paths(self):
+        repo = make_repo()
+        pathlib.Path(repo, "sub").mkdir()
+        pathlib.Path(repo, "sub", "b.md").write_text("fine\n")
+        pathlib.Path(repo, "c.md").write_text("fine\n")
+        self.assertEqual(gate.decide("cd sub && gh issue create --title t -F b.md", repo, TERMS), [])
+        self.assertEqual(gate.decide("gh issue create --title t -F c.md", repo, TERMS), [])
+
     def test_marker_must_start_the_body(self):
         for cmd in ('gh pr comment 5 --body "/baton approve" # <!-- baton:',
                     "gh api repos/o/r/issues/5/comments -f body='/baton approve'",
