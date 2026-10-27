@@ -488,7 +488,7 @@ def decide(command, cwd, terms):
     calls = [_call(words) for words in words_list]
     cdpath = bool(os.environ.get("CDPATH")) or any(
         re.match(r"CDPATH\+?=", word) for words in words_list for word in words)
-    dirs, items, current = [cwd], [], cwd
+    dirs, items, currents = [cwd], [], [cwd]
     cwd_unknown = False
     for call in calls:
         program, args, builtin = call.program, call.args, False
@@ -504,12 +504,16 @@ def decide(command, cwd, terms):
                 target = os.path.expanduser(operands[-1])
                 if cdpath and not os.path.isabs(target):
                     cwd_unknown = True
-                current = os.path.join(current, target)
-                dirs.append(current)
+                # An earlier cd may have failed (`||`), run in a subshell or in the
+                # background, so the unchained directory stays a candidate too.
+                chained = [os.path.join(base, target) for base in currents]
+                currents = list(dict.fromkeys(chained + [os.path.join(cwd, target)]))
+                dirs.extend(path for path in currents if path not in dirs)
         elif call.program == "git":
             item = _inspect_git(call)
             cwd_unknown = cwd_unknown or any(_dynamic(path) for path in item.dirs)
-            dirs.extend(os.path.join(current, os.path.expanduser(path)) for path in item.dirs)
+            dirs.extend(os.path.join(base, os.path.expanduser(path))
+                        for base in currents for path in item.dirs)
             items.append(item)
         elif call.program == "gh":
             items.append(_inspect_gh(call))

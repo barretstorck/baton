@@ -348,6 +348,20 @@ class GateTest(unittest.TestCase):
                 self.assertTrue(
                     gate.decide(prefix + "gh issue create --title t -F p.md", repo, TERMS))
 
+    def test_unchained_directory_stays_a_candidate_when_an_earlier_cd_may_not_apply(self):
+        repo = make_repo()
+        pathlib.Path(repo, "a").mkdir()
+        pathlib.Path(repo, "b").mkdir()
+        pathlib.Path(repo, "b", "p.md").write_text("host 192.168." + "7.7\n")
+        for prefix in ("cd a || cd b && ", "(cd a); cd b && ", "cd a & cd b && "):
+            with self.subTest(prefix=prefix):
+                self.assertTrue(
+                    gate.decide(prefix + "gh issue create --title t -F p.md", repo, TERMS))
+        pathlib.Path(repo, "a", "b").mkdir()
+        pathlib.Path(repo, "a", "b", "p.md").write_text("host 192.168." + "7.7\n")
+        self.assertTrue(
+            gate.decide("cd a && cd b && gh issue create --title t -F p.md", repo, TERMS))
+
     def test_pushd_plus_n_marks_directory_unknown(self):
         repo = make_repo()
         clean = pathlib.Path(repo, "clean.md")
