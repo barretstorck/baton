@@ -448,6 +448,12 @@ def _dynamic(value):
     return "$" in value or "`" in value
 
 
+def _literal_cd(args):
+    """True for exactly one plain directory argument: no option, glob, brace or expansion."""
+    return (len(args) == 1 and not args[0].startswith("-")
+            and not any(char in args[0] for char in "$`*?[{"))
+
+
 def _read(path, bases):
     """Return (texts, problem) for a file a command publishes: the text in every base that holds it."""
     if path == "-":
@@ -482,11 +488,15 @@ def decide(command, cwd, terms):
     dirs, items = [cwd], []
     cwd_unknown = False
     for call in calls:
-        if call.program in ("cd", "pushd"):
-            if not call.args or call.args[0] == "-" or _dynamic(call.args[0]):
+        program, args, builtin = call.program, call.args, False
+        if program == "builtin" and args and args[0] in ("cd", "pushd", "popd"):
+            program, args, builtin = args[0], args[1:], True
+        if program in ("cd", "pushd", "popd"):
+            if builtin or program == "popd" or not _literal_cd(args):
                 cwd_unknown = True
-            if call.args:
-                dirs.append(os.path.join(cwd, os.path.expanduser(call.args[0])))
+            operands = [arg for arg in args if not arg.startswith("-") or arg == "-"]
+            if operands and program != "popd":
+                dirs.append(os.path.join(cwd, os.path.expanduser(operands[-1])))
         elif call.program == "git":
             item = _inspect_git(call)
             cwd_unknown = cwd_unknown or any(_dynamic(path) for path in item.dirs)
