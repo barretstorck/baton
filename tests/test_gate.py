@@ -172,6 +172,40 @@ class GateTest(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertTrue(any("bypass" in p for p in gate.decide(cmd, make_repo(), TERMS)))
 
+    def test_environment_assignments_that_redirect_git_are_refused(self):
+        for cmd in ("GIT_DIR=x git commit -m a", "GIT_CONFIG_COUNT=1 git push",
+                    "GIT_EXEC_PATH=x git push", "env GIT_DIR=x git commit",
+                    "export GIT_DIR=x && git push", "export -- GIT_DIR=x; git push",
+                    "declare -x GIT_DIR=x; git commit", "typeset -x GIT_DIR=x; git commit",
+                    "readonly GIT_DIR=x; git commit", "local GIT_DIR=x; git commit",
+                    "GIT_DIR+=x git push", "export GIT_DIR+=x; git push",
+                    "HOME=/x git commit -m a", "XDG_CONFIG_HOME=/x git push",
+                    "BATON_PRIVATE_TERMS=/x git commit -m a", "env -i GIT_DIR=x git push",
+                    "env -u FOO GIT_DIR=x git push", "sudo -u root HOME=/x git push"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, make_repo(), TERMS)
+                self.assertTrue(any("bypass" in p for p in problems), problems)
+
+    def test_harmless_environment_assignments_are_allowed(self):
+        for cmd in ("GIT_AUTHOR_NAME=x git commit -m a", "GIT_COMMITTER_DATE=x git commit -m a",
+                    "FOO=1 git commit -m a"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, make_repo(), TERMS), [])
+
+    def test_wrapper_options_with_values_are_skipped(self):
+        for cmd in ("sudo -u root gh issue comment 1 -b x", "env -u FOO gh pr create -t x -b y",
+                    "env -C dir gh issue close 1", "sudo -g grp gh pr ready 5"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, make_repo(brief=None), TERMS)
+                self.assertTrue(any("baton" in p for p in problems), problems)
+
+    def test_unknown_wrapper_option_before_gh_or_git_is_refused(self):
+        for cmd in ("sudo --weird gh issue view 1", "env --weird git status"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, make_repo(), TERMS)
+                self.assertTrue(any("cannot tell" in p for p in problems), problems)
+        self.assertEqual(gate.decide("env --weird ls", make_repo(), TERMS), [])
+
     def test_push_dry_run_flag_is_not_a_bypass(self):
         self.assertEqual(gate.decide("git push -n origin main", make_repo(), TERMS), [])
 

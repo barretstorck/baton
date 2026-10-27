@@ -27,9 +27,29 @@ HOOK_TAG = githooks.HOOK_TAG
 _MAX_FILE = 1_000_000
 
 _PUNCTUATION = set("();<>|&")
-_WRAPPERS = {"env", "command", "sudo", "exec", "time", "nohup", "export"}
-_ASSIGNMENT = re.compile(r"^[A-Za-z_]\w*=")
-_BAD_ENV = re.compile(r"^(?:GIT_CONFIG\w*|GIT_DIR|GIT_WORK_TREE|BATON_PRIVATE_TERMS|HOME)=")
+# wrapper -> (short flags without a value, short flags that take a value,
+#             long flags without a value, long flags that take a value)
+_WRAPPERS = {
+    "env": ("i0v", "uCS", {"--ignore-environment", "--null", "--debug"},
+            {"--unset", "--chdir", "--split-string"}),
+    "command": ("pvV", "", set(), set()),
+    "sudo": ("AbEeHKklnPSsVvi", "ugphCrtTUDR", {"--background", "--preserve-env", "--login",
+                                                 "--non-interactive", "--shell", "--set-home"},
+             {"--user", "--group", "--host", "--prompt", "--close-from", "--role", "--type",
+              "--chdir", "--chroot"}),
+    "exec": ("cl", "a", set(), set()),
+    "time": ("pv", "fo", {"--portability", "--verbose", "--append"}, {"--format", "--output"}),
+    "nohup": ("", "", set(), set()),
+    "export": ("nfp", "", set(), set()),
+    "declare": ("xrfFgpaAilunt", "", set(), set()),
+    "typeset": ("xrfFgpaAilunt", "", set(), set()),
+    "readonly": ("afpA", "", set(), set()),
+    "local": ("xrafFgpAilunt", "", set(), set()),
+}
+_ASSIGNMENT = re.compile(r"^([A-Za-z_]\w*)\+?=")
+_SAFE_GIT_ENV = {"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE",
+                 "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_COMMITTER_DATE"}
+_BAD_ENV_NAMES = {"HOME", "XDG_CONFIG_HOME", "BATON_PRIVATE_TERMS"}
 _URL = re.compile(r"^(?:[\w.+-]+://|[\w.-]+@[\w.-]+:)")
 _VARIABLE = re.compile(r"^\$\{?\w+\}?$")
 _INLINE_HEREDOC = "$(cat <<"
@@ -78,6 +98,7 @@ class Call:
     program: str
     args: list
     bad_env: bool
+    unknown_option: bool = False
 
 
 @dataclass
@@ -117,17 +138,59 @@ def _invocations(tokens):
         yield current
 
 
-def _call(words):
-    bad_env, index = False, 0
-    while index < len(words) and (
-            _ASSIGNMENT.match(words[index]) or os.path.basename(words[index]) in _WRAPPERS):
-        bad_env = bad_env or bool(_BAD_ENV.match(words[index]))
+def _bad_env(word):
+    match = _ASSIGNMENT.match(word)
+    if not match:
+        return False
+    name = match.group(1)
+    return name in _BAD_ENV_NAMES or (name.startswith("GIT_") and name not in _SAFE_GIT_ENV)
+
+
+def _skip_options(words, index, wrapper):
+    """Skip a wrapper's options (and their values); return (index, all options known)."""
+    short_plain, short_value, long_plain, long_value = _WRAPPERS[wrapper]
+    known = True
+    while index < len(words) and words[index].startswith("-") and len(words[index]) > 1:
+        word = words[index]
         index += 1
-        while index < len(words) and words[index].startswith("-") and len(words[index]) > 1:
+        if word == "--":
+            break
+        if word.startswith("--"):
+            name = word.split("=", 1)[0]
+            if name in long_value:
+                if "=" not in word:
+                    index += 1
+            elif name not in long_plain:
+                known = False
+            continue
+        for position, char in enumerate(word[1:], 1):
+            if char in short_value:
+                if position == len(word) - 1:
+                    index += 1
+                break
+            if char not in short_plain:
+                known = False
+                break
+    return index, known
+
+
+def _call(words):
+    bad_env, unknown, index = False, False, 0
+    while index < len(words):
+        word = words[index]
+        wrapper = os.path.basename(word)
+        if _ASSIGNMENT.match(word):
+            bad_env = bad_env or _bad_env(word)
             index += 1
+        elif wrapper in _WRAPPERS:
+            index, known = _skip_options(words, index + 1, wrapper)
+            unknown = unknown or not known
+        else:
+            break
+    unknown = unknown and any(_GH_OR_GIT.search(w) for w in words[index:])
     if index >= len(words):
-        return Call("", [], bad_env)
-    return Call(os.path.basename(words[index]), words[index + 1:], bad_env)
+        return Call("", [], bad_env, unknown)
+    return Call(os.path.basename(words[index]), words[index + 1:], bad_env, unknown)
 
 
 def _options(args, value_opts):
@@ -304,6 +367,8 @@ def decide(command, cwd, terms):
     problems, items = [], []
     moves = any(_changes_directory(call) for call in calls)
     for call in calls:
+        if call.unknown_option:
+            problems.append(_WRAPPER_MESSAGE)
         if _is_evaluator(call.program):
             if any(_GH_OR_GIT.search(arg) for arg in call.args):
                 problems.append(_WRAPPER_MESSAGE)
