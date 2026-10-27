@@ -334,6 +334,47 @@ class GateTest(unittest.TestCase):
                 self.assertEqual(
                     gate.decide(f"{prog} sub && gh issue create --title t -F b.md", repo, TERMS), [])
 
+    def test_chained_cd_resolves_against_the_previous_directory(self):
+        repo = make_repo()
+        pathlib.Path(repo, "a", "b").mkdir(parents=True)
+        pathlib.Path(repo, "a", "b", "b.md").write_text("fine\n")
+        pathlib.Path(repo, "a", "b", "p.md").write_text("host 192.168." + "7.7\n")
+        pathlib.Path(repo, "p.md").write_text("fine text\n")
+        for prefix in ("cd a && cd b && ", "pushd a && pushd b && "):
+            with self.subTest(prefix=prefix):
+                self.assertEqual(
+                    gate.decide(prefix + "gh issue create --title t -F b.md", repo, TERMS), [])
+                self.assertTrue(
+                    gate.decide(prefix + "gh issue create --title t -F p.md", repo, TERMS))
+
+    def test_pushd_plus_n_marks_directory_unknown(self):
+        repo = make_repo()
+        clean = pathlib.Path(repo, "clean.md")
+        clean.write_text("fine text\n")
+        for prefix in ("pushd +1 && ", "pushd +0 && "):
+            with self.subTest(prefix=prefix):
+                rel = gate.decide(prefix + "gh issue create --title t -F clean.md", repo, TERMS)
+                self.assertTrue(any("absolute path" in p for p in rel), rel)
+                self.assertEqual(
+                    gate.decide(f"{prefix}gh issue create --title t -F {clean}", repo, TERMS), [])
+
+    def test_cdpath_with_relative_cd_marks_directory_unknown(self):
+        repo = make_repo()
+        clean = pathlib.Path(repo, "clean.md")
+        clean.write_text("fine text\n")
+        pathlib.Path(repo, "sub").mkdir()
+        pathlib.Path(repo, "sub", "b.md").write_text("fine\n")
+        for prefix in ("CDPATH=/x cd sub && ", "CDPATH=/x; cd sub && ",
+                       "export CDPATH=/x && cd sub && ", "env CDPATH=/x cd sub && "):
+            with self.subTest(prefix=prefix):
+                rel = gate.decide(prefix + "gh issue create --title t -F clean.md", repo, TERMS)
+                self.assertTrue(any("absolute path" in p for p in rel), rel)
+                self.assertEqual(
+                    gate.decide(f"{prefix}gh issue create --title t -F {clean}", repo, TERMS), [])
+        self.assertEqual(
+            gate.decide(f"export CDPATH=/x && cd {repo}/sub && gh issue create --title t -F b.md",
+                        repo, TERMS), [])
+
     def test_literal_cd_and_no_cd_still_read_relative_paths(self):
         repo = make_repo()
         pathlib.Path(repo, "sub").mkdir()
