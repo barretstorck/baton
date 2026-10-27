@@ -124,7 +124,8 @@ _API_CLOSE_MUTATION = re.compile(r"\b(?:closeIssue|reopenIssue|closePullRequest|
 _API_MUTATION = re.compile(r"\bmutation\b")
 _API_STATE_ARG = re.compile(r"(?<![$\w])state(?:Reason)?(?:[\s,]|#[^\n\r]*(?:[\r\n]|$))*:")
 _API_STATE_KEY = re.compile(r"\[(?:state|stateReason|state_reason)\]$")
-_API_INPUT_VAR = re.compile(r"\binput\s*:\s*\$(\w+)")
+_GQL_IGN = r"(?:[\s,]|#[^\n\r]*(?:[\r\n]|$))*"
+_API_INPUT_VAR = re.compile(r"\binput" + _GQL_IGN + ":" + _GQL_IGN + r"\$(\w+)")
 _API_GRAPHQL = re.compile(r"(?:^|/)graphql/?(?:\?|$)")
 _API_COMMENT = re.compile(r"/(?:comments|reviews)(?:/\d+)?(?:/|\?|$)")
 

@@ -273,6 +273,11 @@ class GateTest(unittest.TestCase):
                  q + "-F 'i[state_reason]=completed'", q + "-F 'i[input][state]=CLOSED'",
                  q + "-f i='{\"id\":\"X\",\"state\":\"CLOSED\"}'",
                  q + "-F i=@vars.json", q + "-f i=notjson", q + "--input vars.json"]
+        for sep in ("input, : $i", "input,: $i", "input :, $i", "input:# c\n$i", "input # c\n: $i",
+                    "input:\r# c\r\n,$i"):
+            qs = ("gh api graphql -f query='mutation($i: UpdateIssueInput!) { updateIssue("
+                  + sep + ") { clientMutationId } }' ")
+            cmds += [qs + "-f i=notjson", qs + "-F i=@vars.json"]
         for endpoint in ("/graphql", "https://api.github.com/graphql"):
             cmds.append(f"gh api {endpoint} -f query='mutation {{ closeIssue(input: {{id: \"X\"}}) "
                         f"{{ clientMutationId }} }}'")
