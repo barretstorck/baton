@@ -75,6 +75,24 @@ def _has_state_key(value):
     return False
 
 
+def _json_sets_state(text):
+    """True when `text` parses as JSON with a state key (`state`, `stateReason`, `state_reason`) at any depth."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return False
+    return _has_graphql_state_key(data)
+
+
+def _has_graphql_state_key(value):
+    if isinstance(value, dict):
+        return any(key in ("state", "stateReason", "state_reason") or _has_graphql_state_key(item)
+                   for key, item in value.items())
+    if isinstance(value, list):
+        return any(_has_graphql_state_key(item) for item in value)
+    return False
+
+
 def _rest_payload_problem(text):
     """A refusal for a REST payload file that sets state, or cannot be shown not to."""
     try:
@@ -103,6 +121,7 @@ def _graphql_input_problem(text):
 _API_CLOSE_MUTATION = re.compile(r"\b(?:closeIssue|reopenIssue|closePullRequest|reopenPullRequest)\b")
 _API_MUTATION = re.compile(r"\bmutation\b")
 _API_STATE_ARG = re.compile(r"(?<![$\w])state(?:Reason)?(?:[\s,]|#[^\n\r]*(?:[\r\n]|$))*:")
+_API_STATE_KEY = re.compile(r"\[(?:state|stateReason|state_reason)\]$")
 _API_GRAPHQL = re.compile(r"(?:^|/)graphql/?(?:\?|$)")
 _API_COMMENT = re.compile(r"/(?:comments|reviews)(?:/\d+)?(?:/|\?|$)")
 
@@ -272,7 +291,7 @@ def _graphql_sets_state(content):
 def _inspect_gh_api(call, item):
     has_payload = False
     payload_files = []
-    state_endpoint = graphql = state_field = close_mutation = False
+    state_endpoint = graphql = state_field = close_mutation = variable_state = False
     for flag, value in _options(call.args, _API_FIELD_OPTS | {"--input"}):
         if flag is None:
             state_endpoint = state_endpoint or bool(_API_STATE_ENDPOINT.search(value))
@@ -291,6 +310,8 @@ def _inspect_gh_api(call, item):
         key, _, content = value.partition("=")
         state_field = state_field or key in ("state", "state_reason")
         close_mutation = close_mutation or _graphql_sets_state(content)
+        variable_state = (variable_state or bool(_API_STATE_KEY.search(key))
+                          or (not content.startswith("@") and _json_sets_state(content)))
         if flag in _API_TYPED_OPTS and content.startswith("@"):
             item.files.append((content[1:], key == "body"))
             payload_files.append((content[1:], False))
@@ -306,7 +327,7 @@ def _inspect_gh_api(call, item):
             if kind == "rest" and not is_input:
                 continue  # `-F field=@file` is one field's text, not a JSON payload
             item.state_files[path] = "graphql-input" if kind == "graphql" and is_input else kind
-    if (state_endpoint and state_field) or (graphql and close_mutation):
+    if (state_endpoint and state_field) or (graphql and (close_mutation or variable_state)):
         item.problems.append(_CLOSE_MESSAGE)
 
 
