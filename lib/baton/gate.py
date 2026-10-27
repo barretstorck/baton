@@ -484,8 +484,10 @@ def _find_config(dirs):
 
 
 def decide(command, cwd, terms):
-    calls = [_call(words) for words in _invocations(tokenize(command))]
-    dirs, items = [cwd], []
+    words_list = list(_invocations(tokenize(command)))
+    calls = [_call(words) for words in words_list]
+    cdpath = any(re.match(r"CDPATH=", word) for words in words_list for word in words)
+    dirs, items, current = [cwd], [], cwd
     cwd_unknown = False
     for call in calls:
         program, args, builtin = call.program, call.args, False
@@ -495,12 +497,18 @@ def decide(command, cwd, terms):
             if builtin or program == "popd" or not _literal_cd(args):
                 cwd_unknown = True
             operands = [arg for arg in args if not arg.startswith("-") or arg == "-"]
+            if program == "pushd" and any(arg[:1] == "+" for arg in args):
+                cwd_unknown = True
             if operands and program != "popd":
-                dirs.append(os.path.join(cwd, os.path.expanduser(operands[-1])))
+                target = os.path.expanduser(operands[-1])
+                if cdpath and not os.path.isabs(target):
+                    cwd_unknown = True
+                current = os.path.join(current, target)
+                dirs.append(current)
         elif call.program == "git":
             item = _inspect_git(call)
             cwd_unknown = cwd_unknown or any(_dynamic(path) for path in item.dirs)
-            dirs.extend(os.path.join(cwd, os.path.expanduser(path)) for path in item.dirs)
+            dirs.extend(os.path.join(current, os.path.expanduser(path)) for path in item.dirs)
             items.append(item)
         elif call.program == "gh":
             items.append(_inspect_gh(call))
