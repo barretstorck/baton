@@ -94,6 +94,13 @@ def history(comments, owner):
     return events
 
 
+def json_default(value):
+    """json.dumps fallback: sets (the failure ids) become sorted lists."""
+    if isinstance(value, (set, frozenset)):
+        return sorted(value)
+    return str(value)
+
+
 def verify_state(cfg, comments, owner, head):
     """The verification result recorded by the latest review of `head`.
 

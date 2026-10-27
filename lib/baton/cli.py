@@ -163,7 +163,8 @@ def cmd_review(args):
         pr = json.loads(run.run(["gh", "pr", "view", args[1], "--json",
                                  "number,headRefName,headRefOid,comments"]))
         print(json.dumps(review.current(pr, repo["owner"]["login"], cfg, run.run,
-                                        repo["defaultBranchRef"]["name"]), indent=2))
+                                        repo["defaultBranchRef"]["name"]),
+                         indent=2, default=review.json_default))
         return 0
     if len(args) == 5 and args[0] == "post" and args[1].isdigit():
         _, number, verdict, commit, path = args
