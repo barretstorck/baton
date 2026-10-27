@@ -349,6 +349,15 @@ class GateTest(unittest.TestCase):
                 self.assertTrue(
                     gate.decide(prefix + "gh issue create --title t -F p.md", repo, TERMS))
 
+    def test_many_chained_cds_are_bounded_and_leave_the_directory_unknown(self):
+        repo = make_repo()
+        pathlib.Path(repo, "b.md").write_text("fine\n")
+        command = " && ".join(f"cd d{i}" for i in range(600)) + " && gh issue create --title t -F b.md"
+        start = time.monotonic()
+        problems = gate.decide(command, repo, TERMS)
+        self.assertLess(time.monotonic() - start, 5)
+        self.assertTrue(problems)
+
     def test_unchained_directory_stays_a_candidate_when_an_earlier_cd_may_not_apply(self):
         repo = make_repo()
         pathlib.Path(repo, "a").mkdir()

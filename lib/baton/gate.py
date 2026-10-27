@@ -483,6 +483,9 @@ def _find_config(dirs):
     return None
 
 
+_MAX_CANDIDATES = 64
+
+
 def decide(command, cwd, terms):
     words_list = list(_invocations(tokenize(command)))
     calls = [_call(words) for words in words_list]
@@ -507,8 +510,14 @@ def decide(command, cwd, terms):
                 # An earlier cd may have failed (`||`), run in a subshell or in the
                 # background, so the unchained directory stays a candidate too.
                 chained = [os.path.join(base, target) for base in currents]
-                currents = list(dict.fromkeys(chained + [os.path.join(cwd, target)]))
-                dirs.extend(path for path in currents if path not in dirs)
+                candidates = list(dict.fromkeys(chained + [os.path.join(cwd, target)]))
+                if len(candidates) > _MAX_CANDIDATES or len(dirs) > _MAX_CANDIDATES:
+                    # Too many chained cds to track: stop adding candidates, treat as unknown.
+                    cwd_unknown = True
+                    currents = candidates[:_MAX_CANDIDATES]
+                else:
+                    currents = candidates
+                    dirs.extend(path for path in currents if path not in dirs)
         elif call.program == "git":
             item = _inspect_git(call)
             cwd_unknown = cwd_unknown or any(_dynamic(path) for path in item.dirs)
