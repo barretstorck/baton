@@ -115,6 +115,8 @@ def _graphql_input_problem(text):
     query = data.get("query")
     if _graphql_sets_state(text) or (isinstance(query, str) and _graphql_sets_state(query)):
         return _CLOSE_MESSAGE
+    if _has_graphql_state_key(data.get("variables")):
+        return _CLOSE_MESSAGE
     return None
 
 

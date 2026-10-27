@@ -78,6 +78,19 @@ class GateTest(unittest.TestCase):
         self.assertTrue(any("not a valid JSON object" in p
                             for p in self._api(cmd, q_json="mutation { closeIssue }")))
 
+    def test_input_file_graphql_variables_with_state_key_are_refused(self):
+        cmd = "gh api graphql --input q.json"
+        q = "mutation($i: UpdateIssueInput!) { updateIssue(input: $i) { clientMutationId } }"
+        for variables in ({"i": {"state": "CLOSED"}}, {"a": [{"b": {"stateReason": "x"}}]},
+                          {"i": {"state_reason": "x"}}):
+            payload = json.dumps({"query": q, "variables": variables})
+            self.assertTrue(self._closes(self._api(cmd, q_json=payload)), variables)
+        for payload in (json.dumps({"query": q, "variables": {"i": {"title": "t", "id": "X"}}}),
+                        json.dumps({"query": "query { viewer { login } }", "state": "x",
+                                    "variables": {"n": 1}})):
+            self.assertFalse(self._closes(self._api(cmd, q_json=payload)), payload)
+        self.assertNotIn(gate._CLOSE_MESSAGE, self._api(cmd, q_json="not json"))
+
     def test_input_file_graphql_is_refused(self):
         cmd = "gh api graphql --input q.json"
         body = json.dumps({"query": 'mutation { closeIssue(input: {issueId: "x"}) { clientMutationId } }'})
