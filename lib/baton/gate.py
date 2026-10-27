@@ -115,7 +115,15 @@ def _graphql_input_problem(text):
     query = data.get("query")
     if _graphql_sets_state(text) or (isinstance(query, str) and _graphql_sets_state(query)):
         return _CLOSE_MESSAGE
-    if _has_graphql_state_key(data.get("variables")):
+    variables = data.get("variables")
+    if isinstance(variables, str):
+        try:
+            variables = json.loads(variables)
+        except ValueError:
+            return _UNPARSABLE_MESSAGE
+    if variables is not None and not isinstance(variables, dict):
+        return _UNPARSABLE_MESSAGE
+    if _has_graphql_state_key(variables):
         return _CLOSE_MESSAGE
     return None
 

@@ -91,6 +91,19 @@ class GateTest(unittest.TestCase):
             self.assertFalse(self._closes(self._api(cmd, q_json=payload)), payload)
         self.assertNotIn(gate._CLOSE_MESSAGE, self._api(cmd, q_json="not json"))
 
+    def test_input_file_graphql_string_variables_are_checked(self):
+        cmd = "gh api graphql --input q.json"
+        q = "mutation($i: UpdateIssueInput!) { updateIssue(input: $i) { clientMutationId } }"
+
+        def run(variables):
+            return self._api(cmd, q_json=json.dumps({"query": q, "variables": variables}))
+        self.assertTrue(self._closes(run(json.dumps({"i": {"state": "CLOSED"}}))))
+        self.assertIn(gate._UNPARSABLE_MESSAGE, run("not json"))
+        self.assertIn(gate._UNPARSABLE_MESSAGE, run("[1]"))
+        self.assertIn(gate._UNPARSABLE_MESSAGE, run(5))
+        self.assertIn(gate._UNPARSABLE_MESSAGE, run([{"i": {"state": "x"}}]))
+        self.assertEqual([], run(json.dumps({"i": {"title": "t"}})))
+
     def test_input_file_graphql_is_refused(self):
         cmd = "gh api graphql --input q.json"
         body = json.dumps({"query": 'mutation { closeIssue(input: {issueId: "x"}) { clientMutationId } }'})
