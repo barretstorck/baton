@@ -565,3 +565,56 @@ def replace_issue_plan(cfg, runner, number, from_id, new_text, terms, drop=False
     found["replaced"], found["written"] = changes
     found["dropped"] = changes[0][len(changes[1]):]
     return found
+
+
+def _section_start(text, found):
+    return next(s for _, _, s, e in _headings(text) if e == found[0])
+
+
+def set_plan(body, section_text):
+    """`body` with its plan replaced by `section_text`, a whole `## Developer Plan` section."""
+    section = section_text if section_text.endswith("\n") else section_text + "\n"
+    first = section.lstrip().splitlines()[0].strip() if section.strip() else ""
+    if first.lower() != "## developer plan":
+        raise TaskError("the plan must start with the heading '## Developer Plan'")
+    problems = layout_problems(section)
+    if problems:
+        raise TaskError("plan not in the task layout: " + "; ".join(problems))
+    where = span(section, "developer plan")
+    tasks = _blocks(section[where[0]:where[1]])[1]
+    if not tasks:
+        raise TaskError("the plan has no task ('- [ ] Task <n>: <title>')")
+    ids = [task["id"] for task in tasks]
+    if ids != [str(n) for n in range(1, len(ids) + 1)]:
+        raise TaskError("tasks must be numbered 1, 2, 3 in order; found " + ", ".join(ids))
+    text = body or ""
+    lines = text.splitlines(keepends=True)
+    if lines and re.match(r"^Plan:", lines[0]):
+        text = "".join(lines[1:]).lstrip("\n")
+    old = span(text, "plan")
+    if old is not None:
+        text = text[:_section_start(text, old)] + text[old[1]:]
+    top = [s for lvl, name, s, e in _headings(text) if lvl == 2 and name == "verification"]
+    for start in reversed(top):
+        end = next((s for lvl, _, s, _ in _headings(text) if s > start and lvl <= 2), len(text))
+        text = text[:start] + text[end:]
+    decisions = [s for lvl, name, s, e in _headings(text) if lvl == 2 and name == "decisions"]
+    if decisions:
+        at = decisions[0]
+        return text[:at] + section.rstrip("\n") + "\n\n" + text[at:]
+    return text.rstrip("\n") + ("\n\n" if text.strip() else "") + section
+
+
+def set_issue_plan(cfg, runner, number, section_text, terms):
+    """Write a `## Developer Plan` into the issue body (privacy scan first)."""
+    findings = scan.scan_text(section_text, terms, cfg.data["privacy_allow"])
+    if findings:
+        raise TaskError("plan not changed; privacy scan found: "
+                        + "; ".join(scan.describe(findings)))
+    body, link = _linked(runner, number, cfg.data["docs"]["dir"])
+    if link is not None:
+        raise TaskError(f"issue #{number} still has a 'Plan:' link; "
+                        f"run 'baton plan migrate {number}' first")
+    new = set_plan(body, section_text)
+    _save_issue(runner, number, new)
+    return plan(new)

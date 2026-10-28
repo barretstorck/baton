@@ -871,3 +871,60 @@ class LayoutProblemsTest(unittest.TestCase):
         problems = checklist.layout_problems(self.body(bad, _dev_task(2, "Two")))
         self.assertEqual(len(problems), 1)
         self.assertIn("task 1", problems[0])
+
+
+def _section(n=2, extra=""):
+    return (f"## Developer Plan\n\nWritten against: {SHA}\n\n### Verification\n`make`\n\n"
+            + "".join(_dev_task(i, f"T{i}") for i in range(1, n + 1)) + extra)
+
+
+class SetPlanTest(unittest.TestCase):
+    def test_replaces_section_and_keeps_surroundings(self):
+        body = "## Context\nx\n\n## Developer Plan\nold\n\n## Decisions\n- kept\n"
+        new = checklist.set_plan(body, _section())
+        self.assertIn("## Context\nx\n", new)
+        self.assertNotIn("old", new)
+        self.assertIn("Task 2: T2", new)
+        self.assertTrue(new.endswith("## Decisions\n- kept\n"))
+
+    def test_replaces_legacy_plan_and_drops_verification_and_link(self):
+        body = ("Plan: [p.md](https://x/blob/b/p.md)\n\n## Context\nx\n\n## Plan\nold\n\n"
+                "## Verification\n`old`\n\n## Decisions\n- d\n")
+        new = checklist.set_plan(body, _section())
+        self.assertFalse(new.startswith("Plan:"))
+        self.assertNotIn("old", new)
+        self.assertEqual(new.count("Verification"), 1)
+
+    def test_inserts_before_decisions(self):
+        new = checklist.set_plan("## Context\nx\n\n## Decisions\n- d\n", _section())
+        self.assertLess(new.index("## Developer Plan"), new.index("## Decisions"))
+
+    def test_appends_without_decisions(self):
+        new = checklist.set_plan("## Context\nx\n", _section())
+        self.assertTrue(new.rstrip().endswith("</details>"))
+        self.assertIn("## Context\nx\n\n## Developer Plan", new)
+
+    def test_refusals(self):
+        for bad in ("## Plan\n" + _dev_task(1, "A"),
+                    _section().replace("  <summary>Click to see plan details</summary>", "  <summary>x</summary>"),
+                    "## Developer Plan\n\nno tasks\n",
+                    "## Developer Plan\n\n" + _dev_task(1, "A") + _dev_task(3, "C")):
+            with self.assertRaises(checklist.TaskError):
+                checklist.set_plan("## Context\nx\n", bad)
+
+    def test_issue_level_writes_body(self):
+        runner = issue_runner("## Context\nx\n")
+        found = checklist.set_issue_plan(cfg(), runner, 7, _section(), [])
+        self.assertEqual(len(found["tasks"]), 2)
+        self.assertTrue(any("issue edit" in line for line in runner.lines()))
+
+    def test_issue_level_refusals_send_nothing(self):
+        link = "Plan: [p.md](https://github.com/o/r/blob/issue-7-x/docs/baton/plans/p.md)\n\nx\n"
+        cases = [("## Context\nx\n", _section().replace("`make`", "host " + ".".join(["192", "168", "1", "20"]))),
+                 (link, _section()),
+                 ("## Context\nx\n", _section(extra="y" * 70000))]
+        for body, text in cases:
+            runner = issue_runner(body)
+            with self.assertRaises(checklist.TaskError):
+                checklist.set_issue_plan(cfg(), runner, 7, text, [])
+            self.assertFalse(any("issue edit" in line for line in runner.lines()))
