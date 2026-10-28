@@ -80,6 +80,21 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("baton plan against", skill)
         agent = (ROOT / "agents" / "baton-refiner.md").read_text()
         self.assertIn("Re-refine issue", agent)
+        self.assertIn("baton plan replace", skill)
+        self.assertIn("Developer Plan", skill)
+
+    def test_refine_skill_writes_plan_into_body(self):
+        skill = (ROOT / "skills" / "refine" / "SKILL.md").read_text()
+        self.assertIn("baton plan set", skill)
+        self.assertIn("Click to see plan details", skill)
+        self.assertIn("baton plan migrate", skill)
+        for gone in ("baton plan commit", "baton plan link"):
+            self.assertNotIn(gone, skill)
+        self.assertEqual(skill.count("refs/plans"), 1)
+        agent = (ROOT / "agents" / "baton-refiner.md").read_text()
+        self.assertIn("baton plan set", agent)
+        self.assertNotIn("baton plan commit", agent)
+        self.assertNotIn("refs/plans", agent)
 
     def test_agents_declare_restricted_tools(self):
         expected = {
