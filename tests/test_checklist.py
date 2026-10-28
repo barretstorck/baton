@@ -735,9 +735,11 @@ class RefPlanTest(unittest.TestCase):
         with self.assertRaises(checklist.TaskError):
             checklist.add_as_built(self.TEXT, "plan", "9", "x")
 
-    def test_as_built_is_refused_for_other_plans(self):
+    def test_as_built_is_refused_for_a_branch_plan(self):
+        link = planfile.link_line("o/r", "issue-7-x", "docs/baton/plans/7-x.md")
+        runner = FakeRunner({"gh issue view 7": json.dumps({"body": link + "\n"})})
         with self.assertRaises(checklist.TaskError):
-            checklist.tick_issue(issue_runner(), 7, "2", as_built="x")
+            checklist.tick_issue(runner, 7, "2", as_built="x")
 
     def test_replace_commits_and_pushes_to_the_ref(self):
         runner = self.runner()
@@ -799,9 +801,7 @@ class WrittenAgainstTest(unittest.TestCase):
         self.assertEqual(lines[-1], f"git push origin {RefPlanTest.NEW}:refs/plans/7")
         self.assertFalse(any("issue edit" in l for l in lines))
 
-    def test_branch_or_body_plan_is_refused(self):
-        with self.assertRaises(checklist.TaskError):
-            checklist.against_issue_plan(cfg(), issue_runner(), 7, self.NEW)
+    def test_branch_plan_is_refused(self):
         link = planfile.link_line("o/r", "issue-7-x", "docs/baton/plans/7-x.md")
         runner = FakeRunner({"gh issue view 7": json.dumps({"body": link + "\n"})})
         with self.assertRaises(checklist.TaskError):
@@ -928,3 +928,49 @@ class SetPlanTest(unittest.TestCase):
             with self.assertRaises(checklist.TaskError):
                 checklist.set_issue_plan(cfg(), runner, 7, text, [])
             self.assertFalse(any("issue edit" in line for line in runner.lines()))
+
+
+class BodyPlanTest(unittest.TestCase):
+    NEW = "e" * 40
+
+    def run_with(self, fn):
+        runner = issue_runner(DEV_BODY)
+        written = []
+        original = runner.__call__
+
+        def capture(argv, cwd=None):
+            if argv[:3] == ["gh", "issue", "edit"]:
+                written.append(pathlib.Path(argv[argv.index("--body-file") + 1]).read_text())
+            return original(argv, cwd)
+
+        result = fn(capture)
+        return result, written
+
+    def test_against_replaces_the_sha_and_writes_once(self):
+        found, written = self.run_with(
+            lambda r: checklist.against_issue_plan(cfg(), r, 7, self.NEW))
+        self.assertEqual(written, [DEV_BODY.replace(SHA, self.NEW)])
+        self.assertEqual(found["written_against"], self.NEW)
+
+    def test_tick_with_as_built_is_one_write(self):
+        changed, written = self.run_with(
+            lambda r: checklist.tick_issue(r, 7, "2", as_built="`g(x)`"))
+        self.assertTrue(changed)
+        self.assertEqual(len(written), 1)
+        self.assertIn("- [x] Task 2: Second step", written[0])
+        self.assertIn("  - Provides: `g()`\n  - Provides (as built): `g(x)`\n", written[0])
+
+    def test_already_ticked_with_as_built_writes_nothing(self):
+        changed, written = self.run_with(
+            lambda r: checklist.tick_issue(r, 7, "1", as_built="x"))
+        self.assertFalse(changed)
+        self.assertEqual(written, [])
+
+    def test_issue_plan_lists_the_tasks(self):
+        found = checklist.issue_plan(issue_runner(DEV_BODY), 7)
+        self.assertEqual([t["id"] for t in found["tasks"]], ["1", "2"])
+        self.assertEqual(found["source"], "body")
+
+    def test_issue_plan_error_names_developer_plan(self):
+        with self.assertRaisesRegex(checklist.TaskError, "## Developer Plan"):
+            checklist.issue_plan(issue_runner("## Context\nx\n"), 7)

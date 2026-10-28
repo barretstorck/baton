@@ -376,7 +376,7 @@ def issue_plan(runner, number, docs_dir=None):
     text, link = plan_source(runner, issue_body(runner, number), docs_dir=docs_dir)
     found = plan(text)
     if found is None:
-        raise TaskError(f"issue #{number} has no '## Plan' section"
+        raise TaskError(f"issue #{number} has no '## Developer Plan' section"
                         + (f" in {link['path']}" if link else ""))
     found["source"] = "file" if link else "body"
     if link:
@@ -440,14 +440,16 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None):
         print(f"push with: git push --atomic origin HEAD:refs/heads/<branch> "
               f"{sha}:{link['ref']}")
         return True
-    if as_built:
-        raise TaskError("--as-built needs a plan kept at refs/plans/<N>; "
-                        "edit the plan file or the issue by hand for this plan")
     if link is None:
         new, changed = tick(body, "plan", str(task_id))
         if changed:
+            if as_built:
+                new = add_as_built(new, "plan", str(task_id), as_built)
             _save_issue(runner, number, new)
         return changed
+    if as_built:
+        raise TaskError("--as-built needs a plan in the issue body or at refs/plans/<N>; "
+                        "edit the plan file by hand for this plan")
     from . import planfile
     planfile.check_write(cwd, link["path"])
     path = os.path.join(cwd, link["path"])
@@ -534,11 +536,16 @@ def set_written_against(text, sha):
 
 
 def against_issue_plan(cfg, runner, number, sha):
-    """Set `Written against:` on the plan kept at `refs/plans/<N>`: one commit, pushed."""
+    """Set `Written against:` on the plan: in the issue body, or one pushed commit on
+    `refs/plans/<N>` when the issue still links a ref plan."""
     from . import planfile
-    _, link = _linked(runner, number, cfg.data["docs"]["dir"])
-    if link is None or link["kind"] != "ref":
-        raise TaskError(f"issue #{number}'s plan is not on refs/plans/{number}")
+    body, link = _linked(runner, number, cfg.data["docs"]["dir"])
+    if link is None:
+        new = set_written_against(body, sha)
+        _save_issue(runner, number, new)
+        return plan(new)
+    if link["kind"] != "ref":
+        raise TaskError(f"issue #{number}'s plan is not in the body or on refs/plans/{number}")
     text = planfile.read(runner, link["ref"], link["path"])
     new = set_written_against(text, sha)
     planfile.push(runner, number, planfile.write(
