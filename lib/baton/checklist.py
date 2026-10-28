@@ -376,7 +376,7 @@ def issue_plan(runner, number, docs_dir=None):
     text, link = plan_source(runner, issue_body(runner, number), docs_dir=docs_dir)
     found = plan(text)
     if found is None:
-        raise TaskError(f"issue #{number} has no '## Plan' section"
+        raise TaskError(f"issue #{number} has no '## Developer Plan' section"
                         + (f" in {link['path']}" if link else ""))
     found["source"] = "file" if link else "body"
     if link:
@@ -417,7 +417,8 @@ def _linked(runner, number, docs_dir=None):
     return body, link
 
 
-def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None):
+def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None,
+               terms=None, allow=()):
     """Tick a plan task. False when it was already ticked (nothing is written).
 
     A plan at `refs/plans/<N>` is ticked by a new commit on that ref (with `as_built`, a
@@ -426,6 +427,11 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None):
     its file under `cwd` (the developer's checkout) and the issue is not edited; the developer
     commits the file with the task's code. A plan in the issue body is ticked in the issue.
     """
+    if as_built:
+        findings = scan.scan_text(as_built, terms or [], allow)
+        if findings:
+            raise TaskError("plan not changed; privacy scan found: "
+                            + "; ".join(scan.describe(findings)))
     body, link = _linked(runner, number, docs_dir)
     if link is not None and link["kind"] == "ref":
         from . import planfile
@@ -440,14 +446,16 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None):
         print(f"push with: git push --atomic origin HEAD:refs/heads/<branch> "
               f"{sha}:{link['ref']}")
         return True
-    if as_built:
-        raise TaskError("--as-built needs a plan kept at refs/plans/<N>; "
-                        "edit the plan file or the issue by hand for this plan")
     if link is None:
         new, changed = tick(body, "plan", str(task_id))
         if changed:
+            if as_built:
+                new = add_as_built(new, "plan", str(task_id), as_built)
             _save_issue(runner, number, new)
         return changed
+    if as_built:
+        raise TaskError("--as-built needs a plan in the issue body or at refs/plans/<N>; "
+                        "edit the plan file by hand for this plan")
     from . import planfile
     planfile.check_write(cwd, link["path"])
     path = os.path.join(cwd, link["path"])
@@ -534,11 +542,16 @@ def set_written_against(text, sha):
 
 
 def against_issue_plan(cfg, runner, number, sha):
-    """Set `Written against:` on the plan kept at `refs/plans/<N>`: one commit, pushed."""
+    """Set `Written against:` on the plan: in the issue body, or one pushed commit on
+    `refs/plans/<N>` when the issue still links a ref plan."""
     from . import planfile
-    _, link = _linked(runner, number, cfg.data["docs"]["dir"])
-    if link is None or link["kind"] != "ref":
-        raise TaskError(f"issue #{number}'s plan is not on refs/plans/{number}")
+    body, link = _linked(runner, number, cfg.data["docs"]["dir"])
+    if link is None:
+        new = set_written_against(body, sha)
+        _save_issue(runner, number, new)
+        return plan(new)
+    if link["kind"] != "ref":
+        raise TaskError(f"issue #{number}'s plan is not in the body or on refs/plans/{number}")
     text = planfile.read(runner, link["ref"], link["path"])
     new = set_written_against(text, sha)
     planfile.push(runner, number, planfile.write(
@@ -565,3 +578,56 @@ def replace_issue_plan(cfg, runner, number, from_id, new_text, terms, drop=False
     found["replaced"], found["written"] = changes
     found["dropped"] = changes[0][len(changes[1]):]
     return found
+
+
+def _section_start(text, found):
+    return next(s for _, _, s, e in _headings(text) if e == found[0])
+
+
+def set_plan(body, section_text):
+    """`body` with its plan replaced by `section_text`, a whole `## Developer Plan` section."""
+    section = section_text if section_text.endswith("\n") else section_text + "\n"
+    first = section.lstrip().splitlines()[0].strip() if section.strip() else ""
+    if first.lower() != "## developer plan":
+        raise TaskError("the plan must start with the heading '## Developer Plan'")
+    problems = layout_problems(section)
+    if problems:
+        raise TaskError("plan not in the task layout: " + "; ".join(problems))
+    where = span(section, "developer plan")
+    tasks = _blocks(section[where[0]:where[1]])[1]
+    if not tasks:
+        raise TaskError("the plan has no task ('- [ ] Task <n>: <title>')")
+    ids = [task["id"] for task in tasks]
+    if ids != [str(n) for n in range(1, len(ids) + 1)]:
+        raise TaskError("tasks must be numbered 1, 2, 3 in order; found " + ", ".join(ids))
+    text = body or ""
+    lines = text.splitlines(keepends=True)
+    if lines and re.match(r"^Plan:", lines[0]):
+        text = "".join(lines[1:]).lstrip("\n")
+    old = span(text, "plan")
+    if old is not None:
+        text = text[:_section_start(text, old)] + text[old[1]:]
+    top = [s for lvl, name, s, e in _headings(text) if lvl == 2 and name == "verification"]
+    for start in reversed(top):
+        end = next((s for lvl, _, s, _ in _headings(text) if s > start and lvl <= 2), len(text))
+        text = text[:start] + text[end:]
+    decisions = [s for lvl, name, s, e in _headings(text) if lvl == 2 and name == "decisions"]
+    if decisions:
+        at = decisions[0]
+        return text[:at] + section.rstrip("\n") + "\n\n" + text[at:]
+    return text.rstrip("\n") + ("\n\n" if text.strip() else "") + section
+
+
+def set_issue_plan(cfg, runner, number, section_text, terms):
+    """Write a `## Developer Plan` into the issue body (privacy scan first)."""
+    findings = scan.scan_text(section_text, terms, cfg.data["privacy_allow"])
+    if findings:
+        raise TaskError("plan not changed; privacy scan found: "
+                        + "; ".join(scan.describe(findings)))
+    body, link = _linked(runner, number, cfg.data["docs"]["dir"])
+    if link is not None:
+        raise TaskError(f"issue #{number} still has a 'Plan:' link; "
+                        f"run 'baton plan migrate {number}' first")
+    new = set_plan(body, section_text)
+    _save_issue(runner, number, new)
+    return plan(new)

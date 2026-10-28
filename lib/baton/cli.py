@@ -275,7 +275,9 @@ def cmd_task(args):
         cfg = _require_config()
         if args[1] == "issue":
             changed = checklist.tick_issue(run.run, int(args[2]), args[3], cwd=os.getcwd(),
-                                           docs_dir=cfg.data["docs"]["dir"], as_built=as_built)
+                                           docs_dir=cfg.data["docs"]["dir"], as_built=as_built,
+                                           terms=scan.load_terms() if as_built else None,
+                                           allow=cfg.data["privacy_allow"])
         else:
             if as_built:
                 print(_TASK_USAGE, file=sys.stderr)
@@ -306,58 +308,32 @@ def cmd_plan(args):
                 print(f"{label} task {task_id}: {title}")
         print(json.dumps(found, indent=2))
         return 0
+    if len(args) == 3 and args[0] == "set" and args[1].isdigit():
+        text = comment.read_body(args[2], sys.stdin)
+        found = checklist.set_issue_plan(_require_config(), run.run, int(args[1]), text,
+                                         scan.load_terms())
+        print(f"set Developer Plan of #{args[1]}: {len(found)} task(s)")
+        return 0
     if len(args) == 3 and args[0] == "against" and args[1].isdigit():
         checklist.against_issue_plan(_require_config(), run.run, int(args[1]), args[2])
         print(f"written against {args[2]}")
         return 0
-    if len(args) == 4 and args[0] == "commit" and args[1].isdigit():
-        cfg = _require_config()
-        number = int(args[1])
-        text = comment.read_body(args[3], sys.stdin)
-        title = json.loads(run.run(["gh", "issue", "view", str(number), "--json", "title"]))["title"]
-        sha = planfile.write(run.run, number, args[2], text, f"Plan for #{number}: {title}")
-        planfile.push(run.run, number, sha)
-        print(sha)
+    if args and args[0] in ("commit", "pin", "link") and len(args) >= 2 and args[1].isdigit():
+        print("deprecated: plans live in the issue body; use `baton plan set <N> <file>`",
+              file=sys.stderr)
         return 0
-    if len(args) == 2 and args[0] == "pin" and args[1].isdigit():
-        cfg = _require_config()
-        sha = planfile.pin(run.run, _repo_name(), int(args[1]), docs_dir=cfg.data["docs"]["dir"])
-        print(sha if sha else "nothing to pin")
-        return 0
-    if len(args) >= 2 and args[0] == "link" and args[1].isdigit():
-        number, rest = int(args[1]), args[2:]
-        if len(rest) == 2 and rest[0] == "--at":
-            kwargs = {"at": rest[1]}
-        elif len(rest) == 2 and not rest[0].startswith("-"):
-            kwargs = {"branch": rest[0], "path": rest[1]}
-        else:
-            kwargs = None
-        if kwargs is not None:
-            cfg = _require_config()
-            repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
-            print(planfile.link_issue(run.run, repo, number, docs_dir=cfg.data["docs"]["dir"], **kwargs))
-            return 0
-    if len(args) in (2, 3) and args[0] == "migrate" and args[1].isdigit():
-        cfg = _require_config()
-        repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
-        slug = args[2] if len(args) == 3 else None
-        if slug is None:
-            link = planfile.parse_link(checklist.issue_body(run.run, int(args[1])),
-                                       cfg.data["docs"]["dir"])
-            if link is not None:
-                slug = link["path"].rsplit("/", 1)[-1][:-len(".md")].split("-", 1)[-1]
-        print(planfile.migrate(cfg, run.run, repo["nameWithOwner"], int(args[1]), slug,
-                               repo["defaultBranchRef"]["name"]))
+    if len(args) == 2 and args[0] == "migrate" and args[1].isdigit():
+        print(planfile.migrate(_require_config(), run.run, int(args[1])))
         return 0
     print("usage: baton plan replace <issue> <from-task> <file | -> [--drop]\n"
           "       baton plan insert <issue> <before-task> <file | ->\n"
+          "       baton plan set <issue> <file | ->\n"
           "       baton plan against <issue> <sha>\n"
-          "       baton plan commit <issue> <path> <file | ->\n"
-          "       baton plan pin <issue>\n"
-          "       baton plan link <issue> refs/plans/<issue> <path>\n"
-          "       baton plan migrate <issue> [<slug-or-branch>]\n"
-          "       baton plan link <issue> <branch> <path>\n"
-          "       baton plan link <issue> --at <sha>", file=sys.stderr)
+          "       baton plan commit <issue> <path> <file | ->   (deprecated, does nothing)\n"
+          "       baton plan pin <issue>   (deprecated, does nothing)\n"
+          "       baton plan link <issue> ...   (deprecated, does nothing)\n"
+          "       baton plan migrate <issue>\n"
+          , file=sys.stderr)
     return 64
 
 

@@ -217,68 +217,68 @@ class MigrateTest(unittest.TestCase):
         self.assertTrue(body.index("## Pointers") < body.index("## Decisions"))
         self.assertIn("- one", body)
 
-    def test_body_plan_goes_to_the_ref(self):
-        runner = Migrating(LEGACY, ["status:ready"])
-        line = planfile.migrate(self.cfg, runner, "o/r", 5, "issue-5-x", "main")
-        path = "docs/baton/plans/5-x.md"
-        self.assertEqual(line, planfile.link_line("o/r", "refs/plans/5", path))
-        self.assertTrue(line.endswith("/commits/refs/plans/5)"))
-        calls = runner.lines()
-        self.assertIn(f"git push origin {SHA}:refs/plans/5", calls)
-        self.assertFalse(any(c.startswith("git worktree") for c in calls))
-        hashed = runner.inputs[next(i for i, c in enumerate(calls) if c.startswith("git hash-object"))]
-        self.assertIn("make test", hashed)
-        self.assertTrue(any(c.startswith("git commit-tree") and c.endswith("-m Plan for #5: T")
-                            for c in calls))
-        self.assertLess(calls.index(f"git push origin {SHA}:refs/plans/5"),
-                        next(i for i, c in enumerate(calls) if c.startswith("gh issue edit")))
+    def _migrated(self, runner):
+        summary = planfile.migrate(self.cfg, runner, 5)
         self.assertEqual(len(runner.written), 1)
-        self.assertTrue(runner.written[0].startswith(line + "\n\n## Context"))
-        self.assertNotIn("## Plan", runner.written[0])
+        written = runner.written[0]
+        self.assertFalse(any(c.startswith(("git push", "git commit", "git worktree", "git rm"))
+                             for c in runner.lines()))
+        self.assertRegex(summary, r"\d+ task")
+        return written
 
-    def test_branch_plan_goes_to_the_ref_and_leaves_the_branch(self):
+    def test_legacy_body_plan_goes_into_the_body(self):
+        written = self._migrated(Migrating(LEGACY, ["status:ready"]))
+        self.assertIn("## Developer Plan\n\nWritten against: " + SHA, written)
+        self.assertIn("### Verification\n\n`make test`", written)
+        self.assertIn("### Pattern", written)
+        self.assertIn("- [ ] Task 1: First", written)
+        self.assertNotIn("\n## Plan", written)
+        self.assertNotIn("\n## Verification", written)
+        self.assertTrue(written.index("## Developer Plan") < written.index("## Decisions"))
+        self.assertEqual(checklist.layout_problems(written), [])
+
+    def test_ref_plan_goes_into_the_body(self):
+        body = planfile.link_line("o/r", "refs/plans/5", PATH) + "\n\n## Context\nx\n"
+        runner = Migrating(body, ["status:ready"], plan_text=PLAN_TEXT)
+        written = self._migrated(runner)
+        self.assertNotIn("Plan:", written.split("## Developer Plan")[0])
+        self.assertTrue(written.startswith("## Context"))
+        self.assertIn("- [ ] Task 1:", written)
+
+    def test_branch_plan_goes_into_the_body_and_the_branch_is_left(self):
         body = planfile.link_line("o/r", "issue-5-x", PATH) + "\n\n## Context\nx\n"
-        runner = Migrating(body, ["status:ready"], plan_text="the plan\n")
-        line = planfile.migrate(self.cfg, runner, "o/r", 5, None, "main")
-        self.assertEqual(line, planfile.link_line("o/r", "refs/plans/5", PATH))
-        calls = runner.lines()
-        self.assertIn(f"git show --end-of-options origin/issue-5-x:{PATH}", calls)
-        self.assertIn(f"git push origin {SHA}:refs/plans/5", calls)
-        hashed = runner.inputs[next(i for i, c in enumerate(calls) if c.startswith("git hash-object"))]
-        self.assertEqual(hashed, "the plan\n")
-        self.assertEqual(runner.written, [line + "\n\n## Context\nx\n"])
-        self.assertTrue(any(c.startswith("git worktree add --detach") and c.endswith("origin/issue-5-x")
-                            for c in calls))
-        self.assertIn(f"git rm -q -- {PATH}", calls)
-        remove = "git push origin HEAD:refs/heads/issue-5-x"
-        self.assertIn(remove, calls)
-        self.assertLess(calls.index(f"git push origin {SHA}:refs/plans/5"), calls.index(remove))
+        runner = Migrating(body, ["status:ready"], plan_text=PLAN_TEXT)
+        written = self._migrated(runner)
+        self.assertIn(f"git show --end-of-options origin/issue-5-x:{PATH}", runner.lines())
+        self.assertIn("## Developer Plan", written)
+        self.assertNotIn("Plan: [", written)
 
     def test_refuses_started_issue(self):
         for label in ("status:in-dev", "status:blocked", "status:in-review", "status:complete"):
             runner = Migrating(LEGACY, [label])
             with self.assertRaises(checklist.TaskError):
-                planfile.migrate(self.cfg, runner, "o/r", 5, "x", "main")
-            self.assertFalse(any(c.startswith("git push") for c in runner.lines()))
+                planfile.migrate(self.cfg, runner, 5)
             self.assertEqual(runner.written, [])
 
-    def test_refuses_an_issue_that_already_links_a_ref_or_a_pin(self):
-        for ref in ("refs/plans/5", SHA):
-            linked = planfile.link_line("o/r", ref, PATH) + "\n\n" + LEGACY
-            runner = Migrating(linked)
-            with self.assertRaises(checklist.TaskError):
-                planfile.migrate(self.cfg, runner, "o/r", 5, "x", "main")
-            self.assertFalse(any(c.startswith("git push") for c in runner.lines()))
-
-    def test_body_plan_needs_a_slug(self):
+    def test_refuses_an_issue_without_a_plan(self):
+        runner = Migrating("## Context\nx\n")
         with self.assertRaises(checklist.TaskError):
-            planfile.migrate(self.cfg, Migrating(LEGACY), "o/r", 5, None, "main")
-        with self.assertRaises(checklist.TaskError):
-            planfile.migrate(self.cfg, Migrating(LEGACY), "o/r", 5, "issue-5-", "main")
+            planfile.migrate(self.cfg, runner, 5)
+        self.assertEqual(runner.written, [])
 
-    def test_plain_slug_is_accepted(self):
-        line = planfile.migrate(self.cfg, Migrating(LEGACY), "o/r", 5, "x", "main")
-        self.assertIn("docs/baton/plans/5-x.md", line)
+    def test_refuses_an_already_converted_issue(self):
+        done = self._migrated(Migrating(LEGACY))
+        runner = Migrating(done)
+        with self.assertRaises(checklist.TaskError):
+            planfile.migrate(self.cfg, runner, 5)
+        self.assertEqual(runner.written, [])
+
+    def test_refuses_an_oversized_result(self):
+        big = LEGACY.replace("Nothing else.", "x" * (checklist.MAX_BODY + 10))
+        runner = Migrating(big)
+        with self.assertRaises(checklist.TaskError):
+            planfile.migrate(self.cfg, runner, 5)
+        self.assertEqual(runner.written, [])
 
     def test_templates(self):
         root = pathlib.Path(__file__).resolve().parent.parent / "templates"
@@ -465,6 +465,68 @@ Written against: abc
 """
 
 
+FILE_PLAN = """## Pattern
+
+Follow `a.py`.
+
+## Verification
+
+`make test`
+
+## Design notes
+
+(none)
+
+## Plan
+
+Written against: %s
+
+- [x] **1. First**
+  - Files: `a.py`
+  - Provides: `f()`
+  - Provides (as built): `f(x)`
+  - Check: none
+- [ ] **2. Second**
+  - Check: none
+- [ ] Task 3: Third
+  <details>
+  <summary>Click to see plan details</summary>
+
+  - Check: none
+
+  </details>
+""" % SHA
+
+
+class DeveloperPlanFromFileTest(unittest.TestCase):
+    def setUp(self):
+        self.out = planfile.developer_plan_from_file(FILE_PLAN)
+
+    def test_layout_and_order(self):
+        self.assertTrue(self.out.startswith("## Developer Plan\n\nWritten against: " + SHA))
+        self.assertLess(self.out.index("### Verification"), self.out.index("### Pattern"))
+        self.assertNotIn("Design notes", self.out)
+        self.assertEqual(checklist.layout_problems(self.out), [])
+
+    def test_ticks_and_as_built_convert(self):
+        self.assertIn("- [x] Task 1: First\n  <details>", self.out)
+        self.assertIn("  - Provides (as built): `f(x)`", self.out)
+
+    def test_new_layout_task_copied_unchanged(self):
+        self.assertTrue(self.out.endswith(
+            "- [ ] Task 3: Third\n  <details>\n  <summary>Click to see plan details</summary>\n\n"
+            "  - Check: none\n\n  </details>\n"))
+
+    def test_same_tasks_and_flags(self):
+        old = checklist.plan(FILE_PLAN)["tasks"]
+        self.assertEqual(checklist.plan(self.out)["tasks"], old)
+
+    def test_design_notes_kept_when_real(self):
+        out = planfile.developer_plan_from_file(
+            FILE_PLAN.replace("(none)", "Use X."))
+        self.assertIn("### Design notes\n\nUse X.", out)
+
+
 class CliRunner(FakeRunner):
     def __init__(self, replies=None, body=""):
         base = {"hash-object": "b1\n", "git mktree": "t\n", "git commit-tree": f"{SHA}\n",
@@ -479,7 +541,7 @@ class CliRunner(FakeRunner):
 class CliTest(unittest.TestCase):
     def call(self, runner, argv, stdin=""):
         out, err = io.StringIO(), io.StringIO()
-        cfg = mock.Mock(data={"docs": {"dir": "docs/baton"}})
+        cfg = mock.Mock(data={"docs": {"dir": "docs/baton"}, "privacy_allow": []})
         with mock.patch.object(cli.run, "run", runner), \
                 mock.patch.object(cli, "_require_config", return_value=cfg), \
                 mock.patch("sys.stdin", io.StringIO(stdin)), \
@@ -487,44 +549,46 @@ class CliTest(unittest.TestCase):
             code = cli.main(argv)
         return code, out.getvalue(), err.getvalue()
 
-    def test_plan_commit_writes_pushes_and_prints_the_sha(self):
-        runner = CliRunner()
-        code, out, _ = self.call(runner, ["plan", "commit", "5", PATH, "-"], stdin=PLAN_TEXT)
-        self.assertEqual((code, out), (0, SHA + "\n"))
-        self.assertEqual([i for i in runner.inputs if i][0], PLAN_TEXT)
-        lines = runner.lines()
-        self.assertIn("git commit-tree t -m Plan for #5: The title", lines)
-        self.assertEqual(lines[-1], f"git push origin {SHA}:{REF}")
+    def test_plan_set_from_a_file_and_from_stdin(self):
+        seen = []
 
-    def test_plan_commit_reads_a_file(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".md") as handle:
-            handle.write(PLAN_TEXT)
-            handle.flush()
-            runner = CliRunner()
-            code, _, _ = self.call(runner, ["plan", "commit", "5", PATH, handle.name])
+        def fake(cfg, runner, number, text, terms):
+            seen.append((number, text))
+            return [1, 2]
+        with mock.patch.object(cli.checklist, "set_issue_plan", fake), \
+                mock.patch.object(cli.scan, "load_terms", return_value=[]):
+            code, out, _ = self.call(CliRunner(), ["plan", "set", "5", "-"], stdin="STDIN")
+            self.assertEqual((code, out), (0, "set Developer Plan of #5: 2 task(s)\n"))
+            with tempfile.NamedTemporaryFile("w", suffix=".md") as handle:
+                handle.write("FILE")
+                handle.flush()
+                code, _, _ = self.call(CliRunner(), ["plan", "set", "5", handle.name])
         self.assertEqual(code, 0)
-        self.assertEqual([i for i in runner.inputs if i][0], PLAN_TEXT)
+        self.assertEqual(seen, [(5, "STDIN"), (5, "FILE")])
 
-    def test_plan_link_writes_the_history_page_link(self):
-        runner = CliRunner(body="## Context\nx\n")
-        with mock.patch.object(checklist, "_save_issue") as save:
-            code, out, _ = self.call(runner, ["plan", "link", "5", REF, PATH])
-        line = f"Plan: [{PATH}](https://github.com/o/r/commits/{REF})"
-        self.assertEqual((code, out), (0, line + "\n"))
-        save.assert_called_once_with(runner, 5, f"{line}\n\n## Context\nx\n")
+    def test_plan_set_wrong_count_exits_64_and_usage_lists_it(self):
+        code, _, err = self.call(CliRunner(), ["plan", "set", "5"])
+        self.assertEqual(code, 64)
+        self.assertIn("baton plan set <issue> <file | ->", err)
 
-    def test_plan_pin_pins_to_the_tip(self):
-        body = planfile.link_line("o/r", REF, PATH) + "\n\n## Context\n"
-        runner = CliRunner(replies={"git ls-remote": f"{SHA}\t{REF}\n"}, body=body)
-        with mock.patch.object(checklist, "_save_issue") as save:
-            code, out, _ = self.call(runner, ["plan", "pin", "5"])
-        self.assertEqual((code, out), (0, SHA + "\n"))
-        self.assertIn(planfile.link_line("o/r", SHA, PATH), save.call_args[0][2])
+    def test_plan_set_task_error_is_not_a_crash(self):
+        def boom(*a):
+            raise cli.checklist.TaskError("bad layout")
+        with mock.patch.object(cli.checklist, "set_issue_plan", boom), \
+                mock.patch.object(cli.scan, "load_terms", return_value=[]):
+            code, _, err = self.call(CliRunner(), ["plan", "set", "5", "-"], stdin="x")
+        self.assertNotEqual(code, 0)
+        self.assertIn("bad layout", err)
 
-    def test_plan_pin_with_nothing_to_pin(self):
-        runner = CliRunner(body=planfile.link_line("o/r", "issue-5-x", PATH))
-        code, out, _ = self.call(runner, ["plan", "pin", "5"])
-        self.assertEqual((code, out), (0, "nothing to pin\n"))
+    def test_plan_commit_link_pin_are_deprecated_no_ops(self):
+        for argv in (["plan", "commit", "5", PATH, "-"], ["plan", "pin", "5"],
+                     ["plan", "link", "5", REF, PATH], ["plan", "link", "5", "--at", SHA]):
+            runner = CliRunner()
+            code, out, err = self.call(runner, argv, stdin=PLAN_TEXT)
+            self.assertEqual((code, out), (0, ""), argv)
+            self.assertIn("deprecated: plans live in the issue body", err)
+            self.assertIn("baton plan set <N> <file>", err)
+            self.assertEqual(runner.lines(), [], argv)
 
     def test_task_done_ticks_on_the_ref(self):
         body = planfile.link_line("o/r", REF, PATH) + "\n"
@@ -550,8 +614,8 @@ class CliTest(unittest.TestCase):
         self.assertIn("Provides (as built): g()", [i for i in runner.inputs if i][0])
 
     def test_bad_argument_counts_exit_64(self):
-        for argv in (["plan", "commit", "5", PATH], ["plan", "commit", "x", PATH, "-"],
-                     ["plan", "pin"], ["plan", "pin", "5", "6"],
+        for argv in (["plan", "commit", "x", PATH, "-"],
+                     ["plan", "pin"],
                      ["task", "done", "issue", "5", "1", "--as-built"],
                      ["task", "done", "pr", "5", "1.1", "--as-built", "x"],
                      ["task", "done", "issue", "5"]):
@@ -561,5 +625,5 @@ class CliTest(unittest.TestCase):
 
     def test_usage_lists_the_new_forms(self):
         _, _, err = self.call(CliRunner(), ["plan"])
-        for form in ("plan commit", "plan pin", "plan link <issue> refs/plans/<issue>"):
+        for form in ("plan commit", "plan pin", "plan link <issue> ...", "deprecated"):
             self.assertIn(form, err)

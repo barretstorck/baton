@@ -6,8 +6,6 @@ the issue branch, or at a commit once the branch is gone.
 import json
 import os
 import re
-import shutil
-import tempfile
 
 from . import checklist
 from .config import DEFAULTS, STATUSES
@@ -320,13 +318,64 @@ def split_legacy(body):
     return file_text, trimmed.rstrip() + "\n"
 
 
-def migrate(cfg, runner, repo, number, slug, default_branch):
-    """Move a plan to `refs/plans/<number>`, relink the issue and return the new `Plan:` line.
+def _brief_block(block):
+    """The lines of one task block in the new layout (copied as is when it already is)."""
+    lines = block["lines"]
+    if checklist._TASK_NEW.match(lines[0].rstrip("\r\n")):
+        return "".join(lines).rstrip("\n").split("\n")
+    match = checklist._TASK.match(lines[0].rstrip("\r\n"))
+    mark = "x" if block["done"] else " "
+    brief = [line.rstrip() for line in lines[1:]]
+    while brief and not brief[-1]:
+        brief.pop()
+    while brief and not brief[0]:
+        brief.pop(0)
+    indents = [len(line) - len(line.lstrip()) for line in brief if line]
+    shift = 2 - min(indents) if indents else 0
+    moved = []
+    for line in brief:
+        if not line:
+            moved.append("")
+        elif shift >= 0:
+            moved.append(" " * shift + line)
+        else:
+            moved.append(line[-shift:])
+    return ([f"- [{mark}] Task {match.group(2)}: {match.group(3).strip()}",
+             "  <details>", "  <summary>Click to see plan details</summary>", ""]
+            + moved + ["", "  </details>"])
 
-    The source is the body's legacy `## Plan` or the plan file the issue's branch link names
-    (its latest version at `origin/<branch>`). The text is committed to the ref and pushed; a
-    body plan is trimmed from the body, a branch plan is removed from the branch. Refused for
-    an issue that is in development or later, or that already has a ref or pinned link.
+
+def developer_plan_from_file(text):
+    """The `## Developer Plan` section built from a plan file's text (heading included)."""
+    text = (text or "").replace("\r\n", "\n")
+    where = checklist.span(text, "plan")
+    if where is None:
+        raise checklist.TaskError("the plan file has no '## Plan' section")
+    head, blocks = checklist._blocks(text[where[0]:where[1]])
+    against = re.search(r"^Written against:.*$", "".join(head), re.M)
+    out = ["## Developer Plan", ""]
+    if against:
+        out += [against.group(0).strip(), ""]
+    for heading, name in (("verification", "Verification"), ("pattern", "Pattern"),
+                          ("design notes", "Design notes")):
+        found = checklist.span(text, heading)
+        content = text[found[0]:found[1]].strip() if found else ""
+        if not content or (heading == "design notes"
+                           and re.fullmatch(r"\(?none\)?\.?", content, re.I)):
+            continue
+        out += [f"### {name}", "", content, ""]
+    for block in blocks:
+        out += _brief_block(block)
+    return "\n".join(out).rstrip("\n") + "\n"
+
+
+def migrate(cfg, runner, number):
+    """Convert the issue's plan into a `## Developer Plan` section of its body.
+
+    The source is the plan on `refs/plans/<N>`, on a branch or at a pinned commit (the body's
+    `Plan:` link), or the legacy `## Plan` section. The `Plan:` line goes; the ref and any
+    branch are left alone. Refused for an issue that is in development or later, that has no
+    plan, or that already has a `## Developer Plan`. Returns a one-line summary.
     """
     docs_dir = cfg.data["docs"]["dir"]
     info = json.loads(runner(["gh", "issue", "view", str(number), "--json", "title,body,labels"]))
@@ -336,45 +385,18 @@ def migrate(cfg, runner, repo, number, slug, default_branch):
         raise checklist.TaskError(
             f"issue #{number} is {cfg.label(started[0])}; only issues not yet started can be migrated")
     body = info.get("body") or ""
-    existing = parse_link(body, docs_dir)
-    if existing is not None and existing["kind"] != "branch":
-        raise checklist.TaskError(f"issue #{number} already has a Plan: link")
-    if existing is None:
-        if slug is None:
-            raise checklist.TaskError(f"migrating issue #{number} needs a slug")
-        prefix = f"issue-{number}-"
-        slug = slug[len(prefix):] if slug.startswith(prefix) else slug
-        if not slug:
-            raise checklist.TaskError(f"the slug must not be empty, got {prefix!r}")
-        text, new_body = split_legacy(body)
-        path = plan_path(cfg.data, number, slug)
-        check_link(ref_name(number), path, docs_dir)
+    if checklist.span(body, "developer plan") is not None:
+        raise checklist.TaskError(f"issue #{number} already has a Developer Plan")
+    link = parse_link(body, docs_dir)
+    if link is not None:
+        text = read(runner, link["ref"], link["path"])
+        new_body = _PLAN_LINE.sub("", body, count=1).lstrip("\n")
     else:
-        branch, path = existing["ref"], existing["path"]
-        text, new_body = read(runner, branch, path), body
-    message = f"Plan for #{number}: {info.get('title') or ''}".rstrip(": ")
-    sha = write(runner, number, path, text, message)
-    push(runner, number, sha)
-    line = link_line(repo, ref_name(number), path)
-    checklist._save_issue(runner, number, set_link(new_body, line))
-    if existing is not None:
-        _remove_from_branch(runner, branch, path, number)
-    return line
-
-
-def _remove_from_branch(runner, branch, path, number):
-    """Commit `git rm` of the plan file on `branch` from a temporary detached worktree."""
-    runner(["git", "fetch", "--quiet", "--end-of-options", "origin", branch])
-    tree = tempfile.mkdtemp(prefix="baton-migrate-")
-    try:
-        runner(["git", "worktree", "add", "--detach", tree, f"origin/{branch}"])
-        try:
-            runner(["git", "rm", "-q", "--", path], cwd=tree)
-            runner(["git", "commit", "-q", "-m", f"Move the plan of #{number} to {ref_name(number)}"],
-                   cwd=tree)
-            runner(["git", "push", "origin", f"HEAD:refs/heads/{branch}"], cwd=tree)
-        finally:
-            runner(["git", "worktree", "remove", "--force", tree])
-    finally:
-        if os.path.isdir(tree):
-            shutil.rmtree(tree, ignore_errors=True)
+        if checklist.span(body, "plan") is None:
+            raise checklist.TaskError(f"issue #{number} has no plan to migrate")
+        text, new_body = split_legacy(body)
+    section = developer_plan_from_file(text)
+    new = checklist.set_plan(new_body, section)
+    checklist._save_issue(runner, number, new)
+    count = len(checklist.plan(new)["tasks"])
+    return f"migrated the plan of #{number} into its description: {count} task(s)"

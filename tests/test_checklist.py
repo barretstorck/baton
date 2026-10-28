@@ -372,6 +372,22 @@ class IssueForgeTest(unittest.TestCase):
         self.assertTrue(checklist.tick_issue(capture, 7, "2"))
         self.assertEqual(written["body"], BODY.replace("- [ ] **2.", "- [x] **2."))
 
+    def test_as_built_with_a_private_term_is_refused_before_any_write(self):
+        body = BODY.replace("  - Files: `b.py`\n", "  - Files: `b.py`\n  - Provides: `g()`\n")
+        runner = issue_runner(body)
+        with self.assertRaises(checklist.TaskError) as caught:
+            checklist.tick_issue(runner, 7, "2", as_built="`g(x)` for secretterm",
+                                 terms=["secretterm"])
+        self.assertIn("privacy scan found", str(caught.exception))
+        self.assertFalse(any("issue edit" in l for l in runner.lines()))
+
+    def test_clean_as_built_ticks_and_writes_once(self):
+        body = BODY.replace("  - Files: `b.py`\n", "  - Files: `b.py`\n  - Provides: `g()`\n")
+        runner = issue_runner(body)
+        self.assertTrue(checklist.tick_issue(runner, 7, "2", as_built="`g(x)`",
+                                             terms=["secretterm"]))
+        self.assertEqual(sum("issue edit" in l for l in runner.lines()), 1)
+
     def test_tick_issue_already_done_writes_nothing(self):
         runner = issue_runner()
         self.assertFalse(checklist.tick_issue(runner, 7, "1"))
@@ -735,9 +751,11 @@ class RefPlanTest(unittest.TestCase):
         with self.assertRaises(checklist.TaskError):
             checklist.add_as_built(self.TEXT, "plan", "9", "x")
 
-    def test_as_built_is_refused_for_other_plans(self):
+    def test_as_built_is_refused_for_a_branch_plan(self):
+        link = planfile.link_line("o/r", "issue-7-x", "docs/baton/plans/7-x.md")
+        runner = FakeRunner({"gh issue view 7": json.dumps({"body": link + "\n"})})
         with self.assertRaises(checklist.TaskError):
-            checklist.tick_issue(issue_runner(), 7, "2", as_built="x")
+            checklist.tick_issue(runner, 7, "2", as_built="x")
 
     def test_replace_commits_and_pushes_to_the_ref(self):
         runner = self.runner()
@@ -799,9 +817,7 @@ class WrittenAgainstTest(unittest.TestCase):
         self.assertEqual(lines[-1], f"git push origin {RefPlanTest.NEW}:refs/plans/7")
         self.assertFalse(any("issue edit" in l for l in lines))
 
-    def test_branch_or_body_plan_is_refused(self):
-        with self.assertRaises(checklist.TaskError):
-            checklist.against_issue_plan(cfg(), issue_runner(), 7, self.NEW)
+    def test_branch_plan_is_refused(self):
         link = planfile.link_line("o/r", "issue-7-x", "docs/baton/plans/7-x.md")
         runner = FakeRunner({"gh issue view 7": json.dumps({"body": link + "\n"})})
         with self.assertRaises(checklist.TaskError):
@@ -871,3 +887,106 @@ class LayoutProblemsTest(unittest.TestCase):
         problems = checklist.layout_problems(self.body(bad, _dev_task(2, "Two")))
         self.assertEqual(len(problems), 1)
         self.assertIn("task 1", problems[0])
+
+
+def _section(n=2, extra=""):
+    return (f"## Developer Plan\n\nWritten against: {SHA}\n\n### Verification\n`make`\n\n"
+            + "".join(_dev_task(i, f"T{i}") for i in range(1, n + 1)) + extra)
+
+
+class SetPlanTest(unittest.TestCase):
+    def test_replaces_section_and_keeps_surroundings(self):
+        body = "## Context\nx\n\n## Developer Plan\nold\n\n## Decisions\n- kept\n"
+        new = checklist.set_plan(body, _section())
+        self.assertIn("## Context\nx\n", new)
+        self.assertNotIn("old", new)
+        self.assertIn("Task 2: T2", new)
+        self.assertTrue(new.endswith("## Decisions\n- kept\n"))
+
+    def test_replaces_legacy_plan_and_drops_verification_and_link(self):
+        body = ("Plan: [p.md](https://x/blob/b/p.md)\n\n## Context\nx\n\n## Plan\nold\n\n"
+                "## Verification\n`old`\n\n## Decisions\n- d\n")
+        new = checklist.set_plan(body, _section())
+        self.assertFalse(new.startswith("Plan:"))
+        self.assertNotIn("old", new)
+        self.assertEqual(new.count("Verification"), 1)
+
+    def test_inserts_before_decisions(self):
+        new = checklist.set_plan("## Context\nx\n\n## Decisions\n- d\n", _section())
+        self.assertLess(new.index("## Developer Plan"), new.index("## Decisions"))
+
+    def test_appends_without_decisions(self):
+        new = checklist.set_plan("## Context\nx\n", _section())
+        self.assertTrue(new.rstrip().endswith("</details>"))
+        self.assertIn("## Context\nx\n\n## Developer Plan", new)
+
+    def test_refusals(self):
+        for bad in ("## Plan\n" + _dev_task(1, "A"),
+                    _section().replace("  <summary>Click to see plan details</summary>", "  <summary>x</summary>"),
+                    "## Developer Plan\n\nno tasks\n",
+                    "## Developer Plan\n\n" + _dev_task(1, "A") + _dev_task(3, "C")):
+            with self.assertRaises(checklist.TaskError):
+                checklist.set_plan("## Context\nx\n", bad)
+
+    def test_issue_level_writes_body(self):
+        runner = issue_runner("## Context\nx\n")
+        found = checklist.set_issue_plan(cfg(), runner, 7, _section(), [])
+        self.assertEqual(len(found["tasks"]), 2)
+        self.assertTrue(any("issue edit" in line for line in runner.lines()))
+
+    def test_issue_level_refusals_send_nothing(self):
+        link = "Plan: [p.md](https://github.com/o/r/blob/issue-7-x/docs/baton/plans/p.md)\n\nx\n"
+        cases = [("## Context\nx\n", _section().replace("`make`", "host " + ".".join(["192", "168", "1", "20"]))),
+                 (link, _section()),
+                 ("## Context\nx\n", _section(extra="y" * 70000))]
+        for body, text in cases:
+            runner = issue_runner(body)
+            with self.assertRaises(checklist.TaskError):
+                checklist.set_issue_plan(cfg(), runner, 7, text, [])
+            self.assertFalse(any("issue edit" in line for line in runner.lines()))
+
+
+class BodyPlanTest(unittest.TestCase):
+    NEW = "e" * 40
+
+    def run_with(self, fn):
+        runner = issue_runner(DEV_BODY)
+        written = []
+        original = runner.__call__
+
+        def capture(argv, cwd=None):
+            if argv[:3] == ["gh", "issue", "edit"]:
+                written.append(pathlib.Path(argv[argv.index("--body-file") + 1]).read_text())
+            return original(argv, cwd)
+
+        result = fn(capture)
+        return result, written
+
+    def test_against_replaces_the_sha_and_writes_once(self):
+        found, written = self.run_with(
+            lambda r: checklist.against_issue_plan(cfg(), r, 7, self.NEW))
+        self.assertEqual(written, [DEV_BODY.replace(SHA, self.NEW)])
+        self.assertEqual(found["written_against"], self.NEW)
+
+    def test_tick_with_as_built_is_one_write(self):
+        changed, written = self.run_with(
+            lambda r: checklist.tick_issue(r, 7, "2", as_built="`g(x)`"))
+        self.assertTrue(changed)
+        self.assertEqual(len(written), 1)
+        self.assertIn("- [x] Task 2: Second step", written[0])
+        self.assertIn("  - Provides: `g()`\n  - Provides (as built): `g(x)`\n", written[0])
+
+    def test_already_ticked_with_as_built_writes_nothing(self):
+        changed, written = self.run_with(
+            lambda r: checklist.tick_issue(r, 7, "1", as_built="x"))
+        self.assertFalse(changed)
+        self.assertEqual(written, [])
+
+    def test_issue_plan_lists_the_tasks(self):
+        found = checklist.issue_plan(issue_runner(DEV_BODY), 7)
+        self.assertEqual([t["id"] for t in found["tasks"]], ["1", "2"])
+        self.assertEqual(found["source"], "body")
+
+    def test_issue_plan_error_names_developer_plan(self):
+        with self.assertRaisesRegex(checklist.TaskError, "## Developer Plan"):
+            checklist.issue_plan(issue_runner("## Context\nx\n"), 7)
