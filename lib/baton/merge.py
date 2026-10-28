@@ -229,23 +229,6 @@ def _task_worktrees(commits, runner):
     return found
 
 
-def _secret_files(path):
-    """Names of the `.env` and `.env.*` files directly in `path`, skipping example templates."""
-    try:
-        names = sorted(os.listdir(path))
-    except OSError:
-        return []
-    return [name for name in names
-            if (name == ".env" or name.startswith(".env."))
-            and not name.endswith((".example", ".sample", ".template"))
-            and os.path.isfile(os.path.join(path, name))]
-
-
-def _secret_note(path):
-    names = _secret_files(path)
-    return f"; it holds {', '.join(names)}; delete it by hand" if names else ""
-
-
 def _after_merge(pr, cfg, runner, notes):
     for ref in pr.get("closingIssuesReferences") or []:
         issue = ref["number"]
@@ -257,24 +240,14 @@ def _after_merge(pr, cfg, runner, notes):
 
     branch = pr["headRefName"]
     worktree, locked = _worktree_for(branch, runner)
-    keep = False
     if worktree:
-        if runner(["git", "-C", worktree, "status", "--porcelain"]).strip():
-            keep = True
-            notes.append(f"kept worktree {worktree} and branch {branch}: "
-                         "it has uncommitted changes" + _secret_note(worktree))
-        else:
-            force = ["--force", "--force"] if locked else ["--force"]
-            runner(["git", "worktree", "remove", *force, worktree])
+        force = ["--force", "--force"] if locked else ["--force"]
+        runner(["git", "worktree", "remove", *force, worktree])
     own = {commit.get("oid") for commit in pr.get("commits") or []}
     for path, locked in _task_worktrees(own, runner):
-        if runner(["git", "-C", path, "status", "--porcelain"]).strip():
-            notes.append(f"kept task worktree {path}: it has uncommitted changes"
-                         + _secret_note(path))
-            continue
         force = ["--force", "--force"] if locked else ["--force"]
         runner(["git", "worktree", "remove", *force, path])
-    if not keep and runner(["git", "branch", "--list", branch]).strip():
+    if runner(["git", "branch", "--list", branch]).strip():
         runner(["git", "branch", "-D", branch])
     runner(["git", "push", "origin", "--delete", branch])
 

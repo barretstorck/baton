@@ -67,8 +67,6 @@ def _keep_reason(wt, runner, default_branch):
                                    "--json", "state"]))["state"]
         if state == "OPEN":
             return f"issue #{match.group(1)} is open"
-    if runner(["git", "-C", wt["path"], "status", "--porcelain"]).strip():
-        return "it has uncommitted changes"
     if wt["detached"]:
         try:
             runner(["git", "merge-base", "--is-ancestor", wt["sha"], f"origin/{default_branch}"])
