@@ -63,7 +63,7 @@ class ConfigTest(unittest.TestCase):
                     config.load(str(make_repo(f"---\n{meta}\n---\n")))
 
     def test_reviewer_and_review_defaults(self):
-        self.assertEqual(config.DEFAULTS["reviewer"], {"model": "sonnet"})
+        self.assertEqual(config.DEFAULTS["reviewer"], {"model": "sonnet", "effort": "medium"})
         self.assertEqual(config.DEFAULTS["review"], {"required": True, "max_rounds": 2})
 
     def test_developer_default_is_one_at_a_time(self):
@@ -76,6 +76,25 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(cfg.data["developer"]["effort"], "high")
         with self.assertRaisesRegex(config.ConfigError, "developer.effort"):
             config.load(str(make_repo("---\ndeveloper:\n  effort: turbo\n---\n")))
+
+    def test_refiner_defaults(self):
+        self.assertEqual(config.DEFAULTS["refiner"], {"model": "sonnet", "effort": "medium"})
+        self.assertEqual(config.load(str(make_repo("# none\n"))).data["refiner"],
+                         {"model": "sonnet", "effort": "medium"})
+
+    def test_reviewer_and_refiner_effort_and_model_override_and_rejection(self):
+        for role in ("developer", "reviewer", "refiner"):
+            with self.subTest(role=role):
+                cfg = config.load(str(make_repo(f"---\n{role}:\n  model: opus\n  effort: high\n---\n")))
+                self.assertEqual(cfg.data[role]["effort"], "high")
+                self.assertEqual(cfg.data[role]["model"], "opus")
+                with self.assertRaisesRegex(config.ConfigError, f"{role}.effort"):
+                    config.load(str(make_repo(f"---\n{role}:\n  effort: turbo\n---\n")))
+
+    def test_developer_effort_alone_leaves_others_medium(self):
+        cfg = config.load(str(make_repo("---\ndeveloper:\n  effort: high\n---\n")))
+        self.assertEqual(cfg.data["reviewer"]["effort"], "medium")
+        self.assertEqual(cfg.data["refiner"]["effort"], "medium")
 
     def test_review_rounds_must_be_positive(self):
         with self.assertRaises(config.ConfigError):

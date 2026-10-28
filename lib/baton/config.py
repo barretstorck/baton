@@ -16,7 +16,8 @@ OTHER_LABELS = [
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 DEFAULTS = {
     "developer": {"model": "sonnet", "max_parallel": 1, "effort": "medium"},
-    "reviewer": {"model": "sonnet"},
+    "reviewer": {"model": "sonnet", "effort": "medium"},
+    "refiner": {"model": "sonnet", "effort": "medium"},
     "review": {"required": True, "max_rounds": 2},
     "refine": {"may_mark_ready": True},
     "labels": {
@@ -133,8 +134,9 @@ def load(path):
         raise ConfigError(f".baton/brief.md: {error}") from error
     merged = _merge(copy.deepcopy(DEFAULTS), data)
     _validate(merged, DEFAULTS)
-    if merged["developer"]["effort"] not in EFFORTS:
-        raise ConfigError(".baton/brief.md: developer.effort must be one of " + ", ".join(EFFORTS))
+    for role in ("developer", "reviewer", "refiner"):
+        if merged[role]["effort"] not in EFFORTS:
+            raise ConfigError(f".baton/brief.md: {role}.effort must be one of " + ", ".join(EFFORTS))
     if merged["review"]["max_rounds"] < 1:
         raise ConfigError(".baton/brief.md: review.max_rounds must be at least 1")
     if merged["verify"]["timeout_minutes"] < 1:
