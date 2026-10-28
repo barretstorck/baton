@@ -9,7 +9,7 @@ Do **one task** and stop. Another developer does the next one; you do not merge 
 
 You were dispatched with one of:
 
-- `Do task <n> of issue <N>.`: one task of the issue's plan (the file its `Plan:` link points to; an older issue has a `## Plan` section in its body);
+- `Do task <n> of issue <N>.`: one task of the issue's plan (the `## Developer Plan` section of the issue body);
 - `Do review task <r.n> of pull request <P> (issue <N>).`: one task of the latest code review;
 - `Do spike issue <N>.`: a whole spike (see "Spikes").
 - `Update pull request <P> (issue <N>).`: see "Keeping a pull request mergeable".
@@ -44,14 +44,12 @@ filters, send long output to a file, chain related commands, wait for a long run
 
 1. **Read only what the task needs.**
    - `baton tasks issue <N>` for the plan's `Written against` commit and which tasks are done.
-   - The plan lives on its own ref, `refs/plans/<N>`, not in your checkout. `baton tasks issue <N>`
-     prints its `path` (`<docs.dir>/plans/<N>-<slug>.md`). Read it with
-     `git fetch --quiet origin +refs/plans/<N>:refs/baton/plans/<N> && git show refs/baton/plans/<N>:<path>`,
-     your task's brief and the `## Verification` and pattern text, for example piped through
-     `awk '/^- \[.\] \*\*<n>\./,/^$/'`. If the ref is missing, return
-     `BLOCKED: the plan ref is missing`. (The older way, a plan file on the issue branch: the
-     `Plan:` link then points at the branch and the file is in your checkout at that path. An
-     older issue with a `## Plan` section in its body takes the brief from the body.)
+   - The plan is the `## Developer Plan` section of the issue body. `baton tasks issue <N>` prints
+     its tasks, and the body holds each task's brief in a `<details>` block under its checkbox line
+     `- [ ] Task <n>: <title>`. Read your task's brief and the `### Verification`, `### Pattern` and
+     `### Design notes` text, for example
+     `gh issue view <N> --json body -q .body | sed -n '/^## Developer Plan/,$p'`, then take your
+     task's lines. If the body has no `## Developer Plan`, see "Older issues" below.
    - The issue's Context, Acceptance criteria, Out of scope and Decisions, for example:
      `gh issue view <N> --json body -q .body | sed -n '/^## Context/,/^## Pointers/p'`.
      `baton answers <N>`.
@@ -71,13 +69,12 @@ filters, send long output to a file, chain related commands, wait for a long run
    commit, before the task's own work; push it with the task's push.
 
 3. **Get the branch.** The branch `issue-<N>-<short-slug>` is made by task 1 from the default
-   branch; the plan is not on it.
+   branch.
    - *Task 1:* `baton set-status <N> status:in-dev`; create `issue-<N>-<short-slug>` from
      `origin/<default>` (`git fetch --quiet origin <default> && git checkout --detach
      origin/<default>`, pushed as `HEAD:refs/heads/<branch>` in step 6). Do the task (steps 4 to 6);
      then open a **draft** pull request whose body has `Closes #<N>` on its own line and a short
-     summary of the plan. Drafts may not run CI, which saves minutes. An issue whose plan file is
-     already on a branch (the older way): check out that branch instead, as for later tasks.
+     summary of the plan. Drafts may not run CI, which saves minutes.
    - *Later tasks:* `git fetch --quiet origin <branch> && git checkout --detach origin/<branch>`.
      A worktree left by an earlier task may still hold the branch; a detached checkout never
      conflicts with it. See what earlier tasks did with
@@ -94,15 +91,13 @@ filters, send long output to a file, chain related commands, wait for a long run
      diff shows exactly what moved.
    - Never loosen a threshold or delete a test to get to green; a number that moved is a finding.
    - Ideas outside the brief go in your report as follow-up suggestions, not into the code.
-   - Tick your task: `baton task done issue <N> <n>` ticks its box in the plan on `refs/plans/<N>`
-     as a new commit there and prints the commit's sha. If what you built differs from your task's
-     `Provides:` (a changed signature or name), add `--as-built "<what exists now>"`: it adds a
-     `Provides (as built):` line under it in the same commit; the original line stays. Nothing is
-     pushed yet and nothing in your checkout changes. (The older way, a plan file on the branch:
-     the same command ticks the file in your checkout and you commit it with the code.)
+   - Tick your task: `baton task done issue <N> <n>` ticks its box in the issue body (it re-reads
+     the body just before writing). If what you built differs from your task's `Provides:` (a
+     changed signature or name), add `--as-built "<what exists now>"`: it adds a
+     `Provides (as built):` line under it; the original line stays. Nothing in your checkout changes.
    - Who ticks what:
-     - *Plan task:* you tick your own box on the plan ref, `baton task done issue <N> <n>`,
-       and push that commit with the code in step 6, not as a file in your checkout.
+     - *Plan task:* you tick your own box in the issue body, `baton task done issue <N> <n>`,
+       before you push the code in step 6.
      - *Review task:* you never run `baton task done pr`. You return `FIXED <sha>` or
        `DECLINED <reason>`; the orchestrator checks the sha is on the branch and ticks.
 
@@ -114,16 +109,10 @@ filters, send long output to a file, chain related commands, wait for a long run
    `forbid_added` forbids, remove that entry; do not bypass the hook or edit the rule. Only an
    `Allows: forbid_added "<glob>"` line in your task's brief permits it. If you cannot do the task
    without it, return `QUESTION`. Stage the code, `git commit -m "Task <n>: <title>"`, then push the branch
-   and the tick together, for every task, task 1 included:
-   `git push --atomic origin HEAD:refs/heads/<branch> <sha>:refs/plans/<N>` (`<sha>` is the commit
-   `baton task done` printed). Your checkout is detached, so there is no `-u`. The push only
-   fast-forwards; if it is refused, someone else moved the branch or the plan: return
-   `BLOCKED: the branch moved`. Never force-push. (The older way, a plan file on the branch:
-   stage the ticked file with the code and `git push origin HEAD:<branch>`.)
-   After the push, run `baton tasks issue <N>` and confirm that your task's `ticked_by` commit is
-   your own `<sha>`; if it is another commit (for example the orchestrator's replan), return
-   `BLOCKED: the plan was ticked by another commit`. A plan on a branch or in the body shows no
-   `ticked_by`; skip this check there.
+   with a plain push: `git push origin HEAD:refs/heads/<branch>`. Your checkout is detached, so
+   there is no `-u`. The push only fast-forwards; if it is refused, someone else moved the branch:
+   return `BLOCKED: the branch moved`. Never force-push. Then run `baton tasks issue <N>` and
+   confirm your task is ticked.
 
 7. **The last task of the plan** also:
    - fetches and merges the default branch in, resolves conflicts, re-runs its check, pushes;
@@ -180,8 +169,9 @@ For `Update pull request <P> (issue <N>).`, follow these steps in order:
 When the plan cannot be followed as written (an interface changed on the default branch, a step
 is missing, a task is in the wrong order), propose new tasks instead of improvising:
 
-- Write them in the plan's brief format (`- [ ] **<n>. <title>**` with Files, Uses, Provides,
-  Port from and Check lines), numbered from the task you were given, replacing it and every open
+- Write them in the plan's task form (`- [ ] Task <n>: <title>` followed by an indented
+  `<details>` block whose summary is "Click to see plan details" and whose two-space bullets are
+  Files, Uses, Provides, Port from and Check), numbered from the task you were given, replacing it and every open
   task after it.
 - Say why in one paragraph, and whether the new tasks stay inside the issue's acceptance
   criteria. If they would change what the issue promises, say so plainly.
@@ -303,9 +293,14 @@ Issue: #<N>, from task <n>
 Why: <one paragraph>
 Within the acceptance criteria: yes | no, because <...>
 ```baton-plan <n>
-- [ ] **<n>. <title>**
+- [ ] Task <n>: <title>
+  <details>
+  <summary>Click to see plan details</summary>
+
   - Files: ...
   - Check: ...
+
+  </details>
 ```
 ````
 
@@ -357,3 +352,14 @@ Issue: #<N>
 - Return anything but a result form, or stop an update early because the merge was empty.
 - Stop processes, sessions or containers you did not start. On a shared host, end only your own
   by name; never a whole server (`tmux kill-server`) or every container.
+
+## Older issues
+
+An issue whose `Plan:` link points at `refs/plans/<N>` (and has no `## Developer Plan`) is read and
+ticked the old way, for one release. Read the plan with
+`git fetch --quiet origin +refs/plans/<N>:refs/baton/plans/<N> && git show refs/baton/plans/<N>:<path>`
+(`<path>` is printed by `baton tasks issue <N>`); if the ref is missing, return
+`BLOCKED: the plan ref is missing`. `baton task done issue <N> <n>` then ticks on that ref and
+prints a commit sha, which you push with the code atomically:
+`git push --atomic origin HEAD:refs/heads/<branch> <sha>:refs/plans/<N>`; afterwards check that
+the task's `ticked_by` is your `<sha>`, else return `BLOCKED: the plan was ticked by another commit`.

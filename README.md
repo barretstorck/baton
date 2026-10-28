@@ -49,20 +49,18 @@ Every tool call sends an agent's whole conversation to the model again, so an ag
 whole issue grows large and expensive: in the second sprint, single developers reached 300K to
 680K tokens and two of them used a 5-hour quota window in about an hour. So:
 
-- `refine` writes a plan file for each issue (except spikes) to `<docs.dir>/plans/<N>-<slug>.md`
-  (`docs.dir` in `.baton/brief.md`, default `docs/baton`) and keeps it in the custom ref
-  `refs/plans/<N>`, not on the issue branch; the issue's first line (`Plan:`) links to the ref's
-  commit history. The issue stays short for a person to read. The plan holds
+- `refine` writes a plan into the issue body (except for spikes) under `## Developer Plan`: one
+  checkbox line per task (`- [ ] Task <n>: <title>`) with the brief in a `<details>` block, so the
+  issue's progress bar follows the tasks. Acceptance criteria are plain lists. The plan holds
   numbered tasks, each a short brief with the files, the exact signatures it uses and provides,
-  the lines to port from, and the check that proves it done.
+  the lines to port from, and the check that proves it done. The body is limited to 65536
+  characters; a longer one is refused and the issue must be split.
 - The sprint gives **each task to a fresh developer**, one after another on the issue's branch.
-  No developer's conversation grows large. A developer ticks its task on the plan ref and
-  pushes the tick with its code in one atomic push; the orchestrator confirms the tick on the ref.
-- `merge-pr` pins the issue's link to the plan's last commit and merges in the same pass, so the
-  default branch collects no plan files and the link still opens the final plan. (A plan still
-  on the branch from before refs is removed in a commit before the merge.) Sprint retrospectives
-  go to `<docs.dir>/retros/`. An older issue with a `## Plan` in its body is still read, and
-  `baton plan migrate` moves it to the ref.
+  No developer's conversation grows large. A developer ticks its task in the issue body
+  (`baton task done issue`) and pushes its code; the orchestrator confirms the tick.
+- `merge-pr` merges the pull request; the branch holds no plan file. Sprint retrospectives
+  go to `<docs.dir>/retros/`. Older issues: a plan on `refs/plans/<N>`, on a branch or in a legacy
+  `## Plan` section is moved into the body by `baton plan migrate`.
 - The reviewer runs when every task is ticked and the pull request is ready. What it wants fixed is a `## Tasks`
   checklist in its review, worked the same way, one developer per task.
 - `baton usage` measures the result per issue and role from the local transcripts, and the
@@ -91,20 +89,19 @@ whole issue grows large and expensive: in the second sprint, single developers r
 5. Once approved, `baton merge-pr` merges it after checking CI and that the approval still
    covers the head commit.
 
-## Custom refs: spike prototypes and plans
+## Custom refs: spike prototypes
 
-Baton keeps some work in custom refs, which no branch or pull request holds. Plans live in
-`refs/plans/<N>`, with the same caveats as below. A spike that writes prototype code keeps it in the custom ref `refs/spikes/<N>`, where `<N>` is the
+Baton keeps some work in custom refs, which no branch or pull request holds. A spike that writes prototype code keeps it in the custom ref `refs/spikes/<N>`, where `<N>` is the
 spike's issue number. No pull request and no branch is left behind; the findings comment ends with
 a `Prototype:` link to the commit.
 
-- Fetch one with `git fetch origin refs/spikes/<N>` (a plan: `git fetch origin refs/plans/<N>`). A normal clone does not fetch these refs, and
+- Fetch one with `git fetch origin refs/spikes/<N>`. A normal clone does not fetch these refs, and
   `git push --mirror` from such a clone deletes them on the remote.
-- GitHub rulesets cover only branches and tags, so anyone with write access can delete a spike or plan ref.
+- GitHub rulesets cover only branches and tags, so anyone with write access can delete a spike ref.
 - **Before making a repository public**, list the refs with `git ls-remote origin 'refs/spikes/*'`
-  and `git ls-remote origin 'refs/plans/*'`, then review them or delete them with
-  `git push origin --delete refs/spikes/<N>` (or `refs/plans/<N>`). A deleted ref breaks its
-  findings or `Plan:` link, but the findings text stays. Deleting a ref does not erase the commits:
+  then review them or delete them with
+  `git push origin --delete refs/spikes/<N>`. A deleted ref breaks its
+  findings link, but the findings text stays. Deleting a ref does not erase the commits:
   GitHub can still serve them by SHA from cached views, forks and old pull request refs
   (`refs/pull/*`, including earlier spike drafts) until GitHub Support runs a garbage collection.
 
@@ -156,12 +153,12 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton open-questions` | List open issues waiting on the maintainer (unanswered question, `status:blocked` or `needs-maintainer`) as JSON, most pressing first |
 | `baton ready-check <issue>` | The mechanical half of the definition of ready |
 | `baton tasks <issue\|pr> <number>` | An issue's plan tasks, or the latest review's tasks, as JSON |
-| `baton task done <issue\|pr> <number> <task>` | Tick one task: in the plan file of the current checkout for an issue (the developer commits it), in the review for a pull request (the orchestrator) |
-| `baton plan replace <issue> <from-task> <file \| -> [--drop]` | Replace a plan's open tasks from that number on; a linked plan is committed to its branch and pushed |
+| `baton task done <issue\|pr> <number> <task>` | Tick one task: in the issue body's plan for an issue (the developer), in the review for a pull request (the orchestrator) |
+| `baton plan replace <issue> <from-task> <file \| -> [--drop]` | Replace a plan's open tasks from that number on |
 | `baton plan insert <issue> <before-task> <file \| ->` | Insert new tasks before that task number; later open tasks are renumbered (and their `task <n>` references shifted) |
-| `baton plan against <issue> <sha>` | Set the `Written against:` commit of a plan on `refs/plans/<N>` (the refiner, after a replan) |
-| `baton plan link <issue> <branch> <path>` / `--at <sha>` | Write the issue's `Plan:` link to the file on the branch, or pin it to a commit |
-| `baton plan migrate <issue> <branch>` | Move a plan from the issue body to a plan file on a new branch |
+| `baton plan against <issue> <sha>` | Set the `Written against:` commit of the body plan (the refiner, after a replan) |
+| `baton plan set <issue> <file \| ->` | Write the `## Developer Plan` section into the issue body (the refiner); `plan commit`, `link` and `pin` are deprecated no-ops |
+| `baton plan migrate <issue>` | Convert an older plan into `## Developer Plan` |
 | `baton usage [--repo <owner/repo>] [--since <time>] [--json]` | Quota use per issue and role, from local transcripts |
 | `baton sprint-status [milestone]` | The sprint's state and what may be dispatched now, as JSON; `waiting_links` gives each `waiting_on_maintainer` issue's question comment URL and `progress.<N>.next_task_url` links the next plan task; `progress.<N>.stale`, `branch_behind` and `merge_first` report plans naming missing paths (a ready issue with two or more is held for re-refinement) and branches far behind the default branch |
 | `baton clean` | Remove leftover agent worktrees (kept: an open issue's branch, a lock held by a live process, unmerged detached work; uncommitted files are removed with the worktree) and the log folders of closed or merged pull requests; exit 1 if a worktree could not be removed |

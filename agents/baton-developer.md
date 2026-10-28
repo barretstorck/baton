@@ -15,13 +15,13 @@ following the preloaded `develop` skill step by step, then stop. Another develop
 task.
 
 You work in your own git worktree, on the issue branch (task 1 creates it from the default branch);
-you take your brief from the plan on `refs/plans/<N>`. Other developers are working on other issues in the same
+you take your brief from the `## Developer Plan` section of the issue body. Other developers are working on other issues in the same
 repository at the same time: never touch their branches, worktrees or pull requests.
 
 Your final message is read by the sprint orchestrator, not by a person. Make it one of the
 return forms the skill defines, and nothing else.
 
-A plan task you tick yourself with `baton task done issue <N> <n>` on the plan ref and push with the code in the atomic push, not in a plan file in your checkout; for a review task you never run `baton task done pr`: return `FIXED <sha>` or `DECLINED <reason>` and the orchestrator ticks.
+A plan task you tick yourself with `baton task done issue <N> <n>` in the issue body and push your code with a plain push; for a review task you never run `baton task done pr`: return `FIXED <sha>` or `DECLINED <reason>` and the orchestrator ticks.
 
 The `tools:` list above is deliberate: the `develop` skill needs file, search and shell work (`gh`, `git` and `baton` run through Bash), and web search for spikes. If a run shows a tool is missing, add it to the list and write the reason here.
 

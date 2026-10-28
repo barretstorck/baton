@@ -17,8 +17,8 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | A pull request's draft state and CI state (reviewer) | `baton pr-state <N>` (JSON: `draft`, `ci`: `green`, `red`, `cancelled` (only cancelled checks failed: CI did not finish), `pending` or `none`, `verify`: `none`, `missing`, `green`, `red` or `timeout`, `problems`) |
 | Full verification of a pull request (reviewer) | `baton verify <PR> <worktree>`: runs the brief's `verify.command` in the worktree (at the pull request's head, clean); prints `verify <state> commit=<sha7> exit=<n> duration=<s>s`, `log: <path>` and the last 40 lines; writes nothing to the pull request. Exit 0 green, 1 red or refused, 3 timeout |
 | A pull request's review state | `baton review state <N>`: `none`, `changes`, `replied`, `stale`, `approved`, `escalate`, `replan`, `blocked` or `repeated` (the same failing tests in two reviews in a row) |
-| An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`); reads the plan file from `refs/plans/<N>`, or (older way) on the issue branch, or a legacy `## Plan` in the body |
-| An issue's plan file | the issue's first line is `Plan: [path](link)`. A plan on the ref is read with `git fetch --quiet origin +refs/plans/<N>:refs/baton/plans/<N>`, then `git show refs/baton/plans/<N>:<path>` (the path is in `baton tasks issue <N>`; it is `<docs.dir>/plans/<N>-<slug>.md`, `docs.dir` from `baton config`). Only a plan still on the branch (the older way) is a file in a checkout of `issue-<N>-<slug>`. |
+| An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`); reads the `## Developer Plan` section of the issue body |
+| An issue's plan | the `## Developer Plan` section of the issue body: `gh issue view <N> --json body -q .body`. The body is limited to 65536 characters; a longer one is refused and the issue must be split. Older issues: a plan still on `refs/plans/<N>` or on a branch is moved into the body by `baton plan migrate <N>`. |
 | A review's tasks | `baton tasks pr <N>` (the latest review's `## Tasks`; none after an approval) |
 | Clean up leftovers (orchestrator) | `baton clean`: removes agent worktrees under `.claude/worktrees/` that are not on an open issue's branch, are not locked by a live process and have no unmerged commits (uncommitted files are removed with the worktree), and the log folders of closed or merged pull requests; prints `removed`/`kept` lines, exit 1 if one could not be removed |
 | Quota use | `baton usage --repo <owner/repo> [--since <UTC ISO time>] [--json]`: per issue and role, from local transcripts |
@@ -39,22 +39,20 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Mark a pull request ready | `baton pr ready <N>`, or `baton pr ready <N> --undo` to turn it back into a draft (the orchestrator, once the review is approved) |
 | Post a review | `baton review post <N> <approve\|changes\|blocked\|replan> <full head sha> -` with the body as an inline heredoc. It refuses if the head moved. `blocked` needs a `Cause: default-branch` or `Cause: environment` line and a `## Reason` section, takes no `## Tasks`, and does not count as a review round. `replan` needs a non-empty `## Feedback` section, takes no `## Tasks`, and counts as a round. Failures are listed under `## Failures` as `- <id>: <caused\|default-branch\|flaky\|environment>`. |
 | Answer a review | `baton comment pr <N> developer reply -`, one line per task (orchestrator, from the developers' results) |
-| Commit a plan | `baton plan commit <N> <path> <file\|->` (refiner): commits the plan file to `refs/plans/<N>` (no checkout needed) and pushes it |
-| Link an issue to its plan | `baton plan link <N> refs/plans/<N> <path>` (refiner, after `plan commit`); `baton plan link <N> <branch> <path>` is the older way for a plan on a branch; `baton plan link <N> --at <sha>` pins it to a commit |
-| Pin a plan link | `baton plan pin <N>` pins the `Plan:` link to the ref's tip. `baton merge-pr` does it; the orchestrator runs it for an issue closed without a merge. |
-| Migrate a legacy plan | `baton plan migrate <N>` (refiner or orchestrator, for an issue not yet in development; moves it to `refs/plans/<N>`; the older `baton plan migrate <N> <branch>` form still works) |
-| Tick a task | `baton task done issue <N> <task> [--as-built <text>]` (developer: for a plan on the ref, commits the tick (and with `--as-built` the `Provides (as built):` line) to `refs/plans/<N>`, prints the sha and does not push; push it with the code in one atomic push: `git push --atomic origin HEAD:refs/heads/<branch> <sha>:refs/plans/<N>`. For a plan on the branch it ticks the file in the checkout, committed with the code); `baton task done pr <P> <r.n>` (orchestrator only, review tasks; from a linked worktree set `BATON_ROLE=orchestrator` or it warns) |
-| Replace a plan's open tasks | `baton plan replace <N> <from-task> <file> [--drop]` (orchestrator only; refuses fewer new tasks than replaced unless `--drop`; a plan on the ref is committed to `refs/plans/<N>` and pushed; a plan on a branch is committed to the issue branch and pushed) |
-| Insert tasks into a plan | `baton plan insert <N> <before-task> <file>` (orchestrator only; the new tasks go before that number, later open tasks are renumbered with their `task <n>` references; done tasks are refused; `total + 1` appends; stored like `replace`) |
-| Set a plan's `Written against:` | `baton plan against <N> <full sha>` (refiner; a plan on `refs/plans/<N>` only; committed and pushed) |
+| Set a plan | `baton plan set <N> <file\|->` (refiner): writes the whole `## Developer Plan` section (heading included) into the issue body, replacing an earlier one |
+| Deprecated plan commands | `baton plan commit`, `baton plan link` and `baton plan pin` do nothing; do not use them |
+| Migrate a plan | `baton plan migrate <N>` (refiner or orchestrator): converts an older plan (on a branch or in a legacy `## Plan` section) into `## Developer Plan` and removes the `Plan:` line |
+| Tick a task | `baton task done issue <N> <task> [--as-built <text>]` (developer: ticks the task in the issue body, re-reading the body just before writing; `--as-built` adds the `Provides (as built):` line); `baton task done pr <P> <r.n>` (orchestrator only, review tasks; from a linked worktree set `BATON_ROLE=orchestrator` or it warns) |
+| Replace a plan's open tasks | `baton plan replace <N> <from-task> <file> [--drop]` (orchestrator only; refuses fewer new tasks than replaced unless `--drop`; edits the body) |
+| Insert tasks into a plan | `baton plan insert <N> <before-task> <file>` (orchestrator only; the new tasks go before that number, later open tasks are renumbered with their `task <n>` references; done tasks are refused; `total + 1` appends) |
+| Set a plan's `Written against:` | `baton plan against <N> <full sha>` (refiner; edits the body) |
 | Create or edit a milestone | `baton milestone create --title <t> [--description <d>] [--due-on <ISO date>]`; `baton milestone edit <number or title> [--title <t>] [--description <d>] [--due-on <date>] [--state open\|closed]` |
 | Merge | `baton merge-pr <N>` only. `gh pr merge` is refused. |
 
 Roles: `orchestrator`, `developer`, `refine`, `reviewer`. Kinds: `question`, `status`,
 `decision`, `plan`, `review`, `findings`, `reply`. Reviews are posted only with
 `baton review post`, which adds the verdict and the commit to the marker. Task boxes are ticked
-only with `baton task done`. For a plan on the ref, `baton merge-pr` pins the link and merges in one pass. Only for a plan still on a branch (the older way) does a merge remove the plan file from the branch first; run
-`baton merge-pr <P>` again after the checks pass on the removal commit.
+only with `baton task done`. `baton merge-pr` merges in one pass; the plan lives in the issue body, so the branch holds no plan file.
 
 Where a row says "write ... to a file", an inline heredoc works too and needs no file:
 `--body "$(cat <<'EOF'` on one line, the text, then `EOF` and `)"` on the last two lines.

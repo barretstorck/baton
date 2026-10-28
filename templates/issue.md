@@ -1,5 +1,3 @@
-Plan: [path of the plan file](link to the plan ref's history page, `refs/plans/<N>`; `baton plan link` writes this line)
-
 ## Context
 
 What is wrong or missing, and why it matters. Check a claim about current behaviour or past measurements against the code or a linked comment, or mark it unverified and name its source (for example "per the developer of #N").
@@ -10,8 +8,8 @@ What is wrong or missing, and why it matters. Check a claim about current behavi
 
 ## Acceptance criteria
 
-- [ ] A result that can be checked objectively
-- [ ] Another one
+- A result that can be checked objectively
+- Another one
 
 ## Out of scope
 

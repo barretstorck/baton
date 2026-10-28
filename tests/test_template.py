@@ -20,6 +20,20 @@ class TemplateTest(unittest.TestCase):
         self.assertLess(text.index("  - Provides:"), text.index("  - Provides (as built):"))
         self.assertLess(text.index("  - Provides (as built):"), text.index("  - Check:"))
 
+    def test_issue_template_has_no_plan_line_or_checkbox_criteria(self):
+        text = (ROOT / "templates" / "issue.md").read_text()
+        self.assertNotIn("Plan:", text)
+        self.assertNotIn("[ ]", text)
+        self.assertIn("- A result that can be checked objectively", text)
+
+    def test_plan_template_is_developer_plan_section(self):
+        text = (ROOT / "templates" / "plan.md").read_text()
+        for needle in ("## Developer Plan", "- [ ] Task 1:", "Click to see plan details",
+                       "baton plan set", "### Verification", "### Pattern",
+                       "### Design notes", "Written against:"):
+            self.assertIn(needle, text)
+        self.assertNotIn("baton plan commit", text)
+
     def test_develop_skill_limits_outgrows_decline(self):
         text = " ".join((ROOT / "skills/develop/SKILL.md").read_text().split())
         self.assertIn("cannot be declined as \"outgrows the issue\"", text)
@@ -66,6 +80,21 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("baton plan against", skill)
         agent = (ROOT / "agents" / "baton-refiner.md").read_text()
         self.assertIn("Re-refine issue", agent)
+        self.assertIn("baton plan replace", skill)
+        self.assertIn("Developer Plan", skill)
+
+    def test_refine_skill_writes_plan_into_body(self):
+        skill = (ROOT / "skills" / "refine" / "SKILL.md").read_text()
+        self.assertIn("baton plan set", skill)
+        self.assertIn("Click to see plan details", skill)
+        self.assertIn("baton plan migrate", skill)
+        for gone in ("baton plan commit", "baton plan link"):
+            self.assertNotIn(gone, skill)
+        self.assertEqual(skill.count("refs/plans"), 1)
+        agent = (ROOT / "agents" / "baton-refiner.md").read_text()
+        self.assertIn("baton plan set", agent)
+        self.assertNotIn("baton plan commit", agent)
+        self.assertNotIn("refs/plans", agent)
 
     def test_agents_declare_restricted_tools(self):
         expected = {
@@ -144,3 +173,21 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("Problems fixed in review instead of filed", retro)
         text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
         self.assertIn("Fill the two follow-up rows from the sprint's review comments", text)
+
+    def test_develop_skill_uses_body_plan(self):
+        text = (ROOT / "skills/develop/SKILL.md").read_text()
+        self.assertIn("## Developer Plan", text)
+        self.assertIn("Task <n>:", text)
+        self.assertIn("Click to see plan details", text)
+        older = text.index("## Older issues")
+        self.assertEqual(text[:older].count("refs/plans"), 0)
+        self.assertNotIn("refs/plans", (ROOT / "agents/baton-developer.md").read_text())
+
+    def test_review_and_sprint_skills_use_body_plan(self):
+        sprint = (ROOT / "skills/sprint/SKILL.md").read_text()
+        review = (ROOT / "skills/review/SKILL.md").read_text()
+        self.assertIn("baton plan migrate", sprint)
+        self.assertIn("## Developer Plan", sprint)
+        for text in (sprint, review):
+            for gone in ("baton plan commit", "baton plan link", "baton plan pin"):
+                self.assertNotIn(gone, text)

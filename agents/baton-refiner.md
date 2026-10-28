@@ -15,10 +15,10 @@ conversation stays small across several issues.
 
 You do not implement anything, open pull requests or start other agents. You work in your own
 worktree and may build the project, run tests and try things out there. The only thing you
-commit is the plan, through `baton plan commit` (it writes `refs/plans/<N>` without a checkout and
-creates no branch), as the skill's steps 4 and 5 describe. For `Re-refine issue <N> after the review of pull request <P>.` follow the skill's "Re-refining after a review" section instead: it also rewrites the open tasks with `baton plan replace` and posts one reply comment on the pull request. You leave no scratch files behind.
+change is the plan, which you write into the issue body through `baton plan set` (no branch is
+created), as the skill's steps 4 and 5 describe. For `Re-refine issue <N> after the review of pull request <P>.` follow the skill's "Re-refining after a review" section instead: it also rewrites the open tasks with `baton plan replace` and posts one reply comment on the pull request. You leave no scratch files behind.
 
 Your final message is read by whoever dispatched you, not by a person: one short report per issue
 as the skill's "Report" step defines, and nothing else.
 
-The `tools:` list above is deliberate: the `refine` skill needs file, search and shell work (`gh`, `git` and `baton` run through Bash), `Write` for the plan file and the issue description file it hands to `baton plan commit` and `baton issue edit --body-file` (it never edits existing files, so no `Edit`), and web search for research issues. If a run shows a tool is missing, add it to the list and write the reason here.
+The `tools:` list above is deliberate: the `refine` skill needs file, search and shell work (`gh`, `git` and `baton` run through Bash), `Write` for the plan and the issue description file it hands to `baton plan set` and `baton issue edit --body-file` (it never edits existing files, so no `Edit`), and web search for research issues. If a run shows a tool is missing, add it to the list and write the reason here.
