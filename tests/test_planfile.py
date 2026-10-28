@@ -541,7 +541,7 @@ class CliRunner(FakeRunner):
 class CliTest(unittest.TestCase):
     def call(self, runner, argv, stdin=""):
         out, err = io.StringIO(), io.StringIO()
-        cfg = mock.Mock(data={"docs": {"dir": "docs/baton"}})
+        cfg = mock.Mock(data={"docs": {"dir": "docs/baton"}, "privacy_allow": []})
         with mock.patch.object(cli.run, "run", runner), \
                 mock.patch.object(cli, "_require_config", return_value=cfg), \
                 mock.patch("sys.stdin", io.StringIO(stdin)), \
