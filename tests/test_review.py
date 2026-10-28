@@ -252,10 +252,15 @@ class RefPlanTest(unittest.TestCase):
 
 
 TASKS = "## Tasks\n- [ ] **1.1 Fix it**\n  - Check: none\n"
+TASKS_NEW = ("## Tasks\n- [ ] Task 1.1: Fix it\n  <details>\n"
+             "  <summary>Click to see plan details</summary>\n\n"
+             "  - Problem: `a.py:1` wrong\n  - Fix: change it\n  - Check: none\n\n"
+             "  </details>\n")
 
 
-def changes_with_tasks(commit=NEW, ticked=False):
-    body = TASKS.replace("[ ]", "[x]") if ticked else TASKS
+def changes_with_tasks(commit=NEW, ticked=False, new=False):
+    body = TASKS_NEW if new else TASKS
+    body = body.replace("[ ]", "[x]") if ticked else body
     return {"author": {"login": OWNER}, "url": "https://x/pull/9#issuecomment-55",
             "body": review.compose("changes", commit, body)}
 
@@ -290,6 +295,46 @@ class ReviewTasksTest(unittest.TestCase):
         runner = pr_runner([changes_with_tasks(ticked=True)])
         self.assertFalse(review.tick_review(runner, 9, OWNER, "1.1"))
         self.assertFalse(any("PATCH" in line for line in runner.lines()))
+
+
+class ReviewTasksLayoutTest(unittest.TestCase):
+    """The same behaviour on the older and the new task layout."""
+
+    def test_tasks_and_progress(self):
+        for new in (False, True):
+            with self.subTest(new=new):
+                found = review.review_tasks({"comments": [changes_with_tasks(new=new)]}, OWNER)
+                self.assertEqual((found["round"], found["next"], found["total"]), (1, "1.1", 1))
+                self.assertEqual(found["tasks"][0]["title"], "Fix it")
+                self.assertFalse(found["tasks"][0]["done"])
+                done = review.review_tasks(
+                    {"comments": [changes_with_tasks(ticked=True, new=new)]}, OWNER)
+                self.assertTrue(done["tasks"][0]["done"])
+
+    def test_tick_review_ticks_only_that_box(self):
+        class Patching(FakeRunner):
+            sent = None
+
+            def __call__(self, argv, cwd=None, input=None):
+                if "PATCH" in argv:
+                    path = argv[argv.index("-F") + 1].split("@", 1)[1]
+                    self.sent = pathlib.Path(path).read_text()
+                return super().__call__(argv, cwd, input)
+
+        for new in (False, True):
+            with self.subTest(new=new):
+                comment = changes_with_tasks(new=new)
+                runner = Patching(pr_runner([comment]).replies)
+                self.assertTrue(review.tick_review(runner, 9, OWNER, "1.1"))
+                self.assertEqual(runner.sent, comment["body"].replace("[ ]", "[x]", 1))
+
+    def test_changes_post_gate_on_the_new_layout(self):
+        runner = pr_runner([reply()])
+        self.assertEqual(review.post(cfg(), runner, 9, "changes", NEW, TASKS_NEW, [], OWNER),
+                         "https://example.com/c/1")
+        with self.assertRaises(review.ReviewError):
+            review.post(cfg(), runner, 9, "changes", NEW,
+                        TASKS_NEW.replace("1.1", "2.1"), [], OWNER)
 
 
 class PostGateTest(unittest.TestCase):

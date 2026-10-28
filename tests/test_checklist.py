@@ -142,6 +142,41 @@ REVIEW = """<!-- baton:reviewer:review verdict=changes commit=%s -->
 """ % SHA
 
 
+def _review_task(rid, title):
+    return (f"- [ ] Task {rid}: {title}\n  <details>\n"
+            f"  <summary>Click to see plan details</summary>\n\n"
+            f"  - Problem: `x.py:5` it breaks\n"
+            f"  - Fix:\n    ```sh\n    # not a heading\n    cargo test x\n    ```\n"
+            f"  - Check: none\n\n  </details>\n")
+
+
+REVIEW_NEW = (f"<!-- baton:reviewer:review verdict=changes commit={SHA} -->\n"
+              "**Baton reviewer: review (changes requested, commit aaaaaaa)**\n\n## Tasks\n"
+              + _review_task("1.1", "Clamp the estimate")
+              + _review_task("1.2", "Rename")
+              + "\n## Follow-up issues\n- none\n")
+
+
+class ReviewNewLayoutTest(unittest.TestCase):
+    def test_tasks_under_reads_only_the_box_lines(self):
+        tasks = checklist.tasks_under(REVIEW_NEW, "tasks")
+        self.assertEqual(tasks, [{"id": "1.1", "title": "Clamp the estimate", "done": False},
+                                 {"id": "1.2", "title": "Rename", "done": False}])
+        self.assertEqual(checklist.tasks_under(REVIEW_NEW, "follow-up issues"), [])
+
+    def test_tick_only_that_box_and_leaves_the_block(self):
+        new, changed = checklist.tick(REVIEW_NEW, "tasks", "1.2")
+        self.assertTrue(changed)
+        self.assertEqual(new, REVIEW_NEW.replace("- [ ] Task 1.2:", "- [x] Task 1.2:"))
+
+    def test_ticked_task_reads_as_done(self):
+        new, _ = checklist.tick(REVIEW_NEW, "tasks", "1.1")
+        tasks = checklist.tasks_under(new, "tasks")
+        self.assertEqual([t["done"] for t in tasks], [True, False])
+        self.assertEqual(checklist.tick(new, "tasks", "1.1"), (new, False))
+        self.assertEqual(checklist.progress(tasks), {"done": 1, "total": 2, "next": "1.2"})
+
+
 class BodyLimitTest(unittest.TestCase):
     def test_oversized_body_runs_nothing(self):
         runner = FakeRunner()
