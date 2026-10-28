@@ -320,17 +320,8 @@ def cmd_plan(args):
         print("deprecated: plans live in the issue body; use `baton plan set <N> <file>`",
               file=sys.stderr)
         return 0
-    if len(args) in (2, 3) and args[0] == "migrate" and args[1].isdigit():
-        cfg = _require_config()
-        repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
-        slug = args[2] if len(args) == 3 else None
-        if slug is None:
-            link = planfile.parse_link(checklist.issue_body(run.run, int(args[1])),
-                                       cfg.data["docs"]["dir"])
-            if link is not None:
-                slug = link["path"].rsplit("/", 1)[-1][:-len(".md")].split("-", 1)[-1]
-        print(planfile.migrate(cfg, run.run, repo["nameWithOwner"], int(args[1]), slug,
-                               repo["defaultBranchRef"]["name"]))
+    if len(args) == 2 and args[0] == "migrate" and args[1].isdigit():
+        print(planfile.migrate(_require_config(), run.run, int(args[1])))
         return 0
     print("usage: baton plan replace <issue> <from-task> <file | -> [--drop]\n"
           "       baton plan insert <issue> <before-task> <file | ->\n"
@@ -339,7 +330,7 @@ def cmd_plan(args):
           "       baton plan commit <issue> <path> <file | ->   (deprecated, does nothing)\n"
           "       baton plan pin <issue>   (deprecated, does nothing)\n"
           "       baton plan link <issue> ...   (deprecated, does nothing)\n"
-          "       baton plan migrate <issue> [<slug-or-branch>]\n"
+          "       baton plan migrate <issue>\n"
           , file=sys.stderr)
     return 64
 
