@@ -142,6 +142,22 @@ REVIEW = """<!-- baton:reviewer:review verdict=changes commit=%s -->
 """ % SHA
 
 
+class BodyLimitTest(unittest.TestCase):
+    def test_oversized_body_runs_nothing(self):
+        runner = FakeRunner()
+        body = "x" * (checklist.MAX_BODY + 1)
+        with self.assertRaises(checklist.TaskError) as ctx:
+            checklist._save_issue(runner, 5, body)
+        self.assertEqual(runner.calls, [])
+        self.assertIn("65536", str(ctx.exception))
+        self.assertIn(str(len(body)), str(ctx.exception))
+
+    def test_body_at_limit_is_saved(self):
+        runner = FakeRunner()
+        checklist._save_issue(runner, 5, "x" * checklist.MAX_BODY)
+        self.assertEqual(len(runner.calls), 1)
+
+
 class ParseTest(unittest.TestCase):
     def test_plan(self):
         found = checklist.plan(BODY)

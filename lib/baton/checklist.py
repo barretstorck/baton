@@ -365,9 +365,15 @@ def issue_plan(runner, number, docs_dir=None):
     return found
 
 
+MAX_BODY = 65536
+
+
 def _save_issue(runner, number, body):
     if not body.strip():
         raise TaskError("refusing to write an empty description")
+    if len(body) > MAX_BODY:
+        raise TaskError(f"description is {len(body)} characters; "
+                        f"GitHub allows {MAX_BODY}; split the issue")
     handle, path = tempfile.mkstemp(suffix=".md")
     try:
         with os.fdopen(handle, "w", newline="") as out:
