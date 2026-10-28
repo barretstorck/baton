@@ -25,6 +25,105 @@ Written against: {SHA}
 - kept
 """
 
+DEV_BODY = f"""## Context
+x
+
+## Developer Plan
+
+Written against: {SHA}
+
+### Verification
+`make test`
+
+### Pattern
+Some text.
+
+- [x] Task 1: First step
+  <details>
+  <summary>Click to see plan details</summary>
+
+  - Files: `a.py`
+  - Provides: `f()`
+  - Check: none
+
+  </details>
+- [ ] Task 2: Second step
+  <details>
+  <summary>Click to see plan details</summary>
+
+  - Files: `b.py`
+  - Provides: `g()`
+
+  </details>
+
+## Decisions
+- kept
+"""
+
+
+class DeveloperPlanTest(unittest.TestCase):
+    def test_plan_parse(self):
+        got = checklist.plan(DEV_BODY)
+        self.assertEqual(got["written_against"], SHA)
+        self.assertEqual(got["next"], "2")
+        self.assertEqual([(t["id"], t["title"], t["done"]) for t in got["tasks"]],
+                         [("1", "First step", True), ("2", "Second step", False)])
+
+    def test_tick_changes_only_task_line(self):
+        out, changed = checklist.tick(DEV_BODY, "plan", "2")
+        self.assertTrue(changed)
+        self.assertEqual(out, DEV_BODY.replace("- [ ] Task 2", "- [x] Task 2"))
+
+    def test_task_line(self):
+        n = checklist.task_line(DEV_BODY, "2")
+        self.assertTrue(DEV_BODY.splitlines()[n - 1].startswith("- [ ] Task 2"))
+
+    def test_as_built_inside_details(self):
+        out = checklist.add_as_built(DEV_BODY, "plan", "2", "g(x)")
+        self.assertIn("  - Provides: `g()`\n  - Provides (as built): g(x)\n", out)
+
+    def test_star_bullet_and_dotted_id(self):
+        got = checklist.parse("* [X] Task 2.1: Sub\n")
+        self.assertEqual(got, [{"id": "2.1", "title": "Sub", "done": True}])
+
+
+def _dev_task(n, title, uses=""):
+    return (f"- [ ] Task {n}: {title}\n  <details>\n"
+            f"  <summary>Click to see plan details</summary>\n\n"
+            f"  - Files: `f{n}.py`\n{uses}\n  </details>\n")
+
+
+class DeveloperPlanEditTest(unittest.TestCase):
+    BODY = (f"## Developer Plan\n\nWritten against: {SHA}\n\n### Verification\n`make`\n\n"
+            + _dev_task(1, "One").replace("[ ]", "[x]") + _dev_task(2, "Two")
+            + _dev_task(3, "Three", "  - Uses: task 2\n") + "\n## Decisions\n- kept\n")
+
+    def ids(self, body):
+        return [(t["id"], t["title"]) for t in checklist.plan(body)["tasks"]]
+
+    def test_replace_from_task_two(self):
+        new = _dev_task(2, "New two") + _dev_task(3, "New three")
+        out = checklist.replace_plan(self.BODY, "2", new)
+        self.assertEqual(self.ids(out), [("1", "One"), ("2", "New two"), ("3", "New three")])
+        self.assertIn(_dev_task(1, "One").replace("[ ]", "[x]"), out)
+        self.assertIn("## Decisions\n- kept\n", out)
+
+    def test_insert_before_task_two(self):
+        out = checklist.replace_plan(self.BODY, "2", _dev_task(2, "Inserted"), insert=True)
+        self.assertEqual(self.ids(out), [("1", "One"), ("2", "Inserted"), ("3", "Two"),
+                                         ("4", "Three")])
+        self.assertIn(_dev_task(3, "Two").replace("f3.py", "f2.py"), out)
+        self.assertIn(_dev_task(4, "Three", "  - Uses: task 3\n").replace("f4.py", "f3.py"), out)
+
+    def test_done_task_refused(self):
+        with self.assertRaises(checklist.TaskError):
+            checklist.replace_plan(self.BODY, "1", _dev_task(1, "Again"))
+
+    def test_error_names_new_form(self):
+        with self.assertRaisesRegex(checklist.TaskError, r"Task <n>: <title>"):
+            checklist.replace_plan(self.BODY, "2", "junk\n")
+
+
 REVIEW = """<!-- baton:reviewer:review verdict=changes commit=%s -->
 **Baton reviewer: review (changes requested, commit aaaaaaa)**
 
@@ -41,6 +140,22 @@ REVIEW = """<!-- baton:reviewer:review verdict=changes commit=%s -->
 ## Follow-up issues
 - none
 """ % SHA
+
+
+class BodyLimitTest(unittest.TestCase):
+    def test_oversized_body_runs_nothing(self):
+        runner = FakeRunner()
+        body = "x" * (checklist.MAX_BODY + 1)
+        with self.assertRaises(checklist.TaskError) as ctx:
+            checklist._save_issue(runner, 5, body)
+        self.assertEqual(runner.calls, [])
+        self.assertIn("65536", str(ctx.exception))
+        self.assertIn(str(len(body)), str(ctx.exception))
+
+    def test_body_at_limit_is_saved(self):
+        runner = FakeRunner()
+        checklist._save_issue(runner, 5, "x" * checklist.MAX_BODY)
+        self.assertEqual(len(runner.calls), 1)
 
 
 class ParseTest(unittest.TestCase):
@@ -717,3 +832,42 @@ Written against: {SHA}
 
     def test_no_plan(self):
         self.assertEqual(checklist.named_paths("## Context\nx"), [])
+
+
+class LayoutProblemsTest(unittest.TestCase):
+    HEAD = f"## Developer Plan\n\nWritten against: {SHA}\n\n### Verification\n`make`\n\n"
+
+    def body(self, *tasks):
+        return self.HEAD + "".join(tasks) + "\n## Decisions\n- kept\n"
+
+    def test_correct_plan(self):
+        body = self.body(_dev_task(1, "One"), _dev_task(2, "Two"))
+        self.assertEqual(checklist.layout_problems(body), [])
+
+    def test_no_developer_plan(self):
+        self.assertEqual(checklist.layout_problems("## Plan\n- [ ] **1. Old**\n"), [])
+        self.assertEqual(checklist.layout_problems(""), [])
+
+    def test_old_task_line(self):
+        old = _dev_task(2, "Two").replace("Task 2: Two", "**2. Two**")
+        problems = checklist.layout_problems(self.body(_dev_task(1, "One"), old))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("task 2", problems[0])
+
+    def test_missing_details(self):
+        problems = checklist.layout_problems(self.body(_dev_task(1, "One"),
+                                                       "- [ ] Task 2: Two\n  - Files: `x`\n"))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("task 2", problems[0])
+
+    def test_wrong_summary(self):
+        bad = _dev_task(1, "One").replace("Click to see plan details", "Details")
+        problems = checklist.layout_problems(self.body(bad))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("task 1", problems[0])
+
+    def test_unclosed_block(self):
+        bad = _dev_task(1, "One").replace("  </details>\n", "")
+        problems = checklist.layout_problems(self.body(bad, _dev_task(2, "Two")))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("task 1", problems[0])

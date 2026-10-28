@@ -11,7 +11,7 @@ _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.M)
 _BLOCKED = re.compile(r"^\s*Blocked by:(.*)$", re.M | re.I)
 _NO_BLOCKERS = re.compile(r"^\(?none", re.I)
 _FILES = re.compile(r"^\s*Expected files:(.*)$", re.M | re.I)
-_CHECKBOX = re.compile(r"^\s*[-*]\s+\[[ xX]\]\s+\S", re.M)
+_LIST_ITEM = re.compile(r"^\s*(?:[-*]|\d+\.)\s+\S", re.M)
 
 
 def sections(body):
@@ -57,8 +57,8 @@ def ready_problems(issue, cfg, owner, runner=None):
                         "only the maintainer may mark it ready")
     if not parts.get("context"):
         problems.append("Context section is missing or empty (say why the work matters)")
-    if not _CHECKBOX.search(parts.get("acceptance criteria", "")):
-        problems.append("Acceptance criteria section needs at least one checkbox")
+    if not _LIST_ITEM.search(parts.get("acceptance criteria", "")):
+        problems.append("Acceptance criteria section needs at least one list item")
     if "out of scope" not in parts:
         problems.append("Out of scope section is missing")
     try:
@@ -95,8 +95,11 @@ def ready_problems(issue, cfg, owner, runner=None):
             problems.append("Plan section with at least one task is missing"
                             + (f" in {plan_where}" if link else
                                " and no 'Plan:' link to a plan file")
-                            + " (- [ ] **1. <title>** with Files, Uses, Provides and Check lines)")
+                            + " (- [ ] Task 1: <title> followed by an indented <details> block "
+                            "with Files, Uses, Provides and Check lines)")
         else:
+            if not link:
+                problems.extend(checklist.layout_problems(plan_text))
             if not found["written_against"]:
                 problems.append("the plan needs a 'Written against: <full commit sha>' line")
             ids = [task["id"] for task in found["tasks"]]

@@ -13,6 +13,7 @@ from . import scan
 
 _HEADING = re.compile(r"(#{1,6})\s+(.+?)\s*$")
 _TASK = re.compile(r"^[-*] \[([ xX])\] \*\*(\d+(?:\.\d+)?)\.?\s+(.+?)\*\*\s*$")
+_TASK_NEW = re.compile(r"^[-*] \[([ xX])\] Task (\d+(?:\.\d+)?):\s+(.+?)\s*$")
 _AGAINST = re.compile(r"^\s*Written against:\s*([0-9a-f]{40})\b", re.M)
 
 
@@ -40,8 +41,11 @@ def span(text, heading):
     """(start, end) of the text under `heading`, up to the next heading of its level or higher."""
     text = text or ""
     found = _headings(text)
+    wanted = {heading.lower()}
+    if heading.lower() == "plan":
+        wanted.add("developer plan")
     for index, (level, name, _, line_end) in enumerate(found):
-        if name == heading.lower():
+        if name in wanted:
             end = next((start for lvl, _, start, _ in found[index + 1:] if lvl <= level),
                        len(text))
             return line_end, end
@@ -49,7 +53,8 @@ def span(text, heading):
 
 
 def _match(line):
-    return _TASK.match(line.rstrip("\r\n"))
+    line = line.rstrip("\r\n")
+    return _TASK.match(line) or _TASK_NEW.match(line)
 
 
 def parse(section):
@@ -160,6 +165,30 @@ def _blocks(section):
     return head, blocks
 
 
+def layout_problems(body):
+    """Messages for each task of a body `## Developer Plan` that breaks the layout; [] when fine."""
+    text = body or ""
+    if not any(name == "developer plan" for _, name, _, _ in _headings(text)):
+        return []
+    where = span(text, "developer plan")
+    problems = []
+    for block in _blocks(text[where[0]:where[1]])[1]:
+        first, rest = block["lines"][0].rstrip("\r\n"), block["lines"][1:]
+        task_id = block["id"]
+        if not _TASK_NEW.match(first):
+            problems.append(f"task {task_id}: the line must be '- [ ] Task {task_id}: <title>'")
+        lines = [line.rstrip("\r\n") for line in rest]
+        if not lines or lines[0] != "  <details>":
+            problems.append(f"task {task_id}: the line after the task must be an indented "
+                            "'<details>'")
+        elif len(lines) < 2 or lines[1] != "  <summary>Click to see plan details</summary>":
+            problems.append(f"task {task_id}: the <summary> line must be "
+                            "'<summary>Click to see plan details</summary>'")
+        elif "  </details>" not in lines[2:]:
+            problems.append(f"task {task_id}: the <details> block is not closed with '</details>'")
+    return problems
+
+
 _PATH_LINE = re.compile(r"^\s*[-*]?\s*(?:Files|Uses|Port from):", re.I)
 _TICKED = re.compile(r"`([^`]+)`(\s*\(new\b)?")
 _PATH_EXT = (".py", ".md", ".rs", ".toml", ".yml", ".yaml", ".json", ".sh", ".js", ".ts")
@@ -210,6 +239,14 @@ def _shift_refs(line, before, k):
     return _TASK_REF.sub(shift_ref, line)
 
 
+def _renumber(line, number):
+    """The task line with its id set to `number`, in either task-line form."""
+    line, count = re.subn(r"(Task )\d+", rf"\g<1>{number}", line, count=1)
+    if count:
+        return line
+    return re.sub(r"\*\*\d+", f"**{number}", line, count=1)
+
+
 def insert_text(text, before, new_text):
     """The tasks text that inserts `new_text`'s tasks before task `before` of `text`'s plan.
 
@@ -232,18 +269,18 @@ def insert_text(text, before, new_text):
                         f"{len(blocks) + 1} at most")
     new_head, new_blocks = _blocks(new_text.replace("\r\n", "\n").strip("\n") + "\n")
     if any(line.strip() for line in new_head) or not new_blocks:
-        raise TaskError("the new text must start with a task line: - [ ] **<n>. <title>**")
+        raise TaskError("the new text must start with a task line: - [ ] Task <n>: <title>")
     k = len(new_blocks)
     out = []
     for offset, block in enumerate(new_blocks):
         lines = list(block["lines"])
-        lines[0] = re.sub(r"\*\*\d+", f"**{before + offset}", lines[0], count=1)
+        lines[0] = _renumber(lines[0], before + offset)
         out.extend(lines)
     for block in blocks:
         if int(block["id"]) < before:
             continue
         lines = [_shift_refs(line, before, k) for line in block["lines"]]
-        lines[0] = re.sub(r"\*\*\d+", f"**{int(block['id']) + k}", lines[0], count=1)
+        lines[0] = _renumber(lines[0], int(block["id"]) + k)
         out.extend(lines)
     return "".join(out)
 
@@ -293,7 +330,7 @@ def replace_plan(body, from_id, new_text, drop=False, insert=False):
     new_text = new_text.replace("\r\n", "\n").strip("\n").replace("\n", newline) + newline
     new_head, new_blocks = _blocks(new_text)
     if any(line.strip() for line in new_head) or not new_blocks:
-        raise TaskError("the new text must start with a task line: - [ ] **<n>. <title>**")
+        raise TaskError("the new text must start with a task line: - [ ] Task <n>: <title>")
     for offset, block in enumerate(new_blocks):
         if block["done"] or block["id"] != str(first + offset):
             raise TaskError(f"the new tasks must be open and numbered from {first}")
@@ -352,9 +389,15 @@ def issue_plan(runner, number, docs_dir=None):
     return found
 
 
+MAX_BODY = 65536
+
+
 def _save_issue(runner, number, body):
     if not body.strip():
         raise TaskError("refusing to write an empty description")
+    if len(body) > MAX_BODY:
+        raise TaskError(f"description is {len(body)} characters; "
+                        f"GitHub allows {MAX_BODY}; split the issue")
     handle, path = tempfile.mkstemp(suffix=".md")
     try:
         with os.fdopen(handle, "w", newline="") as out:

@@ -123,6 +123,63 @@ SLIM = BODY[:BODY.index("## Verification")] + BODY[BODY.index("## Decisions"):]
 FILE = BODY[BODY.index("## Verification"):BODY.index("## Decisions")]
 
 
+DEV_HEAD = BODY[:BODY.index("## Verification")]
+DEV_PLAN = """## Developer Plan
+
+Written against: 0123456789abcdef0123456789abcdef01234567
+
+### Verification
+`scripts/test.sh`
+
+### Pattern
+Follow the existing flag.
+
+- [ ] Task 1: Add the flag
+  <details>
+  <summary>Click to see plan details</summary>
+
+  - Files: `src/cli.py`
+  - Check: `scripts/test.sh tests/test_cli.py`
+
+  </details>
+"""
+
+
+class DeveloperPlanReadyTest(unittest.TestCase):
+    def problems(self, body):
+        return issue.ready_problems(make(body=body), cfg(), OWNER)
+
+    def test_developer_plan_is_ready(self):
+        self.assertEqual(self.problems(DEV_HEAD + DEV_PLAN), [])
+
+    def test_old_form_task_line_is_not_ready(self):
+        body = DEV_HEAD + DEV_PLAN.replace("Task 1: Add the flag", "**1. Add the flag**")
+        self.assertTrue(any("task 1" in p.lower() for p in self.problems(body)))
+
+    def test_missing_details_block_is_not_ready(self):
+        body = DEV_HEAD + DEV_PLAN[:DEV_PLAN.index("  <details>")]
+        self.assertTrue(any("task 1" in p.lower() for p in self.problems(body)))
+
+    def test_plan_line_and_developer_plan_conflict(self):
+        found = issue.ready_problems(make(body=LINKED_HEAD + DEV_HEAD + DEV_PLAN), cfg(), OWNER,
+                                     RaisingRunner())
+        self.assertTrue(any("both a Plan:" in p for p in found))
+
+    def test_plain_list_criteria_pass(self):
+        for items in ("- one\n- two", "* one", "1. one\n2. two"):
+            body = DEV_HEAD.replace("- [ ] `--dry-run` prints the plan\n- [x] exits 0", items)
+            self.assertEqual(self.problems(body + DEV_PLAN), [], items)
+
+    def test_criteria_without_list_item(self):
+        body = DEV_HEAD.replace("- [ ] `--dry-run` prints the plan\n- [x] exits 0", "prose only")
+        self.assertIn("Acceptance criteria section needs at least one list item",
+                      self.problems(body + DEV_PLAN))
+
+    def test_missing_plan_hint_names_new_layout(self):
+        found = self.problems(DEV_HEAD)
+        self.assertTrue(any("- [ ] Task 1: <title>" in p and "<details>" in p for p in found))
+
+
 class RaisingRunner:
     def __call__(self, argv, cwd=None):
         raise RunError("missing")
