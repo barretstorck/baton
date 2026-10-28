@@ -212,7 +212,7 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
      protected paths, then merges, closes the issue, sets `status:verification` and removes that
      pull request's branch and worktree. Read its output before doing anything else; never chain
      another command after it, and never set a status it did not set. If it says it kept a
-     worktree, post that on the issue as a `status` comment and add `needs-maintainer` (the issue goes under `Needs you`). For a plan on `refs/plans/<N>` it pins the `Plan:` link to the
+     worktree, that is for a live lock or unmerged work; uncommitted files do not keep one. For a plan on `refs/plans/<N>` it pins the `Plan:` link to the
      plan's last commit and merges in the same pass; nothing is pushed to the branch. Only an
      in-flight plan that is still a file on the branch (the older way) is different: `merge-pr`
      pins the link, pushes a commit removing the file and stops without merging. Wait for CI on

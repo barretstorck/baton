@@ -59,11 +59,27 @@ class WorktreeTest(unittest.TestCase):
             "branch refs/heads/issue-7-x", {"gh issue view 7": '{"state": "CLOSED"}'})
         self.assertEqual(removed, [WT])
 
-    def test_worktree_kept_with_uncommitted_changes(self):
-        _, (removed, kept, _), out = self.go(
+    def test_dirty_worktree_is_removed(self):
+        _, (removed, kept, _), _ = self.go(
             "branch refs/heads/worktree-agent-1", {f"git -C {WT} status": " M file\n"})
+        self.assertEqual((removed, kept), ([WT], []))
+
+    def test_dirty_worktree_on_open_issue_is_kept(self):
+        _, (removed, kept, _), _ = self.go(
+            "branch refs/heads/issue-7-x",
+            {"gh issue view 7": '{"state": "OPEN"}', f"git -C {WT} status": " M file\n"})
         self.assertEqual((removed, kept), ([], [WT]))
-        self.assertIn("uncommitted", out[0])
+
+    def test_dirty_locked_worktree_is_kept(self):
+        _, (removed, kept, _), _ = self.go(
+            f"branch refs/heads/x\nlocked claude agent a (pid {os.getpid()})",
+            {f"git -C {WT} status": " M file\n"})
+        self.assertEqual((removed, kept), ([], [WT]))
+
+    def test_dirty_detached_not_contained_is_kept(self):
+        _, (removed, kept, _), _ = self.go(
+            "detached", {f"git -C {WT} status": "?? f\n"}, cls=NotContained)
+        self.assertEqual((removed, kept), ([], [WT]))
 
     def test_worktree_detached_contained_in_default_is_removed(self):
         runner, (removed, _, _), _ = self.go("detached")
