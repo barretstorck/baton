@@ -482,55 +482,15 @@ class MergeTest(unittest.TestCase):
         merge.merge(9, make_config(), runner)
         self.assertIn("git worktree remove --force --force /wt/issue-4", runner.lines())
 
-    def test_dirty_worktree_is_kept_with_a_note(self):
+    def test_dirty_worktree_is_removed(self):
         replies = self.replies(make_pr())
         replies["git -C /wt/issue-4 status --porcelain"] = " M src/tool.py\n"
         runner, notes = FakeRunner(replies), []
         self.assertEqual(merge.merge(9, make_config(), runner, notes), [])
-        self.assertFalse(any("worktree remove" in line for line in runner.lines()))
-        self.assertFalse(any(line.startswith("git branch -D") for line in runner.lines()))
+        self.assertIn("git worktree remove --force /wt/issue-4", runner.lines())
+        self.assertTrue(any(line.startswith("git branch -D") for line in runner.lines()))
         self.assertIn("git push origin --delete issue-4-flag", runner.lines())
-        self.assertTrue(any("/wt/issue-4" in note for note in notes))
-
-    def secret_tree(self, kind):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        for name in (".env", ".env.example", ".env.sample", ".env.template", "notes.txt"):
-            open(os.path.join(tmp.name, name), "w").close()
-        replies = self.replies(make_pr())
-        if kind == "branch":
-            replies["git worktree list"] = replies["git worktree list"].replace("/wt/issue-4", tmp.name)
-            replies[f"git -C {tmp.name} status --porcelain"] = " M src/tool.py\n"
-        else:
-            replies["git worktree list"] += f"\nworktree {tmp.name}\nHEAD {HEAD}\ndetached\n\n"
-            replies[f"git -C {tmp.name} status --porcelain"] = "?? scratch.txt\n"
-        return tmp.name, replies
-
-    def test_kept_branch_worktree_note_names_the_secret_file(self):
-        path, replies = self.secret_tree("branch")
-        notes = []
-        merge.merge(9, make_config(), FakeRunner(replies), notes)
-        note = next(n for n in notes if path in n)
-        self.assertIn("it holds .env; delete it by hand", note)
-        self.assertNotIn(".env.example", note)
-
-    def test_kept_task_worktree_note_names_the_secret_file(self):
-        path, replies = self.secret_tree("task")
-        notes = []
-        merge.merge(9, make_config(), FakeRunner(replies), notes)
-        note = next(n for n in notes if path in n)
-        self.assertIn("it holds .env; delete it by hand", note)
-
-    def test_kept_worktree_without_a_secret_file_has_no_mention(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            open(os.path.join(tmp, ".env.example"), "w").close()
-            self.assertEqual(merge._secret_files(tmp), [])
-            self.assertEqual(merge._secret_files(tmp + "/missing"), [])
-        notes = []
-        replies = self.replies(make_pr())
-        replies["git -C /wt/issue-4 status --porcelain"] = " M src/tool.py\n"
-        merge.merge(9, make_config(), FakeRunner(replies), notes)
-        self.assertFalse(any("holds" in n for n in notes))
+        self.assertFalse(any("/wt/issue-4" in note for note in notes))
 
     TASK_TREES = (f"worktree /wt/agent-a\nHEAD {HEAD}\ndetached\nlocked agent\n\n"
                   "worktree /wt/agent-b\nHEAD 3333\ndetached\n\n"
@@ -552,12 +512,12 @@ class MergeTest(unittest.TestCase):
         for other in ("/wt/agent-b", "/wt/orchestrator"):
             self.assertFalse(any("remove" in line and other in line for line in lines), other)
 
-    def test_dirty_task_worktree_is_kept_with_a_note(self):
+    def test_dirty_task_worktree_is_removed(self):
         runner, fake = self.task_runner(dirty=True)
         notes = []
         self.assertEqual(merge.merge(9, make_config(), runner, notes), [])
-        self.assertFalse(any("remove" in line and "/wt/agent-a" in line for line in fake.lines()))
-        self.assertTrue(any("/wt/agent-a" in note for note in notes))
+        self.assertIn("git worktree remove --force --force /wt/agent-a", fake.lines())
+        self.assertFalse(any("/wt/agent-a" in note for note in notes))
 
     def test_failure_after_merge_says_the_merge_happened(self):
         class Failing(FakeRunner):
