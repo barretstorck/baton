@@ -465,6 +465,68 @@ Written against: abc
 """
 
 
+FILE_PLAN = """## Pattern
+
+Follow `a.py`.
+
+## Verification
+
+`make test`
+
+## Design notes
+
+(none)
+
+## Plan
+
+Written against: %s
+
+- [x] **1. First**
+  - Files: `a.py`
+  - Provides: `f()`
+  - Provides (as built): `f(x)`
+  - Check: none
+- [ ] **2. Second**
+  - Check: none
+- [ ] Task 3: Third
+  <details>
+  <summary>Click to see plan details</summary>
+
+  - Check: none
+
+  </details>
+""" % SHA
+
+
+class DeveloperPlanFromFileTest(unittest.TestCase):
+    def setUp(self):
+        self.out = planfile.developer_plan_from_file(FILE_PLAN)
+
+    def test_layout_and_order(self):
+        self.assertTrue(self.out.startswith("## Developer Plan\n\nWritten against: " + SHA))
+        self.assertLess(self.out.index("### Verification"), self.out.index("### Pattern"))
+        self.assertNotIn("Design notes", self.out)
+        self.assertEqual(checklist.layout_problems(self.out), [])
+
+    def test_ticks_and_as_built_convert(self):
+        self.assertIn("- [x] Task 1: First\n  <details>", self.out)
+        self.assertIn("  - Provides (as built): `f(x)`", self.out)
+
+    def test_new_layout_task_copied_unchanged(self):
+        self.assertTrue(self.out.endswith(
+            "- [ ] Task 3: Third\n  <details>\n  <summary>Click to see plan details</summary>\n\n"
+            "  - Check: none\n\n  </details>\n"))
+
+    def test_same_tasks_and_flags(self):
+        old = checklist.plan(FILE_PLAN)["tasks"]
+        self.assertEqual(checklist.plan(self.out)["tasks"], old)
+
+    def test_design_notes_kept_when_real(self):
+        out = planfile.developer_plan_from_file(
+            FILE_PLAN.replace("(none)", "Use X."))
+        self.assertIn("### Design notes\n\nUse X.", out)
+
+
 class CliRunner(FakeRunner):
     def __init__(self, replies=None, body=""):
         base = {"hash-object": "b1\n", "git mktree": "t\n", "git commit-tree": f"{SHA}\n",

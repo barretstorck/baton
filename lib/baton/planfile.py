@@ -320,6 +320,57 @@ def split_legacy(body):
     return file_text, trimmed.rstrip() + "\n"
 
 
+def _brief_block(block):
+    """The lines of one task block in the new layout (copied as is when it already is)."""
+    lines = block["lines"]
+    if checklist._TASK_NEW.match(lines[0].rstrip("\r\n")):
+        return "".join(lines).rstrip("\n").split("\n")
+    match = checklist._TASK.match(lines[0].rstrip("\r\n"))
+    mark = "x" if block["done"] else " "
+    brief = [line.rstrip() for line in lines[1:]]
+    while brief and not brief[-1]:
+        brief.pop()
+    while brief and not brief[0]:
+        brief.pop(0)
+    indents = [len(line) - len(line.lstrip()) for line in brief if line]
+    shift = 2 - min(indents) if indents else 0
+    moved = []
+    for line in brief:
+        if not line:
+            moved.append("")
+        elif shift >= 0:
+            moved.append(" " * shift + line)
+        else:
+            moved.append(line[-shift:])
+    return ([f"- [{mark}] Task {match.group(2)}: {match.group(3).strip()}",
+             "  <details>", "  <summary>Click to see plan details</summary>", ""]
+            + moved + ["", "  </details>"])
+
+
+def developer_plan_from_file(text):
+    """The `## Developer Plan` section built from a plan file's text (heading included)."""
+    text = (text or "").replace("\r\n", "\n")
+    where = checklist.span(text, "plan")
+    if where is None:
+        raise checklist.TaskError("the plan file has no '## Plan' section")
+    head, blocks = checklist._blocks(text[where[0]:where[1]])
+    against = re.search(r"^Written against:.*$", "".join(head), re.M)
+    out = ["## Developer Plan", ""]
+    if against:
+        out += [against.group(0).strip(), ""]
+    for heading, name in (("verification", "Verification"), ("pattern", "Pattern"),
+                          ("design notes", "Design notes")):
+        found = checklist.span(text, heading)
+        content = text[found[0]:found[1]].strip() if found else ""
+        if not content or (heading == "design notes"
+                           and re.fullmatch(r"\(?none\)?\.?", content, re.I)):
+            continue
+        out += [f"### {name}", "", content, ""]
+    for block in blocks:
+        out += _brief_block(block)
+    return "\n".join(out).rstrip("\n") + "\n"
+
+
 def migrate(cfg, runner, repo, number, slug, default_branch):
     """Move a plan to `refs/plans/<number>`, relink the issue and return the new `Plan:` line.
 
