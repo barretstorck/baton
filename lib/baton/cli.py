@@ -316,33 +316,10 @@ def cmd_plan(args):
         checklist.against_issue_plan(_require_config(), run.run, int(args[1]), args[2])
         print(f"written against {args[2]}")
         return 0
-    if len(args) == 4 and args[0] == "commit" and args[1].isdigit():
-        cfg = _require_config()
-        number = int(args[1])
-        text = comment.read_body(args[3], sys.stdin)
-        title = json.loads(run.run(["gh", "issue", "view", str(number), "--json", "title"]))["title"]
-        sha = planfile.write(run.run, number, args[2], text, f"Plan for #{number}: {title}")
-        planfile.push(run.run, number, sha)
-        print(sha)
+    if args and args[0] in ("commit", "pin", "link") and len(args) >= 2 and args[1].isdigit():
+        print("deprecated: plans live in the issue body; use `baton plan set <N> <file>`",
+              file=sys.stderr)
         return 0
-    if len(args) == 2 and args[0] == "pin" and args[1].isdigit():
-        cfg = _require_config()
-        sha = planfile.pin(run.run, _repo_name(), int(args[1]), docs_dir=cfg.data["docs"]["dir"])
-        print(sha if sha else "nothing to pin")
-        return 0
-    if len(args) >= 2 and args[0] == "link" and args[1].isdigit():
-        number, rest = int(args[1]), args[2:]
-        if len(rest) == 2 and rest[0] == "--at":
-            kwargs = {"at": rest[1]}
-        elif len(rest) == 2 and not rest[0].startswith("-"):
-            kwargs = {"branch": rest[0], "path": rest[1]}
-        else:
-            kwargs = None
-        if kwargs is not None:
-            cfg = _require_config()
-            repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
-            print(planfile.link_issue(run.run, repo, number, docs_dir=cfg.data["docs"]["dir"], **kwargs))
-            return 0
     if len(args) in (2, 3) and args[0] == "migrate" and args[1].isdigit():
         cfg = _require_config()
         repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
@@ -359,12 +336,11 @@ def cmd_plan(args):
           "       baton plan insert <issue> <before-task> <file | ->\n"
           "       baton plan set <issue> <file | ->\n"
           "       baton plan against <issue> <sha>\n"
-          "       baton plan commit <issue> <path> <file | ->\n"
-          "       baton plan pin <issue>\n"
-          "       baton plan link <issue> refs/plans/<issue> <path>\n"
+          "       baton plan commit <issue> <path> <file | ->   (deprecated, does nothing)\n"
+          "       baton plan pin <issue>   (deprecated, does nothing)\n"
+          "       baton plan link <issue> ...   (deprecated, does nothing)\n"
           "       baton plan migrate <issue> [<slug-or-branch>]\n"
-          "       baton plan link <issue> <branch> <path>\n"
-          "       baton plan link <issue> --at <sha>", file=sys.stderr)
+          , file=sys.stderr)
     return 64
 
 

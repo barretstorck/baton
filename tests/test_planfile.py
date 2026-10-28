@@ -518,44 +518,15 @@ class CliTest(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("bad layout", err)
 
-    def test_plan_commit_writes_pushes_and_prints_the_sha(self):
-        runner = CliRunner()
-        code, out, _ = self.call(runner, ["plan", "commit", "5", PATH, "-"], stdin=PLAN_TEXT)
-        self.assertEqual((code, out), (0, SHA + "\n"))
-        self.assertEqual([i for i in runner.inputs if i][0], PLAN_TEXT)
-        lines = runner.lines()
-        self.assertIn("git commit-tree t -m Plan for #5: The title", lines)
-        self.assertEqual(lines[-1], f"git push origin {SHA}:{REF}")
-
-    def test_plan_commit_reads_a_file(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".md") as handle:
-            handle.write(PLAN_TEXT)
-            handle.flush()
+    def test_plan_commit_link_pin_are_deprecated_no_ops(self):
+        for argv in (["plan", "commit", "5", PATH, "-"], ["plan", "pin", "5"],
+                     ["plan", "link", "5", REF, PATH], ["plan", "link", "5", "--at", SHA]):
             runner = CliRunner()
-            code, _, _ = self.call(runner, ["plan", "commit", "5", PATH, handle.name])
-        self.assertEqual(code, 0)
-        self.assertEqual([i for i in runner.inputs if i][0], PLAN_TEXT)
-
-    def test_plan_link_writes_the_history_page_link(self):
-        runner = CliRunner(body="## Context\nx\n")
-        with mock.patch.object(checklist, "_save_issue") as save:
-            code, out, _ = self.call(runner, ["plan", "link", "5", REF, PATH])
-        line = f"Plan: [{PATH}](https://github.com/o/r/commits/{REF})"
-        self.assertEqual((code, out), (0, line + "\n"))
-        save.assert_called_once_with(runner, 5, f"{line}\n\n## Context\nx\n")
-
-    def test_plan_pin_pins_to_the_tip(self):
-        body = planfile.link_line("o/r", REF, PATH) + "\n\n## Context\n"
-        runner = CliRunner(replies={"git ls-remote": f"{SHA}\t{REF}\n"}, body=body)
-        with mock.patch.object(checklist, "_save_issue") as save:
-            code, out, _ = self.call(runner, ["plan", "pin", "5"])
-        self.assertEqual((code, out), (0, SHA + "\n"))
-        self.assertIn(planfile.link_line("o/r", SHA, PATH), save.call_args[0][2])
-
-    def test_plan_pin_with_nothing_to_pin(self):
-        runner = CliRunner(body=planfile.link_line("o/r", "issue-5-x", PATH))
-        code, out, _ = self.call(runner, ["plan", "pin", "5"])
-        self.assertEqual((code, out), (0, "nothing to pin\n"))
+            code, out, err = self.call(runner, argv, stdin=PLAN_TEXT)
+            self.assertEqual((code, out), (0, ""), argv)
+            self.assertIn("deprecated: plans live in the issue body", err)
+            self.assertIn("baton plan set <N> <file>", err)
+            self.assertEqual(runner.lines(), [], argv)
 
     def test_task_done_ticks_on_the_ref(self):
         body = planfile.link_line("o/r", REF, PATH) + "\n"
@@ -581,8 +552,8 @@ class CliTest(unittest.TestCase):
         self.assertIn("Provides (as built): g()", [i for i in runner.inputs if i][0])
 
     def test_bad_argument_counts_exit_64(self):
-        for argv in (["plan", "commit", "5", PATH], ["plan", "commit", "x", PATH, "-"],
-                     ["plan", "pin"], ["plan", "pin", "5", "6"],
+        for argv in (["plan", "commit", "x", PATH, "-"],
+                     ["plan", "pin"],
                      ["task", "done", "issue", "5", "1", "--as-built"],
                      ["task", "done", "pr", "5", "1.1", "--as-built", "x"],
                      ["task", "done", "issue", "5"]):
@@ -592,5 +563,5 @@ class CliTest(unittest.TestCase):
 
     def test_usage_lists_the_new_forms(self):
         _, _, err = self.call(CliRunner(), ["plan"])
-        for form in ("plan commit", "plan pin", "plan link <issue> refs/plans/<issue>"):
+        for form in ("plan commit", "plan pin", "plan link <issue> ...", "deprecated"):
             self.assertIn(form, err)
