@@ -487,6 +487,37 @@ class CliTest(unittest.TestCase):
             code = cli.main(argv)
         return code, out.getvalue(), err.getvalue()
 
+    def test_plan_set_from_a_file_and_from_stdin(self):
+        seen = []
+
+        def fake(cfg, runner, number, text, terms):
+            seen.append((number, text))
+            return [1, 2]
+        with mock.patch.object(cli.checklist, "set_issue_plan", fake), \
+                mock.patch.object(cli.scan, "load_terms", return_value=[]):
+            code, out, _ = self.call(CliRunner(), ["plan", "set", "5", "-"], stdin="STDIN")
+            self.assertEqual((code, out), (0, "set Developer Plan of #5: 2 task(s)\n"))
+            with tempfile.NamedTemporaryFile("w", suffix=".md") as handle:
+                handle.write("FILE")
+                handle.flush()
+                code, _, _ = self.call(CliRunner(), ["plan", "set", "5", handle.name])
+        self.assertEqual(code, 0)
+        self.assertEqual(seen, [(5, "STDIN"), (5, "FILE")])
+
+    def test_plan_set_wrong_count_exits_64_and_usage_lists_it(self):
+        code, _, err = self.call(CliRunner(), ["plan", "set", "5"])
+        self.assertEqual(code, 64)
+        self.assertIn("baton plan set <issue> <file | ->", err)
+
+    def test_plan_set_task_error_is_not_a_crash(self):
+        def boom(*a):
+            raise cli.checklist.TaskError("bad layout")
+        with mock.patch.object(cli.checklist, "set_issue_plan", boom), \
+                mock.patch.object(cli.scan, "load_terms", return_value=[]):
+            code, _, err = self.call(CliRunner(), ["plan", "set", "5", "-"], stdin="x")
+        self.assertNotEqual(code, 0)
+        self.assertIn("bad layout", err)
+
     def test_plan_commit_writes_pushes_and_prints_the_sha(self):
         runner = CliRunner()
         code, out, _ = self.call(runner, ["plan", "commit", "5", PATH, "-"], stdin=PLAN_TEXT)

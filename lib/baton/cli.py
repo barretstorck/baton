@@ -306,6 +306,12 @@ def cmd_plan(args):
                 print(f"{label} task {task_id}: {title}")
         print(json.dumps(found, indent=2))
         return 0
+    if len(args) == 3 and args[0] == "set" and args[1].isdigit():
+        text = comment.read_body(args[2], sys.stdin)
+        found = checklist.set_issue_plan(_require_config(), run.run, int(args[1]), text,
+                                         scan.load_terms())
+        print(f"set Developer Plan of #{args[1]}: {len(found)} task(s)")
+        return 0
     if len(args) == 3 and args[0] == "against" and args[1].isdigit():
         checklist.against_issue_plan(_require_config(), run.run, int(args[1]), args[2])
         print(f"written against {args[2]}")
@@ -351,6 +357,7 @@ def cmd_plan(args):
         return 0
     print("usage: baton plan replace <issue> <from-task> <file | -> [--drop]\n"
           "       baton plan insert <issue> <before-task> <file | ->\n"
+          "       baton plan set <issue> <file | ->\n"
           "       baton plan against <issue> <sha>\n"
           "       baton plan commit <issue> <path> <file | ->\n"
           "       baton plan pin <issue>\n"
