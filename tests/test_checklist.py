@@ -832,3 +832,42 @@ Written against: {SHA}
 
     def test_no_plan(self):
         self.assertEqual(checklist.named_paths("## Context\nx"), [])
+
+
+class LayoutProblemsTest(unittest.TestCase):
+    HEAD = f"## Developer Plan\n\nWritten against: {SHA}\n\n### Verification\n`make`\n\n"
+
+    def body(self, *tasks):
+        return self.HEAD + "".join(tasks) + "\n## Decisions\n- kept\n"
+
+    def test_correct_plan(self):
+        body = self.body(_dev_task(1, "One"), _dev_task(2, "Two"))
+        self.assertEqual(checklist.layout_problems(body), [])
+
+    def test_no_developer_plan(self):
+        self.assertEqual(checklist.layout_problems("## Plan\n- [ ] **1. Old**\n"), [])
+        self.assertEqual(checklist.layout_problems(""), [])
+
+    def test_old_task_line(self):
+        old = _dev_task(2, "Two").replace("Task 2: Two", "**2. Two**")
+        problems = checklist.layout_problems(self.body(_dev_task(1, "One"), old))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("task 2", problems[0])
+
+    def test_missing_details(self):
+        problems = checklist.layout_problems(self.body(_dev_task(1, "One"),
+                                                       "- [ ] Task 2: Two\n  - Files: `x`\n"))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("task 2", problems[0])
+
+    def test_wrong_summary(self):
+        bad = _dev_task(1, "One").replace("Click to see plan details", "Details")
+        problems = checklist.layout_problems(self.body(bad))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("task 1", problems[0])
+
+    def test_unclosed_block(self):
+        bad = _dev_task(1, "One").replace("  </details>\n", "")
+        problems = checklist.layout_problems(self.body(bad, _dev_task(2, "Two")))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("task 1", problems[0])

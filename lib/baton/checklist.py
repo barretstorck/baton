@@ -165,6 +165,30 @@ def _blocks(section):
     return head, blocks
 
 
+def layout_problems(body):
+    """Messages for each task of a body `## Developer Plan` that breaks the layout; [] when fine."""
+    text = body or ""
+    if not any(name == "developer plan" for _, name, _, _ in _headings(text)):
+        return []
+    where = span(text, "developer plan")
+    problems = []
+    for block in _blocks(text[where[0]:where[1]])[1]:
+        first, rest = block["lines"][0].rstrip("\r\n"), block["lines"][1:]
+        task_id = block["id"]
+        if not _TASK_NEW.match(first):
+            problems.append(f"task {task_id}: the line must be '- [ ] Task {task_id}: <title>'")
+        lines = [line.rstrip("\r\n") for line in rest]
+        if not lines or lines[0] != "  <details>":
+            problems.append(f"task {task_id}: the line after the task must be an indented "
+                            "'<details>'")
+        elif len(lines) < 2 or lines[1] != "  <summary>Click to see plan details</summary>":
+            problems.append(f"task {task_id}: the <summary> line must be "
+                            "'<summary>Click to see plan details</summary>'")
+        elif "  </details>" not in lines[2:]:
+            problems.append(f"task {task_id}: the <details> block is not closed with '</details>'")
+    return problems
+
+
 _PATH_LINE = re.compile(r"^\s*[-*]?\s*(?:Files|Uses|Port from):", re.I)
 _TICKED = re.compile(r"`([^`]+)`(\s*\(new\b)?")
 _PATH_EXT = (".py", ".md", ".rs", ".toml", ".yml", ".yaml", ".json", ".sh", ".js", ".ts")
