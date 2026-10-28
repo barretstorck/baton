@@ -182,11 +182,6 @@ def _allowances(pr, closing, cfg, runner, problems):
         problems.append(f"branch {branch} does not belong to the issue the pull request "
                         f"closes (#{number}); no forbid_added allowances apply")
         return set()
-    try:
-        runner(["git", "fetch", "--quiet", "origin",
-                f"+refs/plans/{number}:refs/baton/plans/{number}"])
-    except RunError:
-        pass
     return forbid.allowed_globs(forbid.plan_text(runner, cfg, branch, number))
 
 
@@ -255,8 +250,7 @@ def _after_merge(pr, cfg, runner, notes):
 def _retire_plan(pr, repo, runner, cfg, notes=None):
     """Pin the issue's plan link; for an in-flight branch plan also remove the file and push.
 
-    A plan in `refs/plans/<N>` is pinned to the ref's tip and the merge goes on in the same
-    call. A plan file on the branch is pinned to the head, removed from the branch and pushed,
+    A plan file on the branch is pinned to the head, removed from the branch and pushed,
     and the note to show is returned. None when there is nothing to retire.
     """
     closing = [ref["number"] for ref in pr.get("closingIssuesReferences") or []]
@@ -267,12 +261,6 @@ def _retire_plan(pr, repo, runner, cfg, notes=None):
     if link is None or link["pinned"]:
         return None
     if link["kind"] == "ref":
-        slug = f"{repo['owner']['login']}/{repo['name']}"
-        try:
-            planfile.pin(runner, slug, issue, cfg.data["docs"]["dir"])
-        except checklist.TaskError as error:
-            if notes is not None:
-                notes.append(f"the plan link of #{issue} was not pinned: {error}")
         return None
     runner(["git", "fetch", "--quiet", "--end-of-options", "origin", branch])
     try:

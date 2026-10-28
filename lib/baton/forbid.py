@@ -1,11 +1,14 @@
 """Forbidden diff patterns: the brief's `forbid_added` rules checked against added lines."""
 import fnmatch
+import json
 import re
 
-from . import githooks
+from . import checklist, githooks
 from .run import RunError
 
 _ALLOWS = re.compile(r'^\s*(?:[-*]\s*)?Allows:\s*forbid_added\s+"([^"]+)"\s*$', re.M)
+_HIDDEN = re.compile(r"<!--.*?(?:-->|\Z)|^[ \t]*(`{3,}|~{3,}).*?(?:^[ \t]*\1[`~]*[ \t]*$|\Z)",
+                     re.S | re.M)
 _BRANCH = re.compile(r"^issue-(\d+)(?:-|$)")
 
 
@@ -36,17 +39,20 @@ def branch_issue(branch):
 
 
 def plan_text(runner, cfg, branch, number=None):
-    """The plan file of issue `number` (default: the one the branch `issue-<N>-...` names), or ""."""
+    """The `## Developer Plan` section of issue `number`'s body (default: the issue the branch
+    `issue-<N>-...` names), without HTML comments and code fences, or "" when there is none,
+    the issue cannot be read or its author is not the repository owner."""
     if number is None:
         number = branch_issue(branch)
     if number is None:
         return ""
-    folder = f"{cfg.data['docs']['dir']}/plans/"
-    for ref in (f"refs/baton/plans/{number}", f"refs/plans/{number}"):
-        try:
-            names = runner(["git", "ls-tree", "--name-only", ref, folder]).split()
-            name = next(n for n in names if n.rsplit("/", 1)[-1].startswith(f"{number}-"))
-            return runner(["git", "show", f"{ref}:{name}"])
-        except (RunError, StopIteration):
-            continue
-    return ""
+    try:
+        issue = json.loads(runner(["gh", "issue", "view", str(number), "--json", "author,body"]))
+        owner = json.loads(runner(["gh", "repo", "view", "--json", "owner"]))["owner"]["login"]
+        if issue["author"]["login"] != owner:
+            return ""
+        body = issue["body"] or ""
+    except (RunError, ValueError, KeyError, TypeError):
+        return ""
+    found = checklist.span(body, "developer plan")
+    return _HIDDEN.sub("", body[found[0]:found[1]]) if found else ""

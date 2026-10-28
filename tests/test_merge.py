@@ -172,8 +172,9 @@ class CheckTest(unittest.TestCase):
         cfg = make_config(forbid_added={"pyproject.toml": '^\\s*"src/'})
         runner = FakeRunner({
             "gh pr diff 9": diff,
-            "git ls-tree --name-only refs/baton/plans/4": "docs/baton/plans/4-flag.md\n",
-            "git show refs/baton/plans/4:docs/baton/plans/4-flag.md": plan})
+            "gh repo view": json.dumps({"owner": {"login": OWNER}}),
+            "gh issue view 4 --json author,body": json.dumps(
+                {"author": {"login": OWNER}, "body": "## Developer Plan\n\n" + plan})})
         self.runner = runner
         return merge.check(pr or make_pr(), cfg, OWNER, "main", runner)
 
@@ -184,10 +185,9 @@ class CheckTest(unittest.TestCase):
     def test_forbidden_added_line_allowed_by_the_plan(self):
         self.assertEqual(self._forbid('- Allows: forbid_added "pyproject.toml"\n'), [])
 
-    def test_plan_ref_is_fetched_before_reading(self):
+    def test_no_ref_is_fetched_for_the_allowances(self):
         self._forbid()
-        self.assertIn("git fetch --quiet origin +refs/plans/4:refs/baton/plans/4",
-                      self.runner.lines())
+        self.assertFalse([line for line in self.runner.lines() if line.startswith("git fetch")])
 
     def test_branch_of_another_issue_gets_no_allowance(self):
         plan = '- Allows: forbid_added "pyproject.toml"\n'
@@ -338,24 +338,14 @@ class MergeTest(unittest.TestCase):
         replies["git ls-remote origin refs/plans/4"] = f"{tip}\trefs/plans/4\n" if tip else ""
         return replies
 
-    def test_ref_plan_is_pinned_and_merged_in_one_call(self):
+    def test_ref_plan_is_merged_without_touching_the_ref(self):
         runner = FakeRunner(self.ref_replies(self.TIP))
         self.assertEqual(merge.merge(9, make_config(), runner), [])
         lines = runner.lines()
-        pin = next(i for i, l in enumerate(lines) if l.startswith("gh issue edit 4 --body-file"))
-        done = next(i for i, l in enumerate(lines) if l.startswith("gh pr merge 9 --merge"))
-        self.assertLess(pin, done)
         self.assertIn(f"gh pr merge 9 --merge --match-head-commit {HEAD}", lines)
-        self.assertFalse(any(" rm " in l or l.startswith(("git push origin HEAD", "git worktree add"))
-                             for l in lines))
-
-    def test_missing_ref_adds_a_note_and_does_not_block(self):
-        runner = FakeRunner(self.ref_replies(None))
-        notes = []
-        self.assertEqual(merge.merge(9, make_config(), runner, notes), [])
-        self.assertTrue(any("not pinned" in n for n in notes))
-        self.assertIn(f"gh pr merge 9 --merge --match-head-commit {HEAD}", runner.lines())
-        self.assertFalse(any(l.startswith("gh issue edit 4 --body-file") for l in runner.lines()))
+        self.assertFalse(any(l.startswith(("gh issue edit 4 --body-file", "git fetch", "git ls-remote",
+                                           "git push origin HEAD", "git commit-tree", "git worktree add"))
+                             or " rm " in l for l in lines))
 
     def test_failed_push_restores_the_link_to_the_branch(self):
         class PushFails(FakeRunner):
