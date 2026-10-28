@@ -158,7 +158,9 @@ condition is every task of the plan, including the tasks the refiner added, and 
 8. **Verdict.** `approve` when nothing is to be fixed here; otherwise `changes`, or `replan` when the plan
    is the problem (below). Any `caused`
    failure, any `flaky` failure in this change's own tests, and any other fix-here problem makes it
-   `changes`, with a task for each under `## Tasks` (see the body below), numbered `<round>.<n>`.
+   `changes`, with a task for each under `## Tasks` (see the body below), numbered `<round>.<n>`. Write each task in that layout: the box line
+   `- [ ] Task <round>.<n>: <short title>` is the only unindented line, and the brief (Problem, Fix,
+   Check) sits inside the indented `<details>` block under it.
    Group related small problems in the same place into one task; each task is done by a fresh
    developer who reads only that task, so it must stand on its own. Post `blocked` only when every
    failure is `default-branch` or `environment` and no code finding needs a fix task. A blocked
@@ -213,10 +215,15 @@ Cause: <default-branch | environment>   (a blocked review only)
 <a replan review only: which plan tasks are wrong, which criterion cannot be met and why, what the branch already does>
 
 ## Tasks
-- [ ] **<round>.1 <short title>**
+- [ ] Task <round>.1: <short title>
+  <details>
+  <summary>Click to see plan details</summary>
+
   - Problem: `path/file.py:42` <the problem and why it matters> (important)
   - Fix: <what would fix it, specific enough for someone who has not read this review>
   - Check: <the test to add or run that proves it fixed, or "none">
+
+  </details>
 
 ## Failures
 - <test id or job name>: <caused | default-branch | flaky | environment>
