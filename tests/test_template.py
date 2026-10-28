@@ -20,6 +20,20 @@ class TemplateTest(unittest.TestCase):
         self.assertLess(text.index("  - Provides:"), text.index("  - Provides (as built):"))
         self.assertLess(text.index("  - Provides (as built):"), text.index("  - Check:"))
 
+    def test_issue_template_has_no_plan_line_or_checkbox_criteria(self):
+        text = (ROOT / "templates" / "issue.md").read_text()
+        self.assertNotIn("Plan:", text)
+        self.assertNotIn("[ ]", text)
+        self.assertIn("- A result that can be checked objectively", text)
+
+    def test_plan_template_is_developer_plan_section(self):
+        text = (ROOT / "templates" / "plan.md").read_text()
+        for needle in ("## Developer Plan", "- [ ] Task 1:", "Click to see plan details",
+                       "baton plan set", "### Verification", "### Pattern",
+                       "### Design notes", "Written against:"):
+            self.assertIn(needle, text)
+        self.assertNotIn("baton plan commit", text)
+
     def test_develop_skill_limits_outgrows_decline(self):
         text = " ".join((ROOT / "skills/develop/SKILL.md").read_text().split())
         self.assertIn("cannot be declined as \"outgrows the issue\"", text)
