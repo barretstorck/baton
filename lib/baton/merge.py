@@ -182,11 +182,6 @@ def _allowances(pr, closing, cfg, runner, problems):
         problems.append(f"branch {branch} does not belong to the issue the pull request "
                         f"closes (#{number}); no forbid_added allowances apply")
         return set()
-    try:
-        runner(["git", "fetch", "--quiet", "origin",
-                f"+refs/plans/{number}:refs/baton/plans/{number}"])
-    except RunError:
-        pass
     return forbid.allowed_globs(forbid.plan_text(runner, cfg, branch, number))
 
 

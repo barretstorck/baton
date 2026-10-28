@@ -1,7 +1,9 @@
+import json
 import pathlib
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from baton import gate, githooks
 
 TERMS = ["Zebrowski"]
@@ -185,20 +187,28 @@ PLAN_PATH = "docs/baton/plans/7-x.md"
 ALLOWS = '- [ ] **1. t**\n  - Allows: forbid_added "pyproject.toml"\n'
 
 
-def add_plan(repo, text):
-    write(repo, PLAN_PATH, text)
-    git(repo, "add", "-A")
-    git(repo, "commit", "-q", "-m", "plan")
-    git(repo, "update-ref", "refs/plans/7", "HEAD")
-    git(repo, "rm", "-q", PLAN_PATH)
-    git(repo, "commit", "-q", "-m", "unplan")
+def gh_body(plan):
+    """Patch `run.run` so `gh issue view 7 --json body` answers with a body holding `plan()`."""
+    real = githooks.run.run
+
+    def fake(cmd, *args, **kwargs):
+        if cmd[:3] == ["gh", "issue", "view"]:
+            text = "## Developer Plan\n\n" + plan() if cmd[3] == "7" else ""
+            return json.dumps({"body": text})
+        return real(cmd, *args, **kwargs)
+    return mock.patch.object(githooks.run, "run", fake)
 
 
 class ForbidTest(unittest.TestCase):
+    def setUp(self):
+        self.plan = ""
+        patcher = gh_body(lambda: self.plan)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def staged(self, branch="issue-7-x", plan=None):
         repo = make_repo(FORBID)
-        if plan is not None:
-            add_plan(repo, plan)
+        self.plan = plan or ""
         git(repo, "checkout", "-q", "-b", branch)
         write(repo, "pyproject.toml", '[x]\n"src/a" = [1]\n')
         git(repo, "add", "-A")
@@ -251,32 +261,15 @@ class ForbidTest(unittest.TestCase):
         line = f"refs/heads/issue-8-y {head} refs/heads/issue-7-x {ZEROS}\n"
         self.assertTrue(any("forbidden" in p for p in githooks.pre_push(repo, line, TERMS)))
 
-    def test_push_from_non_issue_local_ref_does_not_borrow_allowance(self):
+    def test_push_of_detached_head_to_an_issue_branch_gets_allowance(self):
         repo, head = self.pushed()
-        for local in ("HEAD", head):
-            line = f"{local} {head} refs/heads/issue-7-x {ZEROS}\n"
-            self.assertTrue(any("forbidden" in p for p in githooks.pre_push(repo, line, TERMS)), local)
+        line = f"HEAD {head} refs/heads/issue-7-x {ZEROS}\n"
+        self.assertEqual(githooks.pre_push(repo, line, TERMS), [])
 
-    def test_developer_push_of_head_with_matching_plan_ref_gets_allowance(self):
+    def test_push_of_detached_head_to_another_issue_gets_none(self):
         repo, head = self.pushed()
-        base = git(repo, "rev-parse", "HEAD~1")
-        lines = (f"HEAD {head} refs/heads/issue-7-x {ZEROS}\n"
-                 f"{base} {base} refs/plans/7 {ZEROS}\n")
-        self.assertEqual(githooks.pre_push(repo, lines, TERMS), [])
-
-    def test_developer_push_with_other_issue_plan_ref_gets_none(self):
-        repo, head = self.pushed()
-        base = git(repo, "rev-parse", "HEAD~1")
-        lines = (f"HEAD {head} refs/heads/issue-7-x {ZEROS}\n"
-                 f"{base} {base} refs/plans/8 {ZEROS}\n")
-        self.assertTrue(any("forbidden" in p for p in githooks.pre_push(repo, lines, TERMS)))
-
-    def test_plan_ref_does_not_rescue_a_local_branch_of_another_issue(self):
-        repo, head = self.pushed()
-        base = git(repo, "rev-parse", "HEAD~1")
-        lines = (f"refs/heads/issue-8-y {head} refs/heads/issue-7-x {ZEROS}\n"
-                 f"{base} {base} refs/plans/7 {ZEROS}\n")
-        self.assertTrue(any("forbidden" in p for p in githooks.pre_push(repo, lines, TERMS)))
+        line = f"HEAD {head} refs/heads/issue-8-y {ZEROS}\n"
+        self.assertTrue(any("forbidden" in p for p in githooks.pre_push(repo, line, TERMS)))
 
     def test_push_with_matching_issue_branch_passes(self):
         repo, head = self.pushed()

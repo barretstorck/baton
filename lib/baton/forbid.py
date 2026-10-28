@@ -2,7 +2,7 @@
 import fnmatch
 import re
 
-from . import githooks
+from . import checklist, githooks
 from .run import RunError
 
 _ALLOWS = re.compile(r'^\s*(?:[-*]\s*)?Allows:\s*forbid_added\s+"([^"]+)"\s*$', re.M)
@@ -36,17 +36,15 @@ def branch_issue(branch):
 
 
 def plan_text(runner, cfg, branch, number=None):
-    """The plan file of issue `number` (default: the one the branch `issue-<N>-...` names), or ""."""
+    """The `## Developer Plan` section of issue `number`'s body (default: the issue the branch
+    `issue-<N>-...` names), or "" when there is none or the issue cannot be read."""
     if number is None:
         number = branch_issue(branch)
     if number is None:
         return ""
-    folder = f"{cfg.data['docs']['dir']}/plans/"
-    for ref in (f"refs/baton/plans/{number}", f"refs/plans/{number}"):
-        try:
-            names = runner(["git", "ls-tree", "--name-only", ref, folder]).split()
-            name = next(n for n in names if n.rsplit("/", 1)[-1].startswith(f"{number}-"))
-            return runner(["git", "show", f"{ref}:{name}"])
-        except (RunError, StopIteration):
-            continue
-    return ""
+    try:
+        body = checklist.issue_body(runner, number)
+    except (RunError, ValueError, KeyError):
+        return ""
+    found = checklist.span(body, "developer plan")
+    return body[found[0]:found[1]] if found else ""

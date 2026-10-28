@@ -1,4 +1,5 @@
 import copy
+import json
 import pathlib
 import unittest
 from baton import config, forbid
@@ -71,30 +72,40 @@ class PlanTextTest(unittest.TestCase):
         self.assertEqual(forbid.plan_text(runner, make_config(), "main"), "")
         self.assertEqual(forbid.plan_text(runner, make_config(), ""), "")
 
-    def test_reads_plan(self):
+    def test_reads_plan_section_of_the_body(self):
         calls = []
+        body = "## Context\nc\n\n## Developer Plan\n\nAllows: forbid_added \"a\"\n\n## Other\nx\n"
 
         def runner(argv):
             calls.append(argv)
-            if argv[1] == "ls-tree":
-                return "docs/baton/plans/7-slug.md\n"
-            return "PLAN"
-        self.assertEqual(forbid.plan_text(runner, make_config(), "issue-7-slug"), "PLAN")
-        self.assertEqual(calls[1], ["git", "show", "refs/baton/plans/7:docs/baton/plans/7-slug.md"])
+            return json.dumps({"body": body})
+        text = forbid.plan_text(runner, make_config(), "issue-7-slug")
+        self.assertIn('Allows: forbid_added "a"', text)
+        self.assertNotIn("Context", text)
+        self.assertNotIn("Other", text)
+        self.assertEqual(calls, [["gh", "issue", "view", "7", "--json", "body"]])
 
     def test_explicit_number_wins_over_branch(self):
         calls = []
 
         def runner(argv):
             calls.append(argv)
-            return "docs/baton/plans/5-s.md\n" if argv[1] == "ls-tree" else "PLAN"
-        self.assertEqual(forbid.plan_text(runner, make_config(), "issue-7-slug", 5), "PLAN")
-        self.assertIn("refs/baton/plans/5", " ".join(calls[0]))
+            return json.dumps({"body": "## Developer Plan\nPLAN\n"})
+        self.assertIn("PLAN", forbid.plan_text(runner, make_config(), "issue-7-slug", 5))
+        self.assertEqual(calls[0][3], "5")
 
-    def test_missing_ref(self):
+    def test_body_without_plan_section(self):
         def runner(argv):
-            raise RunError("no ref")
+            return json.dumps({"body": "## Context\nc\n"})
         self.assertEqual(forbid.plan_text(runner, make_config(), "issue-7-slug"), "")
+
+    def test_errors_give_nothing(self):
+        for reply in (RunError("no network"), "not json", json.dumps({})):
+            def runner(argv, reply=reply):
+                if isinstance(reply, Exception):
+                    raise reply
+                return reply
+            self.assertEqual(forbid.plan_text(runner, make_config(), "issue-7-slug"), "")
 
 
 if __name__ == "__main__":

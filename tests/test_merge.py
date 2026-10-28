@@ -172,8 +172,8 @@ class CheckTest(unittest.TestCase):
         cfg = make_config(forbid_added={"pyproject.toml": '^\\s*"src/'})
         runner = FakeRunner({
             "gh pr diff 9": diff,
-            "git ls-tree --name-only refs/baton/plans/4": "docs/baton/plans/4-flag.md\n",
-            "git show refs/baton/plans/4:docs/baton/plans/4-flag.md": plan})
+            "gh issue view 4 --json body": json.dumps(
+                {"body": "## Developer Plan\n\n" + plan})})
         self.runner = runner
         return merge.check(pr or make_pr(), cfg, OWNER, "main", runner)
 
@@ -184,10 +184,9 @@ class CheckTest(unittest.TestCase):
     def test_forbidden_added_line_allowed_by_the_plan(self):
         self.assertEqual(self._forbid('- Allows: forbid_added "pyproject.toml"\n'), [])
 
-    def test_plan_ref_is_fetched_before_reading(self):
+    def test_no_ref_is_fetched_for_the_allowances(self):
         self._forbid()
-        self.assertIn("git fetch --quiet origin +refs/plans/4:refs/baton/plans/4",
-                      self.runner.lines())
+        self.assertFalse([line for line in self.runner.lines() if line.startswith("git fetch")])
 
     def test_branch_of_another_issue_gets_no_allowance(self):
         plan = '- Allows: forbid_added "pyproject.toml"\n'
