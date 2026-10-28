@@ -275,7 +275,9 @@ def cmd_task(args):
         cfg = _require_config()
         if args[1] == "issue":
             changed = checklist.tick_issue(run.run, int(args[2]), args[3], cwd=os.getcwd(),
-                                           docs_dir=cfg.data["docs"]["dir"], as_built=as_built)
+                                           docs_dir=cfg.data["docs"]["dir"], as_built=as_built,
+                                           terms=scan.load_terms() if as_built else None,
+                                           allow=cfg.data["privacy_allow"])
         else:
             if as_built:
                 print(_TASK_USAGE, file=sys.stderr)

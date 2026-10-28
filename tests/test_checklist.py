@@ -372,6 +372,22 @@ class IssueForgeTest(unittest.TestCase):
         self.assertTrue(checklist.tick_issue(capture, 7, "2"))
         self.assertEqual(written["body"], BODY.replace("- [ ] **2.", "- [x] **2."))
 
+    def test_as_built_with_a_private_term_is_refused_before_any_write(self):
+        body = BODY.replace("  - Files: `b.py`\n", "  - Files: `b.py`\n  - Provides: `g()`\n")
+        runner = issue_runner(body)
+        with self.assertRaises(checklist.TaskError) as caught:
+            checklist.tick_issue(runner, 7, "2", as_built="`g(x)` for secretterm",
+                                 terms=["secretterm"])
+        self.assertIn("privacy scan found", str(caught.exception))
+        self.assertFalse(any("issue edit" in l for l in runner.lines()))
+
+    def test_clean_as_built_ticks_and_writes_once(self):
+        body = BODY.replace("  - Files: `b.py`\n", "  - Files: `b.py`\n  - Provides: `g()`\n")
+        runner = issue_runner(body)
+        self.assertTrue(checklist.tick_issue(runner, 7, "2", as_built="`g(x)`",
+                                             terms=["secretterm"]))
+        self.assertEqual(sum("issue edit" in l for l in runner.lines()), 1)
+
     def test_tick_issue_already_done_writes_nothing(self):
         runner = issue_runner()
         self.assertFalse(checklist.tick_issue(runner, 7, "1"))

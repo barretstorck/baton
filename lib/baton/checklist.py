@@ -417,7 +417,8 @@ def _linked(runner, number, docs_dir=None):
     return body, link
 
 
-def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None):
+def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None,
+               terms=None, allow=()):
     """Tick a plan task. False when it was already ticked (nothing is written).
 
     A plan at `refs/plans/<N>` is ticked by a new commit on that ref (with `as_built`, a
@@ -426,6 +427,11 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None):
     its file under `cwd` (the developer's checkout) and the issue is not edited; the developer
     commits the file with the task's code. A plan in the issue body is ticked in the issue.
     """
+    if as_built:
+        findings = scan.scan_text(as_built, terms or [], allow)
+        if findings:
+            raise TaskError("plan not changed; privacy scan found: "
+                            + "; ".join(scan.describe(findings)))
     body, link = _linked(runner, number, docs_dir)
     if link is not None and link["kind"] == "ref":
         from . import planfile
