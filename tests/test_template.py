@@ -173,3 +173,12 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("Problems fixed in review instead of filed", retro)
         text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
         self.assertIn("Fill the two follow-up rows from the sprint's review comments", text)
+
+    def test_develop_skill_uses_body_plan(self):
+        text = (ROOT / "skills/develop/SKILL.md").read_text()
+        self.assertIn("## Developer Plan", text)
+        self.assertIn("Task <n>:", text)
+        self.assertIn("Click to see plan details", text)
+        older = text.index("## Older issues")
+        self.assertEqual(text[:older].count("refs/plans"), 0)
+        self.assertNotIn("refs/plans", (ROOT / "agents/baton-developer.md").read_text())
