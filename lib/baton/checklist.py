@@ -215,6 +215,14 @@ def _shift_refs(line, before, k):
     return _TASK_REF.sub(shift_ref, line)
 
 
+def _renumber(line, number):
+    """The task line with its id set to `number`, in either task-line form."""
+    line, count = re.subn(r"(Task )\d+", rf"\g<1>{number}", line, count=1)
+    if count:
+        return line
+    return re.sub(r"\*\*\d+", f"**{number}", line, count=1)
+
+
 def insert_text(text, before, new_text):
     """The tasks text that inserts `new_text`'s tasks before task `before` of `text`'s plan.
 
@@ -237,18 +245,18 @@ def insert_text(text, before, new_text):
                         f"{len(blocks) + 1} at most")
     new_head, new_blocks = _blocks(new_text.replace("\r\n", "\n").strip("\n") + "\n")
     if any(line.strip() for line in new_head) or not new_blocks:
-        raise TaskError("the new text must start with a task line: - [ ] **<n>. <title>**")
+        raise TaskError("the new text must start with a task line: - [ ] Task <n>: <title>")
     k = len(new_blocks)
     out = []
     for offset, block in enumerate(new_blocks):
         lines = list(block["lines"])
-        lines[0] = re.sub(r"\*\*\d+", f"**{before + offset}", lines[0], count=1)
+        lines[0] = _renumber(lines[0], before + offset)
         out.extend(lines)
     for block in blocks:
         if int(block["id"]) < before:
             continue
         lines = [_shift_refs(line, before, k) for line in block["lines"]]
-        lines[0] = re.sub(r"\*\*\d+", f"**{int(block['id']) + k}", lines[0], count=1)
+        lines[0] = _renumber(lines[0], int(block["id"]) + k)
         out.extend(lines)
     return "".join(out)
 
@@ -298,7 +306,7 @@ def replace_plan(body, from_id, new_text, drop=False, insert=False):
     new_text = new_text.replace("\r\n", "\n").strip("\n").replace("\n", newline) + newline
     new_head, new_blocks = _blocks(new_text)
     if any(line.strip() for line in new_head) or not new_blocks:
-        raise TaskError("the new text must start with a task line: - [ ] **<n>. <title>**")
+        raise TaskError("the new text must start with a task line: - [ ] Task <n>: <title>")
     for offset, block in enumerate(new_blocks):
         if block["done"] or block["id"] != str(first + offset):
             raise TaskError(f"the new tasks must be open and numbered from {first}")

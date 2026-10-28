@@ -87,6 +87,43 @@ class DeveloperPlanTest(unittest.TestCase):
         self.assertEqual(got, [{"id": "2.1", "title": "Sub", "done": True}])
 
 
+def _dev_task(n, title, uses=""):
+    return (f"- [ ] Task {n}: {title}\n  <details>\n"
+            f"  <summary>Click to see plan details</summary>\n\n"
+            f"  - Files: `f{n}.py`\n{uses}\n  </details>\n")
+
+
+class DeveloperPlanEditTest(unittest.TestCase):
+    BODY = (f"## Developer Plan\n\nWritten against: {SHA}\n\n### Verification\n`make`\n\n"
+            + _dev_task(1, "One").replace("[ ]", "[x]") + _dev_task(2, "Two")
+            + _dev_task(3, "Three", "  - Uses: task 2\n") + "\n## Decisions\n- kept\n")
+
+    def ids(self, body):
+        return [(t["id"], t["title"]) for t in checklist.plan(body)["tasks"]]
+
+    def test_replace_from_task_two(self):
+        new = _dev_task(2, "New two") + _dev_task(3, "New three")
+        out = checklist.replace_plan(self.BODY, "2", new)
+        self.assertEqual(self.ids(out), [("1", "One"), ("2", "New two"), ("3", "New three")])
+        self.assertIn(_dev_task(1, "One").replace("[ ]", "[x]"), out)
+        self.assertIn("## Decisions\n- kept\n", out)
+
+    def test_insert_before_task_two(self):
+        out = checklist.replace_plan(self.BODY, "2", _dev_task(2, "Inserted"), insert=True)
+        self.assertEqual(self.ids(out), [("1", "One"), ("2", "Inserted"), ("3", "Two"),
+                                         ("4", "Three")])
+        self.assertIn(_dev_task(3, "Two").replace("f3.py", "f2.py"), out)
+        self.assertIn(_dev_task(4, "Three", "  - Uses: task 3\n").replace("f4.py", "f3.py"), out)
+
+    def test_done_task_refused(self):
+        with self.assertRaises(checklist.TaskError):
+            checklist.replace_plan(self.BODY, "1", _dev_task(1, "Again"))
+
+    def test_error_names_new_form(self):
+        with self.assertRaisesRegex(checklist.TaskError, r"Task <n>: <title>"):
+            checklist.replace_plan(self.BODY, "2", "junk\n")
+
+
 REVIEW = """<!-- baton:reviewer:review verdict=changes commit=%s -->
 **Baton reviewer: review (changes requested, commit aaaaaaa)**
 
