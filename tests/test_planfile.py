@@ -283,11 +283,11 @@ class MigrateTest(unittest.TestCase):
     def test_templates(self):
         root = pathlib.Path(__file__).resolve().parent.parent / "templates"
         plan = (root / "plan.md").read_text()
-        for heading in ("## Pattern", "## Verification", "## Design notes", "## Plan"):
+        for heading in ("### Pattern", "### Verification", "### Design notes", "## Developer Plan"):
             self.assertIn(heading, plan)
         issue_text = (root / "issue.md").read_text()
-        self.assertTrue(issue_text.startswith("Plan:"))
-        self.assertNotIn("## Plan", issue_text)
+        self.assertFalse(issue_text.startswith("Plan:"))
+        self.assertNotIn("## Developer Plan", issue_text)
         self.assertNotIn("## Verification", issue_text)
 
 
