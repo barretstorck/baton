@@ -26,13 +26,7 @@ LOCAL_REF = "refs/baton/plans/"
 _PLAN_NUMBER = re.compile(r"^(\d+)-")
 
 
-def ref_name(number):
-    return f"{PLAN_REF}{number}"
-
-
 def link_line(repo, ref, path):
-    if ref.startswith(PLAN_REF):
-        return f"Plan: [{path}](https://github.com/{repo}/commits/{ref})"
     return f"Plan: [{path}](https://github.com/{repo}/blob/{ref}/{path})"
 
 
@@ -142,7 +136,7 @@ def _fetch_plan(runner, number):
 
 def read(runner, ref, path):
     """Text of `path` on branch `ref` (fetched first), on plan ref `refs/plans/<N>` (fetched
-    into `refs/baton/plans/<N>` first) or at pinned commit `ref` (fetched through its plan ref
+    into `refs/baton/plans/<N>` first; that branch is for `baton plan migrate` only) or at pinned commit `ref` (fetched through its plan ref
     when the commit is not in the local object store)."""
     try:
         if ref.startswith(PLAN_REF):
@@ -162,86 +156,6 @@ def read(runner, ref, path):
         return runner(["git", "show", "--end-of-options", f"origin/{ref}:{path}"])
     except RunError as error:
         raise checklist.TaskError(f"plan file {path} not found at {ref}: {error}")
-
-
-def tick_commits(runner, ref, path):
-    """{task id: "<short sha> <subject>"} of the commit that first ticked each ticked task.
-
-    Only for a `refs/plans/<N>` ref (else empty). Walks the plan ref's history oldest first and
-    parses the file at each commit; the first commit whose version has a task ticked wins.
-    """
-    if not ref.startswith(PLAN_REF):
-        return {}
-    number = _plan_number(ref, path)
-    _fetch_plan(runner, number)
-    log = runner(["git", "log", "--reverse", "--format=%h%x09%H%x09%s", "--end-of-options",
-                  f"{LOCAL_REF}{number}", "--", path])
-    found = {}
-    for line in log.splitlines():
-        parts = line.split("\t", 2)
-        if len(parts) < 3:
-            continue
-        short, full, subject = parts
-        try:
-            text = runner(["git", "show", "--end-of-options", f"{full}:{path}"])
-        except RunError:
-            continue
-        for task in (checklist.plan(text) or {}).get("tasks", []):
-            if task["done"] and task["id"] not in found:
-                found[task["id"]] = f"{short} {subject}"
-    return found
-
-
-def tip(runner, number):
-    """The sha of `refs/plans/<number>` on the remote, or None when it does not exist."""
-    out = runner(["git", "ls-remote", "origin", ref_name(int(number))]).split()
-    return out[0] if out and _SHA.match(out[0]) else None
-
-
-def write(runner, number, path, text, message):
-    """Commit `text` as `path` on a new commit for `refs/plans/<number>`; returns its sha.
-
-    Built with plumbing (no checkout, no index): a blob, one tree per directory level from the
-    file up, then the commit. Its parent is the remote ref's tip when the ref exists (fetched to
-    `refs/baton/plans/<number>`), else it has none. Nothing is pushed; see `push`.
-    """
-    number = int(number)
-    check_link(ref_name(number), path)
-    parts = path.split("/")
-    sha = runner(["git", "hash-object", "-w", "--stdin"], input=text).strip()
-    entry = f"100644 blob {sha}\t{parts[-1]}\n"
-    for name in reversed(parts[:-1]):
-        sha = runner(["git", "mktree"], input=entry).strip()
-        entry = f"040000 tree {sha}\t{name}\n"
-    tree = runner(["git", "mktree"], input=entry).strip()
-    command = ["git", "commit-tree", tree]
-    if tip(runner, number):
-        _fetch_plan(runner, number)
-        command += ["-p", f"{LOCAL_REF}{number}"]
-    return runner(command + ["-m", message]).strip()
-
-
-def push(runner, number, sha):
-    """Fast-forward `refs/plans/<number>` on the remote to commit `sha`."""
-    if not _SHA.match(sha):
-        raise checklist.TaskError(f"push needs a full 40-character commit sha, got {sha!r}")
-    runner(["git", "push", "origin", f"{sha}:{ref_name(int(number))}"])
-
-
-def pin(runner, repo, number, docs_dir=None):
-    """Pin the issue's `Plan:` link to the plan ref's tip; returns the sha.
-
-    None when the link is already pinned or is not a plan-ref link. TaskError when the ref
-    no longer exists on the remote.
-    """
-    existing = parse_link(checklist.issue_body(runner, number), docs_dir)
-    if existing is None or existing["kind"] != "ref":
-        return None
-    sha = tip(runner, number)
-    if sha is None:
-        raise checklist.TaskError(f"{existing['ref']} does not exist on the remote")
-    link_issue(runner, repo, number, at=sha, docs_dir=docs_dir)
-    return sha
 
 
 def link_issue(runner, repo, number, branch=None, path=None, at=None, docs_dir=None):
