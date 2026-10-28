@@ -104,6 +104,13 @@ class PlanTextTest(unittest.TestCase):
         text = forbid.plan_text(gh_runner(body), make_config(), "issue-7-slug")
         self.assertEqual(forbid.allowed_globs(text), {"v"})
 
+    def test_unterminated_hidden_allowances_ignored(self):
+        for hidden in ('```\nAllows: forbid_added "x"\n', '<!--\nAllows: forbid_added "x"\n',
+                       '~~~\nAllows: forbid_added "x"\n'):
+            body = '## Developer Plan\nAllows: forbid_added "v"\n' + hidden
+            text = forbid.plan_text(gh_runner(body), make_config(), "issue-7-slug")
+            self.assertEqual(forbid.allowed_globs(text), {"v"})
+
     def test_explicit_number_wins_over_branch(self):
         calls = []
         runner = gh_runner("## Developer Plan\nPLAN\n", calls=calls)

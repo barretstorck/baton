@@ -7,7 +7,8 @@ from . import checklist, githooks
 from .run import RunError
 
 _ALLOWS = re.compile(r'^\s*(?:[-*]\s*)?Allows:\s*forbid_added\s+"([^"]+)"\s*$', re.M)
-_HIDDEN = re.compile(r"<!--.*?-->|^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[`~]*[ \t]*$", re.S | re.M)
+_HIDDEN = re.compile(r"<!--.*?(?:-->|\Z)|^[ \t]*(`{3,}|~{3,}).*?(?:^[ \t]*\1[`~]*[ \t]*$|\Z)",
+                     re.S | re.M)
 _BRANCH = re.compile(r"^issue-(\d+)(?:-|$)")
 
 
