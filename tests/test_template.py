@@ -182,3 +182,12 @@ class TemplateTest(unittest.TestCase):
         older = text.index("## Older issues")
         self.assertEqual(text[:older].count("refs/plans"), 0)
         self.assertNotIn("refs/plans", (ROOT / "agents/baton-developer.md").read_text())
+
+    def test_review_and_sprint_skills_use_body_plan(self):
+        sprint = (ROOT / "skills/sprint/SKILL.md").read_text()
+        review = (ROOT / "skills/review/SKILL.md").read_text()
+        self.assertIn("baton plan migrate", sprint)
+        self.assertIn("## Developer Plan", sprint)
+        for text in (sprint, review):
+            for gone in ("baton plan commit", "baton plan link", "baton plan pin"):
+                self.assertNotIn(gone, text)
