@@ -65,6 +65,16 @@ class AllowedTest(unittest.TestCase):
         self.assertEqual(forbid.allowed_globs("nothing"), set())
 
 
+def gh_runner(body, author="owner", calls=None):
+    def runner(argv):
+        if calls is not None:
+            calls.append(argv)
+        if argv[:3] == ["gh", "repo", "view"]:
+            return json.dumps({"owner": {"login": "owner"}})
+        return json.dumps({"author": {"login": author}, "body": body})
+    return runner
+
+
 class PlanTextTest(unittest.TestCase):
     def test_branch_without_issue(self):
         def runner(argv):
@@ -75,29 +85,33 @@ class PlanTextTest(unittest.TestCase):
     def test_reads_plan_section_of_the_body(self):
         calls = []
         body = "## Context\nc\n\n## Developer Plan\n\nAllows: forbid_added \"a\"\n\n## Other\nx\n"
-
-        def runner(argv):
-            calls.append(argv)
-            return json.dumps({"body": body})
-        text = forbid.plan_text(runner, make_config(), "issue-7-slug")
-        self.assertIn('Allows: forbid_added "a"', text)
+        text = forbid.plan_text(gh_runner(body, calls=calls), make_config(), "issue-7-slug")
+        self.assertEqual(forbid.allowed_globs(text), {"a"})
         self.assertNotIn("Context", text)
         self.assertNotIn("Other", text)
-        self.assertEqual(calls, [["gh", "issue", "view", "7", "--json", "body"]])
+        self.assertEqual(calls[0], ["gh", "issue", "view", "7", "--json", "author,body"])
+
+    def test_other_author_gives_nothing(self):
+        body = '## Developer Plan\nAllows: forbid_added "x"\n'
+        text = forbid.plan_text(gh_runner(body, author="mallory"), make_config(), "issue-7-slug")
+        self.assertEqual(forbid.allowed_globs(text), set())
+
+    def test_hidden_allowances_ignored(self):
+        body = ('## Developer Plan\n<!--\nAllows: forbid_added "c"\n-->\n'
+                '```\nAllows: forbid_added "f"\n```\n'
+                '~~~~\nAllows: forbid_added "t"\n~~~~\n'
+                'Allows: forbid_added "v"\n')
+        text = forbid.plan_text(gh_runner(body), make_config(), "issue-7-slug")
+        self.assertEqual(forbid.allowed_globs(text), {"v"})
 
     def test_explicit_number_wins_over_branch(self):
         calls = []
-
-        def runner(argv):
-            calls.append(argv)
-            return json.dumps({"body": "## Developer Plan\nPLAN\n"})
+        runner = gh_runner("## Developer Plan\nPLAN\n", calls=calls)
         self.assertIn("PLAN", forbid.plan_text(runner, make_config(), "issue-7-slug", 5))
         self.assertEqual(calls[0][3], "5")
 
     def test_body_without_plan_section(self):
-        def runner(argv):
-            return json.dumps({"body": "## Context\nc\n"})
-        self.assertEqual(forbid.plan_text(runner, make_config(), "issue-7-slug"), "")
+        self.assertEqual(forbid.plan_text(gh_runner("## Context\nc\n"), make_config(), "issue-7-slug"), "")
 
     def test_errors_give_nothing(self):
         for reply in (RunError("no network"), "not json", json.dumps({})):

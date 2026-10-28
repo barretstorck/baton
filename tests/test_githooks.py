@@ -192,9 +192,11 @@ def gh_body(plan):
     real = githooks.run.run
 
     def fake(cmd, *args, **kwargs):
+        if cmd[:3] == ["gh", "repo", "view"]:
+            return json.dumps({"owner": {"login": "owner"}})
         if cmd[:3] == ["gh", "issue", "view"]:
             text = "## Developer Plan\n\n" + plan() if cmd[3] == "7" else ""
-            return json.dumps({"body": text})
+            return json.dumps({"author": {"login": "owner"}, "body": text})
         return real(cmd, *args, **kwargs)
     return mock.patch.object(githooks.run, "run", fake)
 

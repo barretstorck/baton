@@ -172,8 +172,9 @@ class CheckTest(unittest.TestCase):
         cfg = make_config(forbid_added={"pyproject.toml": '^\\s*"src/'})
         runner = FakeRunner({
             "gh pr diff 9": diff,
-            "gh issue view 4 --json body": json.dumps(
-                {"body": "## Developer Plan\n\n" + plan})})
+            "gh repo view": json.dumps({"owner": {"login": OWNER}}),
+            "gh issue view 4 --json author,body": json.dumps(
+                {"author": {"login": OWNER}, "body": "## Developer Plan\n\n" + plan})})
         self.runner = runner
         return merge.check(pr or make_pr(), cfg, OWNER, "main", runner)
 

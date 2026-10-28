@@ -1,11 +1,13 @@
 """Forbidden diff patterns: the brief's `forbid_added` rules checked against added lines."""
 import fnmatch
+import json
 import re
 
 from . import checklist, githooks
 from .run import RunError
 
 _ALLOWS = re.compile(r'^\s*(?:[-*]\s*)?Allows:\s*forbid_added\s+"([^"]+)"\s*$', re.M)
+_HIDDEN = re.compile(r"<!--.*?-->|^[ \t]*(`{3,}|~{3,}).*?^[ \t]*\1[`~]*[ \t]*$", re.S | re.M)
 _BRANCH = re.compile(r"^issue-(\d+)(?:-|$)")
 
 
@@ -37,14 +39,19 @@ def branch_issue(branch):
 
 def plan_text(runner, cfg, branch, number=None):
     """The `## Developer Plan` section of issue `number`'s body (default: the issue the branch
-    `issue-<N>-...` names), or "" when there is none or the issue cannot be read."""
+    `issue-<N>-...` names), without HTML comments and code fences, or "" when there is none,
+    the issue cannot be read or its author is not the repository owner."""
     if number is None:
         number = branch_issue(branch)
     if number is None:
         return ""
     try:
-        body = checklist.issue_body(runner, number)
-    except (RunError, ValueError, KeyError):
+        issue = json.loads(runner(["gh", "issue", "view", str(number), "--json", "author,body"]))
+        owner = json.loads(runner(["gh", "repo", "view", "--json", "owner"]))["owner"]["login"]
+        if issue["author"]["login"] != owner:
+            return ""
+        body = issue["body"] or ""
+    except (RunError, ValueError, KeyError, TypeError):
         return ""
     found = checklist.span(body, "developer plan")
-    return body[found[0]:found[1]] if found else ""
+    return _HIDDEN.sub("", body[found[0]:found[1]]) if found else ""
