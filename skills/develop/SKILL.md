@@ -355,11 +355,5 @@ Issue: #<N>
 
 ## Older issues
 
-An issue whose `Plan:` link points at `refs/plans/<N>` (and has no `## Developer Plan`) is read and
-ticked the old way, for one release. Read the plan with
-`git fetch --quiet origin +refs/plans/<N>:refs/baton/plans/<N> && git show refs/baton/plans/<N>:<path>`
-(`<path>` is printed by `baton tasks issue <N>`); if the ref is missing, return
-`BLOCKED: the plan ref is missing`. `baton task done issue <N> <n>` then ticks on that ref and
-prints a commit sha, which you push with the code atomically:
-`git push --atomic origin HEAD:refs/heads/<branch> <sha>:refs/plans/<N>`; afterwards check that
-the task's `ticked_by` is your `<sha>`, else return `BLOCKED: the plan was ticked by another commit`.
+An issue whose `Plan:` link points at `refs/plans/<N>` (and has no `## Developer Plan`) is refused
+by baton. Do not read or tick it: return `BLOCKED: run baton plan migrate <N>`.
