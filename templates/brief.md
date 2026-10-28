@@ -5,6 +5,10 @@ developer:
   effort: medium
 reviewer:
   model: sonnet
+  effort: medium
+refiner:
+  model: sonnet
+  effort: medium
 review:
   required: true              # false: merge-pr does not ask for a reviewer's approval
   max_rounds: 2               # review rounds before a disagreement goes to the maintainer

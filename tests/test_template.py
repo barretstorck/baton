@@ -10,6 +10,9 @@ class TemplateTest(unittest.TestCase):
         meta, body = frontmatter.split((ROOT / "templates" / "brief.md").read_text())
         self.assertEqual(frontmatter.parse(meta), config.DEFAULTS)
         self.assertIn("## Verification", body)
+        for role in ("developer", "reviewer", "refiner"):
+            self.assertEqual(config.DEFAULTS[role]["model"], "sonnet")
+            self.assertEqual(config.DEFAULTS[role]["effort"], "medium")
 
     def test_plan_template_describes_as_built_line(self):
         text = (ROOT / "templates" / "plan.md").read_text()
