@@ -66,7 +66,10 @@ If `default_branch.state` is `red`, the repair comes before everything else
 - If `repair_issue` is null: create an issue describing the failure (failing job, first bad
   commit, a short log excerpt with private details replaced), with labels
   `broken-default-branch`, `deliverable` and `type:bug`, in the sprint milestone. Then dispatch
-  `baton:baton-refiner` with `Refine issues <N>.` to diagnose it and write its plan.
+  `baton:baton-refiner` with `Refine issues <N>.` to diagnose it and write its plan. The refiner
+  is always started with the Agent tool's `model` set to `refiner.model` and `effort` set to
+  `refiner.effort` (from `baton config`, default `sonnet` and `medium`), here and in every other
+  refiner dispatch below; say in the sprint status which effort you used.
 - Dispatch a developer to the repair issue at once, even if that exceeds the parallel limit by one.
 - Until the branch is green again: dispatch nothing else and merge nothing else. Developers
   already running may continue; their pull requests wait.
@@ -235,8 +238,9 @@ default branch in does not void its review.
 
 #### Dispatching a reviewer
 
-Start a `baton:baton-reviewer` subagent in the background, with the model from `reviewer.model`
-in the brief. Reviewers do not take developer slots, but run no more of them at once than the
+Start a `baton:baton-reviewer` subagent in the background, with the Agent tool's `model` set to
+`reviewer.model` and `effort` set to `reviewer.effort` (from `baton config`, default `sonnet` and
+`medium`); say in the sprint status which effort you used. Reviewers do not take developer slots, but run no more of them at once than the
 parallel limit, and never two on one pull request. The prompt is short; the issue and the pull
 request are the brief. Its first line is exact, because `baton usage` reads it:
 

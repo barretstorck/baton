@@ -18,8 +18,9 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`. Read
 The plan step is adapted from the superpowers plugin's `writing-plans` skill: a plan of small
 tasks, each a brief a fresh developer can do without searching the code.
 
-**Refining many issues.** Dispatch `baton:baton-refiner` subagents with
-`Refine issues <N>, <M>, <K>.` and at most about three issues each, since writing a plan means
+**Refining many issues.** Dispatch `baton:baton-refiner` subagents, started with the Agent tool's `model` set to
+`refiner.model` and `effort` set to `refiner.effort` (from `baton config`, default `sonnet` and
+`medium`), with `Refine issues <N>, <M>, <K>.` and at most about three issues each, since writing a plan means
 reading code and every issue grows the agent's conversation. Give each agent only its issue
 numbers and the repository; collect their reports.
 
