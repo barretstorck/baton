@@ -590,28 +590,17 @@ class CliTest(unittest.TestCase):
             self.assertIn("baton plan set <N> <file>", err)
             self.assertEqual(runner.lines(), [], argv)
 
-    def test_task_done_ticks_on_the_ref(self):
-        body = planfile.link_line("o/r", REF, PATH) + "\n"
-        runner = CliRunner(replies={"git ls-remote": f"{SHA}\t{REF}\n"}, body=body)
-        code, out, _ = self.call(runner, ["task", "done", "issue", "5", "1"])
-        self.assertEqual(code, 0)
-        self.assertIn(f"plan commit {SHA}", out)
-        self.assertIn("git commit-tree t -p refs/baton/plans/5 -m Task 1", runner.lines())
-        self.assertIn("[x] **1. First**", [i for i in runner.inputs if i][0])
-
-    def test_task_done_as_built_adds_the_line(self):
-        body = planfile.link_line("o/r", REF, PATH) + "\n"
-        runner = CliRunner(body=body)
-        code, _, _ = self.call(runner, ["task", "done", "issue", "5", "1", "--as-built", "g()"])
-        self.assertEqual(code, 0)
-        self.assertIn("Provides (as built): g()", [i for i in runner.inputs if i][0])
-
-    def test_task_done_as_built_flag_before_the_task(self):
-        body = planfile.link_line("o/r", REF, PATH) + "\n"
-        runner = CliRunner(body=body)
-        code, _, _ = self.call(runner, ["task", "done", "issue", "5", "--as-built", "g()", "1"])
-        self.assertEqual(code, 0)
-        self.assertIn("Provides (as built): g()", [i for i in runner.inputs if i][0])
+    def test_task_done_refuses_a_ref_plan(self):
+        body = ("Plan: [docs/baton/plans/5-x.md]"
+                "(https://github.com/o/r/commits/refs/plans/5)\n")
+        for extra in ([], ["--as-built", "g()"]):
+            runner = CliRunner(body=body)
+            code, _, err = self.call(runner, ["task", "done", "issue", "5", "1"] + extra)
+            self.assertNotEqual(code, 0)
+            self.assertIn("issue #5 still links its plan on refs/plans/5; "
+                          "run 'baton plan migrate 5' first", err)
+            self.assertFalse(any(l.startswith(("git fetch", "git push", "git commit-tree",
+                                               "git ls-remote")) for l in runner.lines()))
 
     def test_bad_argument_counts_exit_64(self):
         for argv in (["plan", "commit", "x", PATH, "-"],

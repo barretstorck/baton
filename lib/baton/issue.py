@@ -45,7 +45,8 @@ def ready_problems(issue, cfg, owner, runner=None):
     """Why this issue does not meet the definition of ready; empty when it does.
 
     A non-spike with a `Plan:` link has its Verification and plan read from the linked file
-    (through `runner`; a plan ref `refs/plans/<N>` is fetched first); a legacy body plan is read from the body.
+    (through `runner`); a plan on `refs/plans/<N>` is reported as needing `baton plan migrate`.
+    A legacy body plan is read from the body.
     """
     body = issue.get("body") or ""
     parts = sections(body)
@@ -70,9 +71,15 @@ def ready_problems(issue, cfg, owner, runner=None):
     if link:
         plan_where = link["path"]
         try:
-            if runner is None:
-                raise checklist.TaskError("no way to read it")
-            plan_text = planfile.read(runner, link["ref"], link["path"])
+            if link["kind"] == "ref":
+                number = link["ref"].rsplit("/", 1)[-1]
+                plan_text = None
+                problems.append(f"the plan is on refs/plans/{number}; "
+                                f"run 'baton plan migrate {number}'")
+            else:
+                if runner is None:
+                    raise checklist.TaskError("no way to read it")
+                plan_text = planfile.read(runner, link["ref"], link["path"])
         except checklist.TaskError as error:
             plan_text = None
             problems.append(f"the Plan: link cannot be read ({error})")

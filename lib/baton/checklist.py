@@ -353,6 +353,17 @@ def issue_body(runner, number):
     return json.loads(runner(["gh", "issue", "view", str(number), "--json", "body"]))["body"] or ""
 
 
+def refuse_ref_plan(number, link=None):
+    """Raise the TaskError for an issue whose `Plan:` link is on `refs/plans/<N>`.
+
+    `number` may be None when `link` (from `planfile.parse_link`) names the ref.
+    """
+    if number is None and link is not None:
+        number = link["ref"].rsplit("/", 1)[-1]
+    raise TaskError(f"issue #{number} still links its plan on refs/plans/{number}; "
+                    f"run 'baton plan migrate {number}' first")
+
+
 def plan_source(runner, body, cache=None, docs_dir=None):
     """(text holding the plan, link or None): the linked file's text, else the body itself.
 
@@ -362,6 +373,8 @@ def plan_source(runner, body, cache=None, docs_dir=None):
     link = planfile.parse_link(body, docs_dir)
     if link is None:
         return body, None
+    if link["kind"] == "ref":
+        refuse_ref_plan(None, link)
     key = (link["ref"], link["path"])
     if cache is not None and key in cache:
         return cache[key], link
@@ -372,7 +385,6 @@ def plan_source(runner, body, cache=None, docs_dir=None):
 
 
 def issue_plan(runner, number, docs_dir=None):
-    from . import planfile
     text, link = plan_source(runner, issue_body(runner, number), docs_dir=docs_dir)
     found = plan(text)
     if found is None:
@@ -381,11 +393,6 @@ def issue_plan(runner, number, docs_dir=None):
     found["source"] = "file" if link else "body"
     if link:
         found["ref"], found["path"] = link["ref"], link["path"]
-        if link["kind"] == "ref":
-            ticked = planfile.tick_commits(runner, link["ref"], link["path"])
-            for task in found["tasks"]:
-                if task["done"] and task["id"] in ticked:
-                    task["ticked_by"] = ticked[task["id"]]
     return found
 
 
@@ -408,10 +415,13 @@ def _save_issue(runner, number, body):
 
 
 def _linked(runner, number, docs_dir=None):
-    """(body, link or None) for the issue; a pinned link has no file left to edit."""
+    """(body, link or None) for the issue; a pinned link has no file left to edit and a
+    ref link is refused."""
     from . import planfile
     body = issue_body(runner, number)
     link = planfile.parse_link(body, docs_dir)
+    if link is not None and link["kind"] == "ref":
+        refuse_ref_plan(number, link)
     if link is not None and link["pinned"]:
         raise TaskError(f"issue #{number}'s plan is pinned to a commit; its file was retired")
     return body, link
@@ -421,9 +431,7 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None,
                terms=None, allow=()):
     """Tick a plan task. False when it was already ticked (nothing is written).
 
-    A plan at `refs/plans/<N>` is ticked by a new commit on that ref (with `as_built`, a
-    `Provides (as built):` line is added in the same commit); the commit is not pushed, the
-    developer pushes it atomically with the task's code. A plan file on a branch is ticked in
+    A plan file on a branch is ticked in
     its file under `cwd` (the developer's checkout) and the issue is not edited; the developer
     commits the file with the task's code. A plan in the issue body is ticked in the issue.
     """
@@ -433,19 +441,6 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None,
             raise TaskError("plan not changed; privacy scan found: "
                             + "; ".join(scan.describe(findings)))
     body, link = _linked(runner, number, docs_dir)
-    if link is not None and link["kind"] == "ref":
-        from . import planfile
-        text = planfile.read(runner, link["ref"], link["path"])
-        new, changed = tick(text, "plan", str(task_id))
-        if not changed:
-            return False
-        if as_built:
-            new = add_as_built(new, "plan", str(task_id), as_built)
-        sha = planfile.write(runner, number, link["path"], new, f"Task {task_id}")
-        print(f"plan commit {sha}")
-        print(f"push with: git push --atomic origin HEAD:refs/heads/<branch> "
-              f"{sha}:{link['ref']}")
-        return True
     if link is None:
         new, changed = tick(body, "plan", str(task_id))
         if changed:
@@ -454,7 +449,7 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None,
             _save_issue(runner, number, new)
         return changed
     if as_built:
-        raise TaskError("--as-built needs a plan in the issue body or at refs/plans/<N>; "
+        raise TaskError("--as-built needs a plan in the issue body; "
                         "edit the plan file by hand for this plan")
     from . import planfile
     planfile.check_write(cwd, link["path"])
@@ -480,20 +475,9 @@ def _message(from_id, new_text, insert):
 
 
 def _replace_in_file(runner, number, link, from_id, new_text, drop=False, insert=False):
-    """Commit the replaced tasks to the plan ref, or to the linked branch from a temporary
-    detached worktree."""
+    """Commit the replaced tasks to the linked branch from a temporary detached worktree."""
     from . import planfile
     branch, path = link["ref"], link["path"]
-    if link["kind"] == "ref":
-        text = planfile.read(runner, branch, path)
-        changes = plan_changes(text, from_id, new_text, insert)
-        new = replace_plan(text, str(from_id), new_text, drop, insert)
-        dropped = changes[0][len(changes[1]):]
-        message = _message(from_id, new_text, insert)
-        if dropped:
-            message += f"\n\nDropped: {_describe(dropped)}"
-        planfile.push(runner, number, planfile.write(runner, number, path, new, message))
-        return new, changes
     planfile.check_branch(number, branch)
     runner(["git", "fetch", "--quiet", "--end-of-options", "origin", branch])
     tree = tempfile.mkdtemp(prefix="baton-plan-")
@@ -542,21 +526,13 @@ def set_written_against(text, sha):
 
 
 def against_issue_plan(cfg, runner, number, sha):
-    """Set `Written against:` on the plan: in the issue body, or one pushed commit on
-    `refs/plans/<N>` when the issue still links a ref plan."""
-    from . import planfile
+    """Set `Written against:` on the plan in the issue body."""
     body, link = _linked(runner, number, cfg.data["docs"]["dir"])
     if link is None:
         new = set_written_against(body, sha)
         _save_issue(runner, number, new)
         return plan(new)
-    if link["kind"] != "ref":
-        raise TaskError(f"issue #{number}'s plan is not in the body or on refs/plans/{number}")
-    text = planfile.read(runner, link["ref"], link["path"])
-    new = set_written_against(text, sha)
-    planfile.push(runner, number, planfile.write(
-        runner, number, link["path"], new, f"Re-refine: written against {sha[:7]}"))
-    return plan(new)
+    raise TaskError(f"issue #{number}'s plan is not in the body")
 
 
 def replace_issue_plan(cfg, runner, number, from_id, new_text, terms, drop=False,

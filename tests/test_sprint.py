@@ -336,38 +336,17 @@ class SnapshotTest(unittest.TestCase):
         self.assertTrue(found["progress"]["5"]["unplanned"])
         self.assertFalse(found["progress"]["4"]["unplanned"])
 
-    def test_progress_reads_a_ref_plan(self):
+    def test_progress_does_not_read_a_ref_plan(self):
         dev = issue(4, "in-dev")
         dev["body"] = ("Plan: [docs/baton/plans/4-a.md]"
                        "(https://github.com/octo/proj/commits/refs/plans/4)\n\n" + dev["body"])
-        plan = ("## Plan\nWritten against: " + "c" * 40 +
-                "\n\n- [x] **1. A**\n- [x] **2. B**\n- [ ] **3. C**\n")
-        extra = {"git show --end-of-options refs/baton/plans/4:docs/baton/plans/4-a.md": plan}
-        runner = FakeRunner(replies([dev], extra=extra))
-        found = sprint.snapshot(cfg(), runner)
-        self.assertEqual(found["progress"]["4"]["plan"], {"done": 2, "total": 3, "next": "3"})
-        self.assertFalse(found["progress"]["4"]["unplanned"])
-        self.assertIn("git fetch --quiet origin +refs/plans/4:refs/baton/plans/4", runner.lines())
-
-    def _ref_plan(self, tasks):
-        dev = issue(4, "in-dev")
-        dev["body"] = ("Plan: [docs/baton/plans/4-a.md]"
-                       "(https://github.com/octo/proj/commits/refs/plans/4)\n\n" + dev["body"])
-        plan = "## Plan\nWritten against: " + "c" * 40 + "\n\n" + tasks
-        extra = {"git show --end-of-options refs/baton/plans/4:docs/baton/plans/4-a.md": plan}
-        return snap([dev], extra=extra)["progress"]["4"]
-
-    def test_next_task_url_links_the_open_task_line(self):
-        found = self._ref_plan("- [x] **1. A**\n- [ ] **2. B**\n")
-        self.assertEqual(found["next_task_url"],
-                         "https://github.com/octo/proj/blob/refs/plans/4/docs/baton/plans/4-a.md"
-                         "?plain=1#L5")
-
-    def test_next_task_url_is_null_without_an_open_task(self):
-        self.assertIsNone(self._ref_plan("- [x] **1. A**\n")["next_task_url"])
-
-    def test_next_task_url_is_null_for_a_plan_without_tasks(self):
-        self.assertIsNone(self._ref_plan("Nothing yet.\n")["next_task_url"])
+        runner = FakeRunner(replies([dev]))
+        found = sprint.snapshot(cfg(), runner)["progress"]["4"]
+        self.assertIsNone(found["plan"])
+        self.assertTrue(found["unplanned"])
+        self.assertIsNone(found["next_task_url"])
+        self.assertFalse(any(l.startswith(("git fetch", "git ls-remote", "git show"))
+                             for l in runner.lines()))
 
     def test_next_task_url_is_null_for_an_issue_body_plan(self):
         dev = issue(4, "in-dev")

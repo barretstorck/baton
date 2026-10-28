@@ -222,7 +222,7 @@ def _linked_plan_path(runner, pr, cfg):
     except (checklist.TaskError, run.RunError, OSError, ValueError, KeyError):
         return None
     if link is None or link["kind"] == "ref":
-        return None  # a plan in refs/plans/<N> is never on the branch, so nothing to exclude
+        return None  # no plan file on the branch
     return link["path"]
 
 
