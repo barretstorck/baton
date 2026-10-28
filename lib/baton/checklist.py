@@ -13,6 +13,7 @@ from . import scan
 
 _HEADING = re.compile(r"(#{1,6})\s+(.+?)\s*$")
 _TASK = re.compile(r"^[-*] \[([ xX])\] \*\*(\d+(?:\.\d+)?)\.?\s+(.+?)\*\*\s*$")
+_TASK_NEW = re.compile(r"^[-*] \[([ xX])\] Task (\d+(?:\.\d+)?):\s+(.+?)\s*$")
 _AGAINST = re.compile(r"^\s*Written against:\s*([0-9a-f]{40})\b", re.M)
 
 
@@ -40,8 +41,11 @@ def span(text, heading):
     """(start, end) of the text under `heading`, up to the next heading of its level or higher."""
     text = text or ""
     found = _headings(text)
+    wanted = {heading.lower()}
+    if heading.lower() == "plan":
+        wanted.add("developer plan")
     for index, (level, name, _, line_end) in enumerate(found):
-        if name == heading.lower():
+        if name in wanted:
             end = next((start for lvl, _, start, _ in found[index + 1:] if lvl <= level),
                        len(text))
             return line_end, end
@@ -49,7 +53,8 @@ def span(text, heading):
 
 
 def _match(line):
-    return _TASK.match(line.rstrip("\r\n"))
+    line = line.rstrip("\r\n")
+    return _TASK.match(line) or _TASK_NEW.match(line)
 
 
 def parse(section):

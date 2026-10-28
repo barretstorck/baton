@@ -25,6 +25,68 @@ Written against: {SHA}
 - kept
 """
 
+DEV_BODY = f"""## Context
+x
+
+## Developer Plan
+
+Written against: {SHA}
+
+### Verification
+`make test`
+
+### Pattern
+Some text.
+
+- [x] Task 1: First step
+  <details>
+  <summary>Click to see plan details</summary>
+
+  - Files: `a.py`
+  - Provides: `f()`
+  - Check: none
+
+  </details>
+- [ ] Task 2: Second step
+  <details>
+  <summary>Click to see plan details</summary>
+
+  - Files: `b.py`
+  - Provides: `g()`
+
+  </details>
+
+## Decisions
+- kept
+"""
+
+
+class DeveloperPlanTest(unittest.TestCase):
+    def test_plan_parse(self):
+        got = checklist.plan(DEV_BODY)
+        self.assertEqual(got["written_against"], SHA)
+        self.assertEqual(got["next"], "2")
+        self.assertEqual([(t["id"], t["title"], t["done"]) for t in got["tasks"]],
+                         [("1", "First step", True), ("2", "Second step", False)])
+
+    def test_tick_changes_only_task_line(self):
+        out, changed = checklist.tick(DEV_BODY, "plan", "2")
+        self.assertTrue(changed)
+        self.assertEqual(out, DEV_BODY.replace("- [ ] Task 2", "- [x] Task 2"))
+
+    def test_task_line(self):
+        n = checklist.task_line(DEV_BODY, "2")
+        self.assertTrue(DEV_BODY.splitlines()[n - 1].startswith("- [ ] Task 2"))
+
+    def test_as_built_inside_details(self):
+        out = checklist.add_as_built(DEV_BODY, "plan", "2", "g(x)")
+        self.assertIn("  - Provides: `g()`\n  - Provides (as built): g(x)\n", out)
+
+    def test_star_bullet_and_dotted_id(self):
+        got = checklist.parse("* [X] Task 2.1: Sub\n")
+        self.assertEqual(got, [{"id": "2.1", "title": "Sub", "done": True}])
+
+
 REVIEW = """<!-- baton:reviewer:review verdict=changes commit=%s -->
 **Baton reviewer: review (changes requested, commit aaaaaaa)**
 
