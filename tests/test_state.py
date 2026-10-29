@@ -64,6 +64,80 @@ class ChangeTest(unittest.TestCase):
         self.assertEqual(runner.calls, [])
 
 
+class ReasonTest(unittest.TestCase):
+    def go(self, runner, reason, **kw):
+        return state.change(cfg(), runner, "close", "issue", 5, "developer", "Why.", [],
+                            close_reason=reason, **kw)
+
+    def test_labelled_reasons(self):
+        for reason in ("spam", "support", "wont-do"):
+            runner = FakeRunner()
+            self.go(runner, reason)
+            lines = runner.lines()
+            self.assertEqual(len(lines), 3)
+            self.assertEqual(lines[1], f"gh issue edit 5 --add-label closed:{reason}")
+            self.assertEqual(lines[2], "gh issue close 5 --reason not planned")
+
+    def test_completed_has_no_label(self):
+        runner = FakeRunner()
+        self.go(runner, "completed")
+        self.assertEqual(runner.lines()[1:], ["gh issue close 5 --reason completed"])
+
+    def test_duplicate_with_backlink(self):
+        runner = FakeRunner({"gh issue view 3": '{"number": 3}\n'})
+        self.go(runner, "duplicate", duplicate_of=3)
+        lines = runner.lines()
+        self.assertEqual(lines[0], "gh issue view 3 --json number")
+        self.assertTrue(lines[1].startswith("gh issue comment 5"))
+        self.assertEqual(lines[2], "gh issue edit 5 --add-label closed:duplicate")
+        self.assertEqual(lines[3], "gh issue close 5 --reason duplicate --duplicate-of 3")
+        self.assertTrue(lines[4].startswith("gh issue comment 3"))
+
+    def test_duplicate_refusals(self):
+        for kw in ({}, {"duplicate_of": 5}):
+            runner = FakeRunner({"gh issue view": '{"number": 5}'})
+            with self.assertRaises(comment.CommentError):
+                self.go(runner, "duplicate", **kw)
+            self.assertFalse([c for c in runner.lines() if "comment" in c or "close" in c])
+        with self.assertRaises(comment.CommentError):
+            self.go(FakeRunner(), "spam", duplicate_of=3)
+
+    def test_missing_original(self):
+        runner = FakeRunner()
+        with self.assertRaises(comment.CommentError):
+            self.go(runner, "duplicate", duplicate_of=3)
+        self.assertEqual(runner.lines(), ["gh issue view 3 --json number"])
+
+        def failing(argv, cwd=None, input=None):
+            raise state.run.RunError("not found")
+
+        with self.assertRaises(comment.CommentError):
+            self.go(failing, "duplicate", duplicate_of=3)
+
+    def test_pr_and_reopen_refused(self):
+        runner = FakeRunner()
+        with self.assertRaises(comment.CommentError):
+            state.change(cfg(), runner, "close", "pr", 5, "developer", "x", [], close_reason="spam")
+        with self.assertRaises(comment.CommentError):
+            state.change(cfg(), runner, "close", "pr", 5, "developer", "x", [], lock=True)
+        with self.assertRaises(comment.CommentError):
+            state.change(cfg(), runner, "reopen", "issue", 5, "developer", "x", [], close_reason="spam")
+        with self.assertRaises(comment.CommentError):
+            self.go(runner, "bogus")
+        self.assertEqual(runner.calls, [])
+
+    def test_lock(self):
+        runner = FakeRunner()
+        self.go(runner, "spam", lock=True)
+        self.assertEqual(runner.lines()[-1], "gh issue lock 5 --reason spam")
+        runner = FakeRunner()
+        self.go(runner, "support", lock=True)
+        self.assertEqual(runner.lines()[-1], "gh issue lock 5")
+        runner = FakeRunner()
+        state.change(cfg(), runner, "close", "issue", 5, "developer", "x", [], lock=True)
+        self.assertEqual(runner.lines()[1:], ["gh issue close 5", "gh issue lock 5"])
+
+
 class CommandTest(unittest.TestCase):
     def test_registered(self):
         self.assertIs(cli.COMMANDS["close"], cli.cmd_close)
