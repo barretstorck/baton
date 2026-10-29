@@ -242,4 +242,6 @@ class TemplateTest(unittest.TestCase):
         sprint = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
         self.assertIn("baton:baton-researcher", sprint)
         self.assertIn("researcher.model", sprint)
+        section = sprint[sprint.index("#### Dispatching a researcher"):sprint.index("#### Dispatching a reviewer")]
+        self.assertIn("Timebox:", section)
         self.assertIn("/baton:research", (ROOT / "README.md").read_text())

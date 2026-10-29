@@ -24,6 +24,7 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | A review's tasks | `baton tasks pr <N>` (the latest review's `## Tasks`; none after an approval) |
 | Clean up leftovers (orchestrator) | `baton clean`: removes agent worktrees under `.claude/worktrees/` that are not on an open issue's branch, are not locked by a live process and have no unmerged commits (uncommitted files are removed with the worktree), and the log folders of closed or merged pull requests; prints `removed`/`kept` lines, exit 1 if one could not be removed |
 | Quota use | `baton usage --repo <owner/repo> [--since <UTC ISO time>] [--json]`: per issue and role, from local transcripts |
+| Spike token limit | `baton budget`: a PreToolUse hook, not run by hand; blocks a researcher's tools once its `Timebox:` token limit is spent, except `baton comment` |
 | Repository owner and default branch | `gh repo view --json owner,defaultBranchRef` |
 
 ## Writing
