@@ -254,16 +254,34 @@ _HELPER = ('!f() { test "$1" = get && echo username=x-access-token'
            ' && echo "password=$BATON_GIT_TOKEN"; }; f')
 
 
+def refspec_problem(refspec, default_branch):
+    """Why `baton push` refuses this refspec, or None when it is <source>:refs/heads/<branch>."""
+    if refspec.startswith("-"):
+        return 'starts with "-"'
+    if refspec.startswith("+"):
+        return 'force push ("+")'
+    if refspec.count(":") != 1:
+        return "needs <source>:refs/heads/<branch>"
+    src, dst = refspec.split(":")
+    if not src:
+        return "empty source deletes the branch"
+    if not dst.startswith("refs/heads/") or dst == "refs/heads/":
+        return "destination outside refs/heads/"
+    if dst == f"refs/heads/{default_branch}":
+        return f"destination is the default branch ({default_branch})"
+    return None
+
+
 def push_command(refspec, repo):
     """(argv, env) for pushing a refspec; at tier 1 over HTTPS with the token in the child's env only."""
     ids = _identities()
     if ids is None:
-        return ["git", "push", "origin", refspec], None
+        return ["git", "push", "--", "origin", refspec], None
     if ids.baton is None:
         raise IdentityError("identity.toml has no [baton] entry for pushes")
     tok = token(ids.baton, _run.run, _post, time.time())
     argv = ["git", "-c", "credential.helper=", "-c", f"credential.helper={_HELPER}",
-            "push", f"https://github.com/{repo}.git", refspec]
+            "push", "--", f"https://github.com/{repo}.git", refspec]
     return argv, {"BATON_GIT_TOKEN": tok, "GIT_TERMINAL_PROMPT": "0"}
 
 

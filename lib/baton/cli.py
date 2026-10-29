@@ -803,7 +803,13 @@ def cmd_push(args):
     if len(args) != 1:
         print("usage: baton push <refspec>", file=sys.stderr)
         return 64
-    argv, env = identity.push_command(args[0], _repo_name())
+    info = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
+    default = (info.get("defaultBranchRef") or {}).get("name", "")
+    problem = identity.refspec_problem(args[0], default)
+    if problem:
+        print(f"baton push: refused {args[0]}: {problem}", file=sys.stderr)
+        return 1
+    argv, env = identity.push_command(args[0], info["nameWithOwner"])
     print(run.run(argv, cwd=os.getcwd(), env=env), end="")
     return 0
 

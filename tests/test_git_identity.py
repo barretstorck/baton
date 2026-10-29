@@ -45,11 +45,11 @@ class Tier0Test(unittest.TestCase):
         self.assertEqual(runner.calls, [])
 
     def test_push_is_plain(self):
-        runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r"}'})
+        runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}}'})
         with mock.patch.object(cli.run, "run", runner):
             code, _, _ = call(cli.cmd_push, ["HEAD:refs/heads/b"])
         self.assertEqual(code, 0)
-        self.assertEqual(runner.calls[-1], ["git", "push", "origin", "HEAD:refs/heads/b"])
+        self.assertEqual(runner.calls[-1], ["git", "push", "--", "origin", "HEAD:refs/heads/b"])
         self.assertIsNone(runner.envs[-1])
 
     def test_usage(self):
@@ -98,12 +98,41 @@ class Tier1Test(unittest.TestCase):
         self.assertEqual(git(self.main, "config", "user.email"), "maint@example.com")
 
     def test_push_uses_token_env(self):
-        runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r"}'})
+        runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}}'})
         with mock.patch.object(cli.run, "run", runner):
             call(cli.cmd_push, ["HEAD:refs/heads/b"])
         self.assertIn("https://github.com/o/r.git", runner.calls[-1])
         self.assertEqual(runner.envs[-1]["BATON_GIT_TOKEN"], "tok-baton")
         self.assertFalse(any("tok-baton" in a for a in runner.calls[-1]))
+
+
+REPO = '{"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}}'
+
+
+class PushRefusalTest(unittest.TestCase):
+    def setUp(self):
+        tier1(self)
+
+    def test_refusals(self):
+        for refspec in ["--delete", "-o", "--receive-pack=x", "+HEAD:refs/heads/b",
+                        ":refs/heads/b", "HEAD", "HEAD:main", "HEAD:refs/tags/v1",
+                        "HEAD:refs/heads/main"]:
+            with self.subTest(refspec=refspec):
+                runner = FakeRunner({"gh repo view": REPO})
+                with mock.patch.object(cli.run, "run", runner), \
+                        mock.patch.object(identity, "token", side_effect=AssertionError("token minted")):
+                    code, _, err = call(cli.cmd_push, [refspec])
+                self.assertEqual(code, 1)
+                self.assertIn("refused", err)
+                self.assertFalse(any(c[0] == "git" for c in runner.calls))
+
+    def test_branch_push(self):
+        runner = FakeRunner({"gh repo view": REPO})
+        with mock.patch.object(cli.run, "run", runner):
+            code, _, _ = call(cli.cmd_push, ["HEAD:refs/heads/issue-258-x"])
+        self.assertEqual(code, 0)
+        self.assertEqual(runner.calls[-1][-3:],
+                         ["--", "https://github.com/o/r.git", "HEAD:refs/heads/issue-258-x"])
 
 
 if __name__ == "__main__":
