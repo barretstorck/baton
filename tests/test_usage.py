@@ -70,6 +70,7 @@ class ReportTest(unittest.TestCase):
         found, rows = self.rows()
         task = rows[("issue 12", "task")]
         self.assertEqual((task["agents"], task["calls"]), (1, 2))
+        self.assertEqual(task["output_lower_bound"], 200)   # two requests, out=100 each
         self.assertEqual(task["peak"], 301_010)
         self.assertEqual(task["avg_context"], 151_010)
         self.assertEqual(rows[("session s1", "orchestrator")]["avg_context"], 1010)
@@ -118,6 +119,8 @@ class ReportTest(unittest.TestCase):
         self.assertIn("issue 12", text)
         self.assertIn("task", text)
         self.assertIn("Avg ctx (K)", text)
+        self.assertIn("Output>=", text)
+        self.assertIn("lower bound", text)
 
 
 class TotalWeightedTest(unittest.TestCase):

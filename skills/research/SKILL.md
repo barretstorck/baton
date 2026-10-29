@@ -75,7 +75,7 @@ A spike may carry a limit in tokens, minutes or both.
   `Started:` line; do not restart the clock.
 - Between steps, and before each status comment, compute the elapsed minutes from `Started:` with
   `date`. When you reach the minutes part, stop investigating.
-- Tokens are weighted tokens as `baton usage` counts them. A hook (`baton budget`) blocks every
+- Tokens are weighted tokens as `baton usage` counts them. Transcripts record output tokens while streaming, so output is undercounted and the limit rests on input and cache tokens. A hook (`baton budget`) blocks every
   tool except `baton comment` once the limit is spent, with a message starting `Token budget
   reached`. When you see it, post at once. The hook is approximate (one request late), so also
   stop on your own when you judge the tokens part nearly used.

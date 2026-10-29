@@ -135,11 +135,12 @@ def report(root, since=None, repo=None):
             continue
         row = rows.setdefault((key, role), {"key": key, "role": role, "agents": 0, "calls": 0,
                                             "weighted": 0.0, "peak": 0, "large": 0.0,
-                                            "context": 0})
+                                            "context": 0, "output_lower_bound": 0})
         row["agents"] += 1
         for call in calls:
             row["calls"] += 1
             row["weighted"] += call["weighted"]
+            row["output_lower_bound"] += call["output_tokens"]
             row["peak"] = max(row["peak"], call["context"])
             row["context"] += call["context"]
             if call["context"] > LARGE:
@@ -165,13 +166,15 @@ def report(root, since=None, repo=None):
 
 
 def table(found):
-    lines = ["| Work | Role | Agents | Calls | Weighted (M) | Peak (K) | Avg ctx (K) | Above 250K |",
-             "|---|---|---|---|---|---|---|---|"]
+    lines = ["| Work | Role | Agents | Calls | Weighted (M) | Output>= (K) | Peak (K) | Avg ctx (K) | Above 250K |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for row in found["rows"]:
         lines.append(f"| {row['key']} | {row['role']} | {row['agents']} | {row['calls']} | "
-                     f"{row['weighted'] / 1e6:.1f} | {row['peak'] / 1e3:.0f} | "
+                     f"{row['weighted'] / 1e6:.1f} | {row['output_lower_bound'] / 1e3:.1f} | {row['peak'] / 1e3:.0f} | "
                      f"{row['avg_context'] / 1e3:.0f} | "
                      f"{row['large_share']:.0%} |")
+    lines += ["", "Output>= is a lower bound: transcripts record output tokens while streaming, "
+                  "so the real count is higher."]
     lines += ["", "| Window (UTC) | Weighted (M) | By role |", "|---|---|---|"]
     for window in found["windows"]:
         shares = ", ".join(f"{role} {value / window['weighted']:.0%}"
