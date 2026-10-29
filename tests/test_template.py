@@ -144,11 +144,12 @@ class TemplateTest(unittest.TestCase):
 
     def test_sprint_skill_files_follow_ups_by_severity(self):
         text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
-        self.assertIn("File each by its severity", text)
-        self.assertIn("`critical`: joins the open sprint as `deliverable`", text)
-        self.assertIn("`important`: joins the open sprint as `stretch`", text)
-        self.assertIn("`minor`: not filed", text)
-        self.assertIn("`critical` ones", text)
+        self.assertIn("Place each by its severity", text)
+        self.assertIn("`follow_ups` from `baton config`", text)
+        self.assertIn("`follow_ups.scheduled` in a scheduled run", text)
+        for placement in ("deliverable", "stretch", "goal", "backlog", "skip"):
+            self.assertIn(f"`{placement}`", text)
+        self.assertIn("`needs-maintainer` label", text)
 
     def test_review_skill_reads_state_from_pr_state(self):
         text = (ROOT / "skills/review/SKILL.md").read_text()
