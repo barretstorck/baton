@@ -16,6 +16,8 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | A pull request's checks | `gh pr checks <N>` |
 | A pull request's draft state and CI state (reviewer) | `baton pr-state <N>` (JSON: `draft`, `ci`: `green`, `red`, `cancelled` (only cancelled checks failed: CI did not finish), `pending` or `none`, `verify`: `none`, `missing`, `green`, `red` or `timeout`, `problems`) |
 | Full verification of a pull request (reviewer) | `baton verify <PR> <worktree>`: runs the brief's `verify.command` in the worktree (at the pull request's head, clean); prints `verify <state> commit=<sha7> exit=<n> duration=<s>s`, `log: <path>` and the last 40 lines; writes nothing to the pull request. Exit 0 green, 1 red or refused, 3 timeout |
+| Run a command in the isolated sandbox | `baton sandbox run <command...>`: runs it through the local brief's `## Sandbox` `Command:` template in a fresh checkout of the default branch; prints `sandbox exit=<n>`, `log: <path>` and the last 40 lines. Error (exit 1) when no sandbox is configured; exit status is the command's, 3 on timeout |
+| Check the sandbox is isolated | `baton sandbox check`: prints `none`, `isolated`, `not-isolated` or `probe-failed`; exit 0 for `none` and `isolated`, else 1 |
 | A pull request's review state | `baton review state <N>`: `none`, `changes`, `replied`, `stale`, `approved`, `escalate`, `replan`, `blocked` or `repeated` (the same failing tests in two reviews in a row) |
 | An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`); reads the `## Developer Plan` section of the issue body |
 | An issue's plan | the `## Developer Plan` section of the issue body: `gh issue view <N> --json body -q .body`. The body is limited to 65536 characters; a longer one is refused and the issue must be split. Older issues: a plan still on `refs/plans/<N>` or on a branch is moved into the body by `baton plan migrate <N>`. |
@@ -29,6 +31,9 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Step | Command |
 |---|---|
 | Set an issue's status | `baton set-status <N> status:<name>` (removes the previous status) |
+| Set an issue's priority | `baton set-priority <N> <1-4>` (1 urgent, 2 high, 3 medium, 4 low; replaces any other `priority:` label) |
+| Set a bug's severity | `baton set-severity <N> <1-4>` (replaces any other `severity:` label; refused unless the issue is a bug). Severity is ranking information only: no due dates, it never pulls a bug into a sprint or interrupts one. |
+| Create the Baton labels | `baton labels --create` creates every missing label, including `priority:1`-`4` and `severity:1`-`4` |
 | Add or remove another label | `baton issue edit <N> --add-label <label>` / `--remove-label <label>`; use the names from `labels.map` in `baton config` |
 | Post a comment | `baton comment <issue\|pr> <N> <role> <kind> -` with the body as an inline heredoc on standard input, or a file path in place of `-`. It scans the text, adds the Baton marker and prints the comment URL. |
 | Close or reopen | `baton close\|reopen <issue\|pr> <N> <role> <reason-file \| ->`: posts a `baton:<role>:closed`/`reopened` marker comment with the reason, then closes or reopens. `gh ... close\|reopen` is refused. An item closed with no such marker was closed by the maintainer: do not reopen it without asking. |

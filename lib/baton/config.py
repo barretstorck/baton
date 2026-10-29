@@ -13,6 +13,8 @@ OTHER_LABELS = [
     "type:feature", "type:bug", "type:maintenance", "type:spike", "deliverable", "stretch", "broken-default-branch",
     "needs-maintainer",
 ]
+PRIORITIES = [f"priority:{n}" for n in range(1, 5)]
+SEVERITIES = [f"severity:{n}" for n in range(1, 5)]
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 MODELS = ("opus", "sonnet", "fable", "haiku")
 SEVERITIES = ("critical", "important", "minor")
@@ -32,7 +34,7 @@ DEFAULTS = {
     },
     "labels": {
         "auto_create": True,
-        "map": {name: name for name in STATUSES + OTHER_LABELS},
+        "map": {name: name for name in STATUSES + OTHER_LABELS + PRIORITIES + SEVERITIES},
     },
     "merge": {"allow_no_ci": False},
     "verify": {"command": "", "timeout_minutes": 10},
@@ -43,6 +45,7 @@ DEFAULTS = {
     "privacy_allow": [],
     "forbid_added": {},
     "budgets": {},
+    "work_mix": {},
 }
 
 
@@ -146,6 +149,20 @@ def _check_docs_dir(data):
             raise ConfigError(f".baton/brief.md: docs.dir {docs_dir} is under protected path {entry}")
 
 
+WORK_MIX_KEYS = ("feature", "maintenance", "bug")
+
+
+def _check_work_mix(data):
+    mix = data["work_mix"]
+    for key, value in mix.items():
+        if key not in WORK_MIX_KEYS:
+            raise ConfigError(f".baton/brief.md: work_mix key {key!r} must be one of " + ", ".join(WORK_MIX_KEYS))
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 100:
+            raise ConfigError(f".baton/brief.md: work_mix.{key} must be an integer from 0 to 100")
+    if mix and sum(mix.values()) != 100:
+        raise ConfigError(".baton/brief.md: work_mix values must add up to 100")
+
+
 def repo_root(path):
     try:
         out = run.run(["git", "-C", path, "rev-parse", "--show-toplevel"])
@@ -180,4 +197,5 @@ def load(path):
     _check_follow_ups(merged)
     _check_forbid_added(merged)
     _check_docs_dir(merged)
+    _check_work_mix(merged)
     return Config(root=root, data=merged)
