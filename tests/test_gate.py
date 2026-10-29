@@ -316,6 +316,12 @@ class GateTest(unittest.TestCase):
         problems = gate.decide("git commit -m x", make_repo(hooks=False), TERMS)
         self.assertTrue(any("install-hooks" in p for p in problems))
 
+    def test_git_publish_refuses_hooks_whose_baton_is_gone(self):
+        repo = make_repo(hooks=False)
+        gate.githooks.install(repo, os.path.join(tempfile.mkdtemp(), "0.3.0", "bin", "baton"))
+        problems = gate.decide("git commit -m x", repo, TERMS)
+        self.assertTrue(any("install-hooks" in p for p in problems))
+
     def test_hooks_must_be_in_the_effective_hooks_path(self):
         repo = make_repo()
         subprocess.run(["git", "-C", repo, "config", "core.hooksPath", ".husky"], check=True)
