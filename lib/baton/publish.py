@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 
+from . import identity
 from . import issue as issue_mod
 from . import scan
 from .comment import CommentError
@@ -28,7 +29,7 @@ def _with_body(runner, body, build):
     try:
         with os.fdopen(handle, "w") as out:
             out.write(body)
-        return runner(build(path)).strip()
+        return identity.write(runner, build(path), "orchestrator").strip()
     finally:
         os.unlink(path)
 
@@ -72,7 +73,7 @@ def edit(cfg, runner, target, number, terms, title=None, body=None, add_labels=(
     if remove_milestone:
         argv += ["--remove-milestone"]
     if body is None:
-        return runner(argv).strip()
+        return identity.write(runner, argv, "orchestrator").strip()
     return _with_body(runner, body, lambda path: argv + ["--body-file", path])
 
 
@@ -90,7 +91,7 @@ def ready_pr(runner, number, undo=False):
     argv = ["gh", "pr", "ready", str(number)]
     if undo:
         argv.append("--undo")
-    return runner(argv).strip()
+    return identity.write(runner, argv, "orchestrator").strip()
 
 
 def create_milestone(cfg, runner, title, description, due_on, terms):
@@ -100,7 +101,7 @@ def create_milestone(cfg, runner, title, description, due_on, terms):
         argv += ["-f", f"description={description}"]
     if due_on:
         argv += ["-f", f"due_on={due_on}"]
-    return runner(argv).strip()
+    return identity.write(runner, argv, "orchestrator").strip()
 
 
 def edit_milestone(cfg, runner, ref, terms, title=None, description=None, due_on=None,
@@ -124,7 +125,7 @@ def edit_milestone(cfg, runner, ref, terms, title=None, description=None, due_on
                        ("due_on", due_on), ("state", state)):
         if value is not None and value != "":
             argv += ["-f", f"{key}={value}"]
-    return runner(argv).strip()
+    return identity.write(runner, argv, "orchestrator").strip()
 
 
 def mark_missed(cfg, runner, number, milestone_ref, terms):

@@ -62,6 +62,16 @@ class IssueTest(unittest.TestCase):
             publish.edit(cfg(), Capture(), "issue", 5, [], body=" ")
 
 
+class CredentialTest(unittest.TestCase):
+    def test_issue_body_with_a_credential_is_refused(self):
+        r = Capture()
+        for shape in ("github_pat_" + "A1_" * 10, "eyJhbGciOi.eyJpc3MiOiJ4In0.sig_-x",
+                      "ghp_" + "x" * 30, "-----BEGIN " + "RSA PRIVATE KEY-----"):
+            with self.assertRaises(CommentError):
+                publish.create_issue(cfg(), r, "T", "see " + shape, [], None, [])
+        self.assertEqual(r.calls, [])
+
+
 class PrTest(unittest.TestCase):
     def test_create_pr(self):
         r = Capture()
@@ -144,6 +154,7 @@ class MissedCliTest(unittest.TestCase):
         from baton import cli
         err = io.StringIO()
         with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.identity, "use"), \
                 mock.patch.object(cli.run, "run", runner), \
                 mock.patch.object(cli.scan, "load_terms", return_value=[]), \
                 contextlib.redirect_stderr(err):

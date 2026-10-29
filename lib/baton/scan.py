@@ -19,6 +19,11 @@ _PATTERNS = [
     ("internal-domain", re.compile(
         r"\b(?!(?:self|this|cls)\.)[\w-]+(?:\.[\w-]+)*"
         r"\.(?:local|lan|internal|corp|home\.arpa)\b(?![\w.(-])")),
+    ("credential", re.compile(
+        r"-----BEGIN [A-Z ]*PRIVATE KEY-----"
+        r"|\bgh[pousr]_[A-Za-z0-9]{20,}"
+        r"|\bgithub_pat_[A-Za-z0-9_]{20,}"
+        r"|\beyJ[\w-]+\.eyJ[\w-]+\.[\w-]+")),
 ]
 _EMAIL_OK = re.compile(
     r"@(?:users\.noreply\.github\.com|anthropic\.com|example\.(?:com|org|net))$")

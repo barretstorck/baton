@@ -1,6 +1,6 @@
 import json
 
-from . import config
+from . import config, identity
 
 _STYLE = {
     "status:refinement": ("d4c5f9", "Needs work before it is ready"),
@@ -53,8 +53,8 @@ def ensure(cfg, runner, create):
         if actual in existing:
             continue
         if create:
-            runner(["gh", "label", "create", actual, "--color", color,
-                    "--description", description])
+            identity.write(runner, ["gh", "label", "create", actual, "--color", color,
+                                    "--description", description], "orchestrator")
             created.append(actual)
         else:
             still.append(actual)
@@ -71,7 +71,7 @@ def set_status(cfg, runner, number, status):
     for other in cfg.status_labels():
         if other != target and other in present:
             argv += ["--remove-label", other]
-    runner(argv)
+    identity.write(runner, argv, "orchestrator")
 
 
 def set_group(cfg, runner, number, group, value):
@@ -90,4 +90,4 @@ def set_group(cfg, runner, number, group, value):
         other = cfg.label(name)
         if other != target and other in present:
             argv += ["--remove-label", other]
-    runner(argv)
+    identity.write(runner, argv, "orchestrator")

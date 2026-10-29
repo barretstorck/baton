@@ -133,6 +133,7 @@ class SetGroupCliTest(unittest.TestCase):
         runner = FakeRunner({"gh issue view": json.dumps({"labels": [{"name": n} for n in present]})})
         err = io.StringIO()
         with mock.patch.object(cli, "_require_config", return_value=make_config()), \
+                mock.patch.object(cli.identity, "use"), \
                 mock.patch.object(cli.run, "run", runner), contextlib.redirect_stderr(err):
             code = cli.main(args)
         return code, runner, err.getvalue()

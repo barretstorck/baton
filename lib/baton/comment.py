@@ -3,7 +3,7 @@ import json
 import os
 import tempfile
 
-from . import gate, scan
+from . import gate, identity, scan
 from .config import logins
 
 ROLES = {"orchestrator", "developer", "refine", "reviewer", "researcher"}
@@ -40,7 +40,7 @@ def compose(role, kind, body):
     return f"{gate.MARKER}{role}:{kind} -->\n**Baton {role}: {kind}**\n\n{body.strip()}\n"
 
 
-def publish(cfg, runner, target, number, text, terms):
+def publish(cfg, runner, target, number, text, terms, role="orchestrator"):
     """Scan an already stamped comment and post it. Returns the comment's URL."""
     if target not in TARGETS:
         raise CommentError(f"unknown target {target!r}; use issue or pr")
@@ -52,7 +52,8 @@ def publish(cfg, runner, target, number, text, terms):
     try:
         with os.fdopen(handle, "w") as out:
             out.write(text)
-        return runner(["gh", target, "comment", str(number), "--body-file", path]).strip()
+        return identity.write(runner, ["gh", target, "comment", str(number), "--body-file", path],
+                              role).strip()
     finally:
         os.unlink(path)
 
@@ -61,7 +62,7 @@ def post(cfg, runner, target, number, role, kind, body, terms):
     """Scan, stamp and post a comment. Returns the comment's URL."""
     if target not in TARGETS:
         raise CommentError(f"unknown target {target!r}; use issue or pr")
-    return publish(cfg, runner, target, number, compose(role, kind, body), terms)
+    return publish(cfg, runner, target, number, compose(role, kind, body), terms, role)
 
 
 def _notify_marker(cause):
@@ -94,7 +95,8 @@ def notify(cfg, runner, number, cause, text, maintainers, terms):
     if findings:
         raise CommentError("comment not posted; privacy scan found: "
                            + "; ".join(scan.describe(findings)))
-    runner(["gh", "issue", "edit", str(number), "--add-label", cfg.label("needs-maintainer")])
+    identity.write(runner, ["gh", "issue", "edit", str(number), "--add-label",
+                            cfg.label("needs-maintainer")], "orchestrator")
     return publish(cfg, runner, "issue", number, text_out, terms)
 
 

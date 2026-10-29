@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pathlib
 
 from . import comment as commentmod
+from . import identity
 from . import labels
 from . import run as runmod
 from . import scan
@@ -237,8 +238,8 @@ def apply(cfg, runner, number, decision, maintainers, terms, owner, repo):
     if category == "unclear":
         commentmod.post(cfg, runner, "issue", number, "orchestrator", "status",
                         decision["comment"], terms)
-        runner(["gh", "issue", "edit", str(number), "--add-label",
-                cfg.label("awaiting-feedback")])
+        identity.write(runner, ["gh", "issue", "edit", str(number), "--add-label",
+                                cfg.label("awaiting-feedback")], "orchestrator")
         return f"commented on #{number} and marked it awaiting-feedback"
     if category == "unsure":
         url = commentmod.notify(cfg, runner, number, "triage-unsure",
@@ -259,7 +260,8 @@ def _apply_real(cfg, runner, number, decision, issue, maintainers):
     try:
         with os.fdopen(handle, "w") as out:
             out.write(body)
-        runner(["gh", "issue", "edit", str(number), "--body-file", path])
+        identity.write(runner, ["gh", "issue", "edit", str(number), "--body-file", path],
+                       "orchestrator")
     finally:
         os.unlink(path)
     present = {item["name"] for item in issue.get("labels") or []}
@@ -269,7 +271,7 @@ def _apply_real(cfg, runner, number, decision, issue, maintainers):
         name = cfg.label(f"type:{other}")
         if name != target and name in present:
             argv += ["--remove-label", name]
-    runner(argv)
+    identity.write(runner, argv, "orchestrator")
     if decision.get("priority") is not None:
         labels.set_group(cfg, runner, number, "priority", decision["priority"])
     if decision.get("severity") is not None:

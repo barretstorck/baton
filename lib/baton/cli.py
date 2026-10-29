@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import budget, checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
+from . import budget, checklist, clean, comment, config, gate, githooks, identity, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
 
 
 def cmd_config(args):
@@ -13,6 +13,8 @@ def cmd_config(args):
         return 1
     data = dict(cfg.data)
     data["maintainers"] = list(data["maintainers"]) or cfg.maintainers(_owner())
+    owner, _, name = _repo_name().partition("/")
+    data["identity"] = identity.describe(identity.load(owner, name))
     print(json.dumps(data, indent=2))
     return 0
 
@@ -800,16 +802,27 @@ COMMANDS = {
 }
 
 
+def _load_identity():
+    try:
+        repo = _repo_name()
+    except run.RunError as error:
+        raise identity.IdentityError(f"could not determine the repository to find identity.toml: {error}")
+    return identity.load(*repo.split("/", 1))
+
+
 def main(argv):
     if not argv or argv[0] not in COMMANDS:
         print("usage: baton <" + "|".join(sorted(COMMANDS)) + "> [args]", file=sys.stderr)
         return 64
+    identity.use(_load_identity)
     try:
         return COMMANDS[argv[0]](argv[1:])
-    except (checklist.TaskError, comment.CommentError, review.ReviewError,
+    except (identity.IdentityError, checklist.TaskError, comment.CommentError, review.ReviewError,
             verify.VerifyError, sandbox.SandboxError) as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
     except (config.ConfigError, run.RunError, sprint.SnapshotError, ValueError, OSError) as error:
         print(f"baton: {error}", file=sys.stderr)
         return 2
+    finally:
+        identity.use(None)

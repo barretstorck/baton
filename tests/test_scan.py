@@ -66,6 +66,21 @@ class ScanTest(unittest.TestCase):
     def test_code_that_looks_like_a_domain_passes(self):
         self.assertEqual(kinds("edit settings.local.json; x = threading.local()"), [])
 
+    def test_credentials(self):
+        shapes = [
+            "-----BEGIN " + "RSA PRIVATE KEY-----",
+            "-----BEGIN " + "PRIVATE KEY-----",
+            "ghs_" + "a1B2" * 6,
+            "ghp_" + "x" * 30,
+            "github_pat_" + "A1_" * 10,
+            "eyJhbGciOi" + "." + "eyJpc3MiOiJ4In0" + "." + "sig_-x",
+        ]
+        for shape in shapes:
+            self.assertEqual(kinds("token " + shape + " here"), ["credential"], shape)
+
+    def test_short_or_plain_text_is_not_a_credential(self):
+        self.assertEqual(kinds("ghp_ prefix, github_pat_ and a PRIVATE KEY file"), [])
+
     def test_private_term_case_insensitive(self):
         self.assertEqual(kinds("the zebrowski album", terms=["Zebrowski"]), ["private-term"])
 

@@ -152,6 +152,7 @@ class CommandTest(unittest.TestCase):
         runner = FakeRunner({"gh issue comment": "https://example.com/c/9\n"})
         out = io.StringIO()
         with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.identity, "use"), \
                 mock.patch.object(cli.scan, "load_terms", return_value=[]), \
                 mock.patch.object(cli.run, "run", runner), \
                 mock.patch("sys.stdin", io.StringIO("Done.")), \
@@ -164,6 +165,7 @@ class CommandTest(unittest.TestCase):
     def run_cli(self, argv, runner):
         err = io.StringIO()
         with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.identity, "use"), \
                 mock.patch.object(cli.scan, "load_terms", return_value=[]), \
                 mock.patch.object(cli.run, "run", runner), \
                 mock.patch("sys.stdin", io.StringIO("Dup.")), \
@@ -203,6 +205,7 @@ class CommandTest(unittest.TestCase):
     def test_empty_reason_exits_1(self):
         runner = FakeRunner()
         with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.identity, "use"), \
                 mock.patch.object(cli.scan, "load_terms", return_value=[]), \
                 mock.patch.object(cli.run, "run", runner), \
                 mock.patch("sys.stdin", io.StringIO("  ")), \

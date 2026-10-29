@@ -1,5 +1,5 @@
 """Closing and reopening issues and pull requests, always with a marker comment."""
-from . import comment, run
+from . import comment, identity, run
 
 ACTIONS = {"close": "closed", "reopen": "reopened"}
 REASONS = ("spam", "duplicate", "support", "wont-do", "completed")
@@ -24,20 +24,20 @@ def change(cfg, runner, action, target, number, role, reason, terms,
     _check_options(runner, action, target, number, close_reason, duplicate_of, lock)
     url = comment.post(cfg, runner, target, number, role, ACTIONS[action], reason, terms)
     if close_reason is None:
-        runner(["gh", target, action, str(number)])
+        identity.write(runner, ["gh", target, action, str(number)], role)
     else:
         if close_reason != "completed":
-            runner(["gh", "issue", "edit", str(number), "--add-label",
-                    cfg.label(f"closed:{close_reason}")])
+            identity.write(runner, ["gh", "issue", "edit", str(number), "--add-label",
+                                    cfg.label(f"closed:{close_reason}")], role)
         argv = ["gh", "issue", "close", str(number), "--reason", _NATIVE[close_reason]]
         if close_reason == "duplicate":
             argv += ["--duplicate-of", str(duplicate_of)]
-        runner(argv)
+        identity.write(runner, argv, role)
     if lock:
         argv = ["gh", "issue", "lock", str(number)]
         if close_reason == "spam":
             argv += ["--reason", "spam"]
-        runner(argv)
+        identity.write(runner, argv, role)
     if close_reason == "duplicate":
         comment.post(cfg, runner, "issue", duplicate_of, role, "status",
                      f"Closed #{number} as a duplicate of this issue.", terms)

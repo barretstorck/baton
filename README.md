@@ -50,6 +50,32 @@ agents have their own login (#150) this rule is only as strong as that interim. 
 repository you can afford to experiment on first. The triager is the only agent that reads outside
 text raw; it may only run a short list of commands and writes only through `baton triage apply`. Triaged bugs are reproduced by the refiner in the sandbox only, and an issue from outside still needs a maintainer's `/baton ready` comment.
 
+## Identity tiers
+
+By default (tier 0) every agent write is made with your own `gh` login. At tier 1 writes are made
+as two GitHub Apps, so they show as bots. Tier 1 is opt-in: write
+`~/.baton/<owner>-<repo>/identity.toml` (mode 0600), and Baton signs a short-lived installation
+token for each write (the private key is read only by `openssl`, never by Baton). The file is
+absent at tier 0. A file that exists but is malformed fails closed; it is not read as tier 0.
+
+    [baton]
+    app_id = 123456
+    installation_id = 7890123
+    key_path = "~/.baton/keys/baton.pem"
+    # login = "baton[bot]"            # optional
+
+    [reviewer]
+    app_id = 123457
+    installation_id = 7890124
+    key_path = "~/.baton/keys/reviewer.pem"
+    # login = "baton-reviewer[bot]"   # optional
+
+The `reviewer` role writes as the reviewer App; every other role writes as the `baton` App, with no
+fallback to your login. Permissions: `baton[bot]` has issues, pull requests and contents write;
+`baton-reviewer[bot]` has pull requests write and contents read, and no issues permission. Merging
+stays on your login. `baton config` shows the active tier under `identity`. Tier 2 (a machine user)
+is #225, and creating the Apps and checking the setup is #179.
+
 ## Plans of small tasks
 
 Every tool call sends an agent's whole conversation to the model again, so an agent that works a
@@ -155,7 +181,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 
 | Command | Purpose |
 |---|---|
-| `baton config` | Print the resolved settings from `.baton/brief.md` |
+| `baton config` | Print the resolved settings from `.baton/brief.md`, and the `identity` tier |
 | `baton labels [--create]` | Check or create the labels Baton uses |
 | `baton set-status <issue> <status:name>` | Switch an issue's status label |
 | `baton install-hooks` | Install the `pre-commit` and `pre-push` privacy hooks. The hooks find the current install through `installed_plugins.json`, so a plugin update needs no re-install; run it again only when the gate or a hook says the hooks are missing |
