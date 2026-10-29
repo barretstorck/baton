@@ -305,6 +305,7 @@ def snapshot(cfg, runner, milestone=None):
         files, skipped = default_branch_files()
         named = checklist.named_paths(text)
         base = found.get("written_against")
+        ambiguous = None
         if skipped:
             missing = None
         else:
@@ -316,7 +317,10 @@ def snapshot(cfg, runner, milestone=None):
                     return True
                 return "/" not in path and basenames[path] == 1
             missing = [p for p in named if not present(p)]
+            ambiguous = {p: sorted(f for f in files if f.rsplit("/", 1)[-1] == p)
+                         for p in missing if "/" not in p and p not in created and basenames[p] > 1}
         return {"missing_paths": missing,
+                "ambiguous_paths": ambiguous,
                 "path_check_skipped": skipped,
                 "plan_behind": commits_behind(runner, base, branch) if base else None}
 
@@ -421,6 +425,9 @@ def snapshot(cfg, runner, milestone=None):
             reason = "default branch is red; only the repair issue may proceed"
         elif missing_count(number) >= STALE_MISSING_PATHS:
             reason = f"plan names {missing_count(number)} missing paths; re-refine"
+            ambiguous = (result["progress"][str(number)]["stale"].get("ambiguous_paths") or {})
+            for name in sorted(ambiguous):
+                reason += f"; {name} matches {', '.join(ambiguous[name])}"
         elif open_blockers:
             reason = "blocked by " + ", ".join(f"#{n}" for n in open_blockers)
         elif len(result["dispatchable"]) >= slots:
