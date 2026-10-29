@@ -602,12 +602,14 @@ class VerifyStateTests(unittest.TestCase):
         self.assertEqual(self.state([reviewed("red")], vcfg(""), owner=None), "none")
 
     def test_bot_review_counts_only_with_bots(self):
-        item = {"author": {"login": "baton-reviewer"}, "body": review.compose("approve", HEAD, "ok", "green")}
+        item = {"author": {"login": "baton-reviewer", "__typename": "Bot"}, "body": review.compose("approve", HEAD, "ok", "green")}
         pr = {"isDraft": False, "statusCheckRollup": [], "headRefOid": HEAD, "comments": [item]}
         runner = FakeRunner({})
         self.assertEqual(sprint.pr_state(pr, vcfg(), runner, OWNER)["verify"], "missing")
         self.assertEqual(sprint.pr_state(pr, vcfg(), runner, OWNER,
-                                         bots={"baton-reviewer[bot]"})["verify"], "green")
+                                         reviewers={"baton-reviewer[bot]"})["verify"], "green")
+        self.assertEqual(sprint.pr_state(pr, vcfg(), runner, OWNER,
+                                         reviewers={"baton[bot]"})["verify"], "missing")
 
     def test_in_review_entry_carries_verify(self):
         pr = {"number": 30, "headRefName": "issue-1-x", "isDraft": False, "mergeable": "MERGEABLE",

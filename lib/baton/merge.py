@@ -119,7 +119,7 @@ def _approved(pr, owner, runner, default_branch, touched, bots=()):
     return False
 
 
-def check(pr, cfg, owner, default_branch, runner, notes=None, bots=()):
+def check(pr, cfg, owner, default_branch, runner, notes=None, bots=(), reviewers=()):
     problems = []
     if pr.get("isCrossRepository"):
         problems.append("pull request comes from a fork; Baton only merges its own branches")
@@ -149,7 +149,7 @@ def check(pr, cfg, owner, default_branch, runner, notes=None, bots=()):
         problems.append("file list is incomplete (too many changed files to verify)")
 
     if cfg.data["review"]["required"]:
-        trusted = list(logins(owner)) + sorted(bots)
+        trusted = list(logins(owner)) + sorted(reviewers)
         found = review.current(pr, trusted, cfg, runner, default_branch)
         if found["state"] != "approved":
             problems.append("no reviewer approval of the change at the head commit "
@@ -300,13 +300,13 @@ def _retire_plan(pr, repo, runner, cfg, notes=None):
             "again once they pass")
 
 
-def merge(number, cfg, runner, notes=None, bots=()):
+def merge(number, cfg, runner, notes=None, bots=(), reviewers=()):
     notes = [] if notes is None else notes
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", PR_FIELDS]))
     if pr.get("state") != "MERGED":
         problems = check(pr, cfg, cfg.maintainers(repo["owner"]["login"]), repo["defaultBranchRef"]["name"], runner,
-                         notes, bots)
+                         notes, bots, reviewers)
         if problems:
             return problems
         note = _retire_plan(pr, repo, runner, cfg, notes)

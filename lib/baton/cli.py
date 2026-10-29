@@ -123,7 +123,8 @@ def cmd_merge_pr(args):
 
     notes = []
     try:
-        problems = merge.merge(int(args[0]), _require_config(), tolerant, notes, bots=_bots())
+        problems = merge.merge(int(args[0]), _require_config(), tolerant, notes, bots=_bots(),
+                               reviewers=_reviewers())
     except merge.PlanRetired as note:
         print(f"baton: {note}; not merged yet")
         return 0
@@ -150,12 +151,16 @@ def _maintainers(cfg):
 
 
 def _trusted(cfg):
-    """Logins trusted to post marker comments: the maintainers and the Baton logins."""
-    return list(_maintainers(cfg)) + sorted(_bots())
+    """Logins trusted for review and verify markers: the maintainers and the reviewer App."""
+    return list(_maintainers(cfg)) + sorted(_reviewers())
 
 
 def _bots():
     return identity.bot_logins()
+
+
+def _reviewers():
+    return identity.reviewer_logins()
 
 
 def cmd_comment(args):
@@ -596,7 +601,7 @@ def cmd_ready_check(args):
 def cmd_sprint_status(args):
     cfg = _require_config()
     print(json.dumps(sprint.snapshot(cfg, run.run, args[0] if args else None,
-                                  bots=_bots()), indent=2))
+                                  bots=_bots(), reviewers=_reviewers()), indent=2))
     return 0
 
 
@@ -692,7 +697,7 @@ def cmd_pr_state(args):
         return 64
     cfg = _require_config()
     pr = json.loads(run.run(["gh", "pr", "view", args[0], "--json", sprint.PR_STATE_FIELDS]))
-    print(json.dumps(sprint.pr_state(pr, cfg, run.run, bots=_bots()), indent=2))
+    print(json.dumps(sprint.pr_state(pr, cfg, run.run, reviewers=_reviewers()), indent=2))
     return 0
 
 

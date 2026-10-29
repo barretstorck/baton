@@ -178,21 +178,21 @@ def _pr_ci(pr, cfg, runner=None):
 PR_STATE_FIELDS = "isDraft,statusCheckRollup,headRefOid,comments"  # headRefOid lets _settle settle lagging runs
 
 
-def _pr_verify(pr, cfg, runner, owner, bots=()):
+def _pr_verify(pr, cfg, runner, owner, reviewers=()):
     """The verification state recorded by the latest review of the pull request's head."""
     if not cfg.data["verify"]["command"] or not cfg.data["review"]["required"]:
         return "none"
     if owner is None:
         owner = json.loads(runner(["gh", "repo", "view", "--json", "owner"]))["owner"]["login"]
-    return review.verify_state(cfg, pr.get("comments"), list(cfg.maintainers(owner)) + sorted(bots),
+    return review.verify_state(cfg, pr.get("comments"), list(cfg.maintainers(owner)) + sorted(reviewers),
                               pr.get("headRefOid"))
 
 
-def pr_state(pr, cfg, runner=None, owner=None, bots=()):
+def pr_state(pr, cfg, runner=None, owner=None, reviewers=()):
     """The draft, CI and verify state of one pull request, as sprint-status reads them."""
     return {"draft": bool(pr["isDraft"]), "ci": _pr_ci(pr, cfg, runner),
             "problems": merge._check_ci(pr, cfg, runner),
-            "verify": _pr_verify(pr, cfg, runner, owner, bots)}
+            "verify": _pr_verify(pr, cfg, runner, owner, reviewers)}
 
 
 def _pick_sprint(milestones, wanted):
@@ -231,11 +231,11 @@ def spikes_first(entries, spike_flags, cap):
             "spikes": spikes[:cap], "left_out": spikes[cap:], "cap": cap}
 
 
-def snapshot(cfg, runner, milestone=None, bots=()):
+def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     owner, branch = repo["owner"]["login"], repo["defaultBranchRef"]["name"]
     maintainers = cfg.maintainers(owner)
-    trusted = list(maintainers) + sorted(bots)
+    trusted = list(maintainers) + sorted(reviewers)
     milestones = _load(
         runner, ["gh", "api", f"repos/{owner}/{repo['name']}/milestones?state=open&per_page=100"],
         "milestones")
@@ -386,7 +386,7 @@ def snapshot(cfg, runner, milestone=None, bots=()):
                 "ci": _pr_ci(pr, cfg, runner) if pr else "none",
                 "mergeable": pr["mergeable"] if pr else None,
                 "review": review_state, "rounds": rounds,
-                "verify": _pr_verify(pr, cfg, runner, owner, bots) if pr else "none"})
+                "verify": _pr_verify(pr, cfg, runner, owner, reviewers) if pr else "none"})
         elif status == "status:verification":
             result["verification"].append(number)
         elif status == "status:refinement" and item["state"] == "OPEN":

@@ -236,13 +236,13 @@ class CheckTest(unittest.TestCase):
                     self.assertTrue(any("protected" in p for p in found))
 
     def test_a_bot_review_satisfies_the_review_requirement(self):
-        comments = [{"author": {"login": "baton-reviewer"},
+        comments = [{"author": {"login": "baton-reviewer", "__typename": "Bot"},
                      "body": review.compose("approve", HEAD, "Round 1.")}]
         pr = make_pr(comments=comments)
         found = merge.check(pr, make_config(), [OWNER], "main", FakeRunner())
         self.assertTrue(any("reviewer approval" in p for p in found))
         found = merge.check(pr, make_config(), [OWNER], "main", FakeRunner(),
-                            bots={"baton-reviewer[bot]"})
+                            reviewers={"baton-reviewer[bot]"})
         self.assertFalse(any("reviewer approval" in p for p in found))
 
     def test_a_baton_bot_approval_is_ignored(self):
