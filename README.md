@@ -18,8 +18,10 @@ and a fresh developer per task from its plan-execution skills. See
 ## Status
 
 Baton is young and changes quickly; it is developed in its own sprints. It has run sprints on
-several real repositories, all on GitHub. See the latest version in
-[.claude-plugin/plugin.json](.claude-plugin/plugin.json).
+several real repositories, all on GitHub. Baton has no version number: Claude Code identifies the
+installed build by the commit SHA of `main`, shown as `version` in
+`~/.claude/plugins/installed_plugins.json` and in the cache folder name.
+`claude plugin update baton@baton` installs the newest commit.
 
 ## Install
 
@@ -156,7 +158,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton config` | Print the resolved settings from `.baton/brief.md` |
 | `baton labels [--create]` | Check or create the labels Baton uses |
 | `baton set-status <issue> <status:name>` | Switch an issue's status label |
-| `baton install-hooks` | Install the `pre-commit` and `pre-push` privacy hooks. The hooks record the plugin version's `baton` and fall back to `baton` on `PATH`; when a plugin update removes that version, the gate refuses commits and pushes until you run `baton install-hooks` again |
+| `baton install-hooks` | Install the `pre-commit` and `pre-push` privacy hooks. The hooks find the current install through `installed_plugins.json`, so a plugin update needs no re-install; run it again only when the gate or a hook says the hooks are missing |
 | `baton verify <pr> <worktree>` | Run the brief's `verify.command` on the pull request's head; prints the result, the log path and the last 40 lines |
 | `baton sandbox run <command...>` | Run a command through the local brief's `## Sandbox` template in a fresh checkout of the default branch; prints the exit status, log path and last 40 lines; an error when no sandbox is configured |
 | `baton sandbox check` | Check a sandbox is configured: prints `configured` or `none`; exit 0 for `configured`, 1 for `none` |
