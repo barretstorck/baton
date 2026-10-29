@@ -715,13 +715,17 @@ def main(stdin_text):
     try:
         payload = json.loads(stdin_text)
     except ValueError:
+        # A payload that is not JSON is not a Bash tool call Baton can check. Blocking it
+        # would break every tool call if Claude Code changed its payload format. An error
+        # inside Baton's own checks (below) blocks instead, because there the command was
+        # understood and may publish.
         return 0
     if not isinstance(payload, dict) or payload.get("tool_name") != "Bash":
         return 0
     try:
         command = payload.get("tool_input", {}).get("command", "")
         cwd = payload.get("cwd") or os.getcwd()
-        problems = decide(command, cwd, scan.load_terms())
+        problems = decide(command, cwd, scan.load_terms(warn=False))
     except Exception as error:  # fail closed: an unchecked command must not publish
         print(f"Baton publish gate could not check this command ({error!r}).", file=sys.stderr)
         return 2
