@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import budget, checklist, clean, comment, config, gate, githooks, identity, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
+from . import budget, checklist, clean, comment, config, doctor, gate, githooks, identity, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
 
 
 def cmd_config(args):
@@ -763,7 +763,15 @@ def cmd_clean(args):
     return 1 if failed or failed_logs else 0
 
 
+def cmd_doctor(args):
+    if args:
+        print("usage: baton doctor", file=sys.stderr)
+        return 64
+    return doctor.main(_repo_name())
+
+
 COMMANDS = {
+    "doctor": cmd_doctor,
     "clean": cmd_clean,
     "sprint-metrics": cmd_sprint_metrics,
     "close": cmd_close,
