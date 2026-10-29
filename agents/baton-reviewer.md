@@ -18,3 +18,5 @@ worktrees or pull requests.
 
 Your final message is read by the sprint orchestrator, not by a person. Make it the return form
 the skill defines, and nothing else.
+
+Give every security note in the issue's orchestrator `status` comments a disposition (fix task, follow-up or set aside citing the brief's `## Responsibilities`), as step 5 of the skill says; you may not approve with one left open.

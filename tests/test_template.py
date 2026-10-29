@@ -348,6 +348,12 @@ class TemplateTest(unittest.TestCase):
         sprint = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
         self.assertIn("spikes before", sprint)
 
+    def test_review_skill_requires_security_note_dispositions(self):
+        text = " ".join((ROOT / "skills" / "review" / "SKILL.md").read_text().split())
+        for phrase in ("## Responsibilities", "## Security notes", "fix task",
+                       "follow-up", "set aside", "baton:orchestrator:status"):
+            self.assertIn(phrase, text)
+
     def test_skills_read_issues_through_baton_issue_read(self):
         for name in ("refine", "research", "develop", "review"):
             text = (ROOT / "skills" / name / "SKILL.md").read_text()
