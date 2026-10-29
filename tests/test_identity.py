@@ -206,3 +206,37 @@ class DescribeTest(unittest.TestCase):
         text = json.dumps(out)
         for bad in ("secret", "11", "22", "33", "44", ".pem"):
             self.assertNotIn(bad, text)
+
+
+class ActualLoginTest(unittest.TestCase):
+    app = identity.App(7, 70, "/k/x.pem", "x[bot]")
+
+    def test_app_login(self):
+        sent = []
+
+        def get(url, headers):
+            sent.append((url, headers))
+            return {"slug": "baton"}
+        with mock.patch.object(identity, "jwt", return_value="jwt-x"):
+            self.assertEqual(identity.app_login(self.app, None, get, 0), "baton[bot]")
+        self.assertEqual(sent[0][0], "https://api.github.com/app")
+        self.assertEqual(sent[0][1]["Authorization"], "Bearer jwt-x")
+
+    def test_no_slug(self):
+        with mock.patch.object(identity, "jwt", return_value="j"):
+            with self.assertRaisesRegex(identity.IdentityError, "no slug"):
+                identity.app_login(self.app, None, lambda u, h: {}, 0)
+
+    def test_installation_repos_pages(self):
+        pages = {1: {"total_count": 101, "repositories": [{"full_name": f"o/r{i}"} for i in range(100)]},
+                 2: {"total_count": 101, "repositories": [{"full_name": "o/last"}]}}
+        urls = []
+
+        def get(url, headers):
+            urls.append(url)
+            self.assertEqual(headers["Authorization"], "Bearer tok")
+            return pages[int(url.rsplit("=", 1)[1])]
+        names = identity.installation_repos("tok", get)
+        self.assertEqual(len(names), 101)
+        self.assertIn("o/last", names)
+        self.assertEqual(len(urls), 2)
