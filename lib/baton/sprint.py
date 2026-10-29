@@ -6,7 +6,9 @@ requests, comments and the default branch's checks.
 """
 import collections
 import json
+import math
 import os
+import pathlib
 import re
 import time
 from datetime import datetime, timezone
@@ -566,3 +568,49 @@ def parse_metrics(text):
     if missing:
         raise ValueError("missing metrics: " + ", ".join(missing))
     return {k: values[k] for k in METRIC_KEYS}
+
+
+RETRO_COUNT = 3
+BUFFER = 0.8
+
+
+def recent_metrics(root, docs_dir, count=RETRO_COUNT):
+    """Usable metrics of the newest `count` retro files, newest first."""
+    folder = pathlib.Path(root) / docs_dir / "retros"
+    if not folder.is_dir():
+        return []
+    found = []
+    for path in sorted(folder.glob("*.md"), key=lambda p: p.name, reverse=True)[:count]:
+        try:
+            metrics = parse_metrics(path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        days = metrics["duration_days"]
+        if (days is None or days <= 0 or metrics["issues_completed"] is None
+                or metrics["plan_tasks_done"] is None):
+            continue
+        found.append(metrics)
+    return found
+
+
+def _proposal(average, buffer):
+    return max(math.floor(average * buffer), 1) if average > 0 else 0
+
+
+def capacity(metrics, days, buffer=BUFFER):
+    """Issues and plan tasks to propose for `days`, somewhat below the recent average."""
+    if not metrics:
+        return {"retros": 0, "days": days, "note": "no past retros"}
+    total = sum(m["duration_days"] for m in metrics)
+    issues_rate = sum(m["issues_completed"] for m in metrics) / total
+    tasks_rate = sum(m["plan_tasks_done"] for m in metrics) / total
+    timed = [m for m in metrics if m.get("tokens") is not None]
+    timed_days = sum(m["duration_days"] for m in timed)
+    average_issues = issues_rate * days
+    average_tasks = tasks_rate * days
+    return {"retros": len(metrics), "days": days,
+            "issues_per_day": round(issues_rate, 2), "tasks_per_day": round(tasks_rate, 2),
+            "average_issues": round(average_issues, 1), "average_tasks": round(average_tasks, 1),
+            "buffer": buffer,
+            "issues": _proposal(average_issues, buffer), "tasks": _proposal(average_tasks, buffer),
+            "tokens_per_day": round(sum(m["tokens"] for m in timed) / timed_days) if timed else None}
