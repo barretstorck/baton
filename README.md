@@ -158,6 +158,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton verify <pr> <worktree>` | Run the brief's `verify.command` on the pull request's head; prints the result, the log path and the last 40 lines |
 | `baton sandbox run <command...>` | Run a command through the local brief's `## Sandbox` template in a fresh checkout of the default branch; prints the exit status, log path and last 40 lines; an error when no sandbox is configured |
 | `baton sandbox check` | Probe the sandbox for network access: prints `none`, `isolated`, `not-isolated` or `probe-failed`; exit 0 for `none` and `isolated` |
+| `baton sprint-metrics <milestone> [--since <UTC ISO time>] [--dir <projects dir>]` | Print the seven sprint metrics (`duration_days`, `issues_worked`, `issues_completed`, `issues_missed`, `plan_tasks_done`, `spikes`, `tokens`) for the retro's `## Metrics` section |
 | `baton merge-pr <number>` | Check the review, CI and the rest, then merge |
 | `baton comment <issue\|pr> <number> <role> <kind> <file \| ->` | Scan, stamp and post an agent comment |
 | `baton issue create\|edit ...` | Create an issue, or edit its title, description, labels or milestone; scans the text first |
@@ -181,6 +182,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton plan migrate <issue>` | Convert an older plan into `## Developer Plan` |
 | `baton usage [--repo <owner/repo>] [--since <time>] [--json]` | Quota use per issue and role, from local transcripts |
 | `baton budget` | A PreToolUse hook, not run by hand: blocks a researcher's tools once the `Timebox:` token limit in its prompt is spent, except `baton comment` |
+| `baton sprint-capacity <days> [--retros <n>]` | Read the last retros' `## Metrics` (3 by default) and propose somewhat less than their average issues and plan tasks for `<days>`, as JSON |
 | `baton sprint-status [milestone]` | The sprint's state and what may be dispatched now, as JSON; `waiting_links` gives each `waiting_on_maintainer` issue's question comment URL and `progress.<N>.next_task_url` links the next plan task; `progress.<N>.stale`, `branch_behind` and `merge_first` report plans naming missing paths (a ready issue with two or more is held for re-refinement) and branches far behind the default branch |
 | `baton clean` | Remove leftover agent worktrees (kept: an open issue's branch, a lock held by a live process, unmerged detached work; uncommitted files are removed with the worktree) and the log folders of closed or merged pull requests; exit 1 if a worktree could not be removed |
 | `baton lock <acquire\|release>` | Stop two scheduled runs overlapping |

@@ -526,6 +526,73 @@ def cmd_sprint_status(args):
     return 0
 
 
+_CAPACITY_USAGE = "usage: baton sprint-capacity <days> [--retros <n>]"
+
+
+def cmd_sprint_capacity(args):
+    rest, days, count = list(args), None, sprint.RETRO_COUNT
+    while rest:
+        arg = rest.pop(0)
+        if arg == "--retros" and rest:
+            value = rest.pop(0)
+            if not value.isdigit() or int(value) < 1:
+                print(_CAPACITY_USAGE, file=sys.stderr)
+                return 64
+            count = int(value)
+        elif not arg.startswith("--") and days is None:
+            try:
+                days = float(arg)
+            except ValueError:
+                days = 0
+            if not 0 < days < float("inf"):
+                print(_CAPACITY_USAGE, file=sys.stderr)
+                return 64
+            days = int(days) if days == int(days) else days
+        else:
+            print(_CAPACITY_USAGE, file=sys.stderr)
+            return 64
+    if days is None:
+        print(_CAPACITY_USAGE, file=sys.stderr)
+        return 64
+    cfg = _require_config()
+    found = sprint.recent_metrics(cfg.root, cfg.data["docs"]["dir"], count)
+    print(json.dumps(sprint.capacity(found, days), indent=2))
+    return 0
+
+
+_METRICS_USAGE = "usage: baton sprint-metrics <milestone> [--since <UTC ISO time>] [--dir <projects dir>]"
+
+
+def cmd_sprint_metrics(args):
+    since, root, rest, milestone = None, "~/.claude/projects", list(args), None
+    while rest:
+        arg = rest.pop(0)
+        if arg in ("--since", "--dir") and rest:
+            value = rest.pop(0)
+            if arg == "--since":
+                since = value
+            else:
+                root = value
+        elif not arg.startswith("--") and milestone is None:
+            milestone = arg
+        else:
+            print(_METRICS_USAGE, file=sys.stderr)
+            return 64
+    if milestone is None:
+        print(_METRICS_USAGE, file=sys.stderr)
+        return 64
+    cfg = _require_config()
+    try:
+        repo = json.loads(run.run(["gh", "repo", "view", "--json", "owner,name"]))
+        found = usage.report(root, since, f"{repo['owner']['login']}/{repo['name']}")
+        metrics = sprint.sprint_metrics(cfg, run.run, milestone, usage.total_weighted(found))
+    except sprint.SnapshotError as error:
+        print(f"baton: {error}", file=sys.stderr)
+        return 1
+    print(sprint.format_metrics(metrics))
+    return 0
+
+
 def cmd_pr_state(args):
     if not args:
         print("usage: baton pr-state <PR>", file=sys.stderr)
@@ -618,6 +685,7 @@ def cmd_clean(args):
 
 COMMANDS = {
     "clean": cmd_clean,
+    "sprint-metrics": cmd_sprint_metrics,
     "close": cmd_close,
     "answers": cmd_answers,
     "notify": cmd_notify,
@@ -643,6 +711,7 @@ COMMANDS = {
     "set-status": cmd_set_status,
     "set-priority": cmd_set_priority,
     "set-severity": cmd_set_severity,
+    "sprint-capacity": cmd_sprint_capacity,
     "sprint-status": cmd_sprint_status,
     "task": cmd_task,
     "tasks": cmd_tasks,

@@ -916,3 +916,182 @@ class DefaultBranchStateTest(unittest.TestCase):
             self.assertTrue(sprint.triggers_on_push(text), text)
         for text in no:
             self.assertFalse(sprint.triggers_on_push(text), text)
+
+
+class SprintMetricsTest(unittest.TestCase):
+    TITLE = "Sprint 2026-10-01-1"
+
+    def issue(self, number, labels=(), state="OPEN", body="x"):
+        return {"number": number, "title": f"I{number}", "state": state, "body": body,
+                "labels": [{"name": n} for n in labels]}
+
+    def runner(self, closed_at="2026-10-04T12:00:00Z", milestones=None):
+        plan = "## Developer Plan\n\n- [x] Task 1: a\n- [x] Task 2: b\n- [ ] Task 3: c\n"
+        mine = [self.issue(1, state="CLOSED", body=plan),
+                self.issue(2, ["status:complete", "type:spike"], state="CLOSED"),
+                self.issue(3, ["status:in-dev"])]
+        line = f"x\nMissed sprint: [{self.TITLE}](https://e/1)\n"
+        other = "x\nMissed sprint: [Sprint other](https://e/2)\n"
+        flagged = [self.issue(4, ["missed-sprint"], body=line),
+                   self.issue(5, ["missed-sprint"], body=other)]
+        legacy = [self.issue(6, [f"missed:{self.TITLE}"])]
+        ms = milestones if milestones is not None else [
+            {"number": 3, "title": self.TITLE, "created_at": "2026-10-01T00:00:00Z",
+             "closed_at": closed_at}]
+        return FakeRunner(replies([], milestones=ms, extra={
+            "gh issue list --milestone": json.dumps(mine),
+            "gh issue list --label missed-sprint": json.dumps(flagged),
+            "gh issue list --label missed:": json.dumps(legacy)}))
+
+    def test_numbers(self):
+        got = sprint.sprint_metrics(cfg(), self.runner(), self.TITLE, 1234.5)
+        self.assertEqual(got, {"duration_days": 3.5, "issues_worked": 5, "issues_completed": 2,
+                               "issues_missed": 3, "plan_tasks_done": 2, "spikes": 1,
+                               "tokens": 1234})
+
+    def test_open_milestone_uses_now(self):
+        got = sprint.sprint_metrics(cfg(), self.runner(closed_at=None), self.TITLE, 0)
+        self.assertGreater(got["duration_days"], 3.5)
+
+    def test_milestone_not_found(self):
+        with self.assertRaises(sprint.SnapshotError):
+            sprint.sprint_metrics(cfg(), self.runner(milestones=[]), self.TITLE, 0)
+
+    def test_round_trip(self):
+        metrics = {"duration_days": 3.5, "issues_worked": 5, "issues_completed": 2,
+                   "issues_missed": 3, "plan_tasks_done": 2, "spikes": 1, "tokens": 99}
+        text = "# Retro\n\n## Metrics\n" + sprint.format_metrics(metrics) + "\n\n## Next\nz\n"
+        self.assertEqual(sprint.parse_metrics(text), metrics)
+        self.assertEqual(len(sprint.format_metrics(metrics).splitlines()), 7)
+
+    def test_parse_blank_and_missing(self):
+        blank = "## Metrics\n" + "\n".join(f"{k}:" for k in sprint.METRIC_KEYS) + "\n"
+        self.assertTrue(all(v is None for v in sprint.parse_metrics(blank).values()))
+        with self.assertRaises(ValueError):
+            sprint.parse_metrics("## Outcome\nx\n")
+        with self.assertRaises(ValueError):
+            sprint.parse_metrics("## Metrics\ntokens: 1\n")
+
+
+class SprintMetricsCommandTest(unittest.TestCase):
+    def call(self, args, runner=None):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+        from unittest import mock
+        from baton import cli
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.run, "run", runner or SprintMetricsTest().runner()), \
+                mock.patch.object(cli.usage, "report", return_value={"rows": [{"weighted": 7.9}]}), \
+                redirect_stdout(out), redirect_stderr(err):
+            code = cli.cmd_sprint_metrics(args)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_usage_without_milestone(self):
+        code, _, err = self.call([])
+        self.assertEqual(code, 64)
+        self.assertIn("usage: baton sprint-metrics", err)
+
+    def test_prints_seven_lines(self):
+        code, out, _ = self.call([SprintMetricsTest.TITLE, "--since", "2026-10-01T00:00:00Z"])
+        self.assertEqual(code, 0)
+        self.assertEqual(sprint.parse_metrics("## Metrics\n" + out)["tokens"], 7)
+        self.assertEqual(len(out.strip().splitlines()), 7)
+
+    def test_unknown_milestone_exits_1(self):
+        code, _, err = self.call(["nope"], SprintMetricsTest().runner(milestones=[]))
+        self.assertEqual(code, 1)
+        self.assertIn("milestone not found", err)
+
+
+def _retro_text(days, done, tasks, tokens="1000"):
+    return (f"# Sprint\n\n## Metrics\n\nduration_days: {days}\nissues_worked: {done}\n"
+            f"issues_completed: {done}\nissues_missed: 0\nplan_tasks_done: {tasks}\nspikes: 0\n"
+            f"tokens: {tokens}\n\n## Other\nx\n")
+
+
+class CapacityTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = pathlib.Path(self.tmp.name)
+        (self.root / "docs" / "retros").mkdir(parents=True)
+
+    def put(self, name, text):
+        (self.root / "docs" / "retros" / name).write_text(text, encoding="utf-8")
+
+    def recent(self, **kw):
+        return sprint.recent_metrics(self.root, "docs", **kw)
+
+    def test_three_usable_retros_pool(self):
+        self.put("Sprint 2026-01-01-1.md", _retro_text(5, 4, 10))
+        self.put("Sprint 2026-01-02-1.md", _retro_text(5, 6, 14))
+        self.put("Sprint 2026-01-03-1.md", _retro_text(10, 10, 16))
+        result = sprint.capacity(self.recent(), 10)
+        self.assertEqual(result["retros"], 3)
+        self.assertEqual(result["issues_per_day"], 1.0)
+        self.assertEqual(result["tasks_per_day"], 2.0)
+        self.assertEqual(result["average_issues"], 10.0)
+        self.assertEqual(result["average_tasks"], 20.0)
+        self.assertEqual((result["buffer"], result["issues"], result["tasks"]), (0.8, 8, 16))
+        self.assertEqual(result["tokens_per_day"], 150)
+
+    def test_skips_unusable(self):
+        self.put("Sprint 2026-01-01-1.md", "# no metrics\n")
+        self.put("Sprint 2026-01-02-1.md", _retro_text(5, "", 3))
+        self.put("Sprint 2026-01-03-1.md", _retro_text(5, 5, 5))
+        self.assertEqual(len(self.recent()), 1)
+
+    def test_only_newest_three(self):
+        for i in range(1, 6):
+            self.put(f"Sprint 2026-01-0{i}-1.md", _retro_text(5, i, i))
+        self.assertEqual([m["issues_completed"] for m in self.recent()], [5, 4, 3])
+
+    def test_no_retros(self):
+        self.assertEqual(sprint.capacity([], 7), {"retros": 0, "days": 7, "note": "no past retros"})
+        self.assertEqual(sprint.recent_metrics(self.root, "missing"), [])
+
+    def test_low_throughput_proposes_one(self):
+        self.put("Sprint 2026-01-01-1.md", _retro_text(30, 1, 1))
+        result = sprint.capacity(self.recent(), 7)
+        self.assertEqual((result["issues"], result["tasks"]), (1, 1))
+
+
+class SprintCapacityCommandTest(unittest.TestCase):
+    def call(self, args, retros=()):
+        import io
+        import tempfile
+        from contextlib import redirect_stderr, redirect_stdout
+        from types import SimpleNamespace
+        from unittest import mock
+        from baton import cli
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "docs" / "retros").mkdir(parents=True)
+            for name, text in retros:
+                (root / "docs" / "retros" / name).write_text(text, encoding="utf-8")
+            fake = SimpleNamespace(root=root, data={"docs": {"dir": "docs"}})
+            with mock.patch.object(cli, "_require_config", return_value=fake), \
+                    redirect_stdout(out), redirect_stderr(err):
+                code = cli.main(["sprint-capacity"] + args)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_usage_cases_exit_64(self):
+        for args in ([], ["0"], ["abc"], ["-3"], ["5", "--retros", "0"],
+                     ["5", "--retros", "x"], ["5", "--retros"]):
+            code, _, err = self.call(args)
+            self.assertEqual(code, 64, args)
+            self.assertIn("usage: baton sprint-capacity", err)
+
+    def test_prints_json(self):
+        code, out, _ = self.call(["10"], [("Sprint 2026-01-01-1.md", _retro_text(10, 10, 20))])
+        self.assertEqual(code, 0)
+        data = json.loads(out)
+        self.assertEqual((data["retros"], data["issues"], data["tasks"]), (1, 8, 16))
+
+    def test_no_retros(self):
+        code, out, _ = self.call(["10"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["note"], "no past retros")

@@ -32,7 +32,8 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
    `priority:` and `severity:` label (names in `labels.map` of `baton config`); read them for
    every ready issue. Also list the open issues carrying `priority:1` or `priority:2`, whatever
    their status. Read the last two files in `<docs.dir>/retros/` (`docs.dir` from `baton config`, default `docs/baton`) if they exist and apply their
-   "How to improve" items.
+   "How to improve" items. The metrics come from `baton sprint-capacity` (step 4), not from
+   reading the retros by hand.
 
 4. **Choose.** From the ready issues, pick those that serve the goal.
    - Order them: goals first. Within each goal, order by dependencies first (`Blocked by:`),
@@ -45,9 +46,14 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
    - Mark each `deliverable` (the sprint commits to it) or `stretch` (if time allows).
    - Show where the issues' `Expected files:` overlap, because those pull requests are likely to
      conflict and the merge order matters.
-   - There are no size estimates. The number of plan tasks is the nearest thing: read it with
-     `baton tasks issue <N>` (each task is one developer and one test cycle). Say plainly how
-     many issues and tasks you propose and why that many fits the length; the maintainer adjusts.
+   - Size the proposal from the capacity: run `baton sprint-capacity <days>` with the sprint's
+     length in days from step 2. Propose at most its `issues` and `tasks` (count the plan tasks
+     with `baton tasks issue <N>`; each task is one developer and one test cycle). State in the
+     proposal the recent average (`average_issues`, `average_tasks` from `retros` retros), the
+     buffer (`buffer`) and the resulting numbers; the maintainer adjusts. Tokens and duration
+     are context only. With `retros` 0, say there are no past retros and propose as before: the
+     goal's issues in order, with a plain statement of how many issues and tasks you propose and
+     why that fits the length. There are no per-issue estimates.
    - Check each with `baton ready-check <N>`; an issue without a plan (other than a spike) is not
      ready.
    - If an issue that the goal clearly needs is still in refinement, offer to refine it now

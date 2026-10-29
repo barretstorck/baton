@@ -6,7 +6,9 @@ requests, comments and the default branch's checks.
 """
 import collections
 import json
+import math
 import os
+import pathlib
 import re
 import time
 from datetime import datetime, timezone
@@ -482,3 +484,133 @@ def branch_behind(runner, default, branch):
     except RunError:
         return None
     return commits_behind(runner, f"refs/baton/branches/{branch}", default)
+
+
+METRIC_KEYS = ("duration_days", "issues_worked", "issues_completed", "issues_missed",
+               "plan_tasks_done", "spikes", "tokens")
+_ISSUE_JSON = "number,title,state,labels,body"
+
+
+def _names(issue):
+    return {label["name"] for label in issue.get("labels", [])}
+
+
+def _missed_line(body, title):
+    return re.search(r"^Missed sprint: \[" + re.escape(title) + r"\]\(", body or "", re.M) is not None
+
+
+def _parse_time(text):
+    when = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+def sprint_metrics(cfg, runner, milestone, tokens):
+    """The seven numbers a retro records for one sprint (see METRIC_KEYS)."""
+    repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name"]))
+    base = f"{repo['owner']['login']}/{repo['name']}"
+    found = [m for m in _load(runner, ["gh", "api", f"repos/{base}/milestones?state=all&per_page=100"],
+                              "milestones") if m.get("title") == milestone]
+    if not found:
+        raise SnapshotError(f"milestone not found: {milestone}")
+    start = _parse_time(found[0]["created_at"])
+    end = _parse_time(found[0]["closed_at"]) if found[0].get("closed_at") else datetime.now(timezone.utc)
+
+    def listing(args, what):
+        return _load(runner, ["gh", "issue", "list", *args, "--state", "all", "--limit", "300",
+                              "--json", _ISSUE_JSON], what)
+
+    worked = {i["number"]: i for i in listing(["--milestone", milestone], "milestone issues")}
+    for i in listing(["--label", cfg.label("missed-sprint")], "missed-sprint issues"):
+        if _missed_line(i.get("body"), milestone):
+            worked.setdefault(i["number"], i)
+    for i in listing(["--label", f"missed:{milestone}"], "legacy missed issues"):
+        worked.setdefault(i["number"], i)
+    complete = cfg.label("status:complete")
+    spike = cfg.label("type:spike")
+    done = tasks = spikes = 0
+    for i in worked.values():
+        missed = _missed_line(i.get("body"), milestone) or f"missed:{milestone}" in _names(i)
+        if not missed and (i.get("state", "").upper() == "CLOSED" or complete in _names(i)):
+            done += 1
+        found_plan = checklist.plan(i.get("body") or "")
+        if found_plan:
+            tasks += checklist.progress(found_plan["tasks"])["done"]
+        spikes += spike in _names(i)
+    return {"duration_days": round((end - start).total_seconds() / 86400, 1),
+            "issues_worked": len(worked), "issues_completed": done,
+            "issues_missed": len(worked) - done, "plan_tasks_done": tasks,
+            "spikes": spikes, "tokens": int(tokens)}
+
+
+def format_metrics(metrics):
+    return "\n".join(f"{key}: {metrics[key]}" for key in METRIC_KEYS)
+
+
+def parse_metrics(text):
+    """Read the `## Metrics` section of a retro; numbers become int or float, blanks None."""
+    match = re.search(r"^## Metrics[ \t]*$(.*?)(?=^## |\Z)", text or "", re.M | re.S)
+    if not match:
+        raise ValueError("no '## Metrics' section")
+    values = {}
+    for line in match.group(1).splitlines():
+        key, sep, value = line.partition(":")
+        key, value = key.strip(), value.strip()
+        if not sep or key not in METRIC_KEYS:
+            continue
+        if not value:
+            values[key] = None
+            continue
+        try:
+            values[key] = float(value) if "." in value else int(value)
+        except ValueError as error:
+            raise ValueError(f"bad value for {key}: {value}") from error
+    missing = [k for k in METRIC_KEYS if k not in values]
+    if missing:
+        raise ValueError("missing metrics: " + ", ".join(missing))
+    return {k: values[k] for k in METRIC_KEYS}
+
+
+RETRO_COUNT = 3
+BUFFER = 0.8
+
+
+def recent_metrics(root, docs_dir, count=RETRO_COUNT):
+    """Usable metrics of the newest `count` retro files, newest first."""
+    folder = pathlib.Path(root) / docs_dir / "retros"
+    if not folder.is_dir():
+        return []
+    found = []
+    for path in sorted(folder.glob("*.md"), key=lambda p: p.name, reverse=True)[:count]:
+        try:
+            metrics = parse_metrics(path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        days = metrics["duration_days"]
+        if (days is None or days <= 0 or metrics["issues_completed"] is None
+                or metrics["plan_tasks_done"] is None):
+            continue
+        found.append(metrics)
+    return found
+
+
+def _proposal(average, buffer):
+    return max(math.floor(average * buffer), 1) if average > 0 else 0
+
+
+def capacity(metrics, days, buffer=BUFFER):
+    """Issues and plan tasks to propose for `days`, somewhat below the recent average."""
+    if not metrics:
+        return {"retros": 0, "days": days, "note": "no past retros"}
+    total = sum(m["duration_days"] for m in metrics)
+    issues_rate = sum(m["issues_completed"] for m in metrics) / total
+    tasks_rate = sum(m["plan_tasks_done"] for m in metrics) / total
+    timed = [m for m in metrics if m.get("tokens") is not None]
+    timed_days = sum(m["duration_days"] for m in timed)
+    average_issues = issues_rate * days
+    average_tasks = tasks_rate * days
+    return {"retros": len(metrics), "days": days,
+            "issues_per_day": round(issues_rate, 2), "tasks_per_day": round(tasks_rate, 2),
+            "average_issues": round(average_issues, 1), "average_tasks": round(average_tasks, 1),
+            "buffer": buffer,
+            "issues": _proposal(average_issues, buffer), "tasks": _proposal(average_tasks, buffer),
+            "tokens_per_day": round(sum(m["tokens"] for m in timed) / timed_days) if timed else None}
