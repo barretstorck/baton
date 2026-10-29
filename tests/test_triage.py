@@ -111,6 +111,9 @@ if __name__ == "__main__":
 class FakeCfg:
     data = {"privacy_allow": []}
 
+    def label(self, name):
+        return name
+
 
 class CheckCommentTests(unittest.TestCase):
     def check(self, text, terms=()):
@@ -225,3 +228,69 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(triage.load_issue(runner, 5)["number"], 5)
         with self.assertRaises(triage.TriageError):
             triage.load_issue(FakeRunner(), 5)
+
+
+def apply_decision(decision, replies=None, maintainers=("Boss",), runner=None):
+    runner = runner or FakeRunner(replies if replies is not None
+                                  else {"gh issue view 5": issue_json()})
+    line = triage.apply(FakeCfg(), runner, 5, triage.parse_decision(json.dumps(decision)),
+                        list(maintainers), [], "o", "r")
+    return runner, line
+
+
+class ApplyTests(unittest.TestCase):
+    def index(self, lines, prefix):
+        return next(i for i, c in enumerate(lines) if c.startswith(prefix))
+
+    def test_spam(self):
+        runner, line = apply_decision(valid("spam"))
+        lines = runner.lines()
+        self.assertLess(self.index(lines, "gh issue comment 5"),
+                        self.index(lines, "gh issue close 5"))
+        self.assertIn("gh issue edit 5 --add-label closed:spam", lines)
+        self.assertTrue(any(c.startswith("gh issue lock 5") for c in lines))
+        self.assertIn("spam", line)
+
+    def test_duplicate(self):
+        runner, _ = apply_decision(valid("duplicate"),
+                                   {"gh issue view 5": issue_json(),
+                                    "gh issue view 3": '{"number": 3}'})
+        lines = runner.lines()
+        self.assertTrue(any(c.startswith("gh issue close 5") and "--duplicate-of 3" in c
+                            for c in lines))
+        self.assertTrue(any(c.startswith("gh issue comment 3") for c in lines))
+
+    def test_support_posts_comment_first(self):
+        runner, _ = apply_decision(valid("support"))
+        lines = runner.lines()
+        comments = [i for i, c in enumerate(lines) if c.startswith("gh issue comment 5")]
+        self.assertEqual(len(comments), 2)
+        self.assertLess(comments[1], self.index(lines, "gh issue close 5"))
+        self.assertIn("gh issue edit 5 --add-label closed:support", lines)
+
+    def test_unclear_asks_and_never_closes(self):
+        runner, _ = apply_decision(valid("unclear"))
+        lines = runner.lines()
+        self.assertLess(self.index(lines, "gh issue comment 5"),
+                        self.index(lines, "gh issue edit 5 --add-label awaiting-feedback"))
+        self.assertFalse([c for c in lines if c.startswith("gh issue close")])
+
+    def test_unsure_notifies_once(self):
+        runner, _ = apply_decision(valid("unsure"))
+        self.assertEqual(len([c for c in runner.lines()
+                              if c.startswith("gh issue comment 5")]), 1)
+        marked = json.dumps({"comments": [{"body": "<!-- baton:notify:triage-unsure -->"}]})
+        _, again = apply_decision(valid("unsure"),
+                                  {"gh issue view 5": issue_json(),
+                                   "gh issue view 5 --json comments": marked})
+        self.assertIn("already notified", again)
+
+    def test_refused_decision_writes_nothing(self):
+        runner = FakeRunner({"gh issue view 5": issue_json(author="boss")})
+        with self.assertRaises(triage.TriageError):
+            apply_decision(valid("spam"), runner=runner)
+        self.assertFalse([c for c in runner.lines() if c.startswith(WRITES)])
+
+    def test_real_category_not_yet(self):
+        with self.assertRaises(triage.TriageError):
+            apply_decision(valid("bug"))

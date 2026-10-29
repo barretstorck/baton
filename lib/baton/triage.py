@@ -2,8 +2,10 @@
 import json
 import re
 
+from . import comment as commentmod
 from . import run as runmod
 from . import scan
+from . import state
 from .comment import CommentError
 
 CATEGORIES = ("spam", "duplicate", "support", "unclear", "feature", "bug",
@@ -199,3 +201,44 @@ def check(cfg, runner, number, decision, issue, maintainers, terms, owner, repo)
             raise TriageError(f"duplicate_of #{original} does not exist")
     if decision.get("comment"):
         check_comment(cfg, decision["comment"], terms, owner, repo)
+
+
+UNSURE_TEXT = "Triage could not decide; please look at this issue."
+
+
+def apply(cfg, runner, number, decision, maintainers, terms, owner, repo):
+    """Check a decision against the issue, then act on it. Returns what was done."""
+    issue = load_issue(runner, number)
+    check(cfg, runner, number, decision, issue, maintainers, terms, owner, repo)
+    category = decision["category"]
+    if category == "spam":
+        state.change(cfg, runner, "close", "issue", number, "orchestrator",
+                     "Closed as spam.", terms, close_reason="spam", lock=True)
+        return f"closed #{number} as spam and locked it"
+    if category == "duplicate":
+        original = decision["duplicate_of"]
+        state.change(cfg, runner, "close", "issue", number, "orchestrator",
+                     f"Closed as a duplicate of #{original}.", terms,
+                     close_reason="duplicate", duplicate_of=original)
+        return f"closed #{number} as a duplicate of #{original}"
+    if category == "support":
+        commentmod.post(cfg, runner, "issue", number, "orchestrator", "status",
+                        decision["comment"], terms)
+        state.change(cfg, runner, "close", "issue", number, "orchestrator",
+                     "Closed as a support question; see the comment above.", terms,
+                     close_reason="support")
+        return f"commented on #{number} and closed it as support"
+    if category == "unclear":
+        commentmod.post(cfg, runner, "issue", number, "orchestrator", "status",
+                        decision["comment"], terms)
+        runner(["gh", "issue", "edit", str(number), "--add-label",
+                cfg.label("awaiting-feedback")])
+        return f"commented on #{number} and marked it awaiting-feedback"
+    if category == "unsure":
+        url = commentmod.notify(cfg, runner, number, "triage-unsure",
+                                decision.get("comment") or UNSURE_TEXT,
+                                maintainers, terms)
+        if url is None:
+            return f"#{number}: already notified"
+        return f"notified the maintainers about #{number}"
+    raise TriageError("category not supported yet")
