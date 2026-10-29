@@ -45,7 +45,8 @@ or its body has a line `Origin: outside (@<author>)`; it enters a sprint only wi
 is exactly `/baton ready`, unmarked, from a maintainer. Agents can only post marker comments
 through `baton comment`, but a raw comment an agent writes with `gh` looks like yours, so until
 agents have their own login (#150) this rule is only as strong as that interim. Try it on a
-repository you can afford to experiment on first.
+repository you can afford to experiment on first. The triager is the only agent that reads outside
+text raw; it may only run a short list of commands and writes only through `baton triage apply`.
 
 ## Plans of small tasks
 
@@ -114,6 +115,7 @@ a `Prototype:` link to the commit.
 | Skill | Purpose |
 |---|---|
 | `/baton:init` | Set a repository up: brief, labels, private files, git hooks |
+| `/baton:triage <issue>` | Classify one new issue: spam, duplicate, support, unclear or a real bug, feature or maintenance item; used by the `baton-triager` subagent |
 | `/baton:refine <issue>` | Bring an issue up to the definition of ready, including its plan |
 | `/baton:sprint-plan` | Plan a sprint with the maintainer and create its milestone |
 | `/baton:sprint` | Work a sprint: dispatch developers and reviewers, collect answers, merge, retrospective |
@@ -123,7 +125,7 @@ a `Prototype:` link to the commit.
 
 Each of the five roles (triager, refiner, researcher, developer, reviewer) has its own `model`
 and `effort` in the brief. The defaults are Haiku for the triager, Opus for the refiner,
-researcher and reviewer, and Sonnet for the developer, all at medium effort. The allowed models
+researcher and reviewer, and Sonnet for the developer, all at medium effort. The triager (`baton-triager`) runs on Haiku at medium effort, configured by `triager` in the brief. The allowed models
 are `opus`, `sonnet`, `fable` and `haiku` (efforts: `low`, `medium`, `high`, `xhigh` or `max`). Medium is the default because a
 developer's thinking is about half of its context and every call re-reads that context, so
 thinking is the largest single cost of a sprint. The researcher has web access; the developer has no web tools. For bulk refinement, dispatch
