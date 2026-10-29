@@ -43,8 +43,9 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
      ready.
    - If an issue that the goal clearly needs is still in refinement, offer to refine it now
      (`/baton:refine`, or `baton:baton-refiner` agents with at most about three issues each). Never put an issue that is not ready into the sprint.
-   - Leave out issues written by anyone other than the maintainer unless the maintainer marked
-     them ready.
+   - Leave out outside issues (written by anyone other than a maintainer, or with an
+     `Origin: outside (@<login>)` line) that `baton ready-check` reports as lacking a maintainer's
+     `/baton ready` comment.
 
 5. **Propose.** Show the maintainer a table: order, issue, title, deliverable or stretch,
    plan tasks, blockers, overlaps. Under it list what you left out and why.
