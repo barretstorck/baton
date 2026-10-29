@@ -70,7 +70,8 @@ _GH_READ_ACTIONS = {"view", "list", "status", "checks", "diff", "download", "che
 _GH_READ_GROUPS = {"", "status", "search", "help"}
 _METHOD_OPTS = {"-X", "--method"}
 _EVALUATORS = {"bash", "sh", "zsh", "dash", "eval", "xargs", "source", ".", "node", "perl", "ruby"}
-_GH_OR_GIT = re.compile(r"\b(?:gh|git)\b")
+_GH_OR_GIT = re.compile(r"(?<![\w.\-])(?:gh|git)(?![\w.])")
+_KEYWORDS = {"if", "then", "else", "elif", "while", "until", "do", "!", "{"}
 _DIRECTORY_COMMANDS = ("cd", "pushd", "popd")
 _PLAIN_GIT_OPTS = {"--git-dir", "--work-tree", "--exec-path", "--namespace", "--config-env"}
 _API_VALUE_OPTS = {"--jq", "-q", "-H", "--header", "--hostname", "--cache", "--template", "-t"}
@@ -248,7 +249,9 @@ def _call(words):
     while index < len(words):
         word = words[index]
         wrapper = os.path.basename(word)
-        if _ASSIGNMENT.match(word):
+        if word in _KEYWORDS:
+            index += 1
+        elif _ASSIGNMENT.match(word):
             bad_env = bad_env or _bad_env(word)
             index += 1
         elif wrapper in _WRAPPERS:
