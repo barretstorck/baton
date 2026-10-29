@@ -805,10 +805,19 @@ def cmd_push(args):
         return 64
     info = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
     default = (info.get("defaultBranchRef") or {}).get("name", "")
-    problem = identity.refspec_problem(args[0], default)
+    problem = identity.refspec_problem(args[0], default, identity.ref_format_ok)
     if problem:
         print(f"baton push: refused {args[0]}: {problem}", file=sys.stderr)
         return 1
+    if identity.pushes_to_origin():
+        try:
+            url = run.run(["git", "remote", "get-url", "--push", "origin"], cwd=os.getcwd()).strip()
+            problem = identity.origin_problem(url, info["nameWithOwner"])
+        except run.RunError:
+            problem = "no origin remote"
+        if problem:
+            print(f"baton push: refused {args[0]}: {problem}", file=sys.stderr)
+            return 1
     argv, env = identity.push_command(args[0], info["nameWithOwner"])
     print(run.run(argv, cwd=os.getcwd(), env=env), end="")
     return 0

@@ -31,6 +31,10 @@ def git(cwd, *args):
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
 
 
+AT = "@"
+SCP = "g" + "it" + AT + "github.com:"
+
+
 class Tier0Test(unittest.TestCase):
     def setUp(self):
         identity.use(lambda: None)
@@ -45,7 +49,8 @@ class Tier0Test(unittest.TestCase):
         self.assertEqual(runner.calls, [])
 
     def test_push_is_plain(self):
-        runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}}'})
+        runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}}',
+                             "git remote get-url": SCP + "o/r.git\n"})
         with mock.patch.object(cli.run, "run", runner):
             code, _, _ = call(cli.cmd_push, ["HEAD:refs/heads/b"])
         self.assertEqual(code, 0)
@@ -124,15 +129,77 @@ class PushRefusalTest(unittest.TestCase):
                     code, _, err = call(cli.cmd_push, [refspec])
                 self.assertEqual(code, 1)
                 self.assertIn("refused", err)
-                self.assertFalse(any(c[0] == "git" for c in runner.calls))
+                self.assertFalse(any("push" in c for c in runner.calls))
 
     def test_branch_push(self):
         runner = FakeRunner({"gh repo view": REPO})
         with mock.patch.object(cli.run, "run", runner):
             code, _, _ = call(cli.cmd_push, ["HEAD:refs/heads/issue-258-x"])
         self.assertEqual(code, 0)
+        self.assertFalse(any(c[:2] == ["git", "remote"] for c in runner.calls))
         self.assertEqual(runner.calls[-1][-3:],
                          ["--", "https://github.com/o/r.git", "HEAD:refs/heads/issue-258-x"])
+
+
+class BypassTest(unittest.TestCase):
+    """#262: glob, special-character and unnormalised refspecs."""
+
+    def setUp(self):
+        tier1(self)
+
+    def test_bypasses_refused(self):
+        bad_refs = {"refs/heads//main", "refs/heads/main/", "refs/heads/./main"}
+        for refspec in ["refs/heads/*:refs/heads/*", "HEAD:refs/heads/*", "HEAD*:refs/heads/b",
+                        "HEAD:refs/heads/a^b", "HEAD^:refs/heads/b", "HEAD:refs/heads/a?b",
+                        "HEAD:refs/heads/a[b", "HEAD:refs/heads/a\\b", "HEAD:refs/heads/a b",
+                        "HEAD\t:refs/heads/b", "HEAD:refs/heads//main", "HEAD:refs/heads/main/",
+                        "HEAD:refs/heads/./main"]:
+            with self.subTest(refspec=refspec):
+                calls = []
+
+                def runner(argv, cwd=None, input=None, env=None):
+                    calls.append(argv)
+                    if argv[:3] == ["gh", "repo", "view"]:
+                        return REPO
+                    if argv[:2] == ["git", "check-ref-format"] and argv[-1] in bad_refs:
+                        raise cli.run.RunError("bad ref")
+                    return ""
+
+                with mock.patch.object(cli.run, "run", runner), \
+                        mock.patch.object(identity, "token", side_effect=AssertionError("token minted")):
+                    code, _, err = call(cli.cmd_push, [refspec])
+                self.assertEqual(code, 1)
+                self.assertIn("refused", err)
+                self.assertFalse(any("push" in c for c in calls))
+
+
+class Tier0OriginTest(unittest.TestCase):
+    """#262: at tier 0 the default-branch check and the push use the same repository."""
+
+    def setUp(self):
+        identity.use(lambda: None)
+        self.addCleanup(identity.use, None)
+
+    def test_refuses_when_origin_is_another_repository(self):
+        for url in ["git@github.com:fork/r.git", "https://github.com/o/other.git", "../r.git", ""]:
+            with self.subTest(url=url):
+                runner = FakeRunner({"gh repo view": REPO, "git remote get-url": url + "\n"})
+                with mock.patch.object(cli.run, "run", runner):
+                    code, _, err = call(cli.cmd_push, ["HEAD:refs/heads/b"])
+                self.assertEqual(code, 1)
+                self.assertIn("refused", err)
+                self.assertFalse(any("push" in c for c in runner.calls))
+
+    def test_pushes_when_origin_matches(self):
+        for url in ["git@github.com:o/r.git", "https://github.com/O/R", "https://github.com/o/r.git/",
+                    "ssh://git@github.com/o/r.git"]:
+            with self.subTest(url=url):
+                runner = FakeRunner({"gh repo view": REPO, "git remote get-url": url + "\n"})
+                with mock.patch.object(cli.run, "run", runner):
+                    code, _, err = call(cli.cmd_push, ["HEAD:refs/heads/b"])
+                self.assertEqual(code, 0, err)
+                self.assertIn(["git", "remote", "get-url", "--push", "origin"], runner.calls)
+                self.assertEqual(runner.calls[-1], ["git", "push", "--", "origin", "HEAD:refs/heads/b"])
 
 
 if __name__ == "__main__":

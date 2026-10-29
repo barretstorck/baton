@@ -24,6 +24,10 @@ login = "custom[bot]"
 """
 
 
+AT = "@"
+SCP = "g" + "it" + AT + "github.com:"
+
+
 class LoadTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -221,14 +225,59 @@ class GitIdentityTest(unittest.TestCase):
         self.addCleanup(identity.use, None)
 
     def test_refspec_problem(self):
-        self.assertIsNone(identity.refspec_problem("HEAD:refs/heads/b", "main"))
-        self.assertIsNone(identity.refspec_problem("HEAD:refs/heads/issue-258-x", "main"))
+        ok = lambda ref: True
+        self.assertIsNone(identity.refspec_problem("HEAD:refs/heads/b", "main", ok))
+        self.assertIsNone(identity.refspec_problem("HEAD:refs/heads/issue-258-x", "main", ok))
         for bad in ["--delete", "-o", "--receive-pack=x", "--mirror", "+HEAD:refs/heads/b",
                     ":refs/heads/b", "HEAD", "a:b:c", "HEAD:main", "HEAD:refs/tags/v1",
-                    "HEAD:refs/heads/", "HEAD:refs/heads/main"]:
+                    "HEAD:refs/heads/", "HEAD:refs/heads/main",
+                    "refs/heads/*:refs/heads/*", "HEAD:refs/heads/*", "HEAD*:refs/heads/b",
+                    "HEAD:refs/heads/a^b", "HEAD^:refs/heads/b", "HEAD:refs/heads/a?b",
+                    "HEAD:refs/heads/a[b", "HEAD:refs/heads/a\\b", "HEAD:refs/heads/a b",
+                    "HEAD\t:refs/heads/b"]:
             with self.subTest(refspec=bad):
-                self.assertIsInstance(identity.refspec_problem(bad, "main"), str)
-        self.assertIsNone(identity.refspec_problem("HEAD:refs/heads/main", "trunk"))
+                self.assertIsInstance(identity.refspec_problem(bad, "main", ok), str)
+        self.assertIsNone(identity.refspec_problem("HEAD:refs/heads/main", "trunk", ok))
+
+    def test_refspec_problem_ref_ok(self):
+        seen = []
+
+        def no(ref):
+            seen.append(ref)
+            return False
+        msg = identity.refspec_problem("HEAD:refs/heads/main", "main", no)
+        self.assertIn("check-ref-format", msg)
+        self.assertEqual(seen, ["refs/heads/main"])
+
+    def test_ref_format_ok(self):
+        from tests.fakes import FakeRunner
+        runner = FakeRunner()
+        with mock.patch.object(identity._run, "run", runner):
+            self.assertTrue(identity.ref_format_ok("refs/heads/b"))
+        self.assertEqual(runner.calls, [["git", "check-ref-format", "refs/heads/b"]])
+
+        def boom(*a, **k):
+            raise identity._run.RunError("bad")
+        with mock.patch.object(identity._run, "run", boom):
+            self.assertFalse(identity.ref_format_ok("refs/heads/b"))
+
+    def test_github_repo(self):
+        for url, want in [("https://github.com/o/r", "o/r"), ("https://github.com/o/r.git", "o/r"),
+                          ("https://github.com/o/r.git/", "o/r"), ("https://u:pw" + AT + "github.com/o/r.git", "o/r"),
+                          ("ssh://git" + AT + "github.com/o/r.git", "o/r"), ("ssh://git" + AT + "github.com:22/o/r", "o/r"),
+                          (SCP + "o/r.git", "o/r"), ("../r.git", None),
+                          ("https://gitlab.com/o/r.git", None), ("https://evilgithub.com/o/r", None),
+                          ("", None)]:
+            with self.subTest(url=url):
+                self.assertEqual(identity.github_repo(url), want)
+
+    def test_origin_problem(self):
+        self.assertIsNone(identity.origin_problem(SCP + "O/R.git", "o/r"))
+        self.assertIn("fork/r", identity.origin_problem(SCP + "fork/r.git", "o/r"))
+        self.assertIn("not a GitHub", identity.origin_problem("https://gitlab.com/o/r.git", "o/r"))
+        msg = identity.origin_problem("https://user:secret" + AT + "github.com/fork/r.git", "o/r")
+        self.assertNotIn("secret", msg)
+        self.assertNotIn("user", msg)
 
     def test_tier0(self):
         identity.use(lambda: None)

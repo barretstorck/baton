@@ -3,6 +3,7 @@ import base64
 import datetime
 import json
 import os
+import re
 import tempfile
 import time
 import tomllib
@@ -254,29 +255,72 @@ _HELPER = ('!f() { test "$1" = get && echo username=x-access-token'
            ' && echo "password=$BATON_GIT_TOKEN"; }; f')
 
 
-def refspec_problem(refspec, default_branch):
-    """Why `baton push` refuses this refspec, or None when it is <source>:refs/heads/<branch>."""
+def refspec_problem(refspec, default_branch, ref_ok):
+    """Why `baton push` refuses this refspec, or None when it is <source>:refs/heads/<branch>.
+
+    `ref_ok(ref)` says whether git accepts the destination as a ref name (git check-ref-format).
+    """
     if refspec.startswith("-"):
         return 'starts with "-"'
     if refspec.startswith("+"):
         return 'force push ("+")'
     if refspec.count(":") != 1:
         return "needs <source>:refs/heads/<branch>"
+    for ch in refspec:
+        if ch.isspace():
+            return "whitespace in the refspec"
+        if ch in "*^?[\\":
+            return f"wildcard or special character {ch!r} in the refspec"
     src, dst = refspec.split(":")
     if not src:
         return "empty source deletes the branch"
     if not dst.startswith("refs/heads/") or dst == "refs/heads/":
         return "destination outside refs/heads/"
+    if not ref_ok(dst):
+        return "destination is not a valid branch ref (git check-ref-format)"
     if dst == f"refs/heads/{default_branch}":
         return f"destination is the default branch ({default_branch})"
     return None
 
 
+def ref_format_ok(ref):
+    """True when `git check-ref-format` accepts the ref name."""
+    try:
+        _run.run(["git", "check-ref-format", ref])
+    except _run.RunError:
+        return False
+    return True
+
+
+def github_repo(url):
+    """`owner/repo` of a GitHub remote URL (https, ssh:// or scp-style); None for anything else."""
+    url = (url or "").strip()
+    m = (re.fullmatch(r"https://(?:[^/@]*@)?github\.com/([^/\s]+)/([^/\s]+?)(?:\.git)?/?", url)
+         or re.fullmatch(r"ssh://(?:[^/@]*@)?github\.com(?::\d+)?/([^/\s]+)/([^/\s]+?)(?:\.git)?/?", url)
+         or re.fullmatch(r"(?:[^/@:\s]+@)?github\.com:([^/\s]+)/([^/\s]+?)(?:\.git)?/?", url))
+    return f"{m.group(1)}/{m.group(2)}" if m else None
+
+
+def origin_problem(url, repo):
+    """Why origin is not `repo` (owner/repo), or None when it is. Never repeats the URL."""
+    found = github_repo(url)
+    if found is None:
+        return "origin is not a GitHub repository"
+    if found.lower() != repo.lower():
+        return f"origin is {found}, not {repo}"
+    return None
+
+
+def pushes_to_origin():
+    """True at tier 0, where a push goes to the `origin` remote."""
+    return _identities() is None
+
+
 def push_command(refspec, repo):
     """(argv, env) for pushing a refspec; at tier 1 over HTTPS with the token in the child's env only."""
-    ids = _identities()
-    if ids is None:
+    if pushes_to_origin():
         return ["git", "push", "--", "origin", refspec], None
+    ids = _identities()
     if ids.baton is None:
         raise IdentityError("identity.toml has no [baton] entry for pushes")
     tok = token(ids.baton, _run.run, _post, time.time())
