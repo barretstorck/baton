@@ -44,6 +44,7 @@ handled by "Re-refining after a spike" below, then step 4 onward.
 | `## Out of scope` | present | Names what must not change |
 | `## Pointers` with `Expected files:` | line present (not needed for spikes) | Files really exist; the pattern to follow is named (in the plan) |
 | `Blocked by: #N` | none | Every real dependency is listed |
+| Spike timebox | the `Timebox:` line is within the brief's `spike` ranges | Limits sized to the questions, within `spike.tokens` and `spike.minutes` from `baton config` |
 | Verification | present, not empty (in the plan's Verification sub-section; in the issue for a spike) | A command that actually exists in the repository |
 | Type label | one `type:` label | Correct type |
 | Size | none | One outcome; a developer can finish it in one pull request |
@@ -88,6 +89,13 @@ issue body, written by `baton plan set`.
      description has a line starting `Origin: outside`, copy that line into the spike's Pointers
      unchanged. Then add `Blocked by: #<spike>` to the original's Pointers (append to an existing
      `Blocked by:` line) and keep the original in `status:refinement` until the spike is done.
+     For a spike, read `spike` from `baton config`. For each part (`tokens`, `minutes`) that has a
+     range, pick a value within it, sized to the number and depth of the questions, and write
+     `Timebox: <tokens> tokens, <minutes> min` under the spike's `## Pointers`. Use plain
+     integers; tokens are weighted tokens as `baton usage` counts them. Leave a part out when the
+     brief has no range for it, and leave the line out when neither part applies. When the brief
+     gives a part a `max`, never leave that part out. `baton ready-check` reports a line outside
+     the ranges.
    - *Needs a product or design decision:* go to "Questions".
 
 4. **Write the plan** (not for spikes). From your investigation in step 2, write the
@@ -140,7 +148,7 @@ issue body, written by `baton plan set`.
 5. **Set the plan, then rewrite the description.**
    - Rewrite the description to the issue template first, in a file: Context, `Diagnosis`
      (bugs only), Acceptance criteria as a plain list, Out of scope, Pointers with only the
-     `Expected files:` and `Blocked by:` lines, and Decisions. There is no `Plan:` line. Keep the
+     `Expected files:` and `Blocked by:` lines (and `Timebox:` for a spike), and Decisions. There is no `Plan:` line. Keep the
      author's intent and wording where it is clear, and keep every existing entry under
      `## Decisions` with its link. A spike keeps its Verification in the issue and has no plan or
      branch. Do not put private details in it.

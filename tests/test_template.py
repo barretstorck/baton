@@ -78,6 +78,18 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("refs/spikes/", skill)
         self.assertIn("Prototype:", skill)
 
+    def test_research_skill_keeps_timebox(self):
+        text = " ".join((ROOT / "skills" / "research" / "SKILL.md").read_text().split())
+        for needle in ("Timebox reached", "Started:", "Timebox:",
+                       "Token budget reached", "baton budget"):
+            self.assertIn(needle, text)
+
+    def test_refine_skill_sets_timebox(self):
+        text = " ".join((ROOT / "skills" / "refine" / "SKILL.md").read_text().split())
+        for needle in ("Timebox: <tokens> tokens, <minutes> min", "spike.tokens",
+                       "spike.minutes"):
+            self.assertIn(needle, text)
+
     def test_research_findings_end_with_outcome(self):
         text = " ".join((ROOT / "skills" / "research" / "SKILL.md").read_text().split())
         self.assertIn("Outcome: infeasible|single|multiple|partial", text)
@@ -257,6 +269,8 @@ class TemplateTest(unittest.TestCase):
         sprint = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
         self.assertIn("baton:baton-researcher", sprint)
         self.assertIn("researcher.model", sprint)
+        section = sprint[sprint.index("#### Dispatching a researcher"):sprint.index("#### Dispatching a reviewer")]
+        self.assertIn("Timebox:", section)
         self.assertIn("/baton:research", (ROOT / "README.md").read_text())
 
     def test_sprint_follows_spike_outcome(self):

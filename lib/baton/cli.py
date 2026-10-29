@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
-from . import checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
+from . import budget, checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
 
 
 def cmd_config(args):
@@ -15,6 +15,10 @@ def cmd_config(args):
     data["maintainers"] = list(data["maintainers"]) or cfg.maintainers(_owner())
     print(json.dumps(data, indent=2))
     return 0
+
+
+def cmd_budget(args):
+    return budget.main(sys.stdin.read())
 
 
 def cmd_gate(args):
@@ -708,6 +712,7 @@ COMMANDS = {
     "comment": cmd_comment,
     "ready-check": cmd_ready_check,
     "config": cmd_config,
+    "budget": cmd_budget,
     "gate": cmd_gate,
     "git-hook": cmd_git_hook,
     "install-hooks": cmd_install_hooks,
