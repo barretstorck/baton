@@ -60,6 +60,7 @@ privacy_allow: []             # literal strings the privacy scan should ignore
                               # (Python dependency files are already exempt from private-ip: see README)
 forbid_added: {}              # path glob: regex; a commit or pull request adding a matching line to a matching file is refused (see Conventions)
 budgets: {}
+work_mix: {}                  # optional target share of work by type, shown by sprint-plan, never enforced; e.g. feature: 60, maintenance: 30, bug: 10 (must add up to 100; empty: no target)
 ---
 # Baton brief
 
