@@ -595,7 +595,8 @@ def cmd_ready_check(args):
 
 def cmd_sprint_status(args):
     cfg = _require_config()
-    print(json.dumps(sprint.snapshot(cfg, run.run, args[0] if args else None), indent=2))
+    print(json.dumps(sprint.snapshot(cfg, run.run, args[0] if args else None,
+                                  bots=_bots()), indent=2))
     return 0
 
 
@@ -691,7 +692,7 @@ def cmd_pr_state(args):
         return 64
     cfg = _require_config()
     pr = json.loads(run.run(["gh", "pr", "view", args[0], "--json", sprint.PR_STATE_FIELDS]))
-    print(json.dumps(sprint.pr_state(pr, cfg, run.run), indent=2))
+    print(json.dumps(sprint.pr_state(pr, cfg, run.run, bots=_bots()), indent=2))
     return 0
 
 
