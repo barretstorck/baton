@@ -5,6 +5,7 @@ import pathlib
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from baton import identity
 from baton.run import run
