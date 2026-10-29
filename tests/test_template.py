@@ -78,6 +78,12 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("refs/spikes/", skill)
         self.assertIn("Prototype:", skill)
 
+    def test_research_findings_end_with_outcome(self):
+        text = " ".join((ROOT / "skills" / "research" / "SKILL.md").read_text().split())
+        self.assertIn("Outcome: infeasible|single|multiple|partial", text)
+        for word in ("`infeasible`:", "`single`:", "`multiple`:", "`partial`:"):
+            self.assertIn(word, text)
+
     def test_refiner_runs_in_own_worktree(self):
         meta, _ = frontmatter.split((ROOT / "agents" / "baton-refiner.md").read_text())
         self.assertIn("isolation: worktree", meta.splitlines())
@@ -135,6 +141,13 @@ class TemplateTest(unittest.TestCase):
                     self.assertIn(web, tools, name)
                 else:
                     self.assertNotIn(web, tools, name)
+
+    def test_refiner_handles_re_refine_after_spike(self):
+        skill = (ROOT / "skills/refine/SKILL.md").read_text()
+        self.assertIn("Re-refine issue <N> after spike #<S>.", skill)
+        self.assertIn("## Re-refining after a spike", skill)
+        agent = (ROOT / "agents/baton-refiner.md").read_text()
+        self.assertIn("after spike", agent)
 
     def test_developer_has_no_spikes(self):
         skill = (ROOT / "skills/develop/SKILL.md").read_text()
@@ -214,6 +227,14 @@ class TemplateTest(unittest.TestCase):
         text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
         self.assertIn("Fill the two follow-up rows from the sprint's review comments", text)
 
+    def test_retro_lists_spike_outcomes(self):
+        retro = (ROOT / "templates/retro.md").read_text()
+        self.assertIn("## Spike outcomes", retro)
+        self.assertIn("| Outcome |", retro)
+        self.assertLess(retro.index("## Spike outcomes"), retro.index("## Spike prototypes"))
+        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        self.assertIn("List each spike with its outcome", text)
+
     def test_develop_skill_uses_body_plan(self):
         text = (ROOT / "skills/develop/SKILL.md").read_text()
         self.assertIn("## Developer Plan", text)
@@ -237,3 +258,9 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("baton:baton-researcher", sprint)
         self.assertIn("researcher.model", sprint)
         self.assertIn("/baton:research", (ROOT / "README.md").read_text())
+
+    def test_sprint_follows_spike_outcome(self):
+        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        for want in ("Outcome:", "infeasible", "single", "multiple", "partial",
+                     "Re-refine issue <O> after spike #<S>.", "Spike for:", "Origin: outside"):
+            self.assertIn(want, text)
