@@ -80,6 +80,9 @@ body_file_flags: [-F, --body-file, --input]   # their flags that read a request 
 forbid_added: {}              # path glob: regex; a commit or pull request adding a matching line to a matching file is refused (see Conventions)
 budgets: {}
 work_mix: {}                  # optional target share of work by type, shown by sprint-plan, never enforced; e.g. feature: 60, maintenance: 30, bug: 10 (must add up to 100; empty: no target)
+spike:                        # limits for a spike's Timebox: line, picked by the refiner; each part is optional
+  tokens: {}                  # weighted tokens as `baton usage` counts them; write optional min: and max: on indented lines
+  minutes: {}                 # wall-clock minutes; the same form, e.g. min: 30 then max: 120 on indented lines
 ---
 # Baton brief
 
