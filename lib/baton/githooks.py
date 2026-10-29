@@ -223,6 +223,11 @@ def pre_push(cwd, stdin_text, terms):
             git + ["log", "--diff-filter=AR", "--name-only", "--format="] + revs))
         branch = _pushed_branch(local_ref, remote_ref)
         problems.extend(_check(cfg, patch, new_files, terms, messages, cwd=cwd, branch=branch))
+        if remote_ref.startswith("refs/tags/") and run.run(git + ["cat-file", "-t", local_sha]).strip() == "tag":
+            raw = run.run(git + ["cat-file", "tag", local_sha])
+            tag_message = raw.split("\n\n", 1)[1] if "\n\n" in raw else ""
+            findings = scan.scan_text(tag_message, terms, cfg.data["privacy_allow"])
+            problems.extend(f"privacy: {kind} in the tag message" for kind in sorted({f.kind for f in findings}))
     return sorted(set(problems))
 
 

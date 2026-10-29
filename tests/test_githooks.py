@@ -336,6 +336,19 @@ class PrePushTest(unittest.TestCase):
         self.assertEqual(githooks.pre_push(repo, f"refs/heads/main {head} refs/heads/main {base}\n", TERMS), [])
         self.assertEqual(githooks.pre_push(repo, f"(delete) {ZEROS} refs/heads/x {base}\n", TERMS), [])
 
+    def tag_problems(self, message):
+        repo = make_repo()
+        git(repo, "tag", "-a", "-m", message, "v1")
+        sha = git(repo, "rev-parse", "v1")
+        return githooks.pre_push(repo, f"refs/tags/v1 {sha} refs/tags/v1 {ZEROS}\n", TERMS)
+
+    def test_clean_annotated_tag_passes(self):
+        self.assertEqual(self.tag_problems("release one"), [])
+
+    def test_annotated_tag_message_is_scanned(self):
+        problems = self.tag_problems("release the Zebrowski set")
+        self.assertTrue(any("private-term" in p and "tag message" in p for p in problems))
+
 
 class CommitMsgDispatchTest(unittest.TestCase):
     def test_install_writes_executable_commit_msg_hook(self):
