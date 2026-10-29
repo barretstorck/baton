@@ -33,9 +33,13 @@ _POS = (r"""(?:^|[;&|(`'"\n{]|\bsudo\b|\benv\b|\bxargs\b|\bexec\b|\bcommand\b|\b
         r"""\s*(?:[A-Za-z_]\w*=\S*\s+)*""")
 _FORGE = re.compile(_POS + r"(?:[\w.~+-]*/)*(" + "|".join(FORGE_CLIS) + r")(?![\w.-])")
 _GITPUB = re.compile(_POS + r"(?:[\w.~+-]*/)*git\b[^;&|\n]*?\b(?:commit|push|tag)\b")
+# Run on the command with quoted strings blanked, so a commit message may mention these.
 _BYPASS_TEXT = re.compile(
-    r"--no-verify\b|--config-env\b|-c\s*core\.hooksPath|config\s+(?:--\S+\s+)*core\.hooksPath\s+\S"
+    r"--no-verify\b|--config-env\b"
     r"|(?:^|[\s;&|])(?:HOME|XDG_CONFIG_HOME|BATON_PRIVATE_TERMS|GIT_CONFIG\w*)=")
+# Run on the unblanked command: a quoted `-c "core.hooksPath=/x"` value must still be refused.
+_BYPASS_CFG = re.compile(
+    r"""-c\s*["']?core\.hooksPath|config\s+(?:--\S+\s+)*["']?core\.hooksPath["']?\s+\S""")
 _SHORT_N = re.compile(_POS + r"git\b[^;&|\n]*?\b(?:commit|push)\b[^;&|\n]*?\s-[a-zA-Z]*n[a-zA-Z]*(?:\s|$)")
 _STDIN_BODY = re.compile(r"(?:--body-file|-F|--input|--data(?:-binary|-raw)?|-d)(?:\s+|=)(?:-|@-)(?:\s|$)")
 _GIT_STDIN = re.compile(r"(?:--file|-F)(?:\s+|=)-(?:\s|$)")
@@ -115,7 +119,9 @@ def decide(command, cwd, terms):
     allow = cfg.data["privacy_allow"] if cfg else []
 
     if git:
-        if _BYPASS_TEXT.search(stripped) or _SHORT_N.search(stripped):
+        blanked = _QUOTED.sub('""', stripped)
+        if (_BYPASS_TEXT.search(blanked) or _SHORT_N.search(blanked)
+                or _BYPASS_CFG.search(stripped)):
             problems.append(_BYPASS)
         if cfg is not None and not githooks.installed(cfg.root):
             problems.append(_HOOKS_MISSING)

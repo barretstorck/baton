@@ -159,10 +159,18 @@ class GateTest(unittest.TestCase):
                     "git push -n origin main", "git -c core.hooksPath=/x commit -m x",
                     "git config core.hooksPath /x && git commit -m x", "HOME=/x git push",
                     "GIT_CONFIG_GLOBAL=/x git commit -m x", "BATON_PRIVATE_TERMS=/x git commit -m x",
-                    "git --config-env=core.hooksPath=V commit -m x"):
+                    "git --config-env=core.hooksPath=V commit -m x",
+                    'git -c "core.hooksPath=/x" commit -m x', "HOME=/x git push origin main -m 'a'"):
             with self.subTest(cmd=cmd):
                 problems = gate.decide(cmd, repo, TERMS)
                 self.assertTrue(any("bypass" in p for p in problems), problems)
+
+    def test_bypass_words_inside_a_quoted_message_are_allowed(self):
+        repo = make_repo()
+        for cmd in ('git commit -m "mention --no-verify docs"', "git commit -m 'set HOME=/x then -n'"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, repo, TERMS)
+                self.assertFalse(any("bypass" in p for p in problems), problems)
 
     def test_harmless_git_options_are_not_a_bypass(self):
         repo = make_repo()
