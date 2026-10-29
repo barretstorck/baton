@@ -112,7 +112,7 @@ class TemplateTest(unittest.TestCase):
 
     def test_agents_declare_restricted_tools(self):
         expected = {
-            "baton-developer": "tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch",
+            "baton-developer": "tools: Read, Grep, Glob, Bash, Edit, Write",
             "baton-reviewer": "tools: Read, Grep, Glob, Bash",
             "baton-refiner": "tools: Read, Grep, Glob, Bash, Write, WebSearch, WebFetch",
             "baton-researcher": "tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch",
@@ -125,10 +125,16 @@ class TemplateTest(unittest.TestCase):
                 self.assertNotIn(banned, tools, name)
             self.assertFalse([t for t in tools if t.startswith("mcp__")], name)
             for web in ("WebSearch", "WebFetch"):
-                if name == "baton-reviewer":
-                    self.assertNotIn(web, tools, name)
-                else:
+                if name in ("baton-refiner", "baton-researcher"):
                     self.assertIn(web, tools, name)
+                else:
+                    self.assertNotIn(web, tools, name)
+
+    def test_developer_has_no_spikes(self):
+        skill = (ROOT / "skills/develop/SKILL.md").read_text()
+        self.assertNotIn("## Spikes", skill)
+        agent = (ROOT / "agents/baton-developer.md").read_text()
+        self.assertNotIn("spike", agent.lower())
 
     def test_developer_instructions_forbid_ticking_review_tasks(self):
         for path in ("skills/develop/SKILL.md", "agents/baton-developer.md"):
