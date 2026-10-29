@@ -179,6 +179,46 @@ def write(runner, argv, role, **kw):
     return runner(argv, env={"GH_TOKEN": tok, "GH_PROMPT_DISABLED": "1"}, **kw)
 
 
+def bot_user_id(runner, login):
+    """The numeric id of the App's bot user, which the noreply commit email needs (not the App id)."""
+    try:
+        reply = json.loads(runner(["gh", "api", f"users/{login}"]))
+        uid = reply["id"]
+    except (_run.RunError, ValueError, KeyError, TypeError):
+        raise IdentityError(f"could not read the user id of {login}")
+    if isinstance(uid, bool) or not isinstance(uid, int):
+        raise IdentityError(f"could not read the user id of {login}")
+    return uid
+
+
+def commit_identity(runner):
+    """(name, email) the developer commits as at tier 1; None at tier 0."""
+    ids = _identities()
+    if ids is None:
+        return None
+    if ids.baton is None:
+        raise IdentityError("identity.toml has no [baton] entry for commits")
+    login = ids.baton.login
+    return login, f"{bot_user_id(runner, login)}+{login}@users.noreply.github.com"
+
+
+_HELPER = ('!f() { test "$1" = get && echo username=x-access-token'
+           ' && echo "password=$BATON_GIT_TOKEN"; }; f')
+
+
+def push_command(refspec, repo):
+    """(argv, env) for pushing a refspec; at tier 1 over HTTPS with the token in the child's env only."""
+    ids = _identities()
+    if ids is None:
+        return ["git", "push", "origin", refspec], None
+    if ids.baton is None:
+        raise IdentityError("identity.toml has no [baton] entry for pushes")
+    tok = token(ids.baton, _run.run, _post, time.time())
+    argv = ["git", "-c", "credential.helper=", "-c", f"credential.helper={_HELPER}",
+            "push", f"https://github.com/{repo}.git", refspec]
+    return argv, {"BATON_GIT_TOKEN": tok, "GIT_TERMINAL_PROMPT": "0"}
+
+
 def describe(ids):
     """Tier and the route and login per role, for `baton config`; no id, path or token."""
     roles = {}
