@@ -422,6 +422,34 @@ class GateTest(unittest.TestCase):
         self.assertEqual(gate.main("not json"), 0)
 
 
+class McpToolInputTest(unittest.TestCase):
+    def run_main(self, tool, tool_input, cwd):
+        os.environ["BATON_PRIVATE_TERMS"] = "/nonexistent"
+        payload = {"tool_name": tool, "cwd": cwd, "tool_input": tool_input}
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = gate.main(json.dumps(payload))
+        return code, stderr.getvalue()
+
+    def test_clean_nested_input_is_allowed(self):
+        tool_input = {"title": "t", "items": [{"body": "fine", "n": 3}, "x"]}
+        self.assertEqual(self.run_main("mcp__forge__create_issue", tool_input, make_repo())[0], 0)
+
+    def test_private_value_in_nested_input_is_refused(self):
+        for secret, kind in ((IP, "private-ip"), (MAIL, "email")):
+            with self.subTest(kind=kind):
+                tool_input = {"a": {"b": [{"c": "ok"}, {"d": f"host {secret}"}]}}
+                code, err = self.run_main("mcp__forge__create_issue", tool_input, make_repo())
+                self.assertEqual(code, 2)
+                self.assertIn(kind, err)
+                self.assertNotIn(secret, err)
+
+    def test_other_tools_and_non_baton_repos_are_allowed(self):
+        tool_input = {"body": IP}
+        self.assertEqual(self.run_main("Read", tool_input, make_repo())[0], 0)
+        self.assertEqual(self.run_main("mcp__x__y", tool_input, make_repo(brief=None))[0], 0)
+
+
 class ReadOnlyCommandsTest(unittest.TestCase):
     """Commands that publish nothing are allowed; publishing stays refused (#132)."""
 
