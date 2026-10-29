@@ -12,7 +12,7 @@ def _labels(item):
     return {label["name"] for label in item.get("labels") or []}
 
 
-def open_questions(issues, cfg, owner, now):
+def open_questions(issues, cfg, owner, now, bots=()):
     """The open issues waiting on the maintainer, sorted by importance.
 
     An issue is listed once, with `kind` the first that applies: an unanswered agent
@@ -27,7 +27,7 @@ def open_questions(issues, cfg, owner, now):
     maintainer_label = cfg.label("needs-maintainer")
     entries = []
     for item in open_issues:
-        pending = comment.pending_answers(item, owner)
+        pending = comment.pending_answers(item, owner, bots)
         asked = pending["question"] if not pending["answers"] else None
         names = _labels(item)
         if asked:

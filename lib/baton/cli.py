@@ -523,7 +523,7 @@ def cmd_answers(args):
         return 64
     cfg = _require_config()
     data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "comments"]))
-    print(json.dumps(comment.pending_answers(data, _maintainers(cfg)), indent=2))
+    print(json.dumps(comment.pending_answers(data, _maintainers(cfg), _bots()), indent=2))
     return 0
 
 
@@ -534,7 +534,8 @@ def cmd_open_questions(args):
     cfg = _require_config()
     issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "300",
                                  "--json", "number,title,state,labels,body,author,comments"]))
-    found = questions.open_questions(issues, cfg, _maintainers(cfg), datetime.now(timezone.utc))
+    found = questions.open_questions(issues, cfg, _maintainers(cfg), datetime.now(timezone.utc),
+                                     bots=_bots())
     print(json.dumps(found, indent=2))
     return 0
 

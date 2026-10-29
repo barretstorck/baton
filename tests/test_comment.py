@@ -147,6 +147,26 @@ class AnswersTest(unittest.TestCase):
         result = comment.pending_answers({"comments": comments}, OWNER)
         self.assertEqual(result["answers"][0]["url"], "https://example.com/c/2")
 
+    def test_question_by_a_bot_is_found(self):
+        result = comment.pending_answers({"comments": [c("baton", Q, 1)]}, OWNER, {"baton[bot]"})
+        self.assertEqual(result["question"], "https://example.com/c/1")
+
+    def test_question_marker_by_a_stranger_is_ignored(self):
+        result = comment.pending_answers({"comments": [c("mallory", Q, 1)]}, OWNER, {"baton[bot]"})
+        self.assertIsNone(result["question"])
+
+    def test_decision_by_a_bot_counts_as_an_answer(self):
+        decision = "<!-- baton:orchestrator:decision -->\n> Use A."
+        comments = [c(OWNER, Q, 1), c("baton", decision, 2)]
+        result = comment.pending_answers({"comments": comments}, OWNER, {"baton[bot]"})
+        self.assertEqual(len(result["answers"]), 1)
+
+    def test_markerless_bot_comment_is_not_an_answer(self):
+        comments = [c(OWNER, Q, 1), c("baton", "Use A.", 2)]
+        for owner in (OWNER, [OWNER, "baton[bot]"]):
+            result = comment.pending_answers({"comments": comments}, owner, {"baton[bot]"})
+            self.assertEqual(result["answers"], [])
+
 
 class NotifyTest(unittest.TestCase):
     def runner(self, comments=()):
