@@ -201,6 +201,14 @@ class TemplateTest(unittest.TestCase):
                        "triage.max_per_run", "triage.stale_days"):
             self.assertIn(needed, doc)
 
+    def test_triage_skill_hands_bugs_to_refiner(self):
+        text = (ROOT / "skills/triage/SKILL.md").read_text()
+        for needed in ("repro-handoff", "baton:baton-refiner",
+                       "triage.max_reproductions_per_day"):
+            self.assertIn(needed, text)
+        doc = (ROOT / "docs/scheduling.md").read_text()
+        self.assertIn("triage.max_reproductions_per_day", doc)
+
     def test_refiner_handles_re_refine_after_spike(self):
         skill = (ROOT / "skills/refine/SKILL.md").read_text()
         self.assertIn("Re-refine issue <N> after spike #<S>.", skill)

@@ -46,7 +46,7 @@ is exactly `/baton ready`, unmarked, from a maintainer. Agents can only post mar
 through `baton comment`, but a raw comment an agent writes with `gh` looks like yours, so until
 agents have their own login (#150) this rule is only as strong as that interim. Try it on a
 repository you can afford to experiment on first. The triager is the only agent that reads outside
-text raw; it may only run a short list of commands and writes only through `baton triage apply`.
+text raw; it may only run a short list of commands and writes only through `baton triage apply`. Triaged bugs are reproduced by the refiner in the sandbox only, and an issue from outside still needs a maintainer's `/baton ready` comment.
 
 ## Plans of small tasks
 

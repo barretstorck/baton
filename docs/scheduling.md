@@ -72,7 +72,15 @@ Brief keys:
 
 - `triage.since`: start time (default empty: recorded on the first run);
 - `triage.max_per_run`: issues triaged per run (default 10);
-- `triage.stale_days`: days without feedback before closing (default 14).
+- `triage.stale_days`: days without feedback before closing (default 14);
+- `triage.max_reproductions_per_day`: bugs handed to the refiner for reproduction per 24 hours
+  (default 3, 0 turns hand-off off).
+
+After triage, the run hands triaged bugs to the refiner: it posts a `<!-- baton:repro-handoff -->`
+comment on each and starts a refiner, up to `triage.max_reproductions_per_day`. The refiner
+reproduces only in the sandbox (`baton sandbox`). Without a sandbox configured it posts the
+`repro-skipped` notice instead and does not reproduce. An issue from outside still needs a
+maintainer's `/baton ready` comment.
 
 ## Stopping
 
