@@ -60,7 +60,8 @@ class TemplateTest(unittest.TestCase):
                      "agents/baton-reviewer.md",
                      "agents/baton-refiner.md", "agents/baton-researcher.md",
                      "agents/baton-triager.md",
-                     "skills/research/SKILL.md", "bin/baton"):
+                     "skills/research/SKILL.md", "skills/triage/SKILL.md",
+                     "bin/baton"):
             self.assertTrue((ROOT / path).is_file(), path)
 
     def test_agents_run_at_medium_effort(self):
@@ -151,6 +152,15 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("baton:triage", meta)
         self.assertIn("baton triage apply", body)
         for banned in ("gh issue edit", "gh issue close", "gh issue comment"):
+            self.assertNotIn(banned, text)
+
+    def test_triage_skill_covers_screen_and_apply(self):
+        text = (ROOT / "skills/triage/SKILL.md").read_text()
+        for needed in ("credentials", "curl | sh", "outside the repository",
+                       "encoded", "hooks", "baton triage apply",
+                       "gh search issues", "triager.model"):
+            self.assertIn(needed, text)
+        for banned in ("Edit", "gh issue edit", "gh issue close"):
             self.assertNotIn(banned, text)
 
     def test_refiner_handles_re_refine_after_spike(self):
