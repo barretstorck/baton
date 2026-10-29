@@ -56,6 +56,16 @@ class MaintainersTest(unittest.TestCase):
         self.assertEqual(review.state(comments, [OWNER, "second"], 2)["state"], "changes")
         self.assertEqual(review.state(comments, OWNER, 2)["state"], "none")
 
+    def test_baton_login_review_counts_in_comment_form(self):
+        comments = [rev("changes", login="baton-reviewer")]
+        self.assertEqual(
+            review.state(comments, [OWNER, "baton-reviewer[bot]"], 2)["state"], "changes")
+        self.assertEqual(review.state(comments, OWNER, 2)["state"], "none")
+
+    def test_baton_login_reply_is_a_reply_event(self):
+        events = review.history([reply("baton")], [OWNER, "baton[bot]"])
+        self.assertEqual([e["kind"] for e in events], ["reply"])
+
 
 class StateTest(unittest.TestCase):
     def test_states_in_order(self):

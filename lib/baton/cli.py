@@ -149,6 +149,11 @@ def _maintainers(cfg):
     return cfg.maintainers(_owner())
 
 
+def _trusted(cfg):
+    """Logins trusted to post marker comments: the maintainers and the Baton logins."""
+    return list(_maintainers(cfg)) + sorted(_bots())
+
+
 def _bots():
     return identity.bot_logins()
 
@@ -374,7 +379,7 @@ def cmd_review(args):
         repo = json.loads(run.run(["gh", "repo", "view", "--json", "owner,defaultBranchRef"]))
         pr = json.loads(run.run(["gh", "pr", "view", args[1], "--json",
                                  "number,headRefName,headRefOid,comments"]))
-        print(json.dumps(review.current(pr, cfg.maintainers(repo["owner"]["login"]), cfg, run.run,
+        print(json.dumps(review.current(pr, _trusted(cfg), cfg, run.run,
                                         repo["defaultBranchRef"]["name"]),
                          indent=2, default=review.json_default))
         return 0
@@ -385,7 +390,7 @@ def cmd_review(args):
             cfg = _require_config()
             print(review.post(cfg, run.run, int(number), verdict, commit, body,
                               scan.load_terms(), _owner(), _repo_name().split("/", 1)[1],
-                              maintainers=_maintainers(cfg)))
+                              maintainers=_trusted(cfg)))
         except (comment.CommentError, review.ReviewError, checklist.TaskError) as error:
             print(f"baton: {error}", file=sys.stderr)
             return 1
@@ -404,7 +409,7 @@ def cmd_tasks(args):
     if len(args) == 2 and args[0] == "pr" and args[1].isdigit():
         cfg = _require_config()
         pr = json.loads(run.run(["gh", "pr", "view", args[1], "--json", "comments"]))
-        print(json.dumps(review.review_tasks(pr, _maintainers(cfg)), indent=2))
+        print(json.dumps(review.review_tasks(pr, _trusted(cfg)), indent=2))
         return 0
     print("usage: baton tasks <issue|pr> <number>", file=sys.stderr)
     return 64
@@ -442,7 +447,7 @@ def cmd_task(args):
                 print("baton: warning: task done pr is the orchestrator's; developers report "
                       "FIXED or DECLINED instead. Set BATON_ROLE=orchestrator to silence this.",
                       file=sys.stderr)
-            changed = review.tick_review(run.run, int(args[2]), _maintainers(cfg), args[3])
+            changed = review.tick_review(run.run, int(args[2]), _trusted(cfg), args[3])
         print(f"ticked task {args[3]}" if changed else f"task {args[3]} was already ticked")
         return 0
     print(_TASK_USAGE, file=sys.stderr)
