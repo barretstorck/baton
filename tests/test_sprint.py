@@ -1002,3 +1002,96 @@ class SprintMetricsCommandTest(unittest.TestCase):
         code, _, err = self.call(["nope"], SprintMetricsTest().runner(milestones=[]))
         self.assertEqual(code, 1)
         self.assertIn("milestone not found", err)
+
+
+def _retro_text(days, done, tasks, tokens="1000"):
+    return (f"# Sprint\n\n## Metrics\n\nduration_days: {days}\nissues_worked: {done}\n"
+            f"issues_completed: {done}\nissues_missed: 0\nplan_tasks_done: {tasks}\nspikes: 0\n"
+            f"tokens: {tokens}\n\n## Other\nx\n")
+
+
+class CapacityTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = pathlib.Path(self.tmp.name)
+        (self.root / "docs" / "retros").mkdir(parents=True)
+
+    def put(self, name, text):
+        (self.root / "docs" / "retros" / name).write_text(text, encoding="utf-8")
+
+    def recent(self, **kw):
+        return sprint.recent_metrics(self.root, "docs", **kw)
+
+    def test_three_usable_retros_pool(self):
+        self.put("Sprint 2026-01-01-1.md", _retro_text(5, 4, 10))
+        self.put("Sprint 2026-01-02-1.md", _retro_text(5, 6, 14))
+        self.put("Sprint 2026-01-03-1.md", _retro_text(10, 10, 16))
+        result = sprint.capacity(self.recent(), 10)
+        self.assertEqual(result["retros"], 3)
+        self.assertEqual(result["issues_per_day"], 1.0)
+        self.assertEqual(result["tasks_per_day"], 2.0)
+        self.assertEqual(result["average_issues"], 10.0)
+        self.assertEqual(result["average_tasks"], 20.0)
+        self.assertEqual((result["buffer"], result["issues"], result["tasks"]), (0.8, 8, 16))
+        self.assertEqual(result["tokens_per_day"], 150)
+
+    def test_skips_unusable(self):
+        self.put("Sprint 2026-01-01-1.md", "# no metrics\n")
+        self.put("Sprint 2026-01-02-1.md", _retro_text(5, "", 3))
+        self.put("Sprint 2026-01-03-1.md", _retro_text(5, 5, 5))
+        self.assertEqual(len(self.recent()), 1)
+
+    def test_only_newest_three(self):
+        for i in range(1, 6):
+            self.put(f"Sprint 2026-01-0{i}-1.md", _retro_text(5, i, i))
+        self.assertEqual([m["issues_completed"] for m in self.recent()], [5, 4, 3])
+
+    def test_no_retros(self):
+        self.assertEqual(sprint.capacity([], 7), {"retros": 0, "days": 7, "note": "no past retros"})
+        self.assertEqual(sprint.recent_metrics(self.root, "missing"), [])
+
+    def test_low_throughput_proposes_one(self):
+        self.put("Sprint 2026-01-01-1.md", _retro_text(30, 1, 1))
+        result = sprint.capacity(self.recent(), 7)
+        self.assertEqual((result["issues"], result["tasks"]), (1, 1))
+
+
+class SprintCapacityCommandTest(unittest.TestCase):
+    def call(self, args, retros=()):
+        import io
+        import tempfile
+        from contextlib import redirect_stderr, redirect_stdout
+        from types import SimpleNamespace
+        from unittest import mock
+        from baton import cli
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "docs" / "retros").mkdir(parents=True)
+            for name, text in retros:
+                (root / "docs" / "retros" / name).write_text(text, encoding="utf-8")
+            fake = SimpleNamespace(root=root, data={"docs": {"dir": "docs"}})
+            with mock.patch.object(cli, "_require_config", return_value=fake), \
+                    redirect_stdout(out), redirect_stderr(err):
+                code = cli.main(["sprint-capacity"] + args)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_usage_cases_exit_64(self):
+        for args in ([], ["0"], ["abc"], ["-3"], ["5", "--retros", "0"],
+                     ["5", "--retros", "x"], ["5", "--retros"]):
+            code, _, err = self.call(args)
+            self.assertEqual(code, 64, args)
+            self.assertIn("usage: baton sprint-capacity", err)
+
+    def test_prints_json(self):
+        code, out, _ = self.call(["10"], [("Sprint 2026-01-01-1.md", _retro_text(10, 10, 20))])
+        self.assertEqual(code, 0)
+        data = json.loads(out)
+        self.assertEqual((data["retros"], data["issues"], data["tasks"]), (1, 8, 16))
+
+    def test_no_retros(self):
+        code, out, _ = self.call(["10"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["note"], "no past retros")
