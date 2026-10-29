@@ -1,4 +1,5 @@
 import copy
+import datetime
 import pathlib
 import re
 from dataclasses import dataclass
@@ -41,6 +42,7 @@ DEFAULTS = {
     "verify": {"command": "", "timeout_minutes": 10},
     "docs": {"dir": "docs/baton"},
     "notify": {"severity": [], "labels": []},
+    "triage": {"since": "", "max_per_run": 10, "stale_days": 14},
     "maintainers": [],
     "protected_paths": [".github/", ".baton/", ".claude/"],
     "fixtures_paths": [],
@@ -125,6 +127,15 @@ def _check_forbid_added(data):
             re.compile(pattern)
         except re.error as error:
             raise ConfigError(f".baton/brief.md: forbid_added[{glob!r}] is not a valid regular expression: {error}") from error
+
+
+def _check_triage_since(data):
+    since = data["triage"]["since"]
+    if since:
+        try:
+            datetime.datetime.fromisoformat(since[:-1] + "+00:00" if since.endswith("Z") else since)
+        except ValueError as error:
+            raise ConfigError(".baton/brief.md: triage.since must be an ISO 8601 time") from error
 
 
 def _check_forge(data):
@@ -223,6 +234,10 @@ def load(path):
         raise ConfigError(".baton/brief.md: review.max_rounds must be at least 1")
     if merged["verify"]["timeout_minutes"] < 1:
         raise ConfigError(".baton/brief.md: verify.timeout_minutes must be at least 1")
+    for key in ("max_per_run", "stale_days"):
+        if merged["triage"][key] < 1:
+            raise ConfigError(f".baton/brief.md: triage.{key} must be at least 1")
+    _check_triage_since(merged)
     _check_follow_ups(merged)
     _check_forbid_added(merged)
     _check_spike(merged)
