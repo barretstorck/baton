@@ -209,7 +209,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 |---|---|
 | `baton config` | Print the resolved settings from `.baton/brief.md`, and the `identity` tier |
 | `baton identity worktree` | At tier 1, set this linked worktree's commit author to `baton[bot]` (worktree-local git config); no-op at tier 0 |
-| `baton push <source>:refs/heads/<branch>` | Push to `origin` (tier 0) or over HTTPS with the `baton` App token (tier 1). Refuses (exit 1) a destination outside `refs/heads/`, the default branch, a leading `-` or `+`, or an empty source |
+| `baton push <source>:refs/heads/<branch>` | Push to `origin` (tier 0) or over HTTPS with the `baton` App token (tier 1). Refuses (exit 1) a destination outside `refs/heads/`, the default branch, a leading `-` or `+`, an empty source, or a refspec containing `*`, `^`, `?`, `[`, `\` or whitespace; the destination must pass `git check-ref-format`, and at tier 0 `origin` must be the repository `gh repo view` resolves |
 | `baton doctor` | Print the identity tier and check each App (login, token, repository access); exits 1 on a failure |
 | `baton labels [--create]` | Check or create the labels Baton uses |
 | `baton set-status <issue> <status:name>` | Switch an issue's status label |
