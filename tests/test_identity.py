@@ -187,3 +187,22 @@ class WriteTest(unittest.TestCase):
         with self.assertRaises(identity.IdentityError):
             identity.write(self.runner, ["gh"], "developer")
         self.assertEqual(self.runner.calls, [])
+
+
+class DescribeTest(unittest.TestCase):
+    def test_tier_zero(self):
+        out = identity.describe(None)
+        self.assertEqual(out["tier"], 0)
+        self.assertEqual(out["roles"]["reviewer"], {"login": None, "route": "maintainer"})
+        self.assertIn("orchestrator", out["roles"])
+
+    def test_tier_one_has_nothing_secret(self):
+        ids = identity.Identities(identity.App(11, 22, "/secret/key.pem", "baton[bot]"),
+                                  identity.App(33, 44, "/secret/r.pem", "baton-reviewer[bot]"))
+        out = identity.describe(ids)
+        self.assertEqual(out["tier"], 1)
+        self.assertEqual(out["roles"]["reviewer"], {"login": "baton-reviewer[bot]", "route": "reviewer"})
+        self.assertEqual(out["roles"]["developer"], {"login": "baton[bot]", "route": "baton"})
+        text = json.dumps(out)
+        for bad in ("secret", "11", "22", "33", "44", ".pem"):
+            self.assertNotIn(bad, text)

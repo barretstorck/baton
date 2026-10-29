@@ -144,6 +144,7 @@ class MissedCliTest(unittest.TestCase):
         from baton import cli
         err = io.StringIO()
         with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.identity, "use"), \
                 mock.patch.object(cli.run, "run", runner), \
                 mock.patch.object(cli.scan, "load_terms", return_value=[]), \
                 contextlib.redirect_stderr(err):

@@ -219,6 +219,7 @@ class NotifyCliTest(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.object(cli, "_require_config", return_value=cfg), \
                 mock.patch.object(cli, "_owner", return_value="me"), \
+                mock.patch.object(cli.identity, "use"), \
                 mock.patch.object(cli.run, "run", runner), \
                 mock.patch.object(cli.scan, "load_terms", return_value=[]), \
                 mock.patch.object(cli.questions, "notify_matches",

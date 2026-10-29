@@ -10,6 +10,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
+from . import config
 from . import run as _run
 from . import verify
 
@@ -176,3 +177,16 @@ def write(runner, argv, role, **kw):
         raise IdentityError(f"identity.toml has no [{name}] entry for role {role}")
     tok = token(app, _run.run, _post, time.time())
     return runner(argv, env={"GH_TOKEN": tok, "GH_PROMPT_DISABLED": "1"}, **kw)
+
+
+def describe(ids):
+    """Tier and the route and login per role, for `baton config`; no id, path or token."""
+    roles = {}
+    for role in (*config.ROLES, "orchestrator"):
+        if ids is None:
+            roles[role] = {"login": None, "route": "maintainer"}
+            continue
+        name = route(role)
+        app = getattr(ids, name)
+        roles[role] = {"login": app.login if app else None, "route": name}
+    return {"tier": 0 if ids is None else 1, "roles": roles}
