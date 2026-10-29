@@ -285,17 +285,22 @@ the findings comment it came from (`gh issue view <N> --comments`). If you canno
 few commands, write in the issue's Context that the claim is **unverified** and name its source
 ("per the developer of #N"). Do not repeat an agent's claim as fact.
 
-File each by its severity (`critical`, `important`, `minor`; the review's own words):
+Place each by its severity (`critical`, `important`, `minor`; the review's own words). Read
+`follow_ups` from `baton config` (`follow_ups.scheduled` in a scheduled run) and use the
+placement it names for the severity:
 
-- `critical`: joins the open sprint as `deliverable` (`baton issue edit <N> --milestone "<title>"`), is refined with
-  `baton:refine` as a subagent at once, and is dispatched once ready.
-- `important`: joins the open sprint as `stretch` when the maintainer's sprint rules let
-  follow-ups join (the brief or the milestone description), or when it serves the sprint goal;
-  otherwise it is filed in `status:refinement`, out of the sprint, for the maintainer to prioritise.
-- `minor`: not filed.
+- `deliverable` or `stretch`: joins the open sprint with that label
+  (`baton issue edit <N> --milestone "<title>"`), is refined with `baton:refine` as a subagent
+  at once, and is dispatched once ready.
+- `goal`: joins as `stretch` only when it serves the sprint goal; otherwise it is filed in the
+  backlog.
+- `backlog`: filed in `status:refinement`, outside the sprint, for the maintainer to prioritise.
+- `skip`: not filed.
 
-A developer's suggestion has no severity. Treat it as `important` only if it names a security,
-privacy, data-loss or performance problem; otherwise as `minor`.
+A developer's suggestion has no severity. Treat it as `important` if it names a security,
+privacy, data-loss or performance problem; otherwise as `minor`. A spike's proposed follow-up is
+placed as `important`. With no open sprint, every placement except `skip` files to the backlog.
+A rule in the milestone description overrides the brief for that one sprint.
 
 ### 7. Dispatch
 
@@ -495,9 +500,9 @@ answer the maintainer left on an issue overnight. Everything above applies, with
 4. **Take the stricter path whenever something is flagged.** A developer reporting untrusted
    instructions, a pull request touching protected paths, an escalated review, a fix that failed
    once already, a budget over its limit: label `needs-maintainer`, comment, and leave it.
-5. **Follow-ups stay out of the sprint, except `critical` ones.** A `critical` follow-up still
-   joins as `deliverable` with the `needs-maintainer` label and a comment saying why. File the
-   others in `status:refinement` and leave the choice to the maintainer.
+5. **Follow-ups use `follow_ups.scheduled`.** Place each by that mapping (step 6). One that
+   joins the sprint in a scheduled run still gets the `needs-maintainer` label and a comment
+   saying why. The others follow their placement (`backlog` goes to `status:refinement`).
 6. **Keep making passes** while developers are running or issues can be dispatched. Developers
    you start must finish inside this run.
 7. **End:** when nothing is running and nothing can be dispatched, run `baton lock release` and
