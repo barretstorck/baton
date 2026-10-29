@@ -805,7 +805,7 @@ def cmd_push(args):
         return 64
     info = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
     default = (info.get("defaultBranchRef") or {}).get("name", "")
-    problem = identity.refspec_problem(args[0], default)
+    problem = identity.refspec_problem(args[0], default, identity.ref_format_ok)
     if problem:
         print(f"baton push: refused {args[0]}: {problem}", file=sys.stderr)
         return 1

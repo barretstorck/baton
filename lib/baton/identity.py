@@ -254,22 +254,41 @@ _HELPER = ('!f() { test "$1" = get && echo username=x-access-token'
            ' && echo "password=$BATON_GIT_TOKEN"; }; f')
 
 
-def refspec_problem(refspec, default_branch):
-    """Why `baton push` refuses this refspec, or None when it is <source>:refs/heads/<branch>."""
+def refspec_problem(refspec, default_branch, ref_ok):
+    """Why `baton push` refuses this refspec, or None when it is <source>:refs/heads/<branch>.
+
+    `ref_ok(ref)` says whether git accepts the destination as a ref name (git check-ref-format).
+    """
     if refspec.startswith("-"):
         return 'starts with "-"'
     if refspec.startswith("+"):
         return 'force push ("+")'
     if refspec.count(":") != 1:
         return "needs <source>:refs/heads/<branch>"
+    for ch in refspec:
+        if ch.isspace():
+            return "whitespace in the refspec"
+        if ch in "*^?[\\":
+            return f"wildcard or special character {ch!r} in the refspec"
     src, dst = refspec.split(":")
     if not src:
         return "empty source deletes the branch"
     if not dst.startswith("refs/heads/") or dst == "refs/heads/":
         return "destination outside refs/heads/"
+    if not ref_ok(dst):
+        return "destination is not a valid branch ref (git check-ref-format)"
     if dst == f"refs/heads/{default_branch}":
         return f"destination is the default branch ({default_branch})"
     return None
+
+
+def ref_format_ok(ref):
+    """True when `git check-ref-format` accepts the ref name."""
+    try:
+        _run.run(["git", "check-ref-format", ref])
+    except _run.RunError:
+        return False
+    return True
 
 
 def push_command(refspec, repo):

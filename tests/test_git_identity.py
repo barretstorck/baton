@@ -124,7 +124,7 @@ class PushRefusalTest(unittest.TestCase):
                     code, _, err = call(cli.cmd_push, [refspec])
                 self.assertEqual(code, 1)
                 self.assertIn("refused", err)
-                self.assertFalse(any(c[0] == "git" for c in runner.calls))
+                self.assertFalse(any("push" in c for c in runner.calls))
 
     def test_branch_push(self):
         runner = FakeRunner({"gh repo view": REPO})
