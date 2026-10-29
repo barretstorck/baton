@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
-from . import checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, publish, questions, review, run, scan, sprint, state, usage, verify
+from . import checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, usage, verify
 
 
 def cmd_config(args):
@@ -493,6 +493,32 @@ def cmd_verify(args):
     return {"green": 0, "red": 1, "timeout": 3}[out["result"]]
 
 
+def cmd_sandbox(args):
+    action = args[0] if args else ""
+    if action not in ("run", "check") or (action == "run" and len(args) < 2) \
+            or (action == "check" and len(args) != 1):
+        print("usage: baton sandbox <run <command...>|check>", file=sys.stderr)
+        return 64
+    cfg = _require_config()
+    repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
+    owner, name = repo["nameWithOwner"].split("/", 1)
+    branch = repo["defaultBranchRef"]["name"]
+    seconds = cfg["verify"]["timeout_minutes"] * 60
+    if action == "check":
+        state, log = sandbox.check(run.run, owner, name, branch, seconds)
+        print(state)
+        if log:
+            print(f"log: {log}")
+        return 0 if state in ("none", "isolated") else 1
+    out = sandbox.run_in_sandbox(run.run, owner, name, branch, " ".join(args[1:]), seconds)
+    print(f"sandbox exit={out['exit']}")
+    print(f"log: {out['log']}")
+    print("--- last 40 lines ---")
+    tail = out["tail"]
+    print(tail if isinstance(tail, str) else "\n".join(tail))
+    return out["exit"]
+
+
 def cmd_lock(args):
     ttl = 6.0
     if "--ttl-hours" in args:
@@ -551,6 +577,7 @@ COMMANDS = {
     "pr-state": cmd_pr_state,
     "reopen": cmd_reopen,
     "review": cmd_review,
+    "sandbox": cmd_sandbox,
     "set-status": cmd_set_status,
     "set-priority": cmd_set_priority,
     "set-severity": cmd_set_severity,
@@ -569,7 +596,7 @@ def main(argv):
     try:
         return COMMANDS[argv[0]](argv[1:])
     except (checklist.TaskError, comment.CommentError, review.ReviewError,
-            verify.VerifyError) as error:
+            verify.VerifyError, sandbox.SandboxError) as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
     except (config.ConfigError, run.RunError, sprint.SnapshotError, ValueError, OSError) as error:
