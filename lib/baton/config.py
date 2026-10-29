@@ -15,6 +15,8 @@ OTHER_LABELS = [
 ]
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 MODELS = ("opus", "sonnet", "fable", "haiku")
+SEVERITIES = ("critical", "important", "minor")
+PLACEMENTS = ("deliverable", "stretch", "goal", "backlog", "skip")
 ROLES = ("triager", "refiner", "researcher", "developer", "reviewer")
 DEFAULTS = {
     "triager": {"model": "haiku", "effort": "medium"},
@@ -24,6 +26,10 @@ DEFAULTS = {
     "reviewer": {"model": "opus", "effort": "medium"},
     "review": {"required": True, "max_rounds": 2},
     "refine": {"may_mark_ready": True},
+    "follow_ups": {
+        "critical": "deliverable", "important": "goal", "minor": "skip",
+        "scheduled": {"critical": "deliverable", "important": "backlog"},
+    },
     "labels": {
         "auto_create": True,
         "map": {name: name for name in STATUSES + OTHER_LABELS},
@@ -108,6 +114,19 @@ def _check_forbid_added(data):
             raise ConfigError(f".baton/brief.md: forbid_added[{glob!r}] is not a valid regular expression: {error}") from error
 
 
+def _check_follow_ups(data):
+    follow_ups = data["follow_ups"]
+    for name, mapping in (("follow_ups", follow_ups), ("follow_ups.scheduled", follow_ups["scheduled"])):
+        allowed = SEVERITIES + (("scheduled",) if name == "follow_ups" else ())
+        for key, value in mapping.items():
+            if key not in allowed:
+                raise ConfigError(f".baton/brief.md: {name}.{key} is not allowed; use " + ", ".join(allowed))
+            if key != "scheduled" and value not in PLACEMENTS:
+                raise ConfigError(f".baton/brief.md: {name}.{key} must be one of " + ", ".join(PLACEMENTS))
+    for severity in SEVERITIES:
+        follow_ups["scheduled"].setdefault(severity, follow_ups[severity])
+
+
 def _check_docs_dir(data):
     docs_dir = data["docs"]["dir"]
     path = pathlib.PurePosixPath(docs_dir)
@@ -158,6 +177,7 @@ def load(path):
         raise ConfigError(".baton/brief.md: review.max_rounds must be at least 1")
     if merged["verify"]["timeout_minutes"] < 1:
         raise ConfigError(".baton/brief.md: verify.timeout_minutes must be at least 1")
+    _check_follow_ups(merged)
     _check_forbid_added(merged)
     _check_docs_dir(merged)
     return Config(root=root, data=merged)
