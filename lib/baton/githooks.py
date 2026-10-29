@@ -1,3 +1,4 @@
+import json
 import os
 import pathlib
 import re
@@ -244,6 +245,43 @@ def recorded_bin(text):
     return words[0] if len(words) == 1 and words[0] else None
 
 
+# Prints the first executable bin/baton among the baton@baton entries of the install record.
+# Run by the hook as `python3 -I -c <script> <root>`; keep it free of single quotes.
+RESOLVE_SCRIPT = (
+    "import json, os, sys\n"
+    "try:\n"
+    "    d = json.load(open(os.path.join(sys.argv[1], \"installed_plugins.json\")))\n"
+    "    for e in d[\"plugins\"][\"baton@baton\"]:\n"
+    "        p = os.path.join(e[\"installPath\"], \"bin\", \"baton\")\n"
+    "        if os.access(p, os.X_OK):\n"
+    "            print(p)\n"
+    "            break\n"
+    "except Exception:\n"
+    "    pass\n"
+)
+
+
+def plugin_root():
+    return os.environ.get("CLAUDE_CODE_PLUGIN_CACHE_DIR") or os.path.join(
+        os.environ.get("HOME") or os.path.expanduser("~"), ".claude", "plugins")
+
+
+def resolve_bin(recorded):
+    """The baton a hook runs: the install record's, else the recorded path if executable, else None."""
+    try:
+        with open(os.path.join(plugin_root(), "installed_plugins.json")) as f:
+            entries = json.load(f)["plugins"]["baton@baton"]
+        for entry in entries:
+            path = os.path.join(entry["installPath"], "bin", "baton")
+            if os.access(path, os.X_OK):
+                return path
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    if recorded and os.access(recorded, os.X_OK) and os.path.isfile(recorded):
+        return recorded
+    return None
+
+
 def installed(repo):
     try:
         directory = hooks_dir(repo)
@@ -255,7 +293,7 @@ def installed(repo):
             if HOOK_TAG not in text:
                 return False
             recorded = recorded_bin(text)
-            if recorded is None or not os.path.exists(recorded):
+            if recorded is None or resolve_bin(recorded) is None:
                 return False
         except OSError:
             return False
@@ -276,7 +314,10 @@ def install(repo, baton_bin):
             f"# {HOOK_TAG}: installed by `baton install-hooks`\n"
             f"baton_bin={shlex.quote(str(baton_bin))}\n"
             'recorded=$baton_bin\n'
-            'if [ ! -x "$baton_bin" ]; then baton_bin=$(command -v baton) || baton_bin=; fi\n'
+            'root=${CLAUDE_CODE_PLUGIN_CACHE_DIR:-$HOME/.claude/plugins}\n'
+            f"found=$(python3 -I -c '{RESOLVE_SCRIPT}' \"$root\" 2>/dev/null) || found=\n"
+            'if [ -n "$found" ]; then baton_bin=$found\n'
+            'elif [ ! -x "$baton_bin" ]; then baton_bin=$(command -v baton) || baton_bin=; fi\n'
             'if [ -z "$baton_bin" ]; then\n'
             '  echo "baton: this Baton git hook cannot find baton (installed from $recorded);'
             ' run \\`baton install-hooks\\`" >&2\n'

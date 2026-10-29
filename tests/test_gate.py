@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from baton import gate
 
 TERMS = ["Zebrowski"]
@@ -69,6 +70,12 @@ def refused_forms(text):
 
 
 class GateTest(unittest.TestCase):
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        patcher = mock.patch.dict(os.environ, {"CLAUDE_CODE_PLUGIN_CACHE_DIR": self.cache})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def prepare(self, directory):
         pathlib.Path(directory, "notes.md").write_text("clean\n")
         return directory
@@ -193,6 +200,18 @@ class GateTest(unittest.TestCase):
         repo = make_repo(hooks=False)
         gate.githooks.install(repo, os.path.join(tempfile.mkdtemp(), "0.3.0", "bin", "baton"))
         self.assertTrue(any("install-hooks" in p for p in gate.decide("git commit -m x", repo, TERMS)))
+
+    def test_gone_baton_with_a_valid_install_record_is_not_refused(self):
+        install_path = tempfile.mkdtemp()
+        os.makedirs(os.path.join(install_path, "bin"))
+        binary = os.path.join(install_path, "bin", "baton")
+        pathlib.Path(binary).write_text("#!/bin/sh\n")
+        os.chmod(binary, 0o755)
+        pathlib.Path(self.cache, "installed_plugins.json").write_text(
+            json.dumps({"plugins": {"baton@baton": [{"installPath": install_path}]}}))
+        repo = make_repo(hooks=False)
+        gate.githooks.install(repo, os.path.join(tempfile.mkdtemp(), "0.3.0", "bin", "baton"))
+        self.assertFalse(any("install-hooks" in p for p in gate.decide("git commit -m x", repo, TERMS)))
 
     def test_hooks_must_be_in_the_effective_hooks_path(self):
         repo = make_repo()

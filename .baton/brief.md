@@ -56,7 +56,7 @@ CI (`.github/workflows/ci.yml`) runs the same command on pull requests.
 - New behaviour has tests in `tests/`, using `tests/fakes.py` `FakeRunner` instead of real
   `gh` or `git` calls.
 - Skills, agents, `references/github.md` and `README.md` describe any changed command or flow.
-- A release bumps `version` in `.claude-plugin/plugin.json`.
+- Claude Code identifies the installed build by the commit SHA; there is no version to bump.
 
 ## Responsibilities
 

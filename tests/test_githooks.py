@@ -383,6 +383,101 @@ class CommitMsgDispatchTest(unittest.TestCase):
 
 
 class InstallTest(unittest.TestCase):
+    def setUp(self):
+        self.cache = tempfile.mkdtemp()
+        patcher = mock.patch.dict(os.environ, {"CLAUDE_CODE_PLUGIN_CACHE_DIR": self.cache})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _fake_baton(self):
+        """A fake executable bin/baton that logs its args; returns (install path, marker)."""
+        install_path = tempfile.mkdtemp()
+        os.makedirs(os.path.join(install_path, "bin"))
+        marker = os.path.join(install_path, "ran")
+        fake = pathlib.Path(install_path, "bin", "baton")
+        fake.write_text(f'#!/bin/sh\necho "$@" >> "{marker}"\n')
+        fake.chmod(0o755)
+        return install_path, marker
+
+    def _record(self, *install_paths):
+        entries = [{"installPath": p} for p in install_paths]
+        pathlib.Path(self.cache, "installed_plugins.json").write_text(
+            json.dumps({"plugins": {"baton@baton": entries}}))
+
+    def _commit(self, repo):
+        write(repo, "b.txt", "x\n")
+        git(repo, "add", "-A")
+        dirs = [os.path.dirname(shutil.which("git")), os.path.dirname(shutil.which("python3")), "/bin"]
+        return subprocess.run(["git", "-C", repo, "commit", "-q", "-m", "b"], capture_output=True,
+                              text=True, env=dict(os.environ, PATH=os.pathsep.join(dirs)))
+
+    def _gone(self):
+        return os.path.join(tempfile.mkdtemp(), "0.3.0", "bin", "baton")
+
+    def test_install_record_serves_a_hook_with_a_gone_path(self):
+        install_path, marker = self._fake_baton()
+        self._record(install_path)
+        repo = make_repo()
+        githooks.install(repo, self._gone())
+        self.assertTrue(githooks.installed(repo))
+        result = self._commit(repo)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(pathlib.Path(marker).read_text().splitlines()[0].split()[:2], ["git-hook", "pre-commit"])
+
+    def test_install_record_wins_over_existing_recorded_path(self):
+        install_path, marker = self._fake_baton()
+        other_path, other_marker = self._fake_baton()
+        self._record(install_path)
+        repo = make_repo()
+        githooks.install(repo, os.path.join(other_path, "bin", "baton"))
+        result = self._commit(repo)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(os.path.exists(marker))
+        self.assertFalse(os.path.exists(other_marker))
+
+    def test_first_entry_with_a_binary_is_used(self):
+        install_path, marker = self._fake_baton()
+        self._record(tempfile.mkdtemp(), install_path)
+        repo = make_repo()
+        githooks.install(repo, self._gone())
+        self.assertTrue(githooks.installed(repo))
+        self.assertEqual(self._commit(repo).returncode, 0)
+        self.assertTrue(os.path.exists(marker))
+
+    def test_missing_or_invalid_record_with_gone_path_is_not_installed(self):
+        repo = make_repo()
+        githooks.install(repo, self._gone())
+        self.assertFalse(githooks.installed(repo))
+        for text in ("{not json", "[]", '{"plugins": {"baton@baton": "x"}}'):
+            with self.subTest(text=text):
+                pathlib.Path(self.cache, "installed_plugins.json").write_text(text)
+                self.assertFalse(githooks.installed(repo))
+                result = self._commit(repo)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("baton install-hooks", result.stderr)
+                git(repo, "reset", "-q")
+
+    def test_repository_modules_cannot_hijack_the_resolver(self):
+        install_path, marker = self._fake_baton()
+        self._record(install_path)
+        repo = make_repo()
+        pwned = os.path.join(repo, "pwned")
+        for name in ("json.py", "os.py"):
+            write(repo, name, f"open({pwned!r}, 'w').close()\n")
+        githooks.install(repo, self._gone())
+        result = self._commit(repo)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(os.path.exists(pwned))
+        self.assertTrue(os.path.exists(marker))
+
+    def test_existing_recorded_path_works_without_a_record(self):
+        install_path, marker = self._fake_baton()
+        repo = make_repo()
+        githooks.install(repo, os.path.join(install_path, "bin", "baton"))
+        self.assertTrue(githooks.installed(repo))
+        self.assertEqual(self._commit(repo).returncode, 0)
+        self.assertTrue(os.path.exists(marker))
+
     def test_install_writes_tagged_executable_shims(self):
         repo = make_repo()
         written = githooks.install(repo, "/opt/baton/bin/baton")

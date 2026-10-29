@@ -1,4 +1,5 @@
 import pathlib
+import json
 import unittest
 from baton import config, frontmatter, sprint
 
@@ -52,6 +53,13 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("\n## Scratch files\n", text)
         self.assertIn("root-owned", text)
         self.assertLess(text.index("## Scratch files"), text.index("\n## Return\n"))
+
+    def test_manifest_has_no_version(self):
+        plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text())
+        self.assertNotIn("version", plugin)
+        market = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text())
+        for entry in market["plugins"]:
+            self.assertNotIn("version", entry, entry.get("name"))
 
     def test_plugin_files_exist(self):
         for path in (".claude-plugin/plugin.json", "hooks/hooks.json",
