@@ -76,6 +76,28 @@ fallback to your login. Permissions: `baton[bot]` has issues, pull requests and 
 stays on your login. `baton config` shows the active tier under `identity`. Tier 2 (a machine user)
 is #225, and creating the Apps and checking the setup is #179.
 
+Keep the keys from agents. The private keys and `identity.toml` sit under `~/.baton/`, readable by
+the user the agents run as. Add these two rules to `permissions.deny` in your user settings,
+`~/.claude/settings.json` (merge them into an existing `deny` list):
+
+    {
+      "permissions": {
+        "deny": [
+          "Read(~/.baton/**/*.pem)",
+          "Read(~/.baton/**/identity.toml)"
+        ]
+      }
+    }
+
+They go in your user settings, not the project's, because the files live under your home directory
+and the rules then apply in every project; a project `.claude/settings.json` would cover one
+repository only. The rules cover the Read, Grep and Glob tools and the `cat`, `head`, `tail` and
+`sed` commands and `< file` redirections in Bash. They do not cover a command that reads a file
+without naming it (for example `grep -r` from `~/.baton`) or a script that opens the file itself.
+Baton still reads both files, because it does not go through Claude Code's tools. The rules do not
+deny the whole directory, since agents may need `sprint.log` and `triage.log` there. See
+[SECURITY.md](SECURITY.md) for the residual risk.
+
 ## Plans of small tasks
 
 Every tool call sends an agent's whole conversation to the model again, so an agent that works a

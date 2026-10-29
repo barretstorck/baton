@@ -22,4 +22,12 @@ bypasses. They are not a sandbox. They see only the forge CLIs (`FORGE_CLIS`) an
 agent runs through Claude Code's Bash tool, not scripts that do HTTP themselves, and they cannot
 stop a determined attacker who controls your machine or your Claude Code session.
 
+At identity tier 1 the App private keys and `identity.toml` sit under `~/.baton/`, readable by the
+OS user the agents run as. File modes do not stop an agent running as that same user. The `Read`
+deny rules in the README ([Identity tiers](README.md#identity-tiers)) are a first layer: they stop
+Claude Code's file tools and the Bash file commands it recognises, but not a command that reads a
+file without naming it, or a script that opens it. The stronger option, not implemented, is a
+signing helper running as another OS user that holds the keys and hands Baton only short-lived
+installation tokens.
+
 Only the latest release is supported.
