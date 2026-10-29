@@ -163,6 +163,18 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(result["answered"][0]["answers"][0]["url"], "https://example.com/c/2")
         self.assertEqual(result["waiting_on_maintainer"], [2])
 
+    def test_second_maintainer_answer_is_counted(self):
+        data = copy.deepcopy(config.DEFAULTS)
+        data["maintainers"] = [OWNER, "pat"]
+        config_ = config.Config(root=pathlib.Path("."), data=data)
+        result = snap([issue(1, "blocked", "deliverable",
+                             comments=[comment(OWNER, Q, 1), comment("pat", "Use A.", 2)])],
+                      config_=config_)
+        self.assertEqual([item["number"] for item in result["answered"]], [1])
+        stranger = snap([issue(1, "blocked", "deliverable",
+                               comments=[comment(OWNER, Q, 1), comment("pat", "Use A.", 2)])])
+        self.assertEqual(stranger["answered"], [])
+
     def test_pull_requests_are_attached_to_their_issue(self):
         head = "f" * 40
         approved = {"author": {"login": OWNER}, "body": review.compose("approve", head, "ok")}

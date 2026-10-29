@@ -29,6 +29,7 @@ DEFAULTS = {
     "merge": {"allow_no_ci": False},
     "verify": {"command": "", "timeout_minutes": 10},
     "docs": {"dir": "docs/baton"},
+    "maintainers": [],
     "protected_paths": [".github/", ".baton/", ".claude/"],
     "fixtures_paths": [],
     "privacy_allow": [],
@@ -41,6 +42,13 @@ class ConfigError(Exception):
     pass
 
 
+def logins(value):
+    """A login or an iterable of logins as a frozenset."""
+    if isinstance(value, str):
+        return frozenset([value])
+    return frozenset(value or ())
+
+
 @dataclass
 class Config:
     root: pathlib.Path
@@ -48,6 +56,9 @@ class Config:
 
     def label(self, name):
         return self.data["labels"]["map"].get(name, name)
+
+    def maintainers(self, owner):
+        return list(self.data["maintainers"]) or [owner]
 
     def status_labels(self):
         return [self.label(name) for name in STATUSES]

@@ -50,6 +50,13 @@ class ComposeTest(unittest.TestCase):
                 review.compose(*args)
 
 
+class MaintainersTest(unittest.TestCase):
+    def test_second_maintainer_review_counts(self):
+        comments = [rev("changes", login="second")]
+        self.assertEqual(review.state(comments, [OWNER, "second"], 2)["state"], "changes")
+        self.assertEqual(review.state(comments, OWNER, 2)["state"], "none")
+
+
 class StateTest(unittest.TestCase):
     def test_states_in_order(self):
         self.assertEqual(review.state([], OWNER, 2)["state"], "none")

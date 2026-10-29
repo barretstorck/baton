@@ -46,6 +46,24 @@ class ConfigTest(unittest.TestCase):
                 with self.assertRaises(config.ConfigError):
                     config.load(str(make_repo(f"---\n{meta}\n---\n")))
 
+    def test_maintainers_default_and_override(self):
+        cfg = config.load(str(make_repo("# none\n")))
+        self.assertEqual(cfg.data["maintainers"], [])
+        self.assertEqual(cfg.maintainers("owner"), ["owner"])
+        cfg = config.load(str(make_repo("---\nmaintainers: [a, b]\n---\n")))
+        self.assertEqual(cfg.data["maintainers"], ["a", "b"])
+        self.assertEqual(cfg.maintainers("owner"), ["a", "b"])
+
+    def test_maintainers_invalid_raises(self):
+        for meta in ('maintainers: a', 'maintainers: [1]'):
+            with self.subTest(meta=meta):
+                with self.assertRaises(config.ConfigError):
+                    config.load(str(make_repo(f"---\n{meta}\n---\n")))
+
+    def test_logins(self):
+        self.assertEqual(config.logins("x"), frozenset(["x"]))
+        self.assertEqual(config.logins(["x", "y"]), frozenset(["x", "y"]))
+
     def test_bad_front_matter_raises(self):
         with self.assertRaises(config.ConfigError):
             config.load(str(make_repo("---\nnot a mapping\n---\n")))

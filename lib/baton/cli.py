@@ -11,7 +11,9 @@ def cmd_config(args):
     if cfg is None:
         print("not a Baton repository: .baton/brief.md not found", file=sys.stderr)
         return 1
-    print(json.dumps(cfg.data, indent=2))
+    data = dict(cfg.data)
+    data["maintainers"] = list(data["maintainers"]) or cfg.maintainers(_owner())
+    print(json.dumps(data, indent=2))
     return 0
 
 
@@ -132,6 +134,10 @@ def _owner():
     return json.loads(run.run(["gh", "repo", "view", "--json", "owner"]))["owner"]["login"]
 
 
+def _maintainers(cfg):
+    return cfg.maintainers(_owner())
+
+
 def cmd_comment(args):
     if len(args) != 5:
         print("usage: baton comment <issue|pr> <number> <role> <kind> <body-file | ->",
@@ -237,7 +243,7 @@ def cmd_review(args):
         repo = json.loads(run.run(["gh", "repo", "view", "--json", "owner,defaultBranchRef"]))
         pr = json.loads(run.run(["gh", "pr", "view", args[1], "--json",
                                  "number,headRefName,headRefOid,comments"]))
-        print(json.dumps(review.current(pr, repo["owner"]["login"], cfg, run.run,
+        print(json.dumps(review.current(pr, cfg.maintainers(repo["owner"]["login"]), cfg, run.run,
                                         repo["defaultBranchRef"]["name"]),
                          indent=2, default=review.json_default))
         return 0
@@ -245,8 +251,10 @@ def cmd_review(args):
         _, number, verdict, commit, path = args
         try:
             body = comment.read_body(path, sys.stdin)
-            print(review.post(_require_config(), run.run, int(number), verdict, commit, body,
-                              scan.load_terms(), _owner(), _repo_name().split("/", 1)[1]))
+            cfg = _require_config()
+            print(review.post(cfg, run.run, int(number), verdict, commit, body,
+                              scan.load_terms(), _owner(), _repo_name().split("/", 1)[1],
+                              maintainers=_maintainers(cfg)))
         except (comment.CommentError, review.ReviewError, checklist.TaskError) as error:
             print(f"baton: {error}", file=sys.stderr)
             return 1
@@ -263,9 +271,9 @@ def cmd_tasks(args):
         print(json.dumps({**found, **checklist.progress(found["tasks"])}, indent=2))
         return 0
     if len(args) == 2 and args[0] == "pr" and args[1].isdigit():
-        _require_config()
+        cfg = _require_config()
         pr = json.loads(run.run(["gh", "pr", "view", args[1], "--json", "comments"]))
-        print(json.dumps(review.review_tasks(pr, _owner()), indent=2))
+        print(json.dumps(review.review_tasks(pr, _maintainers(cfg)), indent=2))
         return 0
     print("usage: baton tasks <issue|pr> <number>", file=sys.stderr)
     return 64
@@ -303,7 +311,7 @@ def cmd_task(args):
                 print("baton: warning: task done pr is the orchestrator's; developers report "
                       "FIXED or DECLINED instead. Set BATON_ROLE=orchestrator to silence this.",
                       file=sys.stderr)
-            changed = review.tick_review(run.run, int(args[2]), _owner(), args[3])
+            changed = review.tick_review(run.run, int(args[2]), _maintainers(cfg), args[3])
         print(f"ticked task {args[3]}" if changed else f"task {args[3]} was already ticked")
         return 0
     print(_TASK_USAGE, file=sys.stderr)
@@ -382,9 +390,9 @@ def cmd_answers(args):
     if len(args) != 1 or not args[0].isdigit():
         print("usage: baton answers <issue-number>", file=sys.stderr)
         return 64
-    _require_config()
+    cfg = _require_config()
     data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "comments"]))
-    print(json.dumps(comment.pending_answers(data, _owner()), indent=2))
+    print(json.dumps(comment.pending_answers(data, _maintainers(cfg)), indent=2))
     return 0
 
 
@@ -395,7 +403,7 @@ def cmd_open_questions(args):
     cfg = _require_config()
     issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "300",
                                  "--json", "number,title,state,labels,body,author,comments"]))
-    found = questions.open_questions(issues, cfg, _owner(), datetime.now(timezone.utc))
+    found = questions.open_questions(issues, cfg, _maintainers(cfg), datetime.now(timezone.utc))
     print(json.dumps(found, indent=2))
     return 0
 
@@ -406,7 +414,7 @@ def cmd_ready_check(args):
         return 64
     cfg = _require_config()
     data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "author,body,labels"]))
-    problems = issue.ready_problems(data, cfg, _owner(), run.run)
+    problems = issue.ready_problems(data, cfg, _maintainers(cfg), run.run)
     for problem in problems:
         print(f"- {problem}")
     if not problems:
