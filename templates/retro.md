@@ -15,6 +15,18 @@
 | Problems fixed in review instead of filed | |
 | Default branch at the end | |
 
+## Metrics
+
+(`baton sprint-metrics "<sprint title>" --since <first dispatch>` fills these seven lines; paste its output unchanged.)
+
+duration_days:
+issues_worked:
+issues_completed:
+issues_missed:
+plan_tasks_done:
+spikes:
+tokens:
+
 ## Delivered
 
 | Issue | Title | Pull request |
@@ -49,6 +61,15 @@ issues whose agents still grew past 250K tokens, and why.)
 Each item names where the change belongs: this repository's brief, an issue, or Baton itself.
 
 1.
+
+## Spike outcomes
+
+One row per spike closed in the sprint. Outcome is one of `infeasible`, `single`, `multiple`,
+`partial`; "What followed" names the issues filed, re-refined or flagged.
+
+| Issue | Title | Outcome | What followed |
+|---|---|---|---|
+|  |  |  |  |
 
 ## Spike prototypes
 
