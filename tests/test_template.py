@@ -52,13 +52,25 @@ class TemplateTest(unittest.TestCase):
                      "skills/init/SKILL.md", "skills/review/SKILL.md",
                      "skills/open-questions/SKILL.md", "agents/baton-developer.md",
                      "agents/baton-reviewer.md",
-                     "agents/baton-refiner.md", "bin/baton"):
+                     "agents/baton-refiner.md", "agents/baton-researcher.md",
+                     "skills/research/SKILL.md", "bin/baton"):
             self.assertTrue((ROOT / path).is_file(), path)
 
     def test_agents_run_at_medium_effort(self):
-        for name in ("baton-developer", "baton-reviewer", "baton-refiner"):
+        for name in ("baton-developer", "baton-reviewer", "baton-refiner",
+                     "baton-researcher"):
             meta, _ = frontmatter.split((ROOT / "agents" / f"{name}.md").read_text())
             self.assertIn("\neffort: medium\n", f"\n{meta}\n", name)
+
+    def test_researcher_agent_and_skill(self):
+        meta, _ = frontmatter.split((ROOT / "agents" / "baton-researcher.md").read_text())
+        lines = meta.splitlines()
+        self.assertIn("isolation: worktree", lines)
+        self.assertIn("model: opus", lines)
+        self.assertIn("  - baton:research", lines)
+        skill = (ROOT / "skills" / "research" / "SKILL.md").read_text()
+        self.assertIn("refs/spikes/", skill)
+        self.assertIn("Prototype:", skill)
 
     def test_refiner_runs_in_own_worktree(self):
         meta, _ = frontmatter.split((ROOT / "agents" / "baton-refiner.md").read_text())
@@ -103,6 +115,7 @@ class TemplateTest(unittest.TestCase):
             "baton-developer": "tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch",
             "baton-reviewer": "tools: Read, Grep, Glob, Bash",
             "baton-refiner": "tools: Read, Grep, Glob, Bash, Write, WebSearch, WebFetch",
+            "baton-researcher": "tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch",
         }
         for name, line in expected.items():
             meta, _ = frontmatter.split((ROOT / "agents" / f"{name}.md").read_text())
