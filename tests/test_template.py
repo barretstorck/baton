@@ -342,7 +342,7 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("spikes before", sprint)
 
     def test_skills_read_issues_through_baton_issue_read(self):
-        for name in ("refine", "research", "develop", "review"):
+        for name in ("refine", "research", "develop", "review", "sprint", "open-questions"):
             text = (ROOT / "skills" / name / "SKILL.md").read_text()
             flat = " ".join(text.split())
             self.assertIn("baton issue read", flat, name)
