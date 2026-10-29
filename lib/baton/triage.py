@@ -345,3 +345,42 @@ def stale(issues, cfg, now, stale_days, maintainers):
         if now - last >= timedelta(days=stale_days):
             found.append(item["number"])
     return sorted(found)
+
+
+# Hand-off of triaged bugs to the refiner for reproduction.
+
+REPRO_MARK = "<!-- baton:repro-handoff -->"
+
+
+def _handed_off(item):
+    return [c for c in item.get("comments") or []
+            if REPRO_MARK in (c.get("body") or "")]
+
+
+def handoffs_last_day(issues, now):
+    """Hand-off comments created within 24 hours of `now`, across open issues."""
+    count = 0
+    for item in issues:
+        if item.get("state") != "OPEN":
+            continue
+        for comment in _handed_off(item):
+            if comment.get("createdAt") and now - _parse(comment["createdAt"]) < timedelta(hours=24):
+                count += 1
+    return count
+
+
+def reproduce_candidates(issues, cfg, now, limit):
+    """Numbers of triaged open bugs to hand to the refiner, oldest first.
+
+    At most `limit` minus the hand-offs of the last 24 hours, never negative.
+    """
+    room = max(0, limit - handoffs_last_day(issues, now))
+    bug, refine = cfg.label("type:bug"), cfg.label("status:refinement")
+    skip = cfg.label("awaiting-feedback")
+    found = [item for item in issues
+             if item.get("state") == "OPEN"
+             and {bug, refine} <= _names(item) and skip not in _names(item)
+             and _SUMMARY_HEADING.search(item.get("body") or "")
+             and not _handed_off(item)]
+    found.sort(key=lambda item: (_parse(item["createdAt"]), item["number"]))
+    return [item["number"] for item in found[:room]]

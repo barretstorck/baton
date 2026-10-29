@@ -113,6 +113,15 @@ class TemplateTest(unittest.TestCase):
         issue = (ROOT / "templates" / "issue.md").read_text()
         self.assertIn("## Diagnosis", issue)
 
+    def test_refine_skill_covers_triaged_bug_reproduction(self):
+        skill = (ROOT / "skills" / "refine" / "SKILL.md").read_text()
+        for needle in ("## Reproducing a triaged bug", "baton sandbox check",
+                       "baton sandbox run",
+                       "reproduction skipped: no sandbox configured",
+                       "baton notify", "awaiting-feedback", "baton issue read",
+                       "Needs information"):
+            self.assertIn(needle, skill)
+
     def test_refine_skill_and_agent_cover_re_refine(self):
         skill = (ROOT / "skills" / "refine" / "SKILL.md").read_text()
         self.assertIn("## Re-refining after a review", skill)
@@ -191,6 +200,14 @@ class TemplateTest(unittest.TestCase):
         for needed in ("## Triage on a schedule", "triage.since",
                        "triage.max_per_run", "triage.stale_days"):
             self.assertIn(needed, doc)
+
+    def test_triage_skill_hands_bugs_to_refiner(self):
+        text = (ROOT / "skills/triage/SKILL.md").read_text()
+        for needed in ("repro-handoff", "baton:baton-refiner",
+                       "triage.max_reproductions_per_day"):
+            self.assertIn(needed, text)
+        doc = (ROOT / "docs/scheduling.md").read_text()
+        self.assertIn("triage.max_reproductions_per_day", doc)
 
     def test_refiner_handles_re_refine_after_spike(self):
         skill = (ROOT / "skills/refine/SKILL.md").read_text()

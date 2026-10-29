@@ -42,7 +42,7 @@ DEFAULTS = {
     "verify": {"command": "", "timeout_minutes": 10},
     "docs": {"dir": "docs/baton"},
     "notify": {"severity": [], "labels": []},
-    "triage": {"since": "", "max_per_run": 10, "stale_days": 14},
+    "triage": {"since": "", "max_per_run": 10, "stale_days": 14, "max_reproductions_per_day": 3},
     "maintainers": [],
     "protected_paths": [".github/", ".baton/", ".claude/"],
     "fixtures_paths": [],
@@ -240,6 +240,8 @@ def load(path):
     for key in ("max_per_run", "stale_days"):
         if merged["triage"][key] < 1:
             raise ConfigError(f".baton/brief.md: triage.{key} must be at least 1")
+    if merged["triage"]["max_reproductions_per_day"] < 0:
+        raise ConfigError(".baton/brief.md: triage.max_reproductions_per_day must be 0 or more")
     _check_triage_since(merged)
     _check_follow_ups(merged)
     _check_forbid_added(merged)
