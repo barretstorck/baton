@@ -11,7 +11,8 @@ STATUSES = [
 ]
 OTHER_LABELS = [
     "type:feature", "type:bug", "type:maintenance", "type:spike", "deliverable", "stretch", "broken-default-branch",
-    "needs-maintainer",
+    "needs-maintainer", "awaiting-feedback",
+    "closed:spam", "closed:duplicate", "closed:support", "closed:wont-do",
 ]
 PRIORITIES = [f"priority:{n}" for n in range(1, 5)]
 SEVERITIES = [f"severity:{n}" for n in range(1, 5)]
