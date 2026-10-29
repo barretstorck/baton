@@ -105,3 +105,60 @@ class ParseTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeCfg:
+    data = {"privacy_allow": []}
+
+
+class CheckCommentTests(unittest.TestCase):
+    def check(self, text, terms=()):
+        triage.check_comment(FakeCfg(), text, list(terms), "me", "repo")
+
+    def test_private_term_refused(self):
+        with self.assertRaises(triage.TriageError) as ctx:
+            self.check("see secret-host", ["secret-host"])
+        self.assertTrue(str(ctx.exception).startswith("privacy scan found:"))
+
+    def test_other_site_refused(self):
+        with self.assertRaises(triage.TriageError) as ctx:
+            self.check("see https://example.com/x")
+        self.assertIn("https://example.com/x", str(ctx.exception))
+
+    def test_repository_links_pass(self):
+        self.check("https://github.com/me/repo")
+        self.check("See https://github.com/Me/repo/issues/3 and https://github.com/me/repo#readme.")
+        self.check("https://me.github.io/repo/docs")
+
+    def test_lookalike_refused(self):
+        for url in ("https://github.com/me/repo-fork", "https://me.github.io/repo2"):
+            with self.assertRaises(triage.TriageError):
+                self.check(url)
+
+
+class SummaryTests(unittest.TestCase):
+    SUMMARY = valid("bug")["summary"]
+
+    def test_maintainer_has_no_origin(self):
+        text = triage.render_summary(self.SUMMARY, "Boss", ["boss"])
+        self.assertNotIn("Origin:", text)
+        self.assertTrue(text.startswith("## Triage summary\n"))
+        self.assertIn("Symptom: It crashes\nExpected: No crash\nActual: Crash\n"
+                      "Area: cli\nVersion: 0.5.1\nType: bug", text)
+
+    def test_outsider_ends_with_origin(self):
+        text = triage.render_summary(self.SUMMARY, "visitor", ["boss"])
+        self.assertTrue(text.endswith("Origin: outside (@visitor)"))
+
+    def test_with_summary_appends(self):
+        out = triage.with_summary("## Context\n\nText\n", "## Triage summary\n\nA: b")
+        self.assertEqual(out, "## Context\n\nText\n\n## Triage summary\n\nA: b\n")
+
+    def test_with_summary_replaces_in_middle(self):
+        body = "## Context\n\nText\n\n## Triage summary\n\nOld: x\n\n## Pointers\n\nP\n"
+        out = triage.with_summary(body, "## Triage summary\n\nNew: y")
+        self.assertEqual(out, "## Context\n\nText\n\n## Triage summary\n\nNew: y\n\n## Pointers\n\nP\n")
+
+    def test_with_summary_replaces_last(self):
+        out = triage.with_summary("Intro\n\n## Triage summary\n\nOld", "## Triage summary\n\nNew")
+        self.assertEqual(out, "Intro\n\n## Triage summary\n\nNew\n")

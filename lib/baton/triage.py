@@ -1,6 +1,8 @@
 """Triage decisions: parsed and checked before anything is written."""
 import json
+import re
 
+from . import scan
 from .comment import CommentError
 
 CATEGORIES = ("spam", "duplicate", "support", "unclear", "feature", "bug",
@@ -99,3 +101,53 @@ def parse_decision(text):
     elif decision["summary"] is not None:
         raise TriageError(f"summary is not used for {category}")
     return decision
+
+
+_URL = re.compile(r"https?://[^\s<>()\[\]\"'`]+", re.I)
+_SUMMARY_HEADING = re.compile(r"^## Triage summary[ \t]*$", re.M)
+_NEXT_HEADING = re.compile(r"^## ", re.M)
+
+
+def _allowed_url(url, owner, repo):
+    lowered = url.lower().rstrip(".,;:!")
+    for base in (f"https://github.com/{owner}/{repo}",
+                 f"https://{owner}.github.io/{repo}"):
+        base = base.lower()
+        if lowered.startswith(base) and (
+                len(lowered) == len(base) or lowered[len(base)] in "/?#"):
+            return True
+    return False
+
+
+def check_comment(cfg, text, terms, owner, repo):
+    """Refuse a comment the privacy scan flags or that links outside the repository."""
+    findings = scan.scan_text(text, terms, cfg.data.get("privacy_allow", []))
+    if findings:
+        raise TriageError("privacy scan found: " + ", ".join(scan.describe(findings)))
+    for match in _URL.finditer(text):
+        if not _allowed_url(match.group(0), owner, repo):
+            raise TriageError(f"comment links outside the repository: {match.group(0)}")
+
+
+def render_summary(summary, author, maintainers):
+    """The `## Triage summary` section text for a decision's summary."""
+    lines = ["## Triage summary", ""]
+    for key in SUMMARY_KEYS:
+        lines.append(f"{key.capitalize()}: {summary[key]}")
+    if author.lower() not in {name.lower() for name in maintainers}:
+        lines.append(f"Origin: outside (@{author})")
+    return "\n".join(lines)
+
+
+def with_summary(body, section):
+    """Replace the `## Triage summary` section of body, or append it."""
+    body = body or ""
+    found = _SUMMARY_HEADING.search(body)
+    if not found:
+        if not body.strip():
+            return section + "\n"
+        return body.rstrip("\n") + "\n\n" + section + "\n"
+    after = _NEXT_HEADING.search(body, found.end())
+    if not after:
+        return body[:found.start()] + section + "\n"
+    return body[:found.start()] + section + "\n\n" + body[after.start():]
