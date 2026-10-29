@@ -164,7 +164,9 @@ def cmd_comment(args):
 
 
 def cmd_triage(args):
-    usage_line = "usage: baton triage apply <issue> <decision.json>"
+    usage_line = "usage: baton triage apply <issue> <decision.json>  |  baton triage queue"
+    if args == ["queue"]:
+        return _triage_queue()
     if len(args) != 3 or args[0] != "apply" or not args[1].isdigit():
         print(usage_line, file=sys.stderr)
         return 64
@@ -179,6 +181,27 @@ def cmd_triage(args):
     decision = triage.parse_decision(text)
     print(triage.apply(cfg, run.run, int(args[1]), decision, _maintainers(cfg),
                        scan.load_terms(), owner, repo))
+    return 0
+
+
+def _triage_queue():
+    cfg = _require_config()
+    owner, _, repo = _repo_name().partition("/")
+    now = datetime.now(timezone.utc)
+    since, first_run = triage.resolve_since(cfg, owner, repo, now)
+    issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "1000",
+                                 "--json", "number,title,state,labels,body,author,createdAt,comments"]))
+    block = cfg.data["triage"]
+    batch, waiting = triage.split_batch(triage.pending(issues, cfg, since), block["max_per_run"])
+    late = triage.overdue(waiting, now)
+    print(json.dumps({
+        "first_run": first_run,
+        "since": since.isoformat(),
+        "batch": [item["number"] for item in batch],
+        "waiting": [item["number"] for item in waiting],
+        "overdue": late["number"] if late else None,
+        "stale": triage.stale(issues, cfg, now, block["stale_days"], _maintainers(cfg)),
+    }, indent=2))
     return 0
 
 

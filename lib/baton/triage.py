@@ -3,12 +3,15 @@ import json
 import os
 import re
 import tempfile
+from datetime import datetime, timedelta, timezone
+import pathlib
 
 from . import comment as commentmod
 from . import labels
 from . import run as runmod
 from . import scan
 from . import state
+from . import verify
 from .comment import CommentError
 
 CATEGORIES = ("spam", "duplicate", "support", "unclear", "feature", "bug",
@@ -273,3 +276,72 @@ def _apply_real(cfg, runner, number, decision, issue, maintainers):
         labels.set_group(cfg, runner, number, "severity", decision["severity"])
     labels.set_status(cfg, runner, number, "status:refinement")
     return f"triaged #{number} as {category} and moved it to refinement"
+
+
+# Scheduled runs: which issues a run triages, and which it closes as stale.
+
+HANDLED = ("closed:spam", "closed:duplicate", "closed:support", "closed:wont-do",
+           "awaiting-feedback", "needs-maintainer")
+
+
+def _parse(stamp):
+    when = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+def _names(item):
+    return {label["name"] for label in item.get("labels") or []}
+
+
+def since_path(owner, repo, home=None):
+    return verify._home(home) / f"{owner}-{repo}" / "triage-since"
+
+
+def resolve_since(cfg, owner, repo, now, home=None):
+    """(start time, wrote): the brief's triage.since, else the recorded time, else `now`."""
+    brief = cfg.data["triage"]["since"]
+    if brief:
+        return _parse(brief), False
+    path = since_path(owner, repo, home)
+    if path.exists():
+        return _parse(path.read_text().strip()), False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(now.astimezone(timezone.utc).isoformat() + "\n")
+    return now, True
+
+
+def pending(issues, cfg, since):
+    """Open issues created after `since` that triage has not acted on, oldest first."""
+    skip = set(cfg.status_labels()) | {cfg.label(name) for name in HANDLED}
+    found = [item for item in issues
+             if item.get("state") == "OPEN" and _parse(item["createdAt"]) > since
+             and not _names(item) & skip]
+    return sorted(found, key=lambda item: (_parse(item["createdAt"]), item["number"]))
+
+
+def split_batch(pending_issues, max_per_run):
+    return list(pending_issues[:max_per_run]), list(pending_issues[max_per_run:])
+
+
+def overdue(waiting, now):
+    """The first waiting issue created at least 24 hours before `now`, else None."""
+    for item in waiting:
+        if now - _parse(item["createdAt"]) >= timedelta(hours=24):
+            return item
+    return None
+
+
+def stale(issues, cfg, now, stale_days, maintainers):
+    """Numbers of open awaiting-feedback issues quiet for `stale_days`, ascending."""
+    label = cfg.label("awaiting-feedback")
+    found = []
+    for item in issues:
+        if item.get("state") != "OPEN" or label not in _names(item):
+            continue
+        if (item.get("author") or {}).get("login") in maintainers:
+            continue
+        stamps = [c["createdAt"] for c in item.get("comments") or [] if c.get("createdAt")]
+        last = max((_parse(s) for s in stamps), default=_parse(item["createdAt"]))
+        if now - last >= timedelta(days=stale_days):
+            found.append(item["number"])
+    return sorted(found)

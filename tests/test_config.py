@@ -97,6 +97,22 @@ class ConfigTest(unittest.TestCase):
                 with self.assertRaises(config.ConfigError):
                     config.load(str(make_repo(f"---\n{meta}\n---\n")))
 
+    def test_triage_defaults_and_overrides(self):
+        cfg = config.load(str(make_repo("# none\n")))
+        self.assertEqual(cfg.data["triage"], {"since": "", "max_per_run": 10, "stale_days": 14})
+        for key, value in (("since", "2026-10-01T00:00:00Z"), ("max_per_run", 3), ("stale_days", 30)):
+            with self.subTest(key=key):
+                cfg = config.load(str(make_repo(f"---\ntriage:\n  {key}: {value}\n---\n")))
+                self.assertEqual(cfg.data["triage"][key], value)
+
+    def test_triage_invalid_raises(self):
+        for meta, text in (("max_per_run: 0", "triage.max_per_run must be at least 1"),
+                           ("stale_days: 0", "triage.stale_days must be at least 1"),
+                           ("since: yesterday", "triage.since must be an ISO 8601 time")):
+            with self.subTest(meta=meta):
+                with self.assertRaisesRegex(config.ConfigError, text):
+                    config.load(str(make_repo(f"---\ntriage:\n  {meta}\n---\n")))
+
     def test_logins(self):
         self.assertEqual(config.logins("x"), frozenset(["x"]))
         self.assertEqual(config.logins(["x", "y"]), frozenset(["x", "y"]))

@@ -173,6 +173,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton review state <pr>` | The pull request's review state at its head commit |
 | `baton review post <pr> <approve\|changes\|blocked\|replan> <sha> <file \| ->` | Post a review of that commit |
 | `baton answers <issue>` | The latest agent question and the maintainer's replies |
+| `baton triage queue` | List what a scheduled triage run should do. Prints JSON: `first_run`, `since`, `batch` (up to `triage.max_per_run` oldest pending issue numbers), `waiting`, `overdue` (the oldest waiting issue once it has waited 24 hours, else null) and `stale` (`awaiting-feedback` issues quiet for `triage.stale_days`). The first run records the start time in the Baton home folder and triages nothing. Writes nothing else. |
 | `baton notify <issue> <cause> <file \| ->` | Add `needs-maintainer` and post one `status` comment mentioning the maintainers, once per issue per cause (`stuck`, `approval`, `triage-unsure`, `spike-infeasible`, `repro-skipped`, `rule`); prints the URL or `already notified`. `/baton:open-questions` is unchanged |
 | `baton notify --rules` | Run `notify` with cause `rule` for each open issue matching the brief's `notify:` severities or labels; one line per issue |
 | `baton open-questions` | List open issues waiting on the maintainer (unanswered question, `status:blocked` or `needs-maintainer`) as JSON, most pressing first |

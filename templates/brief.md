@@ -70,6 +70,10 @@ docs:
 notify:                       # a matching open issue gets the needs-maintainer label and an @-mention of the maintainers, once
   severity: []                # severities to notify about, integers 1 to 4, e.g. [1, 2]
   labels: []                  # label names to notify about, e.g. [security]
+triage:                       # /baton:triage --scheduled
+  since: ""                   # ISO 8601 time; only issues created after it are triaged; empty: the first run records its start time
+  max_per_run: 10             # issues triaged per run, at least 1; the rest wait for the next run
+  stale_days: 14              # awaiting-feedback issues with no comment for this many days are closed, at least 1
 maintainers: []              # logins whose comments count as the maintainer's; empty: the repository owner
 protected_paths: [".github/", ".baton/", ".claude/"]
 fixtures_paths: []            # the only places new image files may be added
