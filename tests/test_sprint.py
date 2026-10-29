@@ -108,14 +108,6 @@ class BranchStateTest(unittest.TestCase):
         self.assertEqual(sprint.branch_state([run(sha="new"), run("failure", sha="new")]), "red")
 
 
-class OverlapTest(unittest.TestCase):
-    def test_same_file_and_directory_prefix_overlap(self):
-        self.assertTrue(sprint.overlaps(["src/a.py"], ["src/a.py", "x"]))
-        self.assertTrue(sprint.overlaps(["src/"], ["src/a.py"]))
-        self.assertFalse(sprint.overlaps(["src/a.py"], ["src/b.py"]))
-        self.assertFalse(sprint.overlaps([], ["src/b.py"]))
-
-
 class SnapshotTest(unittest.TestCase):
     def test_no_open_sprint(self):
         result = sprint.snapshot(cfg(), FakeRunner(replies([], milestones=[])))
@@ -140,7 +132,7 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(result["dispatchable"], [2])
         self.assertEqual(result["in_dev"], [1])
 
-    def test_open_blockers_and_file_overlap_are_skipped(self):
+    def test_open_blockers_are_skipped_and_overlap_is_not(self):
         result = snap([issue(1, "in-review", "deliverable", files="a.py"),
                        issue(2, "ready", "deliverable", files="a.py"),
                        issue(3, "ready", "deliverable", files="b.py", blocked="#1"),
@@ -149,11 +141,19 @@ class SnapshotTest(unittest.TestCase):
                        issue(6, "ready", "deliverable", files="d.py")],
                       config_=cfg(max_parallel=5),
                       extra={"gh issue view 9": json.dumps({"state": "CLOSED"})})
-        self.assertEqual(result["dispatchable"], [5, 4])
+        self.assertEqual(result["dispatchable"], [5, 2, 4, 6])
         skipped = {item["number"]: item["reason"] for item in result["held"]}
-        self.assertIn("overlap", skipped[2])
         self.assertIn("#1", skipped[3])
-        self.assertIn("overlap", skipped[6])
+        self.assertFalse(any("overlap" in r for r in skipped.values()))
+
+    def test_overlapping_issues_fill_every_slot(self):
+        result = snap([issue(1, "in-dev", "deliverable", files="a.py"),
+                       issue(2, "ready", "deliverable", files="a.py"),
+                       issue(3, "ready", "deliverable", files="a.py"),
+                       issue(4, "ready", "deliverable", files="a.py")],
+                      config_=cfg(max_parallel=4))
+        self.assertEqual(sorted(result["dispatchable"]), [2, 3, 4])
+        self.assertEqual(result["held"], [])
 
     def test_blocked_issue_with_an_answer_is_listed_as_answered(self):
         result = snap([issue(1, "blocked", "deliverable",
