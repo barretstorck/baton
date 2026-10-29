@@ -66,3 +66,22 @@ def set_status(cfg, runner, number, status):
         if other != target and other in present:
             argv += ["--remove-label", other]
     runner(argv)
+
+
+def set_group(cfg, runner, number, group, value):
+    groups = {"priority": config.PRIORITIES, "severity": config.SEVERITIES}
+    if group not in groups:
+        raise ValueError(f"unknown label group {group!r}")
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 4:
+        raise ValueError(f"{group} must be a number from 1 to 4")
+    out = runner(["gh", "issue", "view", str(number), "--json", "labels"])
+    present = {item["name"] for item in json.loads(out)["labels"]}
+    if group == "severity" and cfg.label("type:bug") not in present:
+        raise ValueError("severity applies to bugs only")
+    target = cfg.label(f"{group}:{value}")
+    argv = ["gh", "issue", "edit", str(number), "--add-label", target]
+    for name in groups[group]:
+        other = cfg.label(name)
+        if other != target and other in present:
+            argv += ["--remove-label", other]
+    runner(argv)

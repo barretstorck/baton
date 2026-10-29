@@ -67,3 +67,35 @@ class LabelsTest(unittest.TestCase):
     def test_set_status_rejects_unknown_status(self):
         with self.assertRaises(ValueError):
             labels.set_status(make_config(), FakeRunner(), 7, "status:nope")
+
+
+class SetGroupTest(unittest.TestCase):
+    def runner(self, names):
+        return FakeRunner({"gh issue view 7": json.dumps(
+            {"labels": [{"name": n} for n in names]})})
+
+    def test_priority_swaps_only_present_priority_label(self):
+        cfg = make_config({"priority:3": "P3"})
+        runner = self.runner(["P3", "priority:1", "deliverable", "severity:2"])
+        labels.set_group(cfg, runner, 7, "priority", 2)
+        self.assertEqual(runner.calls[-1], [
+            "gh", "issue", "edit", "7", "--add-label", "priority:2",
+            "--remove-label", "priority:1", "--remove-label", "P3"])
+
+    def test_severity_on_bug_swaps(self):
+        runner = self.runner(["type:bug", "severity:4", "priority:1"])
+        labels.set_group(make_config(), runner, 7, "severity", 1)
+        self.assertEqual(runner.calls[-1], [
+            "gh", "issue", "edit", "7", "--add-label", "severity:1",
+            "--remove-label", "severity:4"])
+
+    def test_severity_on_non_bug_raises_without_edit(self):
+        runner = self.runner(["type:feature"])
+        with self.assertRaises(ValueError):
+            labels.set_group(make_config(), runner, 7, "severity", 2)
+        self.assertFalse(any(c[:3] == ["gh", "issue", "edit"] for c in runner.calls))
+
+    def test_bad_value_or_group_raises(self):
+        for group, value in (("priority", 5), ("priority", 0), ("status", 1)):
+            with self.assertRaises(ValueError):
+                labels.set_group(make_config(), self.runner([]), 7, group, value)
