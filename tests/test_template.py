@@ -72,6 +72,12 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("refs/spikes/", skill)
         self.assertIn("Prototype:", skill)
 
+    def test_research_findings_end_with_outcome(self):
+        text = " ".join((ROOT / "skills" / "research" / "SKILL.md").read_text().split())
+        self.assertIn("Outcome: infeasible|single|multiple|partial", text)
+        for word in ("`infeasible`:", "`single`:", "`multiple`:", "`partial`:"):
+            self.assertIn(word, text)
+
     def test_refiner_runs_in_own_worktree(self):
         meta, _ = frontmatter.split((ROOT / "agents" / "baton-refiner.md").read_text())
         self.assertIn("isolation: worktree", meta.splitlines())
