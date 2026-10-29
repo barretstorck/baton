@@ -341,3 +341,66 @@ class ApplyTests(unittest.TestCase):
     def test_feature_without_priority(self):
         runner, _, _ = self.real(valid("feature"))
         self.assertFalse([c for c in runner.lines() if "priority:" in c or "severity:" in c])
+
+
+class CliTests(unittest.TestCase):
+    def drive(self, args, text=None):
+        import io
+        import os
+        import tempfile
+        from unittest import mock
+        from baton import cli
+        calls = []
+
+        def runner(cmd, *a, **k):
+            calls.append(cmd)
+            if cmd[:3] == ["gh", "issue", "view"]:
+                return issue_json()
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return '{"nameWithOwner": "o/r"}'
+            return ""
+        cfg = mock.MagicMock()
+        cfg.maintainers.return_value = ["Boss"]
+        cfg.label.side_effect = lambda n: n
+        cfg.data = {"privacy_allow": []}
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            if text is not None:
+                path = os.path.join(tmp, "d.json")
+                with open(path, "w") as handle:
+                    handle.write(text)
+                args = [path if a == "FILE" else a for a in args]
+            with mock.patch.object(cli, "_require_config", return_value=cfg), \
+                    mock.patch.object(cli, "_owner", return_value="Boss"), \
+                    mock.patch.object(cli.run, "run", runner), \
+                    mock.patch.object(cli.scan, "load_terms", return_value=[]), \
+                    mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+                code = cli.main(args)
+        return code, out.getvalue(), err.getvalue(), calls
+
+    def writes(self, calls):
+        return [c for c in calls if c[:3] not in (["gh", "issue", "view"],
+                                                  ["gh", "repo", "view"])]
+
+    def test_valid_spam(self):
+        code, out, _, calls = self.drive(["triage", "apply", "5", "FILE"],
+                                         json.dumps(valid("spam")))
+        self.assertEqual(code, 0)
+        self.assertIn("spam", out)
+        self.assertTrue(any(c[:3] == ["gh", "issue", "close"] for c in calls))
+
+    def test_invalid_decision_writes_nothing(self):
+        code, _, err, calls = self.drive(["triage", "apply", "5", "FILE"],
+                                         json.dumps({"category": "bogus"}))
+        self.assertEqual(code, 1)
+        self.assertIn("baton:", err)
+        self.assertFalse(self.writes(calls))
+
+    def test_wrong_arguments(self):
+        for args, text in ((["triage"], None), (["triage", "apply", "x", "FILE"], "{}"),
+                           (["triage", "apply", "5", "/no/such/file"], None),
+                           (["triage", "apply", "5"], None)):
+            code, _, err, calls = self.drive(args, text)
+            self.assertEqual(code, 64, args)
+            self.assertIn("usage: baton triage apply <issue> <decision.json>", err)
+            self.assertFalse(calls)

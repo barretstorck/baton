@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
-from . import checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, usage, verify
+from . import checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
 
 
 def cmd_config(args):
@@ -156,6 +156,25 @@ def cmd_comment(args):
     except comment.CommentError as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
+    return 0
+
+
+def cmd_triage(args):
+    usage_line = "usage: baton triage apply <issue> <decision.json>"
+    if len(args) != 3 or args[0] != "apply" or not args[1].isdigit():
+        print(usage_line, file=sys.stderr)
+        return 64
+    try:
+        with open(args[2], encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError:
+        print(usage_line, file=sys.stderr)
+        return 64
+    cfg = _require_config()
+    owner, _, repo = _repo_name().partition("/")
+    decision = triage.parse_decision(text)
+    print(triage.apply(cfg, run.run, int(args[1]), decision, _maintainers(cfg),
+                       scan.load_terms(), owner, repo))
     return 0
 
 
@@ -641,6 +660,7 @@ COMMANDS = {
     "sprint-status": cmd_sprint_status,
     "task": cmd_task,
     "tasks": cmd_tasks,
+    "triage": cmd_triage,
     "usage": cmd_usage,
     "verify": cmd_verify,
 }
