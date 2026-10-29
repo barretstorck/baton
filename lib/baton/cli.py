@@ -522,6 +522,39 @@ def cmd_sprint_status(args):
     return 0
 
 
+_METRICS_USAGE = "usage: baton sprint-metrics <milestone> [--since <UTC ISO time>] [--dir <projects dir>]"
+
+
+def cmd_sprint_metrics(args):
+    since, root, rest, milestone = None, "~/.claude/projects", list(args), None
+    while rest:
+        arg = rest.pop(0)
+        if arg in ("--since", "--dir") and rest:
+            value = rest.pop(0)
+            if arg == "--since":
+                since = value
+            else:
+                root = value
+        elif not arg.startswith("--") and milestone is None:
+            milestone = arg
+        else:
+            print(_METRICS_USAGE, file=sys.stderr)
+            return 64
+    if milestone is None:
+        print(_METRICS_USAGE, file=sys.stderr)
+        return 64
+    cfg = _require_config()
+    try:
+        repo = json.loads(run.run(["gh", "repo", "view", "--json", "owner,name"]))
+        found = usage.report(root, since, f"{repo['owner']['login']}/{repo['name']}")
+        metrics = sprint.sprint_metrics(cfg, run.run, milestone, usage.total_weighted(found))
+    except sprint.SnapshotError as error:
+        print(f"baton: {error}", file=sys.stderr)
+        return 1
+    print(sprint.format_metrics(metrics))
+    return 0
+
+
 def cmd_pr_state(args):
     if not args:
         print("usage: baton pr-state <PR>", file=sys.stderr)
@@ -614,6 +647,7 @@ def cmd_clean(args):
 
 COMMANDS = {
     "clean": cmd_clean,
+    "sprint-metrics": cmd_sprint_metrics,
     "close": cmd_close,
     "answers": cmd_answers,
     "notify": cmd_notify,

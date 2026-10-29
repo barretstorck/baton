@@ -118,3 +118,9 @@ class ReportTest(unittest.TestCase):
         self.assertIn("issue 12", text)
         self.assertIn("task", text)
         self.assertIn("Avg ctx (K)", text)
+
+
+class TotalWeightedTest(unittest.TestCase):
+    def test_sums_rows_as_int(self):
+        self.assertEqual(usage.total_weighted({"rows": [{"weighted": 10.6}, {"weighted": 5.2}]}), 15)
+        self.assertEqual(usage.total_weighted({"rows": []}), 0)

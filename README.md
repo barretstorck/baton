@@ -157,6 +157,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton verify <pr> <worktree>` | Run the brief's `verify.command` on the pull request's head; prints the result, the log path and the last 40 lines |
 | `baton sandbox run <command...>` | Run a command through the local brief's `## Sandbox` template in a fresh checkout of the default branch; prints the exit status, log path and last 40 lines; an error when no sandbox is configured |
 | `baton sandbox check` | Probe the sandbox for network access: prints `none`, `isolated`, `not-isolated` or `probe-failed`; exit 0 for `none` and `isolated` |
+| `baton sprint-metrics <milestone> [--since <UTC ISO time>] [--dir <projects dir>]` | Print the seven sprint metrics (`duration_days`, `issues_worked`, `issues_completed`, `issues_missed`, `plan_tasks_done`, `spikes`, `tokens`) for the retro's `## Metrics` section |
 | `baton merge-pr <number>` | Check the review, CI and the rest, then merge |
 | `baton comment <issue\|pr> <number> <role> <kind> <file \| ->` | Scan, stamp and post an agent comment |
 | `baton issue create\|edit ...` | Create an issue, or edit its title, description, labels or milestone; scans the text first |

@@ -1,6 +1,6 @@
 import pathlib
 import unittest
-from baton import config, frontmatter
+from baton import config, frontmatter, sprint
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -15,6 +15,12 @@ class TemplateTest(unittest.TestCase):
         for role, model in table.items():
             self.assertEqual(config.DEFAULTS[role]["model"], model)
             self.assertEqual(config.DEFAULTS[role]["effort"], "medium")
+
+    def test_retro_template_metrics_parse_blank(self):
+        text = (ROOT / "templates" / "retro.md").read_text()
+        got = sprint.parse_metrics(text)
+        self.assertEqual(tuple(got), sprint.METRIC_KEYS)
+        self.assertTrue(all(v is None for v in got.values()))
 
     def test_plan_template_describes_as_built_line(self):
         text = (ROOT / "templates" / "plan.md").read_text()

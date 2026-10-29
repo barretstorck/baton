@@ -916,3 +916,89 @@ class DefaultBranchStateTest(unittest.TestCase):
             self.assertTrue(sprint.triggers_on_push(text), text)
         for text in no:
             self.assertFalse(sprint.triggers_on_push(text), text)
+
+
+class SprintMetricsTest(unittest.TestCase):
+    TITLE = "Sprint 2026-10-01-1"
+
+    def issue(self, number, labels=(), state="OPEN", body="x"):
+        return {"number": number, "title": f"I{number}", "state": state, "body": body,
+                "labels": [{"name": n} for n in labels]}
+
+    def runner(self, closed_at="2026-10-04T12:00:00Z", milestones=None):
+        plan = "## Developer Plan\n\n- [x] Task 1: a\n- [x] Task 2: b\n- [ ] Task 3: c\n"
+        mine = [self.issue(1, state="CLOSED", body=plan),
+                self.issue(2, ["status:complete", "type:spike"], state="CLOSED"),
+                self.issue(3, ["status:in-dev"])]
+        line = f"x\nMissed sprint: [{self.TITLE}](https://e/1)\n"
+        other = "x\nMissed sprint: [Sprint other](https://e/2)\n"
+        flagged = [self.issue(4, ["missed-sprint"], body=line),
+                   self.issue(5, ["missed-sprint"], body=other)]
+        legacy = [self.issue(6, [f"missed:{self.TITLE}"])]
+        ms = milestones if milestones is not None else [
+            {"number": 3, "title": self.TITLE, "created_at": "2026-10-01T00:00:00Z",
+             "closed_at": closed_at}]
+        return FakeRunner(replies([], milestones=ms, extra={
+            "gh issue list --milestone": json.dumps(mine),
+            "gh issue list --label missed-sprint": json.dumps(flagged),
+            "gh issue list --label missed:": json.dumps(legacy)}))
+
+    def test_numbers(self):
+        got = sprint.sprint_metrics(cfg(), self.runner(), self.TITLE, 1234.5)
+        self.assertEqual(got, {"duration_days": 3.5, "issues_worked": 5, "issues_completed": 2,
+                               "issues_missed": 3, "plan_tasks_done": 2, "spikes": 1,
+                               "tokens": 1234})
+
+    def test_open_milestone_uses_now(self):
+        got = sprint.sprint_metrics(cfg(), self.runner(closed_at=None), self.TITLE, 0)
+        self.assertGreater(got["duration_days"], 3.5)
+
+    def test_milestone_not_found(self):
+        with self.assertRaises(sprint.SnapshotError):
+            sprint.sprint_metrics(cfg(), self.runner(milestones=[]), self.TITLE, 0)
+
+    def test_round_trip(self):
+        metrics = {"duration_days": 3.5, "issues_worked": 5, "issues_completed": 2,
+                   "issues_missed": 3, "plan_tasks_done": 2, "spikes": 1, "tokens": 99}
+        text = "# Retro\n\n## Metrics\n" + sprint.format_metrics(metrics) + "\n\n## Next\nz\n"
+        self.assertEqual(sprint.parse_metrics(text), metrics)
+        self.assertEqual(len(sprint.format_metrics(metrics).splitlines()), 7)
+
+    def test_parse_blank_and_missing(self):
+        blank = "## Metrics\n" + "\n".join(f"{k}:" for k in sprint.METRIC_KEYS) + "\n"
+        self.assertTrue(all(v is None for v in sprint.parse_metrics(blank).values()))
+        with self.assertRaises(ValueError):
+            sprint.parse_metrics("## Outcome\nx\n")
+        with self.assertRaises(ValueError):
+            sprint.parse_metrics("## Metrics\ntokens: 1\n")
+
+
+class SprintMetricsCommandTest(unittest.TestCase):
+    def call(self, args, runner=None):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+        from unittest import mock
+        from baton import cli
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.run, "run", runner or SprintMetricsTest().runner()), \
+                mock.patch.object(cli.usage, "report", return_value={"rows": [{"weighted": 7.9}]}), \
+                redirect_stdout(out), redirect_stderr(err):
+            code = cli.cmd_sprint_metrics(args)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_usage_without_milestone(self):
+        code, _, err = self.call([])
+        self.assertEqual(code, 64)
+        self.assertIn("usage: baton sprint-metrics", err)
+
+    def test_prints_seven_lines(self):
+        code, out, _ = self.call([SprintMetricsTest.TITLE, "--since", "2026-10-01T00:00:00Z"])
+        self.assertEqual(code, 0)
+        self.assertEqual(sprint.parse_metrics("## Metrics\n" + out)["tokens"], 7)
+        self.assertEqual(len(out.strip().splitlines()), 7)
+
+    def test_unknown_milestone_exits_1(self):
+        code, _, err = self.call(["nope"], SprintMetricsTest().runner(milestones=[]))
+        self.assertEqual(code, 1)
+        self.assertIn("milestone not found", err)
