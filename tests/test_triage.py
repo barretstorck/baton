@@ -1,8 +1,11 @@
 import copy
 import json
+import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from baton import triage
+from baton import config
 from tests.fakes import FakeRunner
 
 
@@ -404,3 +407,75 @@ class CliTests(unittest.TestCase):
             self.assertEqual(code, 64, args)
             self.assertIn("usage: baton triage apply <issue> <decision.json>", err)
             self.assertFalse(calls)
+
+
+NOW = datetime(2026, 10, 29, 12, 0, tzinfo=timezone.utc)
+
+
+def stamp(**ago):
+    return (NOW - timedelta(**ago)).isoformat()
+
+
+def item(number, ago=None, labels=(), state="OPEN", author="out", comments=(), **kw):
+    return {"number": number, "state": state, "createdAt": stamp(**(ago or {"hours": 1})),
+            "labels": [{"name": n} for n in labels], "author": {"login": author},
+            "comments": [{"createdAt": stamp(**c)} for c in comments]}
+
+
+def make_cfg(**triage_keys):
+    cfg = config.Config(root=None, data=copy.deepcopy(config.DEFAULTS))
+    cfg.data["triage"].update(triage_keys)
+    return cfg
+
+
+class SelectionTests(unittest.TestCase):
+    def test_resolve_since_writes_once(self):
+        with tempfile.TemporaryDirectory() as home:
+            cfg = make_cfg()
+            first = triage.resolve_since(cfg, "o", "r", NOW, home)
+            self.assertEqual(first, (NOW, True))
+            self.assertTrue(triage.since_path("o", "r", home).exists())
+            later = NOW + timedelta(hours=3)
+            self.assertEqual(triage.resolve_since(cfg, "o", "r", later, home), (NOW, False))
+
+    def test_brief_wins_over_file(self):
+        with tempfile.TemporaryDirectory() as home:
+            triage.resolve_since(make_cfg(), "o", "r", NOW, home)
+            cfg = make_cfg(since="2026-10-01T00:00:00Z")
+            got, wrote = triage.resolve_since(cfg, "o", "r", NOW, home)
+            self.assertEqual(got, datetime(2026, 10, 1, tzinfo=timezone.utc))
+            self.assertFalse(wrote)
+
+    def test_pending_filters_and_sorts(self):
+        cfg = make_cfg()
+        since = NOW - timedelta(days=2)
+        issues = [item(9, {"hours": 1}), item(3, {"hours": 5}), item(4, {"days": 3}),
+                  item(5, state="CLOSED"), item(6, labels=["status:in-dev"]),
+                  item(7, labels=["closed:spam"]), item(8, labels=["closed:duplicate"]),
+                  item(10, labels=["closed:support"]), item(11, labels=["closed:wont-do"]),
+                  item(12, labels=["awaiting-feedback"]),
+                  item(13, labels=["needs-maintainer"]), item(14, labels=["bug"])]
+        got = [i["number"] for i in triage.pending(issues, cfg, since)]
+        self.assertEqual(got, [3, 14, 9])
+
+    def test_split_batch(self):
+        issues = [item(n) for n in range(12)]
+        batch, waiting = triage.split_batch(issues, 10)
+        self.assertEqual([len(batch), len(waiting)], [10, 2])
+        self.assertEqual(waiting[0]["number"], 10)
+
+    def test_overdue(self):
+        self.assertIsNone(triage.overdue([item(1, {"hours": 23})], NOW))
+        self.assertEqual(triage.overdue([item(1, {"hours": 23}), item(2, {"hours": 25})],
+                                        NOW)["number"], 2)
+        self.assertIsNone(triage.overdue([], NOW))
+
+    def test_stale(self):
+        cfg = make_cfg()
+        label = ["awaiting-feedback"]
+        issues = [item(1, {"days": 13}, label), item(2, {"days": 15}, label),
+                  item(3, {"days": 30}, label, comments=[{"days": 5}]),
+                  item(4, {"days": 30}, label, comments=[{"days": 20}, {"days": 16}]),
+                  item(5, {"days": 20}, label, author="boss"),
+                  item(6, {"days": 20}), item(7, {"days": 20}, label, state="CLOSED")]
+        self.assertEqual(triage.stale(issues, cfg, NOW, 14, ["boss"]), [2, 4])
