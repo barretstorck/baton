@@ -137,3 +137,27 @@ class CommandTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NotifyRuleTests(unittest.TestCase):
+    def rule(self, **notify):
+        c = cfg()
+        c.data["notify"] = {"severity": [], "labels": [], **notify}
+        return c
+
+    def test_open_questions_ignores_a_notify_comment(self):
+        mark = ("<!-- baton:orchestrator:status -->\n**Baton orchestrator: status**\n\n"
+                "<!-- baton:notify:stuck -->\n@octo\nx")
+        plain = issue(1, "needs-maintainer")
+        noted = issue(1, "needs-maintainer", comments=[cm("octo", mark, 1)])
+        self.assertEqual(listed([plain]), listed([noted]))
+
+    def test_matches_by_severity_and_label_ascending(self):
+        issues = [issue(5, "security"), issue(3, "severity:2"), issue(4, "severity:3")]
+        got = questions.notify_matches(issues, self.rule(severity=[2], labels=["security"]))
+        self.assertEqual(got, [3, 5])
+
+    def test_ignores_closed_issues_and_an_empty_rule(self):
+        self.assertEqual(questions.notify_matches([issue(1, "severity:1", state="CLOSED")],
+                                                  self.rule(severity=[1])), [])
+        self.assertEqual(questions.notify_matches([issue(1, "severity:1")], self.rule()), [])

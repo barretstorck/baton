@@ -66,6 +66,9 @@ verify:
   timeout_minutes: 10         # the run is killed after this many minutes and counts as a timeout
 docs:
   dir: docs/baton             # where plans and retrospectives live: relative, no "..", not protected
+notify:                       # a matching open issue gets the needs-maintainer label and an @-mention of the maintainers, once
+  severity: []                # severities to notify about, integers 1 to 4, e.g. [1, 2]
+  labels: []                  # label names to notify about, e.g. [security]
 maintainers: []              # logins whose comments count as the maintainer's; empty: the repository owner
 protected_paths: [".github/", ".baton/", ".claude/"]
 fixtures_paths: []            # the only places new image files may be added

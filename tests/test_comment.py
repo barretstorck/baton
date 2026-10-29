@@ -1,4 +1,5 @@
 import copy
+import json
 import pathlib
 import unittest
 from baton import comment, config, gate
@@ -123,3 +124,121 @@ class AnswersTest(unittest.TestCase):
         comments = [c(OWNER, Q, 1), c(OWNER, decision, 2)]
         result = comment.pending_answers({"comments": comments}, OWNER)
         self.assertEqual(result["answers"][0]["url"], "https://example.com/c/2")
+
+
+class NotifyTest(unittest.TestCase):
+    def runner(self, comments=()):
+        return FakeRunner({
+            "gh issue view 7 --json comments": json.dumps({"comments": list(comments)}),
+            "gh issue comment": "https://example.com/c/9\n"})
+
+    def notify(self, runner, cause="stuck", maintainers=("a", "b")):
+        return comment.notify(cfg(), runner, 7, cause, "Stuck.", list(maintainers), [])
+
+    def test_adds_label_and_posts_one_comment_with_marker_and_handles(self):
+        runner = self.runner()
+        self.assertEqual(self.notify(runner), "https://example.com/c/9")
+        lines = runner.lines()
+        self.assertIn("gh issue edit 7 --add-label needs-maintainer", lines)
+        self.assertEqual(len([x for x in lines if x.startswith("gh issue comment")]), 1)
+
+    def test_body_has_marker_and_every_handle(self):
+        seen = {}
+
+        class Runner(FakeRunner):
+            def __call__(self, argv, cwd=None, input=None):
+                if argv[:3] == ["gh", "issue", "comment"]:
+                    seen["body"] = pathlib.Path(argv[argv.index("--body-file") + 1]).read_text()
+                    return "u"
+                return "{}"
+
+        self.notify(Runner())
+        self.assertIn("<!-- baton:notify:stuck -->\n@a @b\nStuck.", seen["body"])
+        self.assertTrue(seen["body"].startswith("<!-- baton:orchestrator:status -->"))
+
+    def test_second_call_for_the_same_cause_does_nothing(self):
+        marked = {"body": "<!-- baton:orchestrator:status -->\n**x**\n\n<!-- baton:notify:stuck -->\n@a"}
+        runner = self.runner([marked])
+        self.assertIsNone(self.notify(runner))
+        self.assertFalse([x for x in runner.lines() if x.startswith(("gh issue edit", "gh issue comment"))])
+        self.assertTrue(comment.notified([marked], "stuck"))
+        self.assertFalse(comment.notified([marked], "approval"))
+
+    def test_a_different_cause_still_posts(self):
+        runner = self.runner([{"body": "<!-- baton:notify:stuck -->"}])
+        self.assertEqual(self.notify(runner, "approval"), "https://example.com/c/9")
+
+    def test_unknown_cause_and_no_maintainers_raise(self):
+        with self.assertRaises(comment.CommentError):
+            self.notify(self.runner(), "bogus")
+        with self.assertRaises(comment.CommentError):
+            self.notify(self.runner(), maintainers=())
+
+    def test_notify_comment_is_not_an_answer_or_question(self):
+        text = comment.compose("orchestrator", "status", "<!-- baton:notify:stuck -->\n@octo\nx")
+        issue = {"comments": [c("octo", text, 1)]}
+        self.assertEqual(comment.pending_answers(issue, OWNER),
+                         comment.pending_answers({"comments": []}, OWNER))
+
+
+class NotifyCliTest(unittest.TestCase):
+    def _run(self, args, issues=None, comments=None):
+        import io
+        from unittest import mock
+        from baton import cli
+        calls = []
+
+        def runner(cmd, *a, **k):
+            calls.append(cmd)
+            if cmd[:3] == ["gh", "issue", "list"]:
+                return json.dumps(issues or [])
+            if cmd[:3] == ["gh", "issue", "view"]:
+                return json.dumps({"comments": comments or []})
+            if cmd[:3] == ["gh", "issue", "comment"]:
+                return "https://x/1#c"
+            return ""
+        cfg = mock.MagicMock()
+        cfg.maintainers.return_value = ["me"]
+        cfg.label.side_effect = lambda n: n
+        cfg.data = {"privacy_allow": []}
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg), \
+                mock.patch.object(cli, "_owner", return_value="me"), \
+                mock.patch.object(cli.run, "run", runner), \
+                mock.patch.object(cli.scan, "load_terms", return_value=[]), \
+                mock.patch.object(cli.questions, "notify_matches",
+                                  return_value=[7] if issues else []), \
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+            code = cli.main(args)
+        return code, out.getvalue(), err.getvalue(), calls
+
+    def test_registered(self):
+        from baton import cli
+        self.assertIn("notify", cli.COMMANDS)
+
+    def test_wrong_arguments_exit_64(self):
+        for args in (["notify"], ["notify", "1", "bogus", "-"], ["notify", "x", "stuck", "-"],
+                     ["notify", "--rules", "1"]):
+            code, _, err, _ = self._run(args)
+            self.assertEqual(code, 64, args)
+            self.assertIn("stuck", err)
+
+    def test_notify_posts_then_already(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".txt") as f:
+            f.write("blocked")
+            f.flush()
+            code, out, _, calls = self._run(["notify", "5", "stuck", f.name])
+            self.assertEqual((code, out.strip()), (0, "https://x/1#c"))
+            self.assertTrue(any(c[:3] == ["gh", "issue", "edit"] for c in calls))
+            marked = [{"body": "<!-- baton:notify:stuck -->"}]
+            code, out, _, _ = self._run(["notify", "5", "stuck", f.name], comments=marked)
+            self.assertEqual((code, out.strip()), (0, "already notified"))
+
+    def test_rules_once(self):
+        issues = [{"number": 7}]
+        code, out, _, _ = self._run(["notify", "--rules"], issues=issues)
+        self.assertEqual((code, out.strip()), (0, "#7 https://x/1#c"))
+        marked = [{"body": "<!-- baton:notify:rule -->"}]
+        code, out, _, _ = self._run(["notify", "--rules"], issues=issues, comments=marked)
+        self.assertEqual(out.strip(), "#7 already notified")
