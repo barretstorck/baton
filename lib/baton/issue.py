@@ -5,13 +5,15 @@ headed sections, an `Expected files:` line and `Blocked by:` lines.
 """
 import re
 
-from . import checklist, planfile
+from . import checklist, gate, planfile
 from .config import logins
 
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.M)
 _BLOCKED = re.compile(r"^\s*Blocked by:(.*)$", re.M | re.I)
 _NO_BLOCKERS = re.compile(r"^\(?none", re.I)
 _FILES = re.compile(r"^\s*Expected files:(.*)$", re.M | re.I)
+_ORIGIN_OUTSIDE = re.compile(r"^\s*Origin:\s*outside\s*\(@[\w-]+\)\s*$", re.M | re.I)
+APPROVAL = "/baton ready"
 _LIST_ITEM = re.compile(r"^\s*(?:[-*]|\d+\.)\s+\S", re.M)
 
 
@@ -42,6 +44,23 @@ def expected_files(body):
     return files
 
 
+def is_outside(issue, maintainers):
+    """True when the author is not a maintainer or the body has an `Origin: outside (@login)` line."""
+    author = (issue.get("author") or {}).get("login")
+    return author not in logins(maintainers) or bool(_ORIGIN_OUTSIDE.search(issue.get("body") or ""))
+
+
+def approved(issue, maintainers):
+    """True when a maintainer wrote an unmarked comment that is exactly `/baton ready`."""
+    allowed = logins(maintainers)
+    for comment in issue.get("comments") or []:
+        body = comment.get("body") or ""
+        if ((comment.get("author") or {}).get("login") in allowed
+                and gate.MARKER not in body and body.strip() == APPROVAL):
+            return True
+    return False
+
+
 def ready_problems(issue, cfg, owner, runner=None):
     """Why this issue does not meet the definition of ready; empty when it does.
 
@@ -54,7 +73,10 @@ def ready_problems(issue, cfg, owner, runner=None):
     labels = {label["name"] for label in issue.get("labels") or []}
     spike = cfg.label("type:spike") in labels
     problems = []
-    if issue.get("author", {}).get("login") not in logins(owner):
+    if is_outside(issue, owner):
+        if not approved(issue, owner):
+            problems.append(f"outside issue: it needs a comment '{APPROVAL}' from a maintainer")
+    elif issue.get("author", {}).get("login") not in logins(owner):
         problems.append("written by someone other than the maintainer; "
                         "only the maintainer may mark it ready")
     if not parts.get("context"):

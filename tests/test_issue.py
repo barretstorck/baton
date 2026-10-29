@@ -102,6 +102,57 @@ class ReadyTest(unittest.TestCase):
         self.assertTrue(any("maintainer" in p for p in found))
 
 
+def comment(login, body):
+    return {"author": {"login": login}, "body": body}
+
+
+class OutsideTest(unittest.TestCase):
+    MARK = "<!-- baton:developer status -->\n"
+
+    def check(self, comments, author="mallory", body=BODY):
+        data = make(author=author, body=body)
+        data["comments"] = comments
+        return data
+
+    def test_outside_by_author_or_origin_line(self):
+        self.assertTrue(issue.is_outside(make(author="mallory"), [OWNER]))
+        marked = BODY + "\nOrigin: outside (@someone)\n"
+        self.assertTrue(issue.is_outside(make(body=marked), [OWNER]))
+        self.assertFalse(issue.is_outside(make(), [OWNER]))
+        self.assertFalse(issue.is_outside(make(author="second"), [OWNER, "second"]))
+
+    def test_plain_maintainer_issue_ignores_comments(self):
+        self.assertEqual(issue.ready_problems(self.check([], author=OWNER), cfg(), OWNER), [])
+
+    def test_without_comment_needs_approval(self):
+        found = issue.ready_problems(self.check([]), cfg(), OWNER)
+        self.assertEqual(found, ["outside issue: it needs a comment '/baton ready' from a maintainer"])
+
+    def test_maintainer_comment_approves(self):
+        data = self.check([comment(OWNER, "  /baton ready\n")])
+        self.assertTrue(issue.approved(data, OWNER))
+        self.assertEqual(issue.ready_problems(data, cfg(), OWNER), [])
+
+    def test_origin_line_issue_by_maintainer_needs_comment(self):
+        body = BODY + "\nOrigin: outside (@someone)\n"
+        self.assertTrue(issue.ready_problems(self.check([], author=OWNER, body=body), cfg(), OWNER))
+        data = self.check([comment(OWNER, "/baton ready")], author=OWNER, body=body)
+        self.assertEqual(issue.ready_problems(data, cfg(), OWNER), [])
+
+    def test_ignored_comments(self):
+        for who, text in (("mallory", "/baton ready"), (OWNER, self.MARK + "/baton ready"),
+                          (OWNER, "/baton ready please"), (OWNER, "/Baton ready")):
+            with self.subTest(who=who, text=text):
+                data = self.check([comment(who, text)])
+                self.assertFalse(issue.approved(data, OWNER))
+                self.assertTrue(issue.ready_problems(data, cfg(), OWNER))
+
+    def test_second_maintainer_counts(self):
+        data = self.check([comment("second", "/baton ready")])
+        self.assertTrue(issue.approved(data, [OWNER, "second"]))
+        self.assertFalse(issue.approved(data, OWNER))
+
+
 class PlanReadyTest(unittest.TestCase):
     def problems(self, body, labels=("type:feature",)):
         return issue.ready_problems(make(body=body, labels=labels), cfg(), OWNER)
