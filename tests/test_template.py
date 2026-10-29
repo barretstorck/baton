@@ -127,6 +127,10 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("## Local data", text)
         self.assertIn("## Credentials", text)
 
+    def test_local_brief_template_has_sandbox_section(self):
+        text = (ROOT / "templates" / "brief.local.md").read_text()
+        self.assertIn("## Sandbox", text)
+
     def test_developer_instructions_forbid_copying_secret_files(self):
         for path in ("skills/develop/SKILL.md", "agents/baton-developer.md"):
             text = (ROOT / path).read_text()
