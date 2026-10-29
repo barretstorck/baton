@@ -267,6 +267,10 @@ Start it in the background, with the Agent tool's `model` set to `researcher.mod
 set to `researcher.effort` (from `baton config`, default `opus` and `medium`); say in the sprint
 status which effort you used. A spike takes a developer slot.
 
+When the spike's `## Pointers` have a `Timebox:` line, the prompt is `Do spike issue <N>.`
+followed by that line copied unchanged on its own line. The `baton budget` hook reads the token
+limit from it, and `baton usage` still classifies the prompt by its first line.
+
 #### Dispatching a reviewer
 
 Start a `baton:baton-reviewer` subagent in the background, with the Agent tool's `model` set to

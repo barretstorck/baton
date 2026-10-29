@@ -50,6 +50,7 @@ DEFAULTS = {
     "forbid_added": {},
     "budgets": {},
     "work_mix": {},
+    "spike": {"tokens": {}, "minutes": {}},
 }
 
 
@@ -180,6 +181,17 @@ def _check_work_mix(data):
         raise ConfigError(".baton/brief.md: work_mix values must add up to 100")
 
 
+def _check_spike(data):
+    for part, mapping in data["spike"].items():
+        for key, value in mapping.items():
+            if key not in ("min", "max"):
+                raise ConfigError(f".baton/brief.md: spike.{part} key {key!r} must be min or max")
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ConfigError(f".baton/brief.md: spike.{part}.{key} must be a positive integer")
+        if "min" in mapping and "max" in mapping and mapping["min"] > mapping["max"]:
+            raise ConfigError(f".baton/brief.md: spike.{part}.min must not be greater than max")
+
+
 def repo_root(path):
     try:
         out = run.run(["git", "-C", path, "rev-parse", "--show-toplevel"])
@@ -213,6 +225,7 @@ def load(path):
         raise ConfigError(".baton/brief.md: verify.timeout_minutes must be at least 1")
     _check_follow_ups(merged)
     _check_forbid_added(merged)
+    _check_spike(merged)
     _check_docs_dir(merged)
     _check_forge(merged)
     _check_work_mix(merged)

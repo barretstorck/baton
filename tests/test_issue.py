@@ -97,6 +97,48 @@ class ReadyTest(unittest.TestCase):
         body = BODY.replace("Expected files: `src/cli.py`, tests/test_cli.py\n", "")
         self.assertEqual(issue.ready_problems(make(body=body, labels=("type:spike",)), cfg(), OWNER), [])
 
+    def spike_problems(self, line, minutes=None, tokens=None, labels=("type:spike",)):
+        body = BODY.replace("Expected files:", line + "\nExpected files:")
+        c = cfg()
+        if minutes:
+            c.data["spike"]["minutes"] = minutes
+        if tokens:
+            c.data["spike"]["tokens"] = tokens
+        return issue.ready_problems(make(body=body, labels=labels), c, OWNER)
+
+    def test_timebox_parse(self):
+        self.assertIsNone(issue.timebox("text"))
+        self.assertEqual(issue.timebox("Timebox: 200000 tokens, 90 min"),
+                         {"tokens": 200000, "minutes": 90})
+        self.assertEqual(issue.timebox("Timebox: 90 min"), {"tokens": None, "minutes": 90})
+        self.assertEqual(issue.timebox("Timebox: 5 tokens"), {"tokens": 5, "minutes": None})
+        with self.assertRaises(ValueError):
+            issue.timebox("Timebox: soon")
+
+    def test_timebox_within_ranges_is_ready(self):
+        self.assertEqual(self.spike_problems("Timebox: 1000 tokens, 60 min", {"min": 30, "max": 120},
+                                             {"max": 5000}), [])
+
+    def test_timebox_no_line_is_ready(self):
+        self.assertEqual(self.spike_problems("", {"max": 120}), [])
+
+    def test_timebox_out_of_range(self):
+        found = self.spike_problems("Timebox: 9000 tokens, 10 min", {"min": 30, "max": 120}, {"max": 5000})
+        self.assertEqual(len(found), 2, found)
+        self.assertTrue(any("tokens 9000" in p for p in found))
+        self.assertTrue(any("minutes 10" in p for p in found))
+        self.assertTrue(self.spike_problems("Timebox: 500 min", {"max": 120}))
+
+    def test_timebox_part_left_out(self):
+        self.assertTrue(self.spike_problems("Timebox: 5000 tokens", {"max": 120}, {"max": 9000}))
+        self.assertEqual(self.spike_problems("Timebox: 5000 tokens", {"min": 30}, {"max": 9000}), [])
+
+    def test_timebox_malformed(self):
+        self.assertTrue(self.spike_problems("Timebox: soon"))
+
+    def test_non_spike_timebox_ignored(self):
+        self.assertEqual(self.spike_problems("Timebox: soon", labels=("type:feature",)), [])
+
     def test_issue_by_someone_else_needs_the_maintainer(self):
         found = issue.ready_problems(make(author="mallory"), cfg(), OWNER)
         self.assertTrue(any("maintainer" in p for p in found))

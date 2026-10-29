@@ -12,6 +12,11 @@
         "hooks": [
           { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" gate" }
         ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" budget" }
+        ]
       }
     ]
   }

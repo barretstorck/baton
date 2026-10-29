@@ -67,6 +67,7 @@ whole issue grows large and expensive: in the second sprint, single developers r
   `## Plan` section is moved into the body by `baton plan migrate`.
 - The reviewer runs when every task is ticked and the pull request is ready. What it wants fixed is a `## Tasks`
   checklist in its review, worked the same way, one developer per task.
+- A spike has a timebox: `spike.tokens` and `spike.minutes` in the brief give the allowed ranges, the refiner writes a `Timebox:` line in the spike, and the researcher stops at either limit.
 - `baton usage` measures the result per issue and role from the local transcripts, and the
   retrospective includes its table.
 
@@ -182,6 +183,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton plan set <issue> <file \| ->` | Write the `## Developer Plan` section into the issue body (the refiner); `plan commit`, `link` and `pin` are deprecated no-ops |
 | `baton plan migrate <issue>` | Convert an older plan into `## Developer Plan` |
 | `baton usage [--repo <owner/repo>] [--since <time>] [--json]` | Quota use per issue and role, from local transcripts |
+| `baton budget` | A PreToolUse hook, not run by hand: blocks a researcher's tools once the `Timebox:` token limit in its prompt is spent, except `baton comment` |
 | `baton sprint-capacity <days> [--retros <n>]` | Read the last retros' `## Metrics` (3 by default) and propose somewhat less than their average issues and plan tasks for `<days>`, as JSON |
 | `baton sprint-status [milestone]` | The sprint's state and what may be dispatched now, as JSON; `waiting_links` gives each `waiting_on_maintainer` issue's question comment URL and `progress.<N>.next_task_url` links the next plan task; `progress.<N>.stale`, `branch_behind` and `merge_first` report plans naming missing paths (a ready issue with two or more is held for re-refinement) and branches far behind the default branch |
 | `baton clean` | Remove leftover agent worktrees (kept: an open issue's branch, a lock held by a live process, unmerged detached work; uncommitted files are removed with the worktree) and the log folders of closed or merged pull requests; exit 1 if a worktree could not be removed |
