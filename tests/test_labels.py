@@ -99,3 +99,47 @@ class SetGroupTest(unittest.TestCase):
         for group, value in (("priority", 5), ("priority", 0), ("status", 1)):
             with self.assertRaises(ValueError):
                 labels.set_group(make_config(), self.runner([]), 7, group, value)
+
+
+class SetGroupCliTest(unittest.TestCase):
+    def run_cli(self, args, present):
+        import contextlib
+        import io
+        from unittest import mock
+        from baton import cli
+        runner = FakeRunner({"gh issue view": json.dumps({"labels": [{"name": n} for n in present]})})
+        err = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=make_config()), \
+                mock.patch.object(cli.run, "run", runner), contextlib.redirect_stderr(err):
+            code = cli.main(args)
+        return code, runner, err.getvalue()
+
+    def test_registered(self):
+        from baton import cli
+        self.assertIs(cli.COMMANDS["set-priority"], cli.cmd_set_priority)
+        self.assertIs(cli.COMMANDS["set-severity"], cli.cmd_set_severity)
+
+    def test_wrong_args_exit_64(self):
+        for args in (["set-priority"], ["set-priority", "7"], ["set-severity", "7", "x"],
+                     ["set-priority", "x", "1"], ["set-priority", "7", "1", "2"]):
+            code, runner, err = self.run_cli(args, [])
+            self.assertEqual(code, 64)
+            self.assertIn("usage", err)
+            self.assertEqual(runner.calls, [])
+
+    def test_bug_is_relabelled(self):
+        code, runner, _ = self.run_cli(["set-severity", "7", "2"], ["type:bug", "severity:4"])
+        self.assertEqual(code, 0)
+        self.assertEqual(runner.calls[-1], [
+            "gh", "issue", "edit", "7", "--add-label", "severity:2", "--remove-label", "severity:4"])
+
+    def test_priority_is_relabelled(self):
+        code, runner, _ = self.run_cli(["set-priority", "7", "1"], ["priority:3"])
+        self.assertEqual(code, 0)
+        self.assertIn("--add-label priority:1", runner.lines()[-1])
+
+    def test_non_bug_severity_exits_2_without_edit(self):
+        code, runner, err = self.run_cli(["set-severity", "7", "2"], ["type:feature"])
+        self.assertEqual(code, 2)
+        self.assertIn("bugs only", err)
+        self.assertFalse(any(c[:3] == ["gh", "issue", "edit"] for c in runner.calls))
