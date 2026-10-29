@@ -192,6 +192,13 @@ line; `baton merge-pr` repeats the check over the whole pull request diff. A pla
 line says so with `Allows: forbid_added "<glob>"` (the glob as written in `forbid_added`); only
 then is that rule skipped. Inline `# noqa` comments are not judged.
 
+## Work mix
+
+`work_mix` in `.baton/brief.md` is an optional target share of work by type, for example
+`{feature: 60, maintenance: 30, bug: 10}` (percentages that add up to 100; default `{}`, no target).
+`/baton:sprint-plan` shows the proposed mix next to it and the difference in percentage points. It is
+information only and is never enforced.
+
 ## Rules the gate enforces in a Baton repository
 
 - Comments posted by agents must start with `<!-- baton:<role>:<kind> -->`.
