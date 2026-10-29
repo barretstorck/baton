@@ -1,6 +1,7 @@
 import fnmatch
 import os
 import re
+import sys
 from dataclasses import dataclass
 
 IMAGE_SUFFIXES = {
@@ -42,12 +43,24 @@ class Finding:
     line: int
 
 
-def load_terms(path=None):
-    path = path or os.environ.get("BATON_PRIVATE_TERMS") or os.path.expanduser(
-        "~/.baton/private-terms.txt")
+def load_terms(path=None, warn=True):
+    if path:
+        name = path
+    elif os.environ.get("BATON_PRIVATE_TERMS"):
+        path = os.environ["BATON_PRIVATE_TERMS"]
+        name = "$BATON_PRIVATE_TERMS"
+    else:
+        path = os.path.expanduser("~/.baton/private-terms.txt")
+        name = "~/.baton/private-terms.txt"
     try:
         with open(path) as handle:
             lines = handle.read().splitlines()
+    except FileNotFoundError:
+        if warn:
+            print(f"baton: warning: no private-terms file at {name}; only the "
+                  "built-in patterns are checked (see /baton:init step 5)",
+                  file=sys.stderr)
+        return []
     except OSError:
         return []
     return [line.strip() for line in lines

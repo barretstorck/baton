@@ -35,6 +35,8 @@ looks done. Workflow adapted from the
    `~/.baton/private-terms.txt` if it is missing, with one comment line explaining that each line
    is a name, hostname or folder name that must never be published. Ask the maintainer to add
    their terms. Do not suggest terms yourself and never print the file's contents.
+   Without this file, the git hooks and `baton` commands warn that only the built-in patterns are
+   checked.
 
 6. **Install the git hooks.** Run `baton install-hooks`. If it reports an existing hook that is
    not Baton's, show the maintainer and stop; do not overwrite it. The hooks record the plugin

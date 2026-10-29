@@ -395,6 +395,14 @@ class GateTest(unittest.TestCase):
         finally:
             gate.decide = original
 
+    def test_main_is_silent_when_private_terms_file_is_missing(self):
+        payload = {"tool_name": "Bash", "cwd": "/", "tool_input": {"command": "ls"}}
+        os.environ["BATON_PRIVATE_TERMS"] = "/nonexistent/terms.txt"
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            self.assertEqual(gate.main(json.dumps(payload)), 0)
+        self.assertEqual(stderr.getvalue(), "")
+
     def test_main_blocks_with_exit_2_and_ignores_other_tools(self):
         repo = make_repo()
         payload = {"tool_name": "Bash", "cwd": repo,
