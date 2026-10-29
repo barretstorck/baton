@@ -17,7 +17,7 @@ PRIORITIES = [f"priority:{n}" for n in range(1, 5)]
 SEVERITIES = [f"severity:{n}" for n in range(1, 5)]
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 MODELS = ("opus", "sonnet", "fable", "haiku")
-SEVERITIES = ("critical", "important", "minor")
+FOLLOW_UP_SEVERITIES = ("critical", "important", "minor")
 PLACEMENTS = ("deliverable", "stretch", "goal", "backlog", "skip")
 ROLES = ("triager", "refiner", "researcher", "developer", "reviewer")
 DEFAULTS = {
@@ -120,13 +120,13 @@ def _check_forbid_added(data):
 def _check_follow_ups(data):
     follow_ups = data["follow_ups"]
     for name, mapping in (("follow_ups", follow_ups), ("follow_ups.scheduled", follow_ups["scheduled"])):
-        allowed = SEVERITIES + (("scheduled",) if name == "follow_ups" else ())
+        allowed = FOLLOW_UP_SEVERITIES + (("scheduled",) if name == "follow_ups" else ())
         for key, value in mapping.items():
             if key not in allowed:
                 raise ConfigError(f".baton/brief.md: {name}.{key} is not allowed; use " + ", ".join(allowed))
             if key != "scheduled" and value not in PLACEMENTS:
                 raise ConfigError(f".baton/brief.md: {name}.{key} must be one of " + ", ".join(PLACEMENTS))
-    for severity in SEVERITIES:
+    for severity in FOLLOW_UP_SEVERITIES:
         follow_ups["scheduled"].setdefault(severity, follow_ups[severity])
 
 
