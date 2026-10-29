@@ -194,18 +194,12 @@ then is that rule skipped. Inline `# noqa` comments are not judged.
 
 ## Rules the gate enforces in a Baton repository
 
-- Comments posted by agents must start with `<!-- baton:<role>:<kind> -->`.
-- Raw forge writes are refused from any directory, and the message names the `baton` command to
-  use instead (`baton comment`, `baton issue`, `baton pr`, `baton milestone`, `baton review post`,
-  `baton close|reopen`, `baton merge-pr`, `baton labels`, `baton set-status`). `gh` is allowed
-  only for reads (`view`, `list`, `checks`, `diff`, ...); any other `gh api` call is refused
-  unless it is a plain GET.
-- A shell or evaluator (`bash -c`, `xargs`, `eval`, `python -c`) that mentions `gh` or `git` is
-  refused, because the gate cannot tell whether it writes to the forge.
-- A git publish (`commit`, `push`, `tag`) must be a plain command in the repository's own
-  directory: no `cd`, no `-C`, no `-c` option. The brief is found from the working directory
-  only; without one the command is refused.
-- Git hooks cannot be skipped (`--no-verify`, `core.hooksPath`).
+- The gate is a text scanner over commands that talk to a forge (`FORGE_CLIS`: `gh`, `glab`,
+  `tea`, `fj`, `curl`, `wget`, `http`, `https`, `xh`) and over git `commit`, `push` and `tag`. It
+  refuses only a privacy finding in their quoted text, heredocs or body files; text it cannot
+  read (stdin body, missing body file, command substitution or backticks in a double-quoted
+  body); a hook bypass (`--no-verify`, `core.hooksPath`, overriding `HOME` or `GIT_*`); and
+  missing git hooks. Every other command is allowed.
 - A pull request that touches a protected path needs a maintainer comment
   `/baton approve <commit sha>` (at least 7 characters of the sha), naming the head commit or an
   earlier one with the same changes to the protected paths.
@@ -215,7 +209,7 @@ then is that rule skipped. Inline `# noqa` comments are not judged.
   `constraints*.txt`, `pylock*.toml`), where four-part package versions look like addresses. Email,
   host-path, internal-domain and private terms are still checked in those files.
 
-The gate guards against mistakes. It is not a sandbox: it only sees `gh` and `git` commands, and cannot see through every wrapper.
+The gate guards against mistakes. It is not a sandbox: it only sees the forge CLIs in `FORGE_CLIS` and `git` commands, and a script that does HTTP itself is outside its view.
 
 ## Tests
 
