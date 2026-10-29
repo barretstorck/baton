@@ -305,3 +305,26 @@ class LinkedPlanReadyTest(unittest.TestCase):
 
     def test_legacy_body_plan_still_passes(self):
         self.assertEqual(self.problems(BODY, RaisingRunner()), [])
+
+
+class ReadyCheckNoteTest(unittest.TestCase):
+    def check(self, data):
+        import contextlib
+        import io
+        from unittest import mock
+        from baton import cli
+        out = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli, "_maintainers", return_value=[OWNER]), \
+                mock.patch.object(cli.run, "run", return_value=__import__("json").dumps(data)), \
+                mock.patch.object(cli.issue, "ready_problems", return_value=[]), \
+                contextlib.redirect_stdout(out):
+            code = cli.cmd_ready_check(["5"])
+        return code, out.getvalue().strip()
+
+    def test_outside_issue_gets_the_note(self):
+        code, text = self.check(make(author="stranger"))
+        self.assertEqual((code, text), (0, "ready (outside issue: the maintainer marks it ready)"))
+
+    def test_maintainer_issue_is_plain_ready(self):
+        self.assertEqual(self.check(make()), (0, "ready"))

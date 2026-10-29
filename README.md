@@ -39,13 +39,13 @@ Baton's agents act with **your** `gh` and `git` credentials: they push branches,
 and merge pull requests. The publish gate and the git hooks catch mistakes (private details in
 published text, state changes without a marker comment), but they are not a sandbox; see
 [Rules the gate enforces](#rules-the-gate-enforces-in-a-baton-repository) and
-[SECURITY.md](SECURITY.md). Only issues written by a maintainer enter a sprint, and only the maintainer's comments count as
-answers. An issue is *outside* when its author is not a maintainer or its body has a line
-`Origin: outside (@<author>)`; it enters a sprint only with a comment that is exactly
-`/baton ready`, unmarked, from a maintainer. Agents can only post marker comments through
-`baton comment`, but a raw comment an agent writes with `gh` looks like yours, so until agents have
-their own login (#150) this rule is only as strong as that interim. Try it on a repository you can afford to
-experiment on first.
+[SECURITY.md](SECURITY.md). Only issues written by a maintainer enter a sprint, and only the
+maintainer's comments count as answers. An issue is *outside* when its author is not a maintainer
+or its body has a line `Origin: outside (@<author>)`; it enters a sprint only with a comment that
+is exactly `/baton ready`, unmarked, from a maintainer. Agents can only post marker comments
+through `baton comment`, but a raw comment an agent writes with `gh` looks like yours, so until
+agents have their own login (#150) this rule is only as strong as that interim. Try it on a
+repository you can afford to experiment on first.
 
 ## Plans of small tasks
 

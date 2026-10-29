@@ -76,9 +76,6 @@ def ready_problems(issue, cfg, owner, runner=None):
     if is_outside(issue, owner):
         if not approved(issue, owner):
             problems.append(f"outside issue: it needs a comment '{APPROVAL}' from a maintainer")
-    elif issue.get("author", {}).get("login") not in logins(owner):
-        problems.append("written by someone other than the maintainer; "
-                        "only the maintainer may mark it ready")
     if not parts.get("context"):
         problems.append("Context section is missing or empty (say why the work matters)")
     if not _LIST_ITEM.search(parts.get("acceptance criteria", "")):
