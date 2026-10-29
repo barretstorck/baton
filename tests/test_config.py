@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from baton import config
 
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+
 
 def make_repo(brief=None):
     root = pathlib.Path(tempfile.mkdtemp())
@@ -41,6 +43,13 @@ class ConfigTest(unittest.TestCase):
         fu = config.load(str(make_repo("# none\n"))).data["follow_ups"]
         self.assertEqual((fu["critical"], fu["important"], fu["minor"]), ("deliverable", "goal", "skip"))
         self.assertEqual(fu["scheduled"], {"critical": "deliverable", "important": "backlog", "minor": "skip"})
+
+    def test_template_brief_matches_follow_ups_defaults(self):
+        text = (ROOT / "templates" / "brief.md").read_text()
+        cfg = config.load(str(make_repo(text)))
+        self.assertEqual(cfg.data["follow_ups"], {
+            "critical": "deliverable", "important": "goal", "minor": "skip",
+            "scheduled": {"critical": "deliverable", "important": "backlog", "minor": "skip"}})
 
     def test_follow_ups_full_override(self):
         fu = self._fu("  critical: stretch\n  important: deliverable\n  minor: backlog\n"
