@@ -13,7 +13,7 @@ import re
 import time
 from datetime import datetime, timezone
 
-from . import checklist, comment, config, issue as issue_fields, merge, review
+from . import checklist, comment, config, identity, issue as issue_fields, merge, review
 from .run import RunError
 
 _FAILED = {"failure", "timed_out", "startup_failure", "action_required"}
@@ -175,7 +175,7 @@ def _pr_ci(pr, cfg, runner=None):
     return "red" if problems else "green"
 
 
-PR_STATE_FIELDS = "isDraft,statusCheckRollup,headRefOid,comments"  # headRefOid lets _settle settle lagging runs
+PR_STATE_FIELDS = "number,isDraft,statusCheckRollup,headRefOid,comments"  # headRefOid lets _settle settle lagging runs
 
 
 def _pr_verify(pr, cfg, runner, owner, reviewers=()):
@@ -258,6 +258,8 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
                             "all", "--limit", "300", "--json", ISSUE_FIELDS], "issues")
     prs = _load(runner, ["gh", "pr", "list", "--state", "open", "--limit", "200",
                          "--json", PR_FIELDS], "pull requests")
+    for item in issues + prs:
+        item["comments"] = identity.mark_authors(runner, item["number"], item.get("comments"))
     pr_for = {ref["number"]: pr for pr in prs for ref in pr.get("closingIssuesReferences") or []}
     by_number = {item["number"]: item for item in issues}
     status_of = {cfg.label(name): name for name in config.STATUSES}

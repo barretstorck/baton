@@ -507,6 +507,7 @@ class ReadCommandTests(unittest.TestCase):
         with mock.patch.object(cli, "_require_config", return_value=cfg()), \
                 mock.patch.object(cli, "_maintainers", return_value=[OWNER]), \
                 mock.patch.object(cli, "_bots", return_value=frozenset()), \
+                mock.patch.object(cli.identity, "bot_logins", return_value=frozenset()), \
                 mock.patch.object(cli.run, "run", fake), \
                 mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
             code = cli.main(args)

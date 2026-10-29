@@ -7,8 +7,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-from baton import identity
+from baton import config, identity
 from baton.run import run
+from tests.fakes import FakeRunner
 
 VALID = """
 [baton]
@@ -87,8 +88,147 @@ class ReviewerLoginsTest(unittest.TestCase):
         self.assertEqual(identity.reviewer_logins(), frozenset())
 
 
+class MarkAuthorsTest(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(identity.use, None)
+        identity.use(lambda: identity.Identities(identity.App(1, 10, "k", "baton[bot]"),
+                                                 identity.App(2, 20, "k", "baton-reviewer[bot]")))
+
+    @staticmethod
+    def c(id_, login):
+        return {"id": id_, "author": {"login": login}}
+
+    def mark(self, comments, reply, number=7):
+        runner = FakeRunner({"gh api": reply})
+        return identity.mark_authors(runner, number, comments), runner
+
+    def test_bot_comment_is_trusted(self):
+        out, _ = self.mark([self.c("IC_1", "baton")], "IC_1\tBot\n")
+        self.assertEqual(out[0]["author"]["type"], "Bot")
+        self.assertTrue(config.has_login(out[0]["author"], ["baton[bot]"]))
+
+    def test_human_comment_is_not_trusted(self):
+        out, _ = self.mark([self.c("IC_2", "baton")], "IC_2\tUser\n")
+        self.assertEqual(out[0]["author"]["type"], "User")
+        self.assertFalse(config.has_login(out[0]["author"], ["baton[bot]"]))
+
+    def test_missing_id_and_error_fail_closed(self):
+        out, _ = self.mark([self.c("IC_3", "baton")], "IC_9\tBot\n")
+        self.assertEqual(out[0]["author"]["type"], "User")
+
+        def boom(argv, **kw):
+            raise identity._run.RunError("x")
+        out = identity.mark_authors(boom, 7, [self.c("IC_3", "baton")])
+        self.assertEqual(out[0]["author"]["type"], "User")
+
+    def test_one_call_per_thread(self):
+        out, runner = self.mark([self.c("IC_1", "baton"), self.c("IC_2", "baton")],
+                                "IC_1\tBot\nIC_2\tUser\n")
+        self.assertEqual(len(runner.calls), 1)
+        self.assertIn("repos/{owner}/{repo}/issues/7/comments?per_page=100", runner.calls[0])
+        self.assertEqual([c["author"]["type"] for c in out], ["Bot", "User"])
+
+    def test_no_call_without_candidates(self):
+        comments = [self.c("IC_1", "barretstorck"), self.c("IC_2", "baton[bot]")]
+        out, runner = self.mark(comments, "")
+        self.assertEqual(runner.calls, [])
+        self.assertEqual(out, comments)
+        identity.use(None)
+        out, runner = self.mark([self.c("IC_1", "baton")], "")
+        self.assertEqual(runner.calls, [])
+
+    def test_input_not_changed(self):
+        comments = [self.c("IC_1", "baton")]
+        self.mark(comments, "IC_1\tBot\n")
+        self.assertEqual(comments, [self.c("IC_1", "baton")])
+
+
+class CliMarkingTest(unittest.TestCase):
+    OWNER = "octo"
+
+    def setUp(self):
+        self.addCleanup(identity.use, None)
+        identity.use(lambda: identity.Identities(identity.App(1, 10, "k", "baton[bot]"),
+                                                 identity.App(2, 20, "k", "baton-reviewer[bot]")))
+
+    def thread(self):
+        question = {"id": "IC_1", "url": "u1", "author": {"login": "baton"},
+                    "body": "<!-- baton:developer:question -->\nWhich one?"}
+        answer = {"id": "IC_2", "url": "u2", "author": {"login": self.OWNER}, "body": "The first."}
+        return {"number": 5, "title": "t", "state": "OPEN", "author": {"login": self.OWNER},
+                "labels": [], "body": "b", "comments": [question, answer]}
+
+    def run_cmd(self, fn, args, rest_type):
+        import contextlib
+        import copy
+        import io
+        import pathlib
+        from baton import cli
+        cfg = config.Config(root=pathlib.Path("."), data=copy.deepcopy(config.DEFAULTS))
+        runner = FakeRunner({"gh issue view": json.dumps(self.thread()),
+                             "gh api": f"IC_1\t{rest_type}\nIC_2\tUser\n"})
+        out = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg), \
+                mock.patch.object(cli, "_maintainers", return_value=[self.OWNER]), \
+                mock.patch.object(cli.run, "run", runner), contextlib.redirect_stdout(out):
+            self.assertEqual(getattr(cli, fn)(args), 0)
+        return out.getvalue(), runner
+
+    def test_answers_trust_a_bot_question(self):
+        out, _ = self.run_cmd("cmd_answers", ["5"], "Bot")
+        self.assertEqual(json.loads(out)["question"], "u1")
+        self.assertEqual([a["url"] for a in json.loads(out)["answers"]], ["u2"])
+
+    def test_answers_ignore_a_human_named_baton(self):
+        out, _ = self.run_cmd("cmd_answers", ["5"], "User")
+        self.assertIsNone(json.loads(out)["question"])
+
+    def test_issue_read_prints_a_bot_comment_in_full(self):
+        out, _ = self.run_cmd("_issue_read", ["read", "5"], "Bot")
+        self.assertIn("Which one?", out)
+
+    def test_issue_read_withholds_a_human_comment(self):
+        out, _ = self.run_cmd("_issue_read", ["read", "5"], "User")
+        self.assertNotIn("Which one?", out)
+
+    def test_tier_zero_makes_no_rest_call(self):
+        identity.use(None)
+        for fn, args in (("cmd_answers", ["5"]), ("_issue_read", ["read", "5"])):
+            _, runner = self.run_cmd(fn, args, "Bot")
+            self.assertFalse(any(line.startswith("gh api") for line in runner.lines()))
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReviewMarkingTest(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(identity.use, None)
+        identity.use(lambda: identity.Identities(identity.App(1, 10, "k", "baton[bot]"),
+                                                 identity.App(2, 20, "k", "baton-reviewer[bot]")))
+
+    def tick(self, rest_type):
+        from baton import review
+        body = review.compose("changes", "b" * 40, "## Tasks\n- [ ] **1.1 Fix it**\n  - Check: none\n")
+        comment = {"id": "IC_9", "url": "https://x/pull/9#issuecomment-55",
+                   "author": {"login": "baton-reviewer"}, "body": body}
+        runner = FakeRunner({"gh pr view 9 --json comments": json.dumps({"comments": [comment]}),
+                             "gh api --paginate": f"IC_9\t{rest_type}\n",
+                             "gh api -X PATCH": ""})
+        owner = ["owner", "baton-reviewer[bot]"]
+        with mock.patch.object(identity, "write", lambda run, argv, role: run(argv)):
+            return review.tick_review(runner, 9, owner, "1.1"), runner
+
+    def test_bot_review_is_found(self):
+        ticked, runner = self.tick("Bot")
+        self.assertTrue(ticked)
+        self.assertTrue(any("PATCH" in line for line in runner.lines()))
+
+    def test_user_review_is_not_found(self):
+        from baton import review
+        with self.assertRaises(review.ReviewError):
+            self.tick("User")
 
 
 class TokenTest(unittest.TestCase):

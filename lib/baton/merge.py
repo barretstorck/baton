@@ -10,7 +10,7 @@ import re
 import shutil
 import tempfile
 
-from . import checklist, forbid, gate, labels, planfile, review, scan, state as item_state, verify
+from . import checklist, forbid, gate, identity, labels, planfile, review, scan, state as item_state, verify
 from .run import RunError
 from .config import has_login, logins
 
@@ -305,6 +305,7 @@ def merge(number, cfg, runner, notes=None, bots=(), reviewers=()):
     notes = [] if notes is None else notes
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", PR_FIELDS]))
+    pr["comments"] = identity.mark_authors(runner, number, pr.get("comments"))
     if pr.get("state") != "MERGED":
         problems = check(pr, cfg, cfg.maintainers(repo["owner"]["login"]), repo["defaultBranchRef"]["name"], runner,
                          notes, bots, reviewers)

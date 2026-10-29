@@ -225,6 +225,58 @@ def reviewer_logins():
     return frozenset({ids.reviewer.login})
 
 
+AUTHOR_TYPES_JQ = '.[] | [.node_id, .user.type] | @tsv'
+
+
+def _is_candidate(comment, slugs):
+    author = (comment or {}).get("author") or {}
+    login = (author.get("login") or "").strip().lower()
+    return (login in slugs and config.bot_slug(login) is None
+            and "type" not in author and "__typename" not in author)
+
+
+def needs_author_types(comments, slugs):
+    """Whether some comment's author is a bare App slug with no type."""
+    return any(_is_candidate(c, slugs) for c in comments or [])
+
+
+def parse_author_types(text):
+    """`node_id -> type` from tab-separated lines; blank or malformed lines are skipped."""
+    types = {}
+    for line in (text or "").splitlines():
+        parts = line.strip().split("\t")
+        if len(parts) == 2 and parts[0] and parts[1]:
+            types[parts[0]] = parts[1]
+    return types
+
+
+def with_author_types(comments, types, slugs):
+    """A new list; each candidate is copied with the REST author type ("User" when unknown)."""
+    out = []
+    for c in comments or []:
+        if _is_candidate(c, slugs):
+            author = {**c["author"], "type": types.get(c.get("id"), "User")}
+            out.append({**c, "author": author})
+        else:
+            out.append(c)
+    return out
+
+
+def mark_authors(runner, number, comments):
+    """Add the REST author type to comments whose bare login is an App's slug (one call per thread)."""
+    slugs = {config.bot_slug(login) for login in bot_logins()} - {None}
+    if not slugs or not needs_author_types(comments, slugs):
+        return comments or []
+    try:
+        text = runner(["gh", "api", "--paginate",
+                       f"repos/{{owner}}/{{repo}}/issues/{number}/comments?per_page=100",
+                       "--jq", AUTHOR_TYPES_JQ])
+        types = parse_author_types(text)
+    except _run.RunError:
+        types = {}
+    return with_author_types(comments, types, slugs)
+
+
 def write(runner, argv, role, **kw):
     """Run a forge write as the role's App at tier 1; exactly `runner(argv, **kw)` at tier 0."""
     ids = _identities()
