@@ -42,6 +42,14 @@ class LabelsTest(unittest.TestCase):
             self.assertIn(name, missing)
             self.assertIn(name, labels._STYLE)
 
+    def test_missed_sprint_label_is_defined_and_reported_missing(self):
+        cfg = make_config()
+        missing = labels.missing(cfg, FakeRunner({"gh label list": label_list([])}))
+        self.assertIn("missed-sprint", missing)
+        self.assertIn("missed-sprint", labels._STYLE)
+        self.assertIn("missed-sprint", config.OTHER_LABELS)
+        self.assertEqual(len(missing), len(cfg.data["labels"]["map"]))
+
     def test_closing_label_map_override_is_honoured(self):
         cfg = make_config({"closed:spam": "Spam", "awaiting-feedback": "Waiting"})
         missing = labels.missing(cfg, FakeRunner({"gh label list": label_list([])}))

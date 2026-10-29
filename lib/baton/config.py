@@ -11,7 +11,7 @@ STATUSES = [
 ]
 OTHER_LABELS = [
     "type:feature", "type:bug", "type:maintenance", "type:spike", "deliverable", "stretch", "broken-default-branch",
-    "needs-maintainer", "awaiting-feedback",
+    "needs-maintainer", "awaiting-feedback", "missed-sprint",
     "closed:spam", "closed:duplicate", "closed:support", "closed:wont-do",
 ]
 PRIORITIES = [f"priority:{n}" for n in range(1, 5)]
@@ -40,6 +40,7 @@ DEFAULTS = {
     "merge": {"allow_no_ci": False},
     "verify": {"command": "", "timeout_minutes": 10},
     "docs": {"dir": "docs/baton"},
+    "notify": {"severity": [], "labels": []},
     "maintainers": [],
     "protected_paths": [".github/", ".baton/", ".claude/"],
     "fixtures_paths": [],
@@ -98,6 +99,11 @@ def _kind_ok(value, default):
 def _validate(data, defaults, prefix=""):
     for key, default in defaults.items():
         value, name = data[key], prefix + key
+        if name == "notify.severity":
+            if not (isinstance(value, list) and all(
+                    isinstance(item, int) and not isinstance(item, bool) and 1 <= item <= 4 for item in value)):
+                raise ConfigError(".baton/brief.md: notify.severity must be a list of integers from 1 to 4")
+            continue
         if not _kind_ok(value, default):
             raise ConfigError(f".baton/brief.md: {name} must be a {type(default).__name__}"
                               + (" of strings" if isinstance(default, list) else ""))

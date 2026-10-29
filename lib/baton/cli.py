@@ -188,7 +188,23 @@ def _edit(target, opts, cfg, terms):
     return None
 
 
+def _issue_missed(args):
+    if len(args) != 3 or not args[1].isdigit():
+        print("usage: baton issue missed <issue number> <milestone title or number>",
+              file=sys.stderr)
+        return 64
+    try:
+        publish.mark_missed(_require_config(), run.run, int(args[1]), args[2], scan.load_terms())
+    except comment.CommentError as error:
+        print(f"baton: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_issue(args):
+    if args[:1] == ["missed"]:
+        return _issue_missed(args)
+
     def act(o, cfg, terms):
         if o["action"] == "create":
             return publish.create_issue(cfg, run.run, o["title"], _body(o), o["labels"],
@@ -452,6 +468,38 @@ def cmd_open_questions(args):
     return 0
 
 
+def cmd_notify(args):
+    usage = ("usage: baton notify <issue> <cause> <text-file | ->  |  baton notify --rules\n"
+             f"causes: {', '.join(comment.NOTIFY_CAUSES)}")
+    if args == ["--rules"]:
+        cfg = _require_config()
+        issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "300",
+                                     "--json", "number,title,state,labels,body,author,comments"]))
+        try:
+            for number in questions.notify_matches(issues, cfg):
+                url = comment.notify(cfg, run.run, number, "rule",
+                                     "This issue matches a notify rule in the brief.",
+                                     _maintainers(cfg), scan.load_terms())
+                print(f"#{number} {url or 'already notified'}")
+        except comment.CommentError as error:
+            print(f"baton: {error}", file=sys.stderr)
+            return 1
+        return 0
+    if len(args) != 3 or not args[0].isdigit() or args[1] not in comment.NOTIFY_CAUSES:
+        print(usage, file=sys.stderr)
+        return 64
+    cfg = _require_config()
+    try:
+        text = comment.read_body(args[2], sys.stdin)
+        url = comment.notify(cfg, run.run, int(args[0]), args[1], text,
+                             _maintainers(cfg), scan.load_terms())
+    except comment.CommentError as error:
+        print(f"baton: {error}", file=sys.stderr)
+        return 1
+    print(url or "already notified")
+    return 0
+
+
 def cmd_ready_check(args):
     if len(args) != 1 or not args[0].isdigit():
         print("usage: baton ready-check <issue-number>", file=sys.stderr)
@@ -568,6 +616,7 @@ COMMANDS = {
     "clean": cmd_clean,
     "close": cmd_close,
     "answers": cmd_answers,
+    "notify": cmd_notify,
     "open-questions": cmd_open_questions,
     "comment": cmd_comment,
     "ready-check": cmd_ready_check,

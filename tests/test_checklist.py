@@ -836,6 +836,37 @@ Written against: {SHA}
     def test_no_plan(self):
         self.assertEqual(checklist.named_paths("## Context\nx"), [])
 
+    def _plan(self, *tasks):
+        return "## Plan\nWritten against: " + SHA + "\n\n" + "\n".join(tasks) + "\n"
+
+    def test_comma_line_suffixes(self):
+        text = self._plan("- [ ] **1. A**", "  - Uses: `lib/b.py:13,41`, `lib/c.py:5,9-12`, "
+                          "`lib/d.py:3-4`, `lib/e.py:7`")
+        self.assertEqual(checklist.named_paths(text),
+                         ["lib/b.py", "lib/c.py", "lib/d.py", "lib/e.py"])
+
+    def test_placeholders_dropped(self):
+        text = self._plan("- [ ] **1. A**", "  - Files: `owner/name`, `lib/x/y`, `a/b.py`")
+        self.assertEqual(checklist.named_paths(text), ["a/b.py", "lib/x/y"])
+
+    def test_new_in_earlier_task_not_reported_later(self):
+        for mark in (" ", "x"):
+            with self.subTest(mark=mark):
+                text = self._plan(f"- [{mark}] **1. A**", "  - Files: `lib/n.py` (new)",
+                                  "- [ ] **2. B**", "  - Uses: `lib/n.py`, `lib/o.py`")
+                self.assertEqual(checklist.named_paths(text), ["lib/o.py"])
+
+    def test_new_only_in_later_task_still_reported(self):
+        text = self._plan("- [ ] **1. A**", "  - Uses: `lib/n.py`",
+                          "- [ ] **2. B**", "  - Files: `lib/n.py` (new)")
+        self.assertEqual(checklist.named_paths(text), ["lib/n.py"])
+
+    def test_created_paths(self):
+        text = self._plan("- [x] **1. A**", "  - Files: `lib/a.py` (new), `lib/z.py`",
+                          "- [ ] **2. B**", "  - Files: `lib/b.py` (new)", "  - Check: `t.py` (new)")
+        self.assertEqual(checklist.created_paths(text), {"lib/a.py", "lib/b.py"})
+        self.assertEqual(checklist.created_paths("## Context\nx"), set())
+
 
 class LayoutProblemsTest(unittest.TestCase):
     HEAD = f"## Developer Plan\n\nWritten against: {SHA}\n\n### Verification\n`make`\n\n"
