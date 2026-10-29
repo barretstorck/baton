@@ -163,6 +163,18 @@ class OutsideTest(unittest.TestCase):
         self.assertFalse(issue.is_outside(make(), [OWNER]))
         self.assertFalse(issue.is_outside(make(author="second"), [OWNER, "second"]))
 
+    def test_bot_issue_is_not_outside_unless_origin_line(self):
+        bots = {"baton[bot]"}
+        self.assertFalse(issue.is_outside(make(author="app/baton"), [OWNER], bots))
+        marked = BODY + "\nOrigin: outside (@someone)\n"
+        self.assertTrue(issue.is_outside(make(author="app/baton", body=marked), [OWNER], bots))
+        self.assertTrue(issue.is_outside(make(author="app/baton"), [OWNER]))
+
+    def test_bot_ready_comment_does_not_approve(self):
+        data = self.check([comment("baton", "/baton ready")])
+        self.assertFalse(issue.approved(data, [OWNER, "baton[bot]"], {"baton[bot]"}))
+        self.assertTrue(issue.approved(self.check([comment(OWNER, "/baton ready")]), [OWNER], {"baton[bot]"}))
+
     def test_plain_maintainer_issue_ignores_comments(self):
         self.assertEqual(issue.ready_problems(self.check([], author=OWNER), cfg(), OWNER), [])
 
@@ -377,6 +389,7 @@ class ReadyCheckNoteTest(unittest.TestCase):
         out = io.StringIO()
         with mock.patch.object(cli, "_require_config", return_value=cfg()), \
                 mock.patch.object(cli, "_maintainers", return_value=[OWNER]), \
+                mock.patch.object(cli, "_bots", return_value=frozenset()), \
                 mock.patch.object(cli.run, "run", return_value=__import__("json").dumps(data)), \
                 mock.patch.object(cli.issue, "ready_problems", return_value=[]), \
                 contextlib.redirect_stdout(out):
@@ -406,6 +419,18 @@ class RenderTest(unittest.TestCase):
                 "labels": [], "body": body, "comments": []}
         data.update(extra)
         return data
+
+    def test_bot_issue_and_comments(self):
+        comments = [
+            {"author": _person("baton"), "body": "<!-- baton:developer:status -->\nbot status"},
+            {"author": _person("baton"), "body": "bot plain"},
+        ]
+        data = self.data(author="app/baton", comments=comments)
+        out = issue.render(data, [OWNER], {"baton[bot]"})
+        self.assertIn("(maintainer)", out)
+        self.assertIn("## Context\nwhy", out)
+        self.assertIn("bot status", out)
+        self.assertNotIn("bot plain", out)
 
     def test_maintainer_issue_and_mixed_comments(self):
         comments = [
@@ -480,6 +505,7 @@ class ReadCommandTests(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.object(cli, "_require_config", return_value=cfg()), \
                 mock.patch.object(cli, "_maintainers", return_value=[OWNER]), \
+                mock.patch.object(cli, "_bots", return_value=frozenset()), \
                 mock.patch.object(cli.run, "run", fake), \
                 mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
             code = cli.main(args)

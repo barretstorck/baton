@@ -266,7 +266,7 @@ def _issue_read(args):
     cfg = _require_config()
     data = json.loads(run.run(["gh", "issue", "view", args[1], "--json",
                                "number,title,state,author,labels,body,comments"]))
-    print(issue.render(data, _maintainers(cfg)))
+    print(issue.render(data, _maintainers(cfg), _bots()))
     return 0
 
 
@@ -579,12 +579,12 @@ def cmd_ready_check(args):
     cfg = _require_config()
     data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "author,body,labels,comments"]))
     maintainers = _maintainers(cfg)
-    problems = issue.ready_problems(data, cfg, maintainers, run.run)
+    problems = issue.ready_problems(data, cfg, maintainers, run.run, _bots())
     for problem in problems:
         print(f"- {problem}")
     if not problems:
         print("ready (outside issue: the maintainer marks it ready)"
-              if issue.is_outside(data, maintainers) else "ready")
+              if issue.is_outside(data, maintainers, _bots()) else "ready")
     return 1 if problems else 0
 
 
