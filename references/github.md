@@ -64,14 +64,20 @@ Where a row says "write ... to a file", an inline heredoc works too and needs no
 
 ## Rules the publish gate enforces
 
-The gate checks only commands that publish (raw `gh` writes, and git commit, push and tag).
-Harmless commands that mention `.git` paths, variables or heredoc text are allowed.
+The gate is a text scanner. It checks commands that talk to a forge (`gh`, `glab`, `tea`, `fj`,
+`curl`, `wget`, `http`, `https`, `xh`) and git commit, push and tag. It refuses only:
 
-- Body files must exist before the command that posts them runs. Write the file in one step and
-  post it in the next.
-- No text from stdin, a shell variable or `$(...)` in a title, body or commit message. Inline text
-  and inline heredocs (`"$(cat <<'EOF' ... EOF)"`) are fine.
-- No `--no-verify`, `core.hooksPath` or overriding `HOME` or `GIT_*` settings on a commit or push.
+- a privacy finding in the quoted text, heredoc or body file of such a command;
+- text it cannot read: a body from stdin (`-F -`, `--body-file -`) without a heredoc or pipe, a
+  body file that does not exist yet (write the file in one step, post it in the next), or `$(...)`
+  or backticks in a double-quoted title, body or message. Inline text and inline heredocs
+  (`"$(cat <<'EOF' ... EOF)"`) are fine;
+- a hook bypass on a git commit, push or tag: `--no-verify`, `core.hooksPath`, or overriding
+  `HOME` or `GIT_*` settings;
+- missing git hooks.
+
+It does not judge which command you use, labels, markers or directories. Other commands are allowed.
+
 - The hooks refuse a commit or push that adds a line matching the brief's `forbid_added` rules
   (naming the line), unless the plan has `Allows: forbid_added "<glob>"`. Remove the entry.
 - If the gate reports a privacy finding, replace the detail with a placeholder ("the NAS",
