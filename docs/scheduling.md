@@ -41,6 +41,39 @@ does the same job. The session's environment needs the repository, `gh` signed i
 enabled and `~/.baton/private-terms.txt` present; a fresh cloud container has none of the files in
 `~/.baton`, so the privacy scan would only apply its generic patterns there.
 
+## Triage on a schedule
+
+`/baton:triage --scheduled` triages new issues while no session is open. It uses polling, not
+webhooks, and needs no forge CI. A run:
+
+1. Takes the same run lock as a sprint run, so the two never overlap, and exits at once if another
+   run holds it.
+2. On its first run, records the start time and triages nothing; later runs only look at issues
+   created after it, never at older ones.
+3. Triages open issues that have no Baton status label and no `closed:*` label, oldest first, one
+   triager per issue. At most `triage.max_per_run` are triaged per run; the rest wait for the next
+   run. If an issue has waited more than a day, the maintainer is notified once.
+4. Closes `awaiting-feedback` issues with no new comment in `triage.stale_days` days, with a
+   comment saying they can be reopened.
+5. Releases the lock and prints one line with the counts.
+
+With cron, from a checkout of the repository:
+
+```cron
+# every 30 minutes; hourly is also fine
+*/30 * * * * cd /path/to/repo && claude -p "/baton:triage --scheduled" --permission-mode auto --permission-prompts none >> "$HOME/.baton/triage.log" 2>&1
+```
+
+With a Claude Code routine, use the same prompt. The container has no `~/.baton`, so the start time
+would be "now" on every firing and nothing would be triaged: set `triage.since` in the brief to an
+ISO 8601 time.
+
+Brief keys:
+
+- `triage.since`: start time (default empty: recorded on the first run);
+- `triage.max_per_run`: issues triaged per run (default 10);
+- `triage.stale_days`: days without feedback before closing (default 14).
+
 ## Stopping
 
 Remove the cron line or disable the routine. To stop a run in progress, end the process and run

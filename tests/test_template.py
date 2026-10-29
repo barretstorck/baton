@@ -181,6 +181,17 @@ class TemplateTest(unittest.TestCase):
             self.assertIn(cmd, agent, cmd)
         self.assertNotIn("ready-check", agent)
 
+    def test_triage_skill_covers_scheduled_runs(self):
+        text = (ROOT / "skills/triage/SKILL.md").read_text()
+        for needed in ("## Scheduled runs", "baton lock acquire",
+                       "baton triage queue", "baton notify",
+                       "--reason wont-do", "baton lock release"):
+            self.assertIn(needed, text)
+        doc = (ROOT / "docs/scheduling.md").read_text()
+        for needed in ("## Triage on a schedule", "triage.since",
+                       "triage.max_per_run", "triage.stale_days"):
+            self.assertIn(needed, doc)
+
     def test_refiner_handles_re_refine_after_spike(self):
         skill = (ROOT / "skills/refine/SKILL.md").read_text()
         self.assertIn("Re-refine issue <N> after spike #<S>.", skill)
