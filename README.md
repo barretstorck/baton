@@ -268,10 +268,13 @@ When an approved pull request's head moves only by merging the default branch in
 ## Maintainers
 
 `maintainers` in `.baton/brief.md` lists the GitHub logins whose comments, reviews, approvals and
-issues Baton trusts (default `[]`, meaning the repository owner alone). Agents post under a
-maintainer's login, so every login on the list can answer questions, approve a merge with
-`/baton approve` and write issues that are ready to develop. `baton config` prints the resolved
-list. Log folders and API paths still use the repository owner.
+issues Baton trusts (default `[]`, meaning the repository owner alone). At tier 0 agents post
+under a maintainer's login, so every login on the list can answer questions, approve a merge with
+`/baton approve` and write issues that are ready to develop. At tier 1 agent comments come from the
+Baton logins instead. Baton trusts those for marker comments (questions, reviews, replies,
+decisions) and for issue authorship, but never for answers, `/baton ready` or `/baton approve`;
+those stay with the maintainers. `baton config` prints the resolved list. Log folders and API
+paths still use the repository owner.
 
 ## Forbidden diff patterns
 

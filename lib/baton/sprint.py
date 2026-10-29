@@ -178,20 +178,21 @@ def _pr_ci(pr, cfg, runner=None):
 PR_STATE_FIELDS = "isDraft,statusCheckRollup,headRefOid,comments"  # headRefOid lets _settle settle lagging runs
 
 
-def _pr_verify(pr, cfg, runner, owner):
+def _pr_verify(pr, cfg, runner, owner, bots=()):
     """The verification state recorded by the latest review of the pull request's head."""
     if not cfg.data["verify"]["command"] or not cfg.data["review"]["required"]:
         return "none"
     if owner is None:
         owner = json.loads(runner(["gh", "repo", "view", "--json", "owner"]))["owner"]["login"]
-    return review.verify_state(cfg, pr.get("comments"), cfg.maintainers(owner), pr.get("headRefOid"))
+    return review.verify_state(cfg, pr.get("comments"), list(cfg.maintainers(owner)) + sorted(bots),
+                              pr.get("headRefOid"))
 
 
-def pr_state(pr, cfg, runner=None, owner=None):
+def pr_state(pr, cfg, runner=None, owner=None, bots=()):
     """The draft, CI and verify state of one pull request, as sprint-status reads them."""
     return {"draft": bool(pr["isDraft"]), "ci": _pr_ci(pr, cfg, runner),
             "problems": merge._check_ci(pr, cfg, runner),
-            "verify": _pr_verify(pr, cfg, runner, owner)}
+            "verify": _pr_verify(pr, cfg, runner, owner, bots)}
 
 
 def _pick_sprint(milestones, wanted):
@@ -230,10 +231,11 @@ def spikes_first(entries, spike_flags, cap):
             "spikes": spikes[:cap], "left_out": spikes[cap:], "cap": cap}
 
 
-def snapshot(cfg, runner, milestone=None):
+def snapshot(cfg, runner, milestone=None, bots=()):
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     owner, branch = repo["owner"]["login"], repo["defaultBranchRef"]["name"]
     maintainers = cfg.maintainers(owner)
+    trusted = list(maintainers) + sorted(bots)
     milestones = _load(
         runner, ["gh", "api", f"repos/{owner}/{repo['name']}/milestones?state=open&per_page=100"],
         "milestones")
@@ -353,7 +355,7 @@ def snapshot(cfg, runner, milestone=None):
             except checklist.TaskError:
                 text, link = "", None
             found = checklist.plan(text)
-            fixes = review.review_tasks(pr, maintainers) if pr else None
+            fixes = review.review_tasks(pr, trusted) if pr else None
             spike = cfg.label("type:spike") in labels
             behind = behind_default(pr) if status in ("status:in-dev", "status:in-review") else None
             result["progress"][str(number)] = {
@@ -374,7 +376,7 @@ def snapshot(cfg, runner, milestone=None):
         elif status == "status:in-review":
             pr = pr_for.get(number)
             if pr and cfg.data["review"]["required"]:
-                found = review.current(pr, maintainers, cfg, runner, branch)
+                found = review.current(pr, trusted, cfg, runner, branch)
                 review_state, rounds = found["state"], found["rounds"]
             else:
                 review_state, rounds = "not-required", 0
@@ -384,7 +386,7 @@ def snapshot(cfg, runner, milestone=None):
                 "ci": _pr_ci(pr, cfg, runner) if pr else "none",
                 "mergeable": pr["mergeable"] if pr else None,
                 "review": review_state, "rounds": rounds,
-                "verify": _pr_verify(pr, cfg, runner, owner) if pr else "none"})
+                "verify": _pr_verify(pr, cfg, runner, owner, bots) if pr else "none"})
         elif status == "status:verification":
             result["verification"].append(number)
         elif status == "status:refinement" and item["state"] == "OPEN":
@@ -393,7 +395,7 @@ def snapshot(cfg, runner, milestone=None):
                 result["re_refine"].append({"number": number, "pr": pr["number"],
                                             "draft": pr["isDraft"]})
         elif status == "status:blocked":
-            pending = comment.pending_answers(item, maintainers)
+            pending = comment.pending_answers(item, maintainers, bots)
             if pending["answers"]:
                 result["answered"].append({"number": number, **pending})
             else:
@@ -419,7 +421,7 @@ def snapshot(cfg, runner, milestone=None):
         number = item["number"]
         open_blockers = [n for n in issue_fields.blocked_by(item.get("body"))
                          if _blocker_open(n, by_number, runner)]
-        if issue_fields.is_outside(item, maintainers) and not issue_fields.approved(item, maintainers):
+        if issue_fields.is_outside(item, maintainers, bots) and not issue_fields.approved(item, maintainers, bots):
             reason = "outside issue without a maintainer's '/baton ready' comment"
         elif red and not repair:
             reason = "default branch is red; only the repair issue may proceed"
@@ -439,7 +441,7 @@ def snapshot(cfg, runner, milestone=None):
 
     result["waiting_on_maintainer"] = sorted(waiting)
     for number in result["waiting_on_maintainer"]:
-        pending = comment.pending_answers(by_number[number], maintainers)
+        pending = comment.pending_answers(by_number[number], maintainers, bots)
         result["waiting_links"][str(number)] = (
             pending["question"] if pending["question"] and not pending["answers"] else None)
     result["finished"] = bool(issues) and all(

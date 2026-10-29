@@ -11,7 +11,7 @@ import re
 import tempfile
 
 from . import checklist, comment, gate, identity, run, verify as verifylog
-from .config import logins
+from .config import has_login
 
 # The one place a verdict is defined. `tasks` is "none" (a `## Tasks` section is
 # refused) or "required"; `round` says whether the verdict counts toward review.max_rounds.
@@ -77,10 +77,11 @@ def failure_ids(body):
 
 
 def history(comments, owner):
-    """Reviews and replies, oldest first. Only the owner's comments count: agents post as the owner."""
+    """Reviews and replies, oldest first. `owner` is the logins trusted to post marker comments
+    (maintainers and Baton logins); only their comments count."""
     events = []
     for item in comments or []:
-        if item.get("author", {}).get("login") not in logins(owner):
+        if not has_login(item.get("author"), owner):
             continue
         body = (item.get("body") or "").lstrip()
         match = _REVIEW.match(body)
@@ -260,10 +261,11 @@ def current(pr, owner, cfg, runner, default_branch):
 
 
 def _latest_review(comments, owner):
-    """The owner's latest review comment and its marker match, or (None, None)."""
+    """The latest review comment from a trusted login (`owner`: maintainers and Baton logins)
+    and its marker match, or (None, None)."""
     found = (None, None)
     for item in comments or []:
-        if item.get("author", {}).get("login") not in logins(owner):
+        if not has_login(item.get("author"), owner):
             continue
         match = _REVIEW.match((item.get("body") or "").lstrip())
         if match:

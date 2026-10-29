@@ -4,7 +4,7 @@ import os
 import tempfile
 
 from . import gate, identity, scan
-from .config import logins
+from .config import has_login
 
 ROLES = {"orchestrator", "developer", "refine", "reviewer", "researcher"}
 KINDS = {"question", "status", "decision", "plan", "review", "findings", "reply",
@@ -104,29 +104,38 @@ def _first_line(body):
     return (body or "").lstrip().split("\n", 1)[0]
 
 
-def pending_answers(issue, owner):
+def pending_answers(issue, owner, bots=()):
     """The latest agent question on an issue and the maintainer's replies after it.
 
-    A reply is a comment by the repository owner that either carries no Baton
-    marker, or is the orchestrator's `decision` comment quoting an answer the
-    maintainer gave in the session.
+    A question marker counts from `owner` (the maintainers) or `bots` (Baton logins).
+    A reply is a comment by `owner` that carries no Baton marker, or a `decision`
+    marker comment from `owner` or `bots`. A marker-less comment by a bot never counts.
     """
     comments = issue.get("comments") or []
     question_at = None
     for index, item in enumerate(comments):
         line = _first_line(item.get("body"))
-        if line.startswith(gate.MARKER) and _QUESTION in line:
+        if not (line.startswith(gate.MARKER) and _QUESTION in line):
+            continue
+        author = item.get("author")
+        if has_login(author, owner) or has_login(author, list(bots)):
             question_at = index
     if question_at is None:
         return {"question": None, "answers": []}
     answers = []
     for item in comments[question_at + 1:]:
-        if item.get("author", {}).get("login") not in logins(owner):
-            continue
+        author = item.get("author")
+        is_bot = has_login(author, list(bots))
         line = _first_line(item.get("body"))
-        if line.startswith(gate.MARKER) and _DECISION not in line:
+        marked = line.startswith(gate.MARKER)
+        if marked and _DECISION in line:
+            if not (has_login(author, owner) or is_bot):
+                continue
+        elif marked:
             continue
-        if gate.MARKER in (item.get("body") or "") and not line.startswith(gate.MARKER):
+        elif is_bot or not has_login(author, owner):
+            continue
+        if gate.MARKER in (item.get("body") or "") and not marked:
             continue
         answers.append({"url": item.get("url"), "body": item.get("body")})
     return {"question": comments[question_at].get("url"), "answers": answers}

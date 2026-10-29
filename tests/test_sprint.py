@@ -601,6 +601,14 @@ class VerifyStateTests(unittest.TestCase):
         self.assertEqual(self.state([reviewed("red")], owner=None, runner=runner), "red")
         self.assertEqual(self.state([reviewed("red")], vcfg(""), owner=None), "none")
 
+    def test_bot_review_counts_only_with_bots(self):
+        item = {"author": {"login": "baton-reviewer"}, "body": review.compose("approve", HEAD, "ok", "green")}
+        pr = {"isDraft": False, "statusCheckRollup": [], "headRefOid": HEAD, "comments": [item]}
+        runner = FakeRunner({})
+        self.assertEqual(sprint.pr_state(pr, vcfg(), runner, OWNER)["verify"], "missing")
+        self.assertEqual(sprint.pr_state(pr, vcfg(), runner, OWNER,
+                                         bots={"baton-reviewer[bot]"})["verify"], "green")
+
     def test_in_review_entry_carries_verify(self):
         pr = {"number": 30, "headRefName": "issue-1-x", "isDraft": False, "mergeable": "MERGEABLE",
               "headRefOid": HEAD, "comments": [reviewed("timeout")],
@@ -813,6 +821,14 @@ class DefaultBranchStateTest(unittest.TestCase):
         result = self._outside([comment(OWNER, "/baton ready", 1)])
         self.assertEqual(result["dispatchable"], [5])
         self.assertEqual(result["held"], [])
+
+    def test_issue_by_a_baton_login_is_not_outside(self):
+        item = issue(5, "ready", "deliverable", author="app/baton")
+        held = sprint.snapshot(cfg(), FakeRunner(replies([item])))
+        self.assertEqual(held["dispatchable"], [])
+        found = sprint.snapshot(cfg(), FakeRunner(replies([item])), bots={"baton[bot]"})
+        self.assertEqual(found["dispatchable"], [5])
+        self.assertEqual(found["held"], [])
 
     def test_marker_or_non_maintainer_approval_leaves_outside_issue_held(self):
         for item in (comment(OWNER, "<!-- baton:refine:status -->\n/baton ready", 1),

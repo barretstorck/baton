@@ -26,7 +26,7 @@ def issue(number, *labels, blocked="", state="OPEN", comments=()):
 
 
 def ask(number, *labels, created="2026-01-30T00:00:00Z", **kw):
-    return issue(number, *labels, comments=[cm("bot", Q, number, created)], **kw)
+    return issue(number, *labels, comments=[cm(OWNER, Q, number, created)], **kw)
 
 
 def listed(issues):

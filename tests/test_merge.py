@@ -223,6 +223,28 @@ class CheckTest(unittest.TestCase):
                                     [OWNER, "second"], "main", FakeRunner())
                 self.assertEqual(not any("protected" in p for p in found), ok)
 
+    def test_a_bot_approval_does_not_unlock_protected_paths(self):
+        files = [{"path": ".github/workflows/ci.yml"}]
+        bots = {"baton[bot]", "baton-reviewer[bot]"}
+        for login in ("baton", "app/baton", "baton-reviewer"):
+            for owner in ([OWNER], [OWNER, "baton[bot]"]):
+                with self.subTest(login=login, owner=owner):
+                    comments = [approval(), {"author": {"login": login},
+                                             "body": "/baton approve abc1234"}]
+                    found = merge.check(make_pr(files=files, comments=comments), make_config(),
+                                        owner, "main", FakeRunner(), bots=bots)
+                    self.assertTrue(any("protected" in p for p in found))
+
+    def test_a_bot_review_satisfies_the_review_requirement(self):
+        comments = [{"author": {"login": "baton-reviewer"},
+                     "body": review.compose("approve", HEAD, "Round 1.")}]
+        pr = make_pr(comments=comments)
+        found = merge.check(pr, make_config(), [OWNER], "main", FakeRunner())
+        self.assertTrue(any("reviewer approval" in p for p in found))
+        found = merge.check(pr, make_config(), [OWNER], "main", FakeRunner(),
+                            bots={"baton-reviewer[bot]"})
+        self.assertFalse(any("reviewer approval" in p for p in found))
+
     def test_other_approvals_do_not_unlock(self):
         files = [{"path": ".baton/brief.md"}]
         cases = {

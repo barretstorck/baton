@@ -208,6 +208,12 @@ def _identities():
     return _loaded
 
 
+def bot_logins():
+    """The login of each configured App; empty at tier 0 or with no loader."""
+    ids = _identities()
+    return frozenset(ids.logins()) if ids is not None else frozenset()
+
+
 def write(runner, argv, role, **kw):
     """Run a forge write as the role's App at tier 1; exactly `runner(argv, **kw)` at tier 0."""
     ids = _identities()

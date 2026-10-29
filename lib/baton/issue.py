@@ -6,7 +6,7 @@ headed sections, an `Expected files:` line and `Blocked by:` lines.
 import re
 
 from . import checklist, gate, planfile
-from .config import logins
+from .config import has_login, logins
 
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.M)
 _BLOCKED = re.compile(r"^\s*Blocked by:(.*)$", re.M | re.I)
@@ -85,24 +85,26 @@ def timebox(body):
     return result
 
 
-def is_outside(issue, maintainers):
-    """True when the author is not a maintainer or the body has an `Origin: outside (@login)` line."""
-    author = (issue.get("author") or {}).get("login")
-    return author not in logins(maintainers) or bool(_ORIGIN_OUTSIDE.search(issue.get("body") or ""))
+def is_outside(issue, maintainers, bots=()):
+    """True when the author is neither a maintainer nor a Baton login, or the body has an
+    `Origin: outside (@login)` line."""
+    author = issue.get("author")
+    known = has_login(author, maintainers) or has_login(author, list(bots))
+    return not known or bool(_ORIGIN_OUTSIDE.search(issue.get("body") or ""))
 
 
-def approved(issue, maintainers):
-    """True when a maintainer wrote an unmarked comment that is exactly `/baton ready`."""
-    allowed = logins(maintainers)
+def approved(issue, maintainers, bots=()):
+    """True when a maintainer (never a Baton login) wrote an unmarked comment that is exactly `/baton ready`."""
     for comment in issue.get("comments") or []:
         body = comment.get("body") or ""
-        if ((comment.get("author") or {}).get("login") in allowed
+        author = comment.get("author")
+        if (has_login(author, maintainers) and not has_login(author, list(bots))
                 and gate.MARKER not in body and body.strip() == APPROVAL):
             return True
     return False
 
 
-def ready_problems(issue, cfg, owner, runner=None):
+def ready_problems(issue, cfg, owner, runner=None, bots=()):
     """Why this issue does not meet the definition of ready; empty when it does.
 
     A non-spike with a `Plan:` link has its Verification and plan read from the linked file
@@ -114,8 +116,8 @@ def ready_problems(issue, cfg, owner, runner=None):
     labels = {label["name"] for label in issue.get("labels") or []}
     spike = cfg.label("type:spike") in labels
     problems = []
-    if is_outside(issue, owner):
-        if not approved(issue, owner):
+    if is_outside(issue, owner, bots):
+        if not approved(issue, owner, bots):
             problems.append(f"outside issue: it needs a comment '{APPROVAL}' from a maintainer")
     if not parts.get("context"):
         problems.append("Context section is missing or empty (say why the work matters)")
@@ -214,16 +216,19 @@ def _kept_sections(body):
     return kept
 
 
-def render(data, maintainers):
+def render(data, maintainers, bots=()):
     """The issue as text for an agent, with outsider-written text withheld.
 
     A maintainer's text is printed in full. On an issue by anyone else the body is replaced
     by a placeholder, keeping only the Triage summary and Developer Plan sections; a comment
-    by anyone else is replaced by the placeholder.
+    by anyone else is replaced by the placeholder. A Baton login (`bots`) counts as a
+    maintainer for its issues (unless the body has an `Origin: outside` line) and for comments
+    that start with the Baton marker.
     """
     allowed = {name.lower() for name in logins(maintainers)}
     author = _login(data.get("author"))
-    trusted = author.lower() in allowed
+    trusted = has_login(data.get("author"), maintainers) or (
+        has_login(data.get("author"), list(bots)) and not _ORIGIN_OUTSIDE.search(data.get("body") or ""))
     labels = ", ".join(label["name"] for label in data.get("labels") or []) or "none"
     lines = [
         f"#{data.get('number')} {_clean_title(data.get('title'))}",
@@ -242,8 +247,10 @@ def render(data, maintainers):
     for comment in data.get("comments") or []:
         who = _login(comment.get("author"))
         lines.append(f"--- comment by @{who} ---")
-        if who.lower() in allowed:
-            lines.append((comment.get("body") or "").strip())
+        text = (comment.get("body") or "").strip()
+        marked = text.split("\n", 1)[0].startswith(gate.MARKER)
+        if who.lower() in allowed or (has_login(comment.get("author"), list(bots)) and marked):
+            lines.append(text)
         else:
             lines.append(UNTRUSTED.format(author=who))
     return "\n".join(lines) + "\n"
