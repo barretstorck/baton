@@ -29,6 +29,9 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Step | Command |
 |---|---|
 | Set an issue's status | `baton set-status <N> status:<name>` (removes the previous status) |
+| Set an issue's priority | `baton set-priority <N> <1-4>` (1 urgent, 2 high, 3 medium, 4 low; replaces any other `priority:` label) |
+| Set a bug's severity | `baton set-severity <N> <1-4>` (replaces any other `severity:` label; refused unless the issue is a bug). Severity is ranking information only: no due dates, it never pulls a bug into a sprint or interrupts one. |
+| Create the Baton labels | `baton labels --create` creates every missing label, including `priority:1`-`4` and `severity:1`-`4` |
 | Add or remove another label | `baton issue edit <N> --add-label <label>` / `--remove-label <label>`; use the names from `labels.map` in `baton config` |
 | Post a comment | `baton comment <issue\|pr> <N> <role> <kind> -` with the body as an inline heredoc on standard input, or a file path in place of `-`. It scans the text, adds the Baton marker and prints the comment URL. |
 | Close or reopen | `baton close\|reopen <issue\|pr> <N> <role> <reason-file \| ->`: posts a `baton:<role>:closed`/`reopened` marker comment with the reason, then closes or reopens. `gh ... close\|reopen` is refused. An item closed with no such marker was closed by the maintainer: do not reopen it without asking. |

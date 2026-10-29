@@ -38,6 +38,14 @@ labels:
     stretch: "stretch"
     broken-default-branch: "broken-default-branch"
     needs-maintainer: "needs-maintainer"
+    priority:1: "priority:1"
+    priority:2: "priority:2"
+    priority:3: "priority:3"
+    priority:4: "priority:4"
+    severity:1: "severity:1"
+    severity:2: "severity:2"
+    severity:3: "severity:3"
+    severity:4: "severity:4"
 merge:
   allow_no_ci: false          # true only for repositories with no CI at all; the reviewer then starts without waiting for CI
 verify:

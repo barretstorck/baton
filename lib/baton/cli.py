@@ -83,6 +83,22 @@ def cmd_set_status(args):
     return 0
 
 
+def _set_group(group, args):
+    if len(args) != 2 or not args[0].isdigit() or not args[1].isdigit():
+        print(f"usage: baton set-{group} <issue-number> <1-4>", file=sys.stderr)
+        return 64
+    labels.set_group(_require_config(), run.run, int(args[0]), group, int(args[1]))
+    return 0
+
+
+def cmd_set_priority(args):
+    return _set_group("priority", args)
+
+
+def cmd_set_severity(args):
+    return _set_group("severity", args)
+
+
 def cmd_merge_pr(args):
     if len(args) != 1 or not args[0].isdigit():
         print("usage: baton merge-pr <pull-request-number>", file=sys.stderr)
@@ -503,6 +519,8 @@ COMMANDS = {
     "reopen": cmd_reopen,
     "review": cmd_review,
     "set-status": cmd_set_status,
+    "set-priority": cmd_set_priority,
+    "set-severity": cmd_set_severity,
     "sprint-status": cmd_sprint_status,
     "task": cmd_task,
     "tasks": cmd_tasks,
