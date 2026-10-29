@@ -296,6 +296,7 @@ def review_tasks(pr, owner):
 def tick_review(runner, number, owner, task_id):
     """Tick a task in the latest review. False when it was already ticked."""
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", "comments"]))
+    pr["comments"] = identity.mark_authors(runner, number, pr.get("comments"))
     item, match = _latest_review(pr.get("comments"), owner)
     if item is None or VERDICTS[match.group(1)]["tasks"] == "none":
         raise ReviewError(f"the latest review on #{number} asks for no changes")
@@ -344,6 +345,7 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, ho
     text = compose(verdict, commit, body, verify)
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json",
                             "headRefOid,comments,closingIssuesReferences"]))
+    pr["comments"] = identity.mark_authors(runner, number, pr.get("comments"))
     head = pr["headRefOid"]
     if head != commit:
         raise ReviewError(f"the pull request's head is now {head[:7]}, not {commit[:7]}; "

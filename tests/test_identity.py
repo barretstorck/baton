@@ -202,6 +202,35 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class ReviewMarkingTest(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(identity.use, None)
+        identity.use(lambda: identity.Identities(identity.App(1, 10, "k", "baton[bot]"),
+                                                 identity.App(2, 20, "k", "baton-reviewer[bot]")))
+
+    def tick(self, rest_type):
+        from baton import review
+        body = review.compose("changes", "b" * 40, "## Tasks\n- [ ] **1.1 Fix it**\n  - Check: none\n")
+        comment = {"id": "IC_9", "url": "https://x/pull/9#issuecomment-55",
+                   "author": {"login": "baton-reviewer"}, "body": body}
+        runner = FakeRunner({"gh pr view 9 --json comments": json.dumps({"comments": [comment]}),
+                             "gh api --paginate": f"IC_9\t{rest_type}\n",
+                             "gh api -X PATCH": ""})
+        owner = ["owner", "baton-reviewer[bot]"]
+        with mock.patch.object(identity, "write", lambda run, argv, role: run(argv)):
+            return review.tick_review(runner, 9, owner, "1.1"), runner
+
+    def test_bot_review_is_found(self):
+        ticked, runner = self.tick("Bot")
+        self.assertTrue(ticked)
+        self.assertTrue(any("PATCH" in line for line in runner.lines()))
+
+    def test_user_review_is_not_found(self):
+        from baton import review
+        with self.assertRaises(review.ReviewError):
+            self.tick("User")
+
+
 class TokenTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
