@@ -17,9 +17,9 @@ Please include the command or text that reproduces it.
 ## What Baton does and does not protect
 
 Baton's agents run with your own `gh` and `git` credentials and can do anything those credentials
-allow. The gate and the git hooks catch mistakes: private details in published text, and state
-changes without a marker comment. They are not a sandbox. They see only the `gh` and `git` commands
-an agent runs through Claude Code's Bash tool, and they cannot stop a determined attacker who
-controls your machine or your Claude Code session.
+allow. The gate and the git hooks catch mistakes: private details in published text and git hook
+bypasses. They are not a sandbox. They see only the forge CLIs (`FORGE_CLIS`) and `git` commands an
+agent runs through Claude Code's Bash tool, not scripts that do HTTP themselves, and they cannot
+stop a determined attacker who controls your machine or your Claude Code session.
 
 Only the latest release is supported.

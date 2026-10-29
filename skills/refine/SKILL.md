@@ -152,10 +152,12 @@ issue body, written by `baton plan set`.
 
 7. **Set the outcome.**
    - Ready, and `refine.may_mark_ready` is true in `baton config`, and `ready-check` did not
-     report that the issue was written by someone else: `baton set-status <N> status:ready`.
+     report that the issue was written by someone else or print the outside-issue note
+     (`ready (outside issue: the maintainer marks it ready)`): `baton set-status <N> status:ready`.
    - Ready, but one of those conditions fails: `baton set-status <N> status:refinement`, add the
      `needs-maintainer` label, and post a `status` comment saying it is ready for the maintainer
-     to mark.
+     to mark. This includes an outside issue, whatever `refine.may_mark_ready` says: propose and
+     stop.
    - Not ready: `baton set-status <N> status:refinement` and post what is missing.
 
 8. **Report** in a few lines per issue: the outcome, the number of plan tasks, what you changed,
@@ -253,6 +255,6 @@ and finish.
 - Leave scratch files outside your worktree.
 - Invent requirements the author did not ask for. Put ideas under a "Suggestions" heading for the
   maintainer.
-- Mark ready an issue written by someone other than the maintainer.
+- Mark ready an issue written by someone other than the maintainer, or any outside issue.
 - Remove an entry from `## Decisions`.
 - Change acceptance criteria during a re-refine without the maintainer's agreement on the issue.

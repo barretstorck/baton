@@ -20,6 +20,14 @@ review:
   max_rounds: 2               # review rounds before a disagreement goes to the maintainer
 refine:
   may_mark_ready: true        # false: refine proposes, the maintainer applies the label
+follow_ups:                   # where a follow-up goes, by severity
+  critical: deliverable       # placements: deliverable | stretch | goal | backlog | skip
+  important: goal             # goal: join as stretch only if it serves the sprint goal, else backlog
+  minor: skip                 # backlog: status:refinement, outside the sprint; skip: do not file
+  scheduled:                  # the same, for scheduled runs; a missing severity uses the value above
+    critical: deliverable
+    important: backlog
+                              # a rule in the milestone description overrides this for that sprint
 labels:
   auto_create: true           # false: a missing label stops the run
   map:                        # Baton's name: the label this repository uses

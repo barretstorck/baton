@@ -39,9 +39,13 @@ Baton's agents act with **your** `gh` and `git` credentials: they push branches,
 and merge pull requests. The publish gate and the git hooks catch mistakes (private details in
 published text, state changes without a marker comment), but they are not a sandbox; see
 [Rules the gate enforces](#rules-the-gate-enforces-in-a-baton-repository) and
-[SECURITY.md](SECURITY.md). Only issues written or marked ready by the maintainer enter a sprint,
-and only the maintainer's comments count as answers. Try it on a repository you can afford to
-experiment on first.
+[SECURITY.md](SECURITY.md). Only issues written by a maintainer enter a sprint, and only the
+maintainer's comments count as answers. An issue is *outside* when its author is not a maintainer
+or its body has a line `Origin: outside (@<author>)`; it enters a sprint only with a comment that
+is exactly `/baton ready`, unmarked, from a maintainer. Agents can only post marker comments
+through `baton comment`, but a raw comment an agent writes with `gh` looks like yours, so until
+agents have their own login (#150) this rule is only as strong as that interim. Try it on a
+repository you can afford to experiment on first.
 
 ## Plans of small tasks
 
@@ -125,6 +129,15 @@ thinking is the largest single cost of a sprint. For bulk refinement, dispatch
 `baton-refiner` agents with at most about three issues each.
 The refiner runs in its own worktree, where it can build the project and run quick experiments; for a
 `type:bug` issue it reproduces the bug and writes a `## Diagnosis` section into the description.
+
+The `follow_ups` setting says where each follow-up goes, by severity (`critical`, `important`,
+`minor`). The placements are `deliverable`, `stretch`, `goal` (join as `stretch` only when it
+serves the sprint goal, else backlog), `backlog` (`status:refinement`, outside the sprint) and
+`skip`. The defaults are `critical: deliverable`, `important: goal`, `minor: skip`.
+`follow_ups.scheduled` sets the same for scheduled runs (defaults `critical: deliverable`,
+`important: backlog`); a severity missing there uses the interactive value. With no open sprint
+everything but `skip` goes to the backlog, and a rule in the milestone description overrides the
+brief for that sprint.
 
 Typical use:
 
@@ -212,18 +225,12 @@ information only and is never enforced.
 
 ## Rules the gate enforces in a Baton repository
 
-- Comments posted by agents must start with `<!-- baton:<role>:<kind> -->`.
-- Raw forge writes are refused from any directory, and the message names the `baton` command to
-  use instead (`baton comment`, `baton issue`, `baton pr`, `baton milestone`, `baton review post`,
-  `baton close|reopen`, `baton merge-pr`, `baton labels`, `baton set-status`). `gh` is allowed
-  only for reads (`view`, `list`, `checks`, `diff`, ...); any other `gh api` call is refused
-  unless it is a plain GET.
-- A shell or evaluator (`bash -c`, `xargs`, `eval`, `python -c`) that mentions `gh` or `git` is
-  refused, because the gate cannot tell whether it writes to the forge.
-- A git publish (`commit`, `push`, `tag`) must be a plain command in the repository's own
-  directory: no `cd`, no `-C`, no `-c` option. The brief is found from the working directory
-  only; without one the command is refused.
-- Git hooks cannot be skipped (`--no-verify`, `core.hooksPath`).
+- The gate is a text scanner over commands that talk to a forge (`FORGE_CLIS`: `gh`, `glab`,
+  `tea`, `fj`, `curl`, `wget`, `http`, `https`, `xh`) and over git `commit`, `push` and `tag`. It
+  refuses only a privacy finding in their quoted text, heredocs or body files; text it cannot
+  read (stdin body, missing body file, command substitution or backticks in a double-quoted
+  body); a hook bypass (`--no-verify`, `core.hooksPath`, overriding `HOME` or `GIT_*`); and
+  missing git hooks. Every other command is allowed.
 - A pull request that touches a protected path needs a maintainer comment
   `/baton approve <commit sha>` (at least 7 characters of the sha), naming the head commit or an
   earlier one with the same changes to the protected paths.
@@ -233,7 +240,7 @@ information only and is never enforced.
   `constraints*.txt`, `pylock*.toml`), where four-part package versions look like addresses. Email,
   host-path, internal-domain and private terms are still checked in those files.
 
-The gate guards against mistakes. It is not a sandbox: it only sees `gh` and `git` commands, and cannot see through every wrapper.
+The gate guards against mistakes. It is not a sandbox: it only sees the forge CLIs in `FORGE_CLIS` and `git` commands, and a script that does HTTP itself is outside its view.
 
 ## Tests
 
