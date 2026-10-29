@@ -482,3 +482,87 @@ def branch_behind(runner, default, branch):
     except RunError:
         return None
     return commits_behind(runner, f"refs/baton/branches/{branch}", default)
+
+
+METRIC_KEYS = ("duration_days", "issues_worked", "issues_completed", "issues_missed",
+               "plan_tasks_done", "spikes", "tokens")
+_ISSUE_JSON = "number,title,state,labels,body"
+
+
+def _names(issue):
+    return {label["name"] for label in issue.get("labels", [])}
+
+
+def _missed_line(body, title):
+    return re.search(r"^Missed sprint: \[" + re.escape(title) + r"\]\(", body or "", re.M) is not None
+
+
+def _parse_time(text):
+    when = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+def sprint_metrics(cfg, runner, milestone, tokens):
+    """The seven numbers a retro records for one sprint (see METRIC_KEYS)."""
+    repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name"]))
+    base = f"{repo['owner']['login']}/{repo['name']}"
+    found = [m for m in _load(runner, ["gh", "api", f"repos/{base}/milestones?state=all&per_page=100"],
+                              "milestones") if m.get("title") == milestone]
+    if not found:
+        raise SnapshotError(f"milestone not found: {milestone}")
+    start = _parse_time(found[0]["created_at"])
+    end = _parse_time(found[0]["closed_at"]) if found[0].get("closed_at") else datetime.now(timezone.utc)
+
+    def listing(args, what):
+        return _load(runner, ["gh", "issue", "list", *args, "--state", "all", "--limit", "300",
+                              "--json", _ISSUE_JSON], what)
+
+    worked = {i["number"]: i for i in listing(["--milestone", milestone], "milestone issues")}
+    for i in listing(["--label", cfg.label("missed-sprint")], "missed-sprint issues"):
+        if _missed_line(i.get("body"), milestone):
+            worked.setdefault(i["number"], i)
+    for i in listing(["--label", f"missed:{milestone}"], "legacy missed issues"):
+        worked.setdefault(i["number"], i)
+    complete = cfg.label("status:complete")
+    spike = cfg.label("type:spike")
+    done = tasks = spikes = 0
+    for i in worked.values():
+        missed = _missed_line(i.get("body"), milestone) or f"missed:{milestone}" in _names(i)
+        if not missed and (i.get("state", "").upper() == "CLOSED" or complete in _names(i)):
+            done += 1
+        found_plan = checklist.plan(i.get("body") or "")
+        if found_plan:
+            tasks += checklist.progress(found_plan["tasks"])["done"]
+        spikes += spike in _names(i)
+    return {"duration_days": round((end - start).total_seconds() / 86400, 1),
+            "issues_worked": len(worked), "issues_completed": done,
+            "issues_missed": len(worked) - done, "plan_tasks_done": tasks,
+            "spikes": spikes, "tokens": int(tokens)}
+
+
+def format_metrics(metrics):
+    return "\n".join(f"{key}: {metrics[key]}" for key in METRIC_KEYS)
+
+
+def parse_metrics(text):
+    """Read the `## Metrics` section of a retro; numbers become int or float, blanks None."""
+    match = re.search(r"^## Metrics[ \t]*$(.*?)(?=^## |\Z)", text or "", re.M | re.S)
+    if not match:
+        raise ValueError("no '## Metrics' section")
+    values = {}
+    for line in match.group(1).splitlines():
+        key, sep, value = line.partition(":")
+        key, value = key.strip(), value.strip()
+        if not sep or key not in METRIC_KEYS:
+            continue
+        if not value:
+            values[key] = None
+            continue
+        try:
+            values[key] = float(value) if "." in value else int(value)
+        except ValueError as error:
+            raise ValueError(f"bad value for {key}: {value}") from error
+    missing = [k for k in METRIC_KEYS if k not in values]
+    if missing:
+        raise ValueError("missing metrics: " + ", ".join(missing))
+    return {k: values[k] for k in METRIC_KEYS}

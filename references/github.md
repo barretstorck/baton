@@ -24,9 +24,12 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | A review's tasks | `baton tasks pr <N>` (the latest review's `## Tasks`; none after an approval) |
 | Clean up leftovers (orchestrator) | `baton clean`: removes agent worktrees under `.claude/worktrees/` that are not on an open issue's branch, are not locked by a live process and have no unmerged commits (uncommitted files are removed with the worktree), and the log folders of closed or merged pull requests; prints `removed`/`kept` lines, exit 1 if one could not be removed |
 | Quota use | `baton usage --repo <owner/repo> [--since <UTC ISO time>] [--json]`: per issue and role, from local transcripts |
+| Sprint metrics | `baton sprint-metrics <milestone> [--since <UTC ISO time>] [--dir <projects dir>]`: seven `key: value` lines for the retro's `## Metrics` section |
 | Repository owner and default branch | `gh repo view --json owner,defaultBranchRef` |
 
 ## Writing
+
+These commands are the rule, not only what the gate checks: every write to the forge goes through the `baton` command in this table. A raw `gh` write (`gh issue comment`, `gh pr create`, `gh pr merge`, `gh label ...`, `gh api -X POST ...`) is not allowed even where the gate lets it through, because it skips the Baton marker and the checks `baton` makes.
 
 | Step | Command |
 |---|---|
@@ -37,7 +40,7 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Add or remove another label | `baton issue edit <N> --add-label <label>` / `--remove-label <label>`; use the names from `labels.map` in `baton config` |
 | Notify the maintainers | `baton notify <N> <cause> -` (text on standard input, or a file path). Causes: `stuck`, `approval`, `triage-unsure`, `spike-infeasible`, `repro-skipped`, `rule`. Adds `needs-maintainer` and posts one `status` comment that mentions every maintainer, once per issue per cause (prints `already notified` otherwise). `baton notify --rules` does this with cause `rule` for each open issue matching the brief's `notify:` rules. `/baton:open-questions` is unchanged. |
 | Post a comment | `baton comment <issue\|pr> <N> <role> <kind> -` with the body as an inline heredoc on standard input, or a file path in place of `-`. It scans the text, adds the Baton marker and prints the comment URL. |
-| Close or reopen | `baton close\|reopen <issue\|pr> <N> <role> <reason-file \| ->`: posts a `baton:<role>:closed`/`reopened` marker comment with the reason, then closes or reopens. `close` on an issue also takes `--reason spam\|duplicate\|support\|wont-do\|completed`, `--duplicate-of <N>` (required with `duplicate`; links the original and comments on it) and `--lock`: `spam`, `support` and `wont-do` add the label `closed:<reason>` and close as not planned, `duplicate` adds `closed:duplicate`, `completed` adds no label; `--lock` locks the issue after closing. None of these apply to a pull request or to `reopen`. The label `awaiting-feedback` is only a label you may set; no command acts on it. `gh ... close\|reopen` is refused. An item closed with no such marker was closed by the maintainer: do not reopen it without asking. |
+| Close or reopen | `baton close\|reopen <issue\|pr> <N> <role> <reason-file \| ->`: posts a `baton:<role>:closed`/`reopened` marker comment with the reason, then closes or reopens. `close` on an issue also takes `--reason spam\|duplicate\|support\|wont-do\|completed`, `--duplicate-of <N>` (required with `duplicate`; links the original and comments on it) and `--lock`: `spam`, `support` and `wont-do` add the label `closed:<reason>` and close as not planned, `duplicate` adds `closed:duplicate`, `completed` adds no label; `--lock` locks the issue after closing. None of these apply to a pull request or to `reopen`. The label `awaiting-feedback` is only a label you may set; no command acts on it. Do not run `gh ... close\|reopen`. An item closed with no such marker was closed by the maintainer: do not reopen it without asking. |
 | Mark an issue as missing its sprint | `baton issue missed <N> "<milestone title or number>"` (adds a `Missed sprint:` line under Pointers, the `missed-sprint` label, and removes the milestone) |
 | Edit an issue description | Write the full new description to a file, then `baton issue edit <N> --body-file <file>` (it scans the text and refuses an empty body) |
 | Edit a pull request | `baton pr edit <N>` takes the same options as `baton issue edit` (`--title`, `--body-file`, `--add-label`, `--remove-label`, `--milestone`) |
@@ -54,7 +57,7 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Insert tasks into a plan | `baton plan insert <N> <before-task> <file>` (orchestrator only; the new tasks go before that number, later open tasks are renumbered with their `task <n>` references; done tasks are refused; `total + 1` appends) |
 | Set a plan's `Written against:` | `baton plan against <N> <full sha>` (refiner; edits the body) |
 | Create or edit a milestone | `baton milestone create --title <t> [--description <d>] [--due-on <ISO date>]`; `baton milestone edit <number or title> [--title <t>] [--description <d>] [--due-on <date>] [--state open\|closed]` |
-| Merge | `baton merge-pr <N>` only. `gh pr merge` is refused. |
+| Merge | `baton merge-pr <N>` only. Do not run `gh pr merge`. |
 
 Roles: `orchestrator`, `developer`, `refine`, `reviewer`. Kinds: `question`, `status`,
 `decision`, `plan`, `review`, `findings`, `reply`. Reviews are posted only with

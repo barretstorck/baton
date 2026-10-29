@@ -15,6 +15,18 @@
 | Problems fixed in review instead of filed | |
 | Default branch at the end | |
 
+## Metrics
+
+(`baton sprint-metrics "<sprint title>" --since <first dispatch>` fills these seven lines; paste its output unchanged.)
+
+duration_days:
+issues_worked:
+issues_completed:
+issues_missed:
+plan_tasks_done:
+spikes:
+tokens:
+
 ## Delivered
 
 | Issue | Title | Pull request |

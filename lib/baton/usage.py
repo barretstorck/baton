@@ -181,3 +181,8 @@ def table(found):
     if found["skipped"]:
         lines += ["", f"{found['skipped']} unreadable records skipped."]
     return "\n".join(lines)
+
+
+def total_weighted(found):
+    """The weighted total of a report, as an integer."""
+    return int(sum(row["weighted"] for row in found["rows"]))

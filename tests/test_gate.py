@@ -247,6 +247,37 @@ class GateTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             return gate.main(json.dumps(payload))
 
+    def test_merge_hint_once_per_session(self):
+        def run(command, session="s1"):
+            payload = {"tool_name": "Bash", "cwd": "/", "tool_input": {"command": command}}
+            if session:
+                payload["session_id"] = session
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                code = gate.main(json.dumps(payload))
+            return code, out.getvalue()
+
+        tmp = tempfile.mkdtemp()
+        original, decide = tempfile.gettempdir, gate.decide
+        tempfile.gettempdir = lambda: tmp
+        try:
+            code, out = run("gh pr merge 5")
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(out), {"hookSpecificOutput": {
+                "hookEventName": "PreToolUse", "additionalContext": gate.MERGE_HINT}})
+            self.assertEqual(run("gh pr merge 5"), (0, ""))
+            code, out = run("gh pr merge 5", "s2")
+            self.assertEqual(code, 0)
+            self.assertIn(gate.MERGE_HINT, out)
+            self.assertEqual(run("gh pr merge 5", None), (0, ""))
+            self.assertEqual(run("gh pr view 5", "s3"), (0, ""))
+            gate.decide = lambda *args: ["privacy: x"]
+            code, out = run("gh pr merge 5", "s4")
+            self.assertEqual((code, out), (2, ""))
+        finally:
+            tempfile.gettempdir = original
+            gate.decide = decide
+
     def test_main_fails_closed_only_on_a_trigger(self):
         original = gate.decide
         gate.decide = lambda *args: 1 / 0
@@ -322,3 +353,23 @@ class McpToolInputTest(unittest.TestCase):
         tool_input = {"body": IP}
         self.assertEqual(self.run_main("Read", tool_input, make_repo())[0], 0)
         self.assertEqual(self.run_main("mcp__x__y", tool_input, make_repo(brief=None))[0], 0)
+
+
+class BriefListsTest(unittest.TestCase):
+    def test_forge_clis_come_from_the_brief(self):
+        root = make_repo("---\nforge_clis: [myforge]\n---\n")
+        self.assertTrue(gate.decide(f'myforge issue comment 5 --body "{IP}"', root, TERMS))
+        self.assertEqual(gate.decide(f'gh issue comment 5 --body "{IP}"', root, TERMS), [])
+
+    def test_body_file_flags_come_from_the_brief(self):
+        root = make_repo("---\nforge_clis: [myforge]\nbody_file_flags: [--text-file]\n---\n")
+        pathlib.Path(root, "notes.md").write_text(f"see {IP}\n")
+        problems = gate.decide("myforge x --text-file notes.md", root, TERMS)
+        self.assertTrue(any(p.startswith("privacy:") for p in problems), problems)
+
+    def test_defaults_apply_without_a_brief(self):
+        root = make_repo(brief=None)
+        pathlib.Path(root, "notes.md").write_text(f"see {IP}\n")
+        self.assertTrue(gate.decide("gh issue comment 5 --body-file notes.md", root, TERMS))
+        self.assertTrue(gate.forge_facing("glab mr list"))
+        self.assertFalse(gate.forge_facing("glab mr list", ("gh",)))
