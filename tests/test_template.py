@@ -59,12 +59,13 @@ class TemplateTest(unittest.TestCase):
                      "skills/open-questions/SKILL.md", "agents/baton-developer.md",
                      "agents/baton-reviewer.md",
                      "agents/baton-refiner.md", "agents/baton-researcher.md",
+                     "agents/baton-triager.md",
                      "skills/research/SKILL.md", "bin/baton"):
             self.assertTrue((ROOT / path).is_file(), path)
 
     def test_agents_run_at_medium_effort(self):
         for name in ("baton-developer", "baton-reviewer", "baton-refiner",
-                     "baton-researcher"):
+                     "baton-researcher", "baton-triager"):
             meta, _ = frontmatter.split((ROOT / "agents" / f"{name}.md").read_text())
             self.assertIn("\neffort: medium\n", f"\n{meta}\n", name)
 
@@ -128,6 +129,7 @@ class TemplateTest(unittest.TestCase):
             "baton-reviewer": "tools: Read, Grep, Glob, Bash",
             "baton-refiner": "tools: Read, Grep, Glob, Bash, Write, WebSearch, WebFetch",
             "baton-researcher": "tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch",
+            "baton-triager": "tools: Bash, Write",
         }
         for name, line in expected.items():
             meta, _ = frontmatter.split((ROOT / "agents" / f"{name}.md").read_text())
@@ -141,6 +143,15 @@ class TemplateTest(unittest.TestCase):
                     self.assertIn(web, tools, name)
                 else:
                     self.assertNotIn(web, tools, name)
+
+    def test_triager_defaults_and_commands(self):
+        text = (ROOT / "agents/baton-triager.md").read_text()
+        meta, body = frontmatter.split(text)
+        self.assertIn("model: haiku", meta.splitlines())
+        self.assertIn("baton:triage", meta)
+        self.assertIn("baton triage apply", body)
+        for banned in ("gh issue edit", "gh issue close", "gh issue comment"):
+            self.assertNotIn(banned, text)
 
     def test_refiner_handles_re_refine_after_spike(self):
         skill = (ROOT / "skills/refine/SKILL.md").read_text()
