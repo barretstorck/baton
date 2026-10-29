@@ -201,7 +201,12 @@ def _path_tokens(block):
         if not _PATH_LINE.match(line):
             continue
         for token, is_new in _TICKED.findall(line):
-            token = _LINE_SUFFIX.sub("", token.strip())
+            token = token.strip().split("::", 1)[0]
+            if token.startswith("${CLAUDE_PLUGIN_ROOT}/"):
+                token = token[len("${CLAUDE_PLUGIN_ROOT}/"):]
+            token = _LINE_SUFFIX.sub("", token)
+            if not token:
+                continue
             if " " in token or "<" in token:
                 continue
             if "." not in token.rsplit("/", 1)[-1] and token.count("/") < 2:

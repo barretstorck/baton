@@ -407,7 +407,7 @@ class SnapshotTest(unittest.TestCase):
                           "next_task_url": None,
                           "review": {"round": 1, "done": 0, "total": 1, "next": "1.1"},
                           "review_without_tasks": False,
-                          "stale": {"missing_paths": None,
+                          "stale": {"missing_paths": None, "ambiguous_paths": None,
                                     "path_check_skipped": "the default branch listing is empty",
                                     "plan_behind": 2},
                           "branch_behind": 2, "merge_first": False})
@@ -853,6 +853,7 @@ class DefaultBranchStateTest(unittest.TestCase):
         result, _ = self._stale_snap("`lib/gone.py`, `lib/also_gone.py`, `lib/keep.py`")
         self.assertEqual(result["progress"]["7"]["stale"],
                          {"missing_paths": ["lib/also_gone.py", "lib/gone.py"],
+                          "ambiguous_paths": {},
                           "path_check_skipped": None, "plan_behind": 4})
         self.assertEqual(result["dispatchable"], [])
         self.assertEqual(result["held"],
@@ -876,7 +877,20 @@ class DefaultBranchStateTest(unittest.TestCase):
         result, _ = self._stale_snap("`sprint.py`, `other.py`",
                                      tracked="lib/other.py\ntests/other.py\nlib/keep.py\n")
         self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], ["other.py", "sprint.py"])
+        self.assertEqual(result["progress"]["7"]["stale"]["ambiguous_paths"],
+                         {"other.py": ["lib/other.py", "tests/other.py"]})
         self.assertEqual(result["dispatchable"], [])
+
+    def test_hold_reason_names_the_matches_of_an_ambiguous_name(self):
+        result, _ = self._stale_snap("`other.py`, `sprint.py`",
+                                     tracked="lib/other.py\ntests/other.py\nlib/keep.py\n")
+        self.assertEqual(result["held"],
+                         [{"number": 7, "reason": "plan names 2 missing paths; re-refine; "
+                                                  "other.py matches lib/other.py, tests/other.py"}])
+
+    def test_path_with_test_suffix_is_present(self):
+        result, _ = self._stale_snap("`lib/keep.py::test_x`")
+        self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], [])
 
     def test_path_a_blocker_creates_is_not_missing(self):
         result, _ = self._stale_snap("`lib/new_b.py`, `lib/gone.py`", blocker="`lib/new_b.py` (new)",
@@ -915,7 +929,7 @@ class DefaultBranchStateTest(unittest.TestCase):
                                     extra={"git ls-tree": "", "git rev-list": "4\n"}))
         result = sprint.snapshot(cfg(), runner)
         self.assertEqual(result["progress"]["7"]["stale"],
-                         {"missing_paths": None,
+                         {"missing_paths": None, "ambiguous_paths": None,
                           "path_check_skipped": "the default branch listing is empty",
                           "plan_behind": 4})
         self.assertEqual(result["dispatchable"], [7])

@@ -845,6 +845,18 @@ Written against: {SHA}
         self.assertEqual(checklist.named_paths(text),
                          ["lib/b.py", "lib/c.py", "lib/d.py", "lib/e.py"])
 
+    def test_double_colon_and_plugin_root_tokens(self):
+        text = self._plan("- [ ] **1. A**", "  - Check: `lib/cli.py::test_a`, `tests/test_t.py::T::test_b`, "
+                          "`${CLAUDE_PLUGIN_ROOT}/references/x.md`, `::x`")
+        # Check lines are not path lines; use Uses
+        text = text.replace("Check:", "Uses:")
+        self.assertEqual(checklist.named_paths(text),
+                         ["lib/cli.py", "references/x.md", "tests/test_t.py"])
+
+    def test_new_mark_on_double_colon_token(self):
+        text = self._plan("- [ ] **1. A**", "  - Files: `tests/test_n.py::test_x` (new)")
+        self.assertEqual(checklist.created_paths(text), {"tests/test_n.py"})
+
     def test_placeholders_dropped(self):
         text = self._plan("- [ ] **1. A**", "  - Files: `owner/name`, `lib/x/y`, `a/b.py`")
         self.assertEqual(checklist.named_paths(text), ["a/b.py", "lib/x/y"])
