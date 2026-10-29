@@ -47,14 +47,6 @@ def load_template(owner, repo, home=None):
     return parse_template(path.read_text())
 
 
-PROBE = ("import socket\n"
-         "try:\n"
-         "    socket.create_connection(('1.1.1.1', 53), timeout=3).close()\n"
-         "    print('REACHABLE')\n"
-         "except OSError:\n"
-         "    print('UNREACHABLE')")
-
-
 def _log_path(owner, repo, now, home):
     folder = pathlib.Path(verify._home(home)) / f"{owner}-{repo}" / "logs" / "sandbox"
     folder.mkdir(parents=True, exist_ok=True)
@@ -91,17 +83,6 @@ def run_in_sandbox(runner, owner, repo, default_branch, command, timeout_seconds
             "tail": verify.tail(log)}
 
 
-def check(runner, owner, repo, default_branch, timeout_seconds, execute=verify.execute,
-          now=None, home=None):
-    """Return (state, log): none, isolated, not-isolated or probe-failed."""
-    if not load_template(owner, repo, home):
-        return "none", None
-    command = "python3 -c " + shlex.quote(PROBE)
-    status, log = _run(runner, owner, repo, default_branch, command, timeout_seconds,
-                       execute, now, home)
-    text = pathlib.Path(log).read_text(errors="replace") if pathlib.Path(log).exists() else ""
-    if "UNREACHABLE" in text:
-        return "isolated", str(log)
-    if "REACHABLE" in text:
-        return "not-isolated", str(log)
-    return "probe-failed", str(log)
+def check(owner, repo, home=None):
+    """Return "configured" if the local brief has a sandbox command, else "none". Runs nothing."""
+    return "configured" if load_template(owner, repo, home) else "none"

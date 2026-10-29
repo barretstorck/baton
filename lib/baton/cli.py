@@ -709,11 +709,9 @@ def cmd_sandbox(args):
     branch = repo["defaultBranchRef"]["name"]
     seconds = cfg["verify"]["timeout_minutes"] * 60
     if action == "check":
-        state, log = sandbox.check(run.run, owner, name, branch, seconds)
+        state = sandbox.check(owner, name)
         print(state)
-        if log:
-            print(f"log: {log}")
-        return 0 if state in ("none", "isolated") else 1
+        return 0 if state == "configured" else 1
     out = sandbox.run_in_sandbox(run.run, owner, name, branch, " ".join(args[1:]), seconds)
     print(f"sandbox exit={out['exit']}")
     print(f"log: {out['log']}")
