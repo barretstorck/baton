@@ -128,6 +128,8 @@ class Call:
     bad_env: bool
     unknown_option: bool = False
     stdin: str = ""
+    expands: bool = False
+    piped: bool = False
 
 
 @dataclass
@@ -164,7 +166,7 @@ def _split_heredocs(command):
     Each operator and delimiter becomes `<<` and a placeholder word; the map goes from
     placeholder to body. Heredocs inside quoted values are left in place.
     """
-    out, bodies, pending = [], {}, []
+    out, bodies, pending, expanding = [], {}, [], set()
     index, quote, depth, length = 0, "", 0, len(command)
     while index < length:
         char = command[index]
@@ -198,6 +200,8 @@ def _split_heredocs(command):
                 word = match.group(2) or match.group(3) or match.group(4) or ""
                 name = f"__baton_heredoc_{len(bodies) + len(pending)}__"
                 pending.append((name, word, bool(match.group(1))))
+                if match.group(4) is not None:
+                    expanding.add(name)
                 out.append(f"<< {name}")
                 index = match.end()
                 continue
@@ -221,13 +225,15 @@ def _split_heredocs(command):
         index += 1
     for name, _, _ in pending:   # no newline followed: an empty body
         bodies[name] = ""
-    return "".join(out), bodies
+    return "".join(out), bodies, expanding
 
 
-def _invocations(tokens, heredocs=None):
-    """Yield (words, stdin) per invocation; redirections and their targets are dropped."""
+def _invocations(tokens, heredocs=None, expanding=()):
+    """Yield (words, stdin, expands, piped) per invocation; redirections and their targets
+    are dropped. `expands` marks a heredoc whose delimiter was unquoted; `piped` marks a
+    command whose output goes into the next one."""
     heredocs = heredocs or {}
-    current, stdin, skip, here = [], "", False, False
+    current, stdin, skip, here, expands = [], "", False, False, False
     for token in tokens:
         if token and set(token) <= _PUNCTUATION:
             if token in _REDIRECTS:
@@ -237,16 +243,17 @@ def _invocations(tokens, heredocs=None):
                 continue
             skip = False
             if current:
-                yield current, stdin
-            current, stdin = [], ""
+                yield current, stdin, expands, token in ("|", "|&")
+            current, stdin, expands = [], "", False
         elif skip:
             skip = False
             if here:
                 stdin = heredocs.get(token, token)
+                expands = token in expanding
         else:
             current.append(token)
     if current:
-        yield current, stdin
+        yield current, stdin, expands, False
 
 
 def _bad_name(name):
@@ -587,9 +594,46 @@ def _has_brief(path):
         return False
 
 
+def _reaches_shell(calls, number):
+    """True when the call is a shell, or pipes into one later in its pipeline."""
+    while True:
+        if calls[number].program in _SHELLS:
+            return True
+        if not calls[number].piped or number + 1 >= len(calls):
+            return False
+        number += 1
+
+
+def _substitutions(text):
+    """Contents of `$(...)` and backtick substitutions in the body of an unquoted heredoc."""
+    found, index = [], 0
+    while index < len(text):
+        if text[index] == "\\":
+            index += 2
+        elif text.startswith("$(", index):
+            depth, end = 1, index + 2
+            while end < len(text) and depth:
+                depth += {"(": 1, ")": -1}.get(text[end], 0)
+                end += 1
+            found.append(text[index + 2:end - 1 if depth == 0 else end])
+            index = end
+        elif text[index] == "`":
+            end = text.find("`", index + 1)
+            end = len(text) if end < 0 else end
+            found.append(text[index + 1:end])
+            index = end + 1
+        else:
+            index += 1
+    return found
+
+
 def decide(command, cwd, terms):
-    stripped, heredocs = _split_heredocs(command)
-    calls = [_call(words, stdin) for words, stdin in _invocations(tokenize(stripped), heredocs)]
+    stripped, heredocs, expanding = _split_heredocs(command)
+    calls = []
+    for words, stdin, expands, piped in _invocations(tokenize(stripped), heredocs, expanding):
+        call = _call(words, stdin)
+        call.expands, call.piped = expands, piped
+        calls.append(call)
     named = _named_directories(calls)
     if not _has_brief(cwd):
         literal = [os.path.join(cwd, os.path.expanduser(name)) for name in named
@@ -598,11 +642,14 @@ def decide(command, cwd, terms):
             return []
     problems, items = [], []
     moves = any(_changes_directory(call) for call in calls)
-    for call in calls:
+    for number, call in enumerate(calls):
         if call.unknown_option:
             problems.append(_WRAPPER_MESSAGE)
-        if call.program in _SHELLS and call.stdin:
+        if call.stdin and _reaches_shell(calls, number):
             problems.extend(decide(call.stdin, cwd, terms))
+        elif call.stdin and call.expands:
+            for inner in _substitutions(call.stdin):
+                problems.extend(decide(inner, cwd, terms))
         if _is_evaluator(call.program):
             if any(_GH_OR_GIT.search(arg) for arg in call.args):
                 problems.append(_WRAPPER_MESSAGE)

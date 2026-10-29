@@ -425,6 +425,18 @@ class ReadOnlyCommandsTest(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertEqual(gate.decide(cmd, repo, TERMS), [])
 
+    def test_heredoc_reaching_a_shell_is_checked(self):
+        repo = make_repo()
+        for cmd in ("cat <<'EOF' | sh\ngh issue close 1\nEOF",
+                    "cat <<EOF\n$(gh issue close 1)\nEOF",
+                    "cat <<EOF\n`gh issue close 1`\nEOF"):
+            with self.subTest(cmd=cmd):
+                self.assertTrue(gate.decide(cmd, repo, TERMS))
+        for cmd in ("cat <<'EOF' | sh\nls\nEOF", "cat <<EOF\n$(date)\nEOF",
+                    "cat <<'EOF'\n$(gh issue close 1)\nEOF"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [])
+
     def test_publishing_stays_refused(self):
         repo = make_repo()
         for cmd in ('git -C "$dir" commit -m x', 'git -C "$dir" push', 'cd "$D" && git push',
