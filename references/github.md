@@ -24,8 +24,8 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | An issue's plan | the `## Developer Plan` section of the issue body: `baton issue read <N> | sed -n '/^## Developer Plan/,/^--- comments ---$/p'`. The body is limited to 65536 characters; a longer one is refused and the issue must be split. Older issues: a plan still on `refs/plans/<N>` or on a branch is moved into the body by `baton plan migrate <N>`. |
 | A review's tasks | `baton tasks pr <N>` (the latest review's `## Tasks`; none after an approval) |
 | Clean up leftovers (orchestrator) | `baton clean`: removes agent worktrees under `.claude/worktrees/` that are not on an open issue's branch, are not locked by a live process and have no unmerged commits (uncommitted files are removed with the worktree), and the log folders of closed or merged pull requests; prints `removed`/`kept` lines, exit 1 if one could not be removed |
-| Quota use | `baton usage --repo <owner/repo> [--since <UTC ISO time>] [--json]`: per issue and role, from local transcripts |
-| Spike token limit | `baton budget`: a PreToolUse hook, not run by hand; blocks a researcher's tools once its `Timebox:` token limit is spent, except `baton comment` |
+| Quota use | `baton usage --repo <owner/repo> [--since <UTC ISO time>] [--json]`: per issue and role, from local transcripts; transcripts record streaming-time output tokens, so `Output>=` and `output_lower_bound` are lower bounds |
+| Spike token limit | `baton budget`: a PreToolUse hook, not run by hand; blocks a researcher's tools once its `Timebox:` token limit is spent, except `baton comment`; it rests on input and cache tokens, as output is undercounted |
 | Sprint metrics | `baton sprint-metrics <milestone> [--since <UTC ISO time>] [--dir <projects dir>]`: seven `key: value` lines for the retro's `## Metrics` section |
 | Sprint capacity | `baton sprint-capacity <days> [--retros <n>]`: reads the last retros' `## Metrics` and proposes somewhat less (a 0.8 buffer) than their average issues and plan tasks for `<days>`, as JSON |
 | Repository owner and default branch | `gh repo view --json owner,defaultBranchRef` |
