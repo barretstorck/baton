@@ -37,7 +37,9 @@ looks done. Workflow adapted from the
    their terms. Do not suggest terms yourself and never print the file's contents.
 
 6. **Install the git hooks.** Run `baton install-hooks`. If it reports an existing hook that is
-   not Baton's, show the maintainer and stop; do not overwrite it.
+   not Baton's, show the maintainer and stop; do not overwrite it. The hooks record the plugin
+   version's `baton` and fall back to `baton` on `PATH`; when a plugin update removes that version,
+   the gate refuses commits and pushes until `baton install-hooks` is run again.
 
 7. **Verify.** Run `baton config` and confirm it prints the settings. Run `baton labels` and
    confirm it exits 0.
