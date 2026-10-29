@@ -971,3 +971,34 @@ class SprintMetricsTest(unittest.TestCase):
             sprint.parse_metrics("## Outcome\nx\n")
         with self.assertRaises(ValueError):
             sprint.parse_metrics("## Metrics\ntokens: 1\n")
+
+
+class SprintMetricsCommandTest(unittest.TestCase):
+    def call(self, args, runner=None):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+        from unittest import mock
+        from baton import cli
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.run, "run", runner or SprintMetricsTest().runner()), \
+                mock.patch.object(cli.usage, "report", return_value={"rows": [{"weighted": 7.9}]}), \
+                redirect_stdout(out), redirect_stderr(err):
+            code = cli.cmd_sprint_metrics(args)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_usage_without_milestone(self):
+        code, _, err = self.call([])
+        self.assertEqual(code, 64)
+        self.assertIn("usage: baton sprint-metrics", err)
+
+    def test_prints_seven_lines(self):
+        code, out, _ = self.call([SprintMetricsTest.TITLE, "--since", "2026-10-01T00:00:00Z"])
+        self.assertEqual(code, 0)
+        self.assertEqual(sprint.parse_metrics("## Metrics\n" + out)["tokens"], 7)
+        self.assertEqual(len(out.strip().splitlines()), 7)
+
+    def test_unknown_milestone_exits_1(self):
+        code, _, err = self.call(["nope"], SprintMetricsTest().runner(milestones=[]))
+        self.assertEqual(code, 1)
+        self.assertIn("milestone not found", err)
