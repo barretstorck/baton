@@ -774,6 +774,40 @@ def cmd_clean(args):
     return 1 if failed or failed_logs else 0
 
 
+def cmd_identity(args):
+    if args != ["worktree"]:
+        print("usage: baton identity worktree", file=sys.stderr)
+        return 64
+    who = identity.commit_identity(run.run)
+    if who is None:
+        print("tier 0: commits keep your git identity")
+        return 0
+    cwd = os.getcwd()
+    if not review.in_linked_worktree(run.run, cwd):
+        print("baton: run this in a linked worktree, not the main checkout", file=sys.stderr)
+        return 1
+    name, email = who
+    try:
+        flag = run.run(["git", "config", "--get", "extensions.worktreeConfig"], cwd=cwd).strip()
+    except run.RunError:
+        flag = ""
+    if flag != "true":
+        run.run(["git", "config", "extensions.worktreeConfig", "true"], cwd=cwd)
+    run.run(["git", "config", "--worktree", "user.name", name], cwd=cwd)
+    run.run(["git", "config", "--worktree", "user.email", email], cwd=cwd)
+    print(f"commits in this worktree are by {name} {email}")
+    return 0
+
+
+def cmd_push(args):
+    if len(args) != 1:
+        print("usage: baton push <refspec>", file=sys.stderr)
+        return 64
+    argv, env = identity.push_command(args[0], _repo_name())
+    print(run.run(argv, cwd=os.getcwd(), env=env), end="")
+    return 0
+
+
 def cmd_doctor(args):
     if args:
         print("usage: baton doctor", file=sys.stderr)
@@ -796,12 +830,14 @@ COMMANDS = {
     "gate": cmd_gate,
     "git-hook": cmd_git_hook,
     "install-hooks": cmd_install_hooks,
+    "identity": cmd_identity,
     "issue": cmd_issue,
     "labels": cmd_labels,
     "lock": cmd_lock,
     "merge-pr": cmd_merge_pr,
     "milestone": cmd_milestone,
     "plan": cmd_plan,
+    "push": cmd_push,
     "pr": cmd_pr,
     "pr-state": cmd_pr_state,
     "reopen": cmd_reopen,

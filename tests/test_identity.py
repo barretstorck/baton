@@ -209,6 +209,49 @@ class DescribeTest(unittest.TestCase):
             self.assertNotIn(bad, text)
 
 
+class GitIdentityTest(unittest.TestCase):
+    def setUp(self):
+        from unittest import mock
+        from tests.fakes import FakeRunner
+        self.runner = FakeRunner()
+        self.ids = identity.Identities(identity.App(1, 11, "k", "baton[bot]"))
+        p = mock.patch.object(identity, "token", lambda *a: "tok-baton")
+        p.start()
+        self.addCleanup(p.stop)
+        self.addCleanup(identity.use, None)
+
+    def test_tier0(self):
+        identity.use(lambda: None)
+        self.assertEqual(identity.push_command("HEAD:refs/heads/b", "o/r"),
+                         (["git", "push", "origin", "HEAD:refs/heads/b"], None))
+        self.assertIsNone(identity.commit_identity(self.runner))
+        self.assertEqual(self.runner.calls, [])
+
+    def test_tier1_push_keeps_token_out_of_argv(self):
+        identity.use(lambda: self.ids)
+        argv, env = identity.push_command("HEAD:refs/heads/b", "o/r")
+        self.assertIn("https://github.com/o/r.git", argv)
+        self.assertEqual(argv[-1], "HEAD:refs/heads/b")
+        self.assertEqual(argv[1:4], ["-c", "credential.helper=", "-c"])
+        self.assertFalse(any("tok-baton" in a for a in argv))
+        self.assertEqual(env, {"BATON_GIT_TOKEN": "tok-baton", "GIT_TERMINAL_PROMPT": "0"})
+
+    def test_commit_identity(self):
+        from tests.fakes import FakeRunner
+        identity.use(lambda: self.ids)
+        runner = FakeRunner({"gh api users/baton[bot]": '{"id": 42}'})
+        self.assertEqual(identity.commit_identity(runner),
+                         ("baton[bot]", "42+baton[bot]@users.noreply.github.com"))
+
+    def test_missing_id_raises(self):
+        from tests.fakes import FakeRunner
+        identity.use(lambda: self.ids)
+        for reply in ('{"login": "x"}', '{"id": "7"}', 'nope', ''):
+            with self.assertRaises(identity.IdentityError) as cm:
+                identity.commit_identity(FakeRunner({"gh api": reply}))
+            self.assertIn("baton[bot]", str(cm.exception))
+
+
 class ActualLoginTest(unittest.TestCase):
     app = identity.App(7, 70, "/k/x.pem", "x[bot]")
 

@@ -21,7 +21,7 @@ repository at the same time: never touch their branches, worktrees or pull reque
 Your final message is read by the sprint orchestrator, not by a person. Make it one of the
 return forms the skill defines, and nothing else.
 
-A plan task you tick yourself with `baton task done issue <N> <n>` in the issue body and push your code with a plain push; for a review task you never run `baton task done pr`: return `FIXED <sha>` or `DECLINED <reason>` and the orchestrator ticks.
+A plan task you tick yourself with `baton task done issue <N> <n>` in the issue body and push your code with `baton push`; for a review task you never run `baton task done pr`: return `FIXED <sha>` or `DECLINED <reason>` and the orchestrator ticks.
 
 The `tools:` list above is deliberate: the `develop` skill needs file, search and shell work (`gh`, `git` and `baton` run through Bash). If a run shows a tool is missing, add it to the list and write the reason here.
 
