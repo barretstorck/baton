@@ -21,6 +21,8 @@ What this issue must not change.
 
 Expected files: `path/one`, `path/two`
 Blocked by: (issue numbers such as #12, or leave this line out)
+Spike for: (#12, the issue this spike was made from; only on spikes made from another issue, otherwise leave this line out)
+Origin: outside (only when the issue this spike was made from has this line, otherwise leave this line out)
 
 ## Decisions
 

@@ -133,6 +133,14 @@ class TemplateTest(unittest.TestCase):
             self.assertIn("never copy or link `.env`", text.lower(), path)
             self.assertIn("## Local data", text, path)
 
+    def test_refine_skill_creates_linked_blocking_spikes(self):
+        text = " ".join((ROOT / "skills/refine/SKILL.md").read_text().split())
+        for needle in ("[SPIKE]", "Spike for: #", "Origin: outside", "Blocked by: #<spike>"):
+            self.assertIn(needle, text)
+        tmpl = (ROOT / "templates" / "issue.md").read_text()
+        self.assertIn("Spike for:", tmpl)
+        self.assertIn("Origin: outside", tmpl)
+
     def test_sprint_skill_names_orchestrator_role_variable(self):
         text = (ROOT / "skills/sprint/SKILL.md").read_text()
         self.assertIn("BATON_ROLE", text)
