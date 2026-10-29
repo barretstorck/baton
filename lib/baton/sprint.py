@@ -376,7 +376,8 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
         elif status == "status:in-review":
             pr = pr_for.get(number)
             if pr and cfg.data["review"]["required"]:
-                found = review.current(pr, trusted, cfg, runner, branch)
+                found = review.current(pr, trusted, cfg, runner, branch,
+                                       list(maintainers) + sorted(bots))
                 review_state, rounds = found["state"], found["rounds"]
             else:
                 review_state, rounds = "not-required", 0

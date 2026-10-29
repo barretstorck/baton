@@ -150,7 +150,8 @@ def check(pr, cfg, owner, default_branch, runner, notes=None, bots=(), reviewers
 
     if cfg.data["review"]["required"]:
         trusted = list(logins(owner)) + sorted(reviewers)
-        found = review.current(pr, trusted, cfg, runner, default_branch)
+        found = review.current(pr, trusted, cfg, runner, default_branch,
+                               list(logins(owner)) + sorted(bots))
         if found["state"] != "approved":
             problems.append("no reviewer approval of the change at the head commit "
                             f"(review state: {found['state']})")

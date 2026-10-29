@@ -73,6 +73,20 @@ class MaintainersTest(unittest.TestCase):
         events = review.history([item], [OWNER, "baton[bot]"])
         self.assertEqual([e["kind"] for e in events], ["reply"])
 
+    def test_developer_app_reply_counts_but_not_its_review(self):
+        def bot(item, login):
+            item["author"] = {"login": login, "__typename": "Bot"}
+            return item
+        owner, repliers = [OWNER, "baton-reviewer[bot]"], [OWNER, "baton[bot]", "baton-reviewer[bot]"]
+        comments = [bot(rev("changes"), "baton-reviewer"), bot(reply(), "baton")]
+        self.assertEqual(review.state(comments, owner, 2, repliers)["state"], "replied")
+        self.assertEqual(review.state(comments, owner, 2)["state"], "changes")
+        forged = [bot(rev("approve"), "baton")]
+        self.assertEqual(review.state(forged, owner, 2, repliers)["state"], "none")
+        plain = [bot(rev("changes"), "baton-reviewer"), bot(reply(), "baton")]
+        plain[1]["author"] = {"login": "baton"}
+        self.assertEqual(review.state(plain, owner, 2, repliers)["state"], "changes")
+
 
 class StateTest(unittest.TestCase):
     def test_states_in_order(self):
