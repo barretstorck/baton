@@ -192,27 +192,48 @@ def layout_problems(body):
 _PATH_LINE = re.compile(r"^\s*[-*]?\s*(?:Files|Uses|Port from):", re.I)
 _TICKED = re.compile(r"`([^`]+)`(\s*\(new\b)?")
 _PATH_EXT = (".py", ".md", ".rs", ".toml", ".yml", ".yaml", ".json", ".sh", ".js", ".ts")
-_LINE_SUFFIX = re.compile(r":\d+(?:-\d+)?$")
+_LINE_SUFFIX = re.compile(r":\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$")
+
+
+def _path_tokens(block):
+    """(token, is_new) for each path-like token on the path lines of a task block."""
+    for line in block["lines"][1:]:
+        if not _PATH_LINE.match(line):
+            continue
+        for token, is_new in _TICKED.findall(line):
+            token = _LINE_SUFFIX.sub("", token.strip())
+            if " " in token or "<" in token:
+                continue
+            if "." not in token.rsplit("/", 1)[-1] and token.count("/") < 2:
+                continue
+            if "/" in token or token.endswith(_PATH_EXT):
+                yield token, bool(is_new)
+
+
+def created_paths(text):
+    """Paths marked '(new' on the Files, Uses and Port from lines of any task, ticked or not."""
+    where = span(text, "plan")
+    if where is None:
+        return set()
+    return {token for block in _blocks(text[where[0]:where[1]])[1]
+            for token, is_new in _path_tokens(block) if is_new}
 
 
 def named_paths(text):
-    """Sorted, unique paths named on the Files, Uses and Port from lines of unticked tasks."""
+    """Sorted, unique paths named on the Files, Uses and Port from lines of unticked tasks.
+
+    A path marked '(new' in the same or an earlier task (ticked or not) is not reported.
+    """
     where = span(text, "plan")
     if where is None:
         return []
-    found = set()
+    found, created = set(), set()
     for block in _blocks(text[where[0]:where[1]])[1]:
+        tokens = list(_path_tokens(block))
+        created.update(token for token, is_new in tokens if is_new)
         if block["done"]:
             continue
-        for line in block["lines"][1:]:
-            if not _PATH_LINE.match(line):
-                continue
-            for token, is_new in _TICKED.findall(line):
-                token = _LINE_SUFFIX.sub("", token.strip())
-                if is_new or " " in token or "<" in token:
-                    continue
-                if "/" in token or token.endswith(_PATH_EXT):
-                    found.add(token)
+        found.update(token for token, is_new in tokens if not is_new and token not in created)
     return sorted(found)
 
 
