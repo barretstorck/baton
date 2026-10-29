@@ -358,23 +358,26 @@ def _handed_off(item):
 
 
 def handoffs_last_day(issues, now):
-    """Hand-off comments created within 24 hours of `now`, across open issues."""
+    """Hand-off comments created within 24 hours of `now`, across the given issues, open or closed."""
     count = 0
     for item in issues:
-        if item.get("state") != "OPEN":
-            continue
         for comment in _handed_off(item):
             if comment.get("createdAt") and now - _parse(comment["createdAt"]) < timedelta(hours=24):
                 count += 1
     return count
 
 
-def reproduce_candidates(issues, cfg, now, limit):
+def reproduce_candidates(issues, cfg, now, limit, closed=()):
     """Numbers of triaged open bugs to hand to the refiner, oldest first.
 
     At most `limit` minus the hand-offs of the last 24 hours, never negative.
+    The hand-offs are counted over `issues` plus `closed` (recently closed
+    issues), each issue number once, the entry in `issues` winning. Only open
+    entries of `issues` are candidates.
     """
-    room = max(0, limit - handoffs_last_day(issues, now))
+    seen = {item.get("number") for item in issues}
+    counted = list(issues) + [item for item in closed if item.get("number") not in seen]
+    room = max(0, limit - handoffs_last_day(counted, now))
     bug, refine = cfg.label("type:bug"), cfg.label("status:refinement")
     skip = cfg.label("awaiting-feedback")
     found = [item for item in issues

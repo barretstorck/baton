@@ -496,7 +496,17 @@ class ReproduceTests(unittest.TestCase):
     def test_handoffs_window(self):
         issues = [bug(1, handoffs=[{"hours": 23}, {"hours": 25}]),
                   bug(2, handoffs=[{"hours": 1}], state="CLOSED")]
-        self.assertEqual(triage.handoffs_last_day(issues, NOW), 1)
+        self.assertEqual(triage.handoffs_last_day(issues, NOW), 2)
+
+    def test_closed_issue_handoff_counts(self):
+        closed = [bug(1, handoffs=[{"hours": 1}], state="CLOSED")]
+        self.assertEqual(triage.reproduce_candidates([bug(2)], make_cfg(), NOW, 1, closed=closed), [])
+        self.assertEqual(triage.reproduce_candidates([bug(2)], make_cfg(), NOW, 2, closed=closed), [2])
+
+    def test_same_number_in_both_lists_counts_once(self):
+        both = bug(1, handoffs=[{"hours": 1}])
+        closed = [bug(1, handoffs=[{"hours": 1}], state="CLOSED")]
+        self.assertEqual(triage.reproduce_candidates([both, bug(2)], make_cfg(), NOW, 2, closed=closed), [2])
 
     def test_other_comments_do_not_count(self):
         issue = bug(1)
