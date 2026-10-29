@@ -92,7 +92,7 @@ the issue.
 6. Hand bugs to the refiner. Run `baton triage queue` again; its `reproduce` list holds the
    triaged bugs still to reproduce, already cut to what is left of `triage.max_reproductions_per_day`
    for the last 24 hours (0 turns hand-off off). For each number in `reproduce`, run
-   `baton comment issue <N> orchestrator status -` with the first line `<!-- baton:repro-handoff -->`
+   `baton comment issue <N> orchestrator status -` with the first line of the body `<!-- baton:repro-handoff -->`
    and one sentence saying reproduction was handed to the refiner. Then start one
    `baton:baton-refiner` (Agent tool, `model` and `effort` from `refiner` in `baton config`, prompt
    `Refine issues <N>.`) per number and wait for all. The refiner reproduces only in the sandbox

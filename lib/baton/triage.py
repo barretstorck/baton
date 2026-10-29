@@ -354,7 +354,7 @@ REPRO_MARK = "<!-- baton:repro-handoff -->"
 
 def _handed_off(item):
     return [c for c in item.get("comments") or []
-            if (c.get("body") or "").lstrip().split("\n", 1)[0].strip() == REPRO_MARK]
+            if REPRO_MARK in (c.get("body") or "")]
 
 
 def handoffs_last_day(issues, now):

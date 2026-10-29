@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 
+from baton import comment
 from baton import triage
 from baton import config
 from tests.fakes import FakeRunner
@@ -485,7 +486,8 @@ def bug(number, ago=None, labels=("type:bug", "status:refinement"), body="## Tri
         handoffs=(), **kw):
     data = item(number, ago or {"days": 1}, labels, **kw)
     data["body"] = body
-    data["comments"] = [{"createdAt": stamp(**h), "body": triage.REPRO_MARK + "\nhanded"}
+    data["comments"] = [{"createdAt": stamp(**h), "body": comment.compose("orchestrator", "status",
+                                                           triage.REPRO_MARK + "\nhanded")}
                         for h in handoffs]
     return data
 
@@ -498,8 +500,16 @@ class ReproduceTests(unittest.TestCase):
 
     def test_other_comments_do_not_count(self):
         issue = bug(1)
-        issue["comments"] = [{"createdAt": stamp(hours=1), "body": "hi\n" + triage.REPRO_MARK}]
+        issue["comments"] = [{"createdAt": stamp(hours=1), "body": comment.compose("orchestrator", "status", "hi")}]
         self.assertEqual(triage.handoffs_last_day([issue], NOW), 0)
+
+    def test_composed_handoff_counts_and_excludes(self):
+        issue = bug(1)
+        issue["comments"] = [{"createdAt": stamp(hours=1), "body": comment.compose(
+            "orchestrator", "status", triage.REPRO_MARK + "\nhanded")}]
+        other = bug(2)
+        self.assertEqual(triage.handoffs_last_day([issue], NOW), 1)
+        self.assertEqual(triage.reproduce_candidates([issue, other], make_cfg(), NOW, 5), [2])
 
     def test_limit_minus_recent(self):
         issues = [bug(1, handoffs=[{"hours": 1}]), bug(2, handoffs=[{"hours": 2}]),
