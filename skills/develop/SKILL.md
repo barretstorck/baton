@@ -82,6 +82,8 @@ filters, send long output to a file, chain related commands, wait for a long run
      conflicts with it. See what earlier tasks did with
      `git log --oneline origin/<default>..HEAD` and `git diff --stat origin/<default>...HEAD`,
      and open their code only where your brief uses it.
+   - After either checkout, run `baton identity worktree`: at tier 1 it makes this worktree's
+     commits come from `baton[bot]`; at tier 0 it does nothing.
    - If the branch already has a `Task <n>:` commit for your task, an interrupted developer did it:
      check it against the brief and that its commit ticks the task (`baton tasks issue <N>`),
      finish it if needed, and continue from step 5.
@@ -111,7 +113,7 @@ filters, send long output to a file, chain related commands, wait for a long run
    `forbid_added` forbids, remove that entry; do not bypass the hook or edit the rule. Only an
    `Allows: forbid_added "<glob>"` line in your task's brief permits it. If you cannot do the task
    without it, return `QUESTION`. Stage the code, `git commit -m "Task <n>: <title>"`, then push the branch
-   with a plain push: `git push origin HEAD:refs/heads/<branch>`. Your checkout is detached, so
+   with `baton push HEAD:refs/heads/<branch>` (a plain push at tier 0, the `baton` App's token at tier 1). Your checkout is detached, so
    there is no `-u`. The push only fast-forwards; if it is refused, someone else moved the branch:
    return `BLOCKED: the branch moved`. Never force-push. Then run `baton tasks issue <N>` and
    confirm your task is ticked.
@@ -157,7 +159,7 @@ For `Update pull request <P> (issue <N>).`, follow these steps in order:
    and run only those tasks' `Check:` lines. No conflicts: run none, and do not run the whole
    suite (Baton handles the full verification of the new head, see #49; you do not run it).
 3. Commit the merge if git did not. Whether or not there was anything to merge, run
-   `git push origin HEAD:refs/heads/<branch>` (pushing an unchanged head is a no-op and must still
+   `baton push HEAD:refs/heads/<branch>` (pushing an unchanged head is a no-op and must still
    be run). Never force.
 4. Read the pushed head back: `git ls-remote origin refs/heads/<branch>` must print
    `git rev-parse HEAD`. If it does not, return `BLOCKED: the branch moved`.

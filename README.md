@@ -72,8 +72,10 @@ absent at tier 0. A file that exists but is malformed fails closed; it is not re
 
 The `reviewer` role writes as the reviewer App; every other role writes as the `baton` App, with no
 fallback to your login. Permissions: `baton[bot]` has issues, pull requests and contents write;
-`baton-reviewer[bot]` has pull requests write and contents read, and no issues permission. Merging
-stays on your login. `baton config` shows the active tier under `identity`. Tier 2 (a machine user)
+`baton-reviewer[bot]` has pull requests write and contents read, and no issues permission. At tier 1 the
+developer's commits are by `baton[bot]` (worktree-local git config, set by `baton identity worktree`),
+its pushes use the `baton` App token (`baton push`), and the draft pull request is opened by the
+`baton` App. Merging stays on your login. `baton config` shows the active tier under `identity`. Tier 2 (a machine user)
 is #225, and creating the Apps and checking the setup is #179.
 
 Keep the keys from agents. The private keys and `identity.toml` sit under `~/.baton/`, readable by
@@ -204,6 +206,8 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | Command | Purpose |
 |---|---|
 | `baton config` | Print the resolved settings from `.baton/brief.md`, and the `identity` tier |
+| `baton identity worktree` | At tier 1, set this linked worktree's commit author to `baton[bot]` (worktree-local git config); no-op at tier 0 |
+| `baton push <refspec>` | Push to `origin` (tier 0) or over HTTPS with the `baton` App token (tier 1) |
 | `baton labels [--create]` | Check or create the labels Baton uses |
 | `baton set-status <issue> <status:name>` | Switch an issue's status label |
 | `baton install-hooks` | Install the `pre-commit` and `pre-push` privacy hooks. The hooks find the current install through `installed_plugins.json`, so a plugin update needs no re-install; run it again only when the gate or a hook says the hooks are missing |
