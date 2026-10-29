@@ -39,6 +39,21 @@ class ComposeTest(unittest.TestCase):
                     comment.compose(role, kind, "x")
 
 
+class RolesTest(unittest.TestCase):
+    def test_researcher_role_composes(self):
+        self.assertIn("researcher:findings", comment.compose("researcher", "findings", "x"))
+
+    def test_skill_comment_roles_are_known(self):
+        import re
+        root = pathlib.Path(__file__).resolve().parent.parent / "skills"
+        seen = set()
+        for skill in root.glob("*/SKILL.md"):
+            seen.update(re.findall(r"baton comment (?:issue|pr) <\w+> (\w+) <?\w+>? ?-?",
+                                   skill.read_text()))
+        self.assertIn("researcher", seen)
+        self.assertLessEqual(seen, comment.ROLES)
+
+
 class PostTest(unittest.TestCase):
     def test_reviewer_role_and_reply_kind(self):
         text = comment.compose("developer", "reply", "1. Fixed in abc1234.")

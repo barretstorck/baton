@@ -5,7 +5,7 @@ import tempfile
 from . import gate, scan
 from .config import logins
 
-ROLES = {"orchestrator", "developer", "refine", "reviewer"}
+ROLES = {"orchestrator", "developer", "refine", "reviewer", "researcher"}
 KINDS = {"question", "status", "decision", "plan", "review", "findings", "reply",
          "closed", "reopened"}
 TARGETS = {"issue", "pr"}
