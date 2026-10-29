@@ -21,7 +21,7 @@ import signal
 import sys
 import tempfile
 
-from . import config, githooks, scan
+from . import config, githooks, rewrite, scan
 
 MARKER = "<!-- baton:"
 HOOK_TAG = githooks.HOOK_TAG
@@ -294,6 +294,21 @@ def main(stdin_text):
             return 0
         print(f"Baton publish gate could not check this command ({error!r}).", file=sys.stderr)
         return 2
+    if not problems and not mcp:
+        try:
+            step = rewrite.plan(command, cwd, agent=os.environ.get("AI_AGENT"))
+        except Exception as error:
+            step = ("refuse", f"Baton could not check `gh pr create` ({error!r}); add `--head <branch>` yourself")
+        if step and step[0] == "refuse":
+            problems = [step[1]]
+        elif step:
+            tool_input = dict(payload.get("tool_input") or {})
+            tool_input["command"] = step[1]
+            # No permissionDecision: the normal permission flow judges the rewritten command.
+            print(json.dumps({"hookSpecificOutput": {
+                "hookEventName": "PreToolUse", "updatedInput": tool_input,
+                "additionalContext": step[2]}}))
+            return 0
     if not problems:
         if not mcp:
             try:
