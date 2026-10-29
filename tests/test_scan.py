@@ -1,6 +1,9 @@
+import contextlib
+import io
 import os
 import tempfile
 import unittest
+from unittest import mock
 from baton import scan
 
 
@@ -80,5 +83,43 @@ class ScanTest(unittest.TestCase):
         self.assertEqual(scan.load_terms(fh.name), ["Zebrowski", "tank"])
         os.unlink(fh.name)
 
+    def _load(self, env, **kw):
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, env, clear=False), \
+                contextlib.redirect_stderr(err):
+            result = scan.load_terms(**kw)
+        return result, err.getvalue()
+
     def test_load_terms_missing_file(self):
-        self.assertEqual(scan.load_terms("/nonexistent/terms.txt"), [])
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(scan.load_terms("/nonexistent/terms.txt"), [])
+        self.assertIn("only the built-in patterns", err.getvalue())
+
+    def test_missing_default_warns(self):
+        with tempfile.TemporaryDirectory() as home:
+            with mock.patch.dict(os.environ, {"HOME": home}):
+                os.environ.pop("BATON_PRIVATE_TERMS", None)
+                result, out = self._load({})
+        self.assertEqual(result, [])
+        self.assertIn("~/.baton/private-terms.txt", out)
+        self.assertIn("/baton:init step 5", out)
+        self.assertNotIn(home, out)
+
+    def test_missing_env_path_warns_without_value(self):
+        result, out = self._load({"BATON_PRIVATE_TERMS": "/nonexistent/x/t.txt"})
+        self.assertEqual(result, [])
+        self.assertIn("$BATON_PRIVATE_TERMS", out)
+        self.assertNotIn("/nonexistent", out)
+
+    def test_existing_comment_only_file_is_silent(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as fh:
+            fh.write("# nothing\n")
+        self.addCleanup(os.unlink, fh.name)
+        result, out = self._load({"BATON_PRIVATE_TERMS": fh.name})
+        self.assertEqual((result, out), ([], ""))
+
+    def test_warn_false_is_silent(self):
+        result, out = self._load({"BATON_PRIVATE_TERMS": "/nonexistent/t.txt"},
+                                 warn=False)
+        self.assertEqual((result, out), ([], ""))
