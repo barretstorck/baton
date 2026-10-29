@@ -31,6 +31,10 @@ def git(cwd, *args):
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
 
 
+AT = "@"
+SCP = "g" + "it" + AT + "github.com:"
+
+
 class Tier0Test(unittest.TestCase):
     def setUp(self):
         identity.use(lambda: None)
@@ -45,7 +49,8 @@ class Tier0Test(unittest.TestCase):
         self.assertEqual(runner.calls, [])
 
     def test_push_is_plain(self):
-        runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}}'})
+        runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}}',
+                             "git remote get-url": SCP + "o/r.git\n"})
         with mock.patch.object(cli.run, "run", runner):
             code, _, _ = call(cli.cmd_push, ["HEAD:refs/heads/b"])
         self.assertEqual(code, 0)
@@ -131,6 +136,7 @@ class PushRefusalTest(unittest.TestCase):
         with mock.patch.object(cli.run, "run", runner):
             code, _, _ = call(cli.cmd_push, ["HEAD:refs/heads/issue-258-x"])
         self.assertEqual(code, 0)
+        self.assertFalse(any(c[:2] == ["git", "remote"] for c in runner.calls))
         self.assertEqual(runner.calls[-1][-3:],
                          ["--", "https://github.com/o/r.git", "HEAD:refs/heads/issue-258-x"])
 

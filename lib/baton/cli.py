@@ -809,6 +809,15 @@ def cmd_push(args):
     if problem:
         print(f"baton push: refused {args[0]}: {problem}", file=sys.stderr)
         return 1
+    if identity.pushes_to_origin():
+        try:
+            url = run.run(["git", "remote", "get-url", "--push", "origin"], cwd=os.getcwd()).strip()
+            problem = identity.origin_problem(url, info["nameWithOwner"])
+        except run.RunError:
+            problem = "no origin remote"
+        if problem:
+            print(f"baton push: refused {args[0]}: {problem}", file=sys.stderr)
+            return 1
     argv, env = identity.push_command(args[0], info["nameWithOwner"])
     print(run.run(argv, cwd=os.getcwd(), env=env), end="")
     return 0

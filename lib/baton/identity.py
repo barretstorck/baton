@@ -3,6 +3,7 @@ import base64
 import datetime
 import json
 import os
+import re
 import tempfile
 import time
 import tomllib
@@ -291,11 +292,35 @@ def ref_format_ok(ref):
     return True
 
 
+def github_repo(url):
+    """`owner/repo` of a GitHub remote URL (https, ssh:// or scp-style); None for anything else."""
+    url = (url or "").strip()
+    m = (re.fullmatch(r"https://(?:[^/@]*@)?github\.com/([^/\s]+)/([^/\s]+?)(?:\.git)?/?", url)
+         or re.fullmatch(r"ssh://(?:[^/@]*@)?github\.com(?::\d+)?/([^/\s]+)/([^/\s]+?)(?:\.git)?/?", url)
+         or re.fullmatch(r"(?:[^/@:\s]+@)?github\.com:([^/\s]+)/([^/\s]+?)(?:\.git)?/?", url))
+    return f"{m.group(1)}/{m.group(2)}" if m else None
+
+
+def origin_problem(url, repo):
+    """Why origin is not `repo` (owner/repo), or None when it is. Never repeats the URL."""
+    found = github_repo(url)
+    if found is None:
+        return "origin is not a GitHub repository"
+    if found.lower() != repo.lower():
+        return f"origin is {found}, not {repo}"
+    return None
+
+
+def pushes_to_origin():
+    """True at tier 0, where a push goes to the `origin` remote."""
+    return _identities() is None
+
+
 def push_command(refspec, repo):
     """(argv, env) for pushing a refspec; at tier 1 over HTTPS with the token in the child's env only."""
-    ids = _identities()
-    if ids is None:
+    if pushes_to_origin():
         return ["git", "push", "--", "origin", refspec], None
+    ids = _identities()
     if ids.baton is None:
         raise IdentityError("identity.toml has no [baton] entry for pushes")
     tok = token(ids.baton, _run.run, _post, time.time())

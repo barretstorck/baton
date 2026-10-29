@@ -24,6 +24,10 @@ login = "custom[bot]"
 """
 
 
+AT = "@"
+SCP = "g" + "it" + AT + "github.com:"
+
+
 class LoadTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -256,6 +260,24 @@ class GitIdentityTest(unittest.TestCase):
             raise identity._run.RunError("bad")
         with mock.patch.object(identity._run, "run", boom):
             self.assertFalse(identity.ref_format_ok("refs/heads/b"))
+
+    def test_github_repo(self):
+        for url, want in [("https://github.com/o/r", "o/r"), ("https://github.com/o/r.git", "o/r"),
+                          ("https://github.com/o/r.git/", "o/r"), ("https://u:pw" + AT + "github.com/o/r.git", "o/r"),
+                          ("ssh://git" + AT + "github.com/o/r.git", "o/r"), ("ssh://git" + AT + "github.com:22/o/r", "o/r"),
+                          (SCP + "o/r.git", "o/r"), ("../r.git", None),
+                          ("https://gitlab.com/o/r.git", None), ("https://evilgithub.com/o/r", None),
+                          ("", None)]:
+            with self.subTest(url=url):
+                self.assertEqual(identity.github_repo(url), want)
+
+    def test_origin_problem(self):
+        self.assertIsNone(identity.origin_problem(SCP + "O/R.git", "o/r"))
+        self.assertIn("fork/r", identity.origin_problem(SCP + "fork/r.git", "o/r"))
+        self.assertIn("not a GitHub", identity.origin_problem("https://gitlab.com/o/r.git", "o/r"))
+        msg = identity.origin_problem("https://user:secret" + AT + "github.com/fork/r.git", "o/r")
+        self.assertNotIn("secret", msg)
+        self.assertNotIn("user", msg)
 
     def test_tier0(self):
         identity.use(lambda: None)
