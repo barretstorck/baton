@@ -481,6 +481,45 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(triage.stale(issues, cfg, NOW, 14, ["boss"]), [2, 4])
 
 
+def bug(number, ago=None, labels=("type:bug", "status:refinement"), body="## Triage summary\nx",
+        handoffs=(), **kw):
+    data = item(number, ago or {"days": 1}, labels, **kw)
+    data["body"] = body
+    data["comments"] = [{"createdAt": stamp(**h), "body": triage.REPRO_MARK + "\nhanded"}
+                        for h in handoffs]
+    return data
+
+
+class ReproduceTests(unittest.TestCase):
+    def test_handoffs_window(self):
+        issues = [bug(1, handoffs=[{"hours": 23}, {"hours": 25}]),
+                  bug(2, handoffs=[{"hours": 1}], state="CLOSED")]
+        self.assertEqual(triage.handoffs_last_day(issues, NOW), 1)
+
+    def test_other_comments_do_not_count(self):
+        issue = bug(1)
+        issue["comments"] = [{"createdAt": stamp(hours=1), "body": "hi\n" + triage.REPRO_MARK}]
+        self.assertEqual(triage.handoffs_last_day([issue], NOW), 0)
+
+    def test_limit_minus_recent(self):
+        issues = [bug(1, handoffs=[{"hours": 1}]), bug(2, handoffs=[{"hours": 2}]),
+                  bug(3, {"days": 5}), bug(4, {"days": 4}), bug(5, {"days": 3})]
+        self.assertEqual(triage.reproduce_candidates(issues, make_cfg(), NOW, 3), [3])
+        self.assertEqual(triage.reproduce_candidates(issues, make_cfg(), NOW, 1), [])
+
+    def test_limit_zero(self):
+        self.assertEqual(triage.reproduce_candidates([bug(1)], make_cfg(), NOW, 0), [])
+
+    def test_exclusions_and_order(self):
+        issues = [bug(1, labels=("type:feature", "status:refinement")),
+                  bug(2, body="no summary"),
+                  bug(3, handoffs=[{"days": 3}]),
+                  bug(4, labels=("type:bug", "status:refinement", "awaiting-feedback")),
+                  bug(5, labels=("type:bug", "status:ready")),
+                  bug(6, {"days": 2}), bug(7, {"days": 6}), bug(8, state="CLOSED")]
+        self.assertEqual(triage.reproduce_candidates(issues, make_cfg(), NOW, 5), [7, 6])
+
+
 class QueueCommandTests(unittest.TestCase):
     def drive(self, issues, home, args=("triage", "queue"), since=""):
         import io
@@ -490,7 +529,8 @@ class QueueCommandTests(unittest.TestCase):
         cfg = mock.MagicMock()
         cfg.label.side_effect = lambda n: n
         cfg.status_labels.return_value = ["status:in-dev"]
-        cfg.data = {"triage": {"since": since, "max_per_run": 10, "stale_days": 14}}
+        cfg.data = {"triage": {"since": since, "max_per_run": 10, "stale_days": 14,
+                                 "max_reproductions_per_day": 3}}
         runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r"}',
                              "gh issue list": json.dumps(issues)})
         out, err = io.StringIO(), io.StringIO()
@@ -515,6 +555,7 @@ class QueueCommandTests(unittest.TestCase):
             self.assertTrue(os.path.exists(triage.since_path("o", "r", home)))
             _, text = self.drive([issue], home)
             self.assertFalse(json.loads(text)["first_run"])
+            self.assertEqual(json.loads(text)["reproduce"], [])
 
     def test_later_run_caps_batch(self):
         old = datetime.now(timezone.utc) - timedelta(days=3)
