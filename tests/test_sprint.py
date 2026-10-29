@@ -741,13 +741,23 @@ class DefaultBranchStateTest(unittest.TestCase):
         self.assertIn("grace_ends_in_seconds", branch)
         self.assertEqual(snap([issue(1, "ready")])["default_branch"]["grace_ends_in_seconds"], None)
 
-    def _stale_snap(self, files_line, status="ready", behind="4\n"):
+    def _stale_snap(self, files_line, status="ready", behind="4\n", tracked="lib/keep.py\n",
+                    blocker=None, blocker_state="OPEN", blocked_line=None):
         body = ("## Plan\nWritten against: " + "c" * 40 + "\n\n- [ ] **1. A**\n"
                 f"  - Files: {files_line}\n")
         item = issue(7, status, "deliverable")
         item["body"] += body
-        extra = {"git ls-tree": "lib/keep.py\n", "git rev-list": behind}
-        runner = FakeRunner(replies([item], extra=extra))
+        if blocked_line:
+            item["body"] += "\n" + blocked_line + "\n"
+        extra = {"git ls-tree": tracked, "git rev-list": behind}
+        items = [item]
+        if blocker:
+            other = issue(8, "ready", "deliverable")
+            other["body"] += ("## Plan\nWritten against: " + "c" * 40 + "\n\n- [ ] **1. B**\n"
+                              f"  - Files: {blocker}\n")
+            other["state"] = blocker_state
+            items.append(other)
+        runner = FakeRunner(replies(items, extra=extra))
         return sprint.snapshot(cfg(), runner), runner
 
     def test_plan_naming_two_missing_paths_is_held(self):
@@ -768,6 +778,27 @@ class DefaultBranchStateTest(unittest.TestCase):
         result, _ = self._stale_snap("`lib/gone.py`, `lib/keep.py`")
         self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], ["lib/gone.py"])
         self.assertEqual(result["dispatchable"], [7])
+
+    def test_bare_name_with_one_tracked_match_is_present(self):
+        result, _ = self._stale_snap("`sprint.py`, `other.py`", tracked="lib/sprint.py\nlib/other.py\n")
+        self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], [])
+
+    def test_bare_name_with_no_or_several_matches_is_missing(self):
+        result, _ = self._stale_snap("`sprint.py`, `other.py`",
+                                     tracked="lib/other.py\ntests/other.py\nlib/keep.py\n")
+        self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], ["other.py", "sprint.py"])
+        self.assertEqual(result["dispatchable"], [])
+
+    def test_path_a_blocker_creates_is_not_missing(self):
+        result, _ = self._stale_snap("`lib/new_b.py`, `lib/gone.py`", blocker="`lib/new_b.py` (new)",
+                                     blocked_line="Blocked by: #8")
+        self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], ["lib/gone.py"])
+
+    def test_path_a_closed_blocker_creates_is_missing(self):
+        result, _ = self._stale_snap("`lib/new_b.py`, `lib/gone.py`", blocker="`lib/new_b.py` (new)",
+                                     blocked_line="Blocked by: #8", blocker_state="CLOSED")
+        self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"],
+                         ["lib/gone.py", "lib/new_b.py"])
 
     def _plan_item(self):
         item = issue(7, "ready", "deliverable")

@@ -4,6 +4,7 @@ The orchestrator keeps no memory between passes (design spec, section 6);
 `snapshot` rebuilds everything it needs from the milestone, labels, pull
 requests, comments and the default branch's checks.
 """
+import collections
 import json
 import os
 import re
@@ -270,13 +271,43 @@ def snapshot(cfg, runner, milestone=None):
             tracked.append((files, reason))
         return tracked[0]
 
-    def staleness(text, found):
+    def blocker_created(item):
+        """Paths that the plans of this issue's open blockers mark (new."""
+        created = set()
+        for blocker in issue_fields.blocked_by(item.get("body")):
+            if not _blocker_open(blocker, by_number, runner):
+                continue
+            try:
+                if blocker in by_number:
+                    body = by_number[blocker].get("body")
+                else:
+                    body = json.loads(runner(["gh", "issue", "view", str(blocker),
+                                             "--json", "body"]))["body"]
+                text, _ = checklist.plan_source(runner, body or "", plan_cache,
+                                                cfg.data["docs"]["dir"])
+                created |= checklist.created_paths(text)
+            except (ValueError, KeyError, TypeError, RunError, checklist.TaskError):
+                continue
+        return created
+
+    def staleness(text, found, item):
         if not found or not found["tasks"]:
             return None
         files, skipped = default_branch_files()
         named = checklist.named_paths(text)
         base = found.get("written_against")
-        return {"missing_paths": None if skipped else [p for p in named if p not in files],
+        if skipped:
+            missing = None
+        else:
+            created = blocker_created(item) if named else set()
+            basenames = collections.Counter(f.rsplit("/", 1)[-1] for f in files)
+
+            def present(path):
+                if path in files or path in created:
+                    return True
+                return "/" not in path and basenames[path] == 1
+            missing = [p for p in named if not present(p)]
+        return {"missing_paths": missing,
                 "path_check_skipped": skipped,
                 "plan_behind": commits_behind(runner, base, branch) if base else None}
 
@@ -321,7 +352,7 @@ def snapshot(cfg, runner, milestone=None):
                 "review": ({key: fixes[key] for key in ("round", "done", "total", "next")}
                            if fixes and fixes["total"] else None),
                 "review_without_tasks": bool(fixes and fixes["review"] and not fixes["total"]),
-                "stale": staleness(text, found),
+                "stale": staleness(text, found, item),
                 "branch_behind": behind,
                 "merge_first": behind is not None and behind >= BEHIND_LIMIT,
             }
