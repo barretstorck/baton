@@ -245,6 +245,17 @@ class CheckTest(unittest.TestCase):
                             bots={"baton-reviewer[bot]"})
         self.assertFalse(any("reviewer approval" in p for p in found))
 
+    def test_a_baton_bot_approval_is_ignored(self):
+        bots = {"baton[bot]", "baton-reviewer[bot]"}
+        for author in ({"login": "baton[bot]"}, {"login": "app/baton"},
+                       {"login": "baton", "__typename": "Bot"}, {"login": "baton-reviewer"}):
+            with self.subTest(author=author):
+                comments = [{"author": author,
+                             "body": review.compose("approve", HEAD, "Round 1.", "green")}]
+                found = merge.check(make_pr(comments=comments), make_config(), [OWNER], "main",
+                                    FakeRunner(), bots=bots, reviewers={"baton-reviewer[bot]"})
+                self.assertTrue(any("reviewer approval" in p for p in found))
+
     def test_other_approvals_do_not_unlock(self):
         files = [{"path": ".baton/brief.md"}]
         cases = {

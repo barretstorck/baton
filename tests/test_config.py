@@ -265,6 +265,34 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.load(str(root / "src")).root.resolve(), root.resolve())
 
 
+class LoginMatchTest(unittest.TestCase):
+    BOTS = ["baton[bot]", "baton-reviewer[bot]"]
+
+    def test_plain_login_never_matches_a_bot(self):
+        for login in ("baton", "baton-reviewer", "Baton-Reviewer", "BATON"):
+            for extra in ({}, {"type": "User"}, {"__typename": "User"}):
+                with self.subTest(login=login, extra=extra):
+                    self.assertFalse(config.has_login({"login": login, **extra}, self.BOTS))
+
+    def test_bot_forms_match(self):
+        for person in ({"login": "baton[bot]"}, {"login": "app/baton"},
+                       {"login": "Baton-Reviewer[bot]"}, {"login": "APP/baton-reviewer"},
+                       {"login": "baton", "__typename": "Bot"},
+                       {"login": "Baton-Reviewer", "type": "Bot"}):
+            with self.subTest(person=person):
+                self.assertTrue(config.has_login(person, self.BOTS))
+        self.assertFalse(config.has_login({"login": "other[bot]"}, self.BOTS))
+
+    def test_maintainers_match_exactly(self):
+        self.assertTrue(config.has_login({"login": "Octo"}, ["octo"]))
+        self.assertTrue(config.has_login({"login": "octo"}, "OCTO"))
+        for person in ({"login": "octo[bot]"}, {"login": "app/octo"},
+                       {"login": "octo", "__typename": "Bot"}, {"login": "octo", "type": "Bot"},
+                       {"login": "octo-x"}, {"login": ""}, None):
+            with self.subTest(person=person):
+                self.assertFalse(config.has_login(person, ["octo"]))
+
+
 class ForgeKeysTest(unittest.TestCase):
     def test_defaults(self):
         data = config.load(str(make_repo("x\n"))).data
