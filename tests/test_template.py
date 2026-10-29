@@ -136,6 +136,13 @@ class TemplateTest(unittest.TestCase):
                 else:
                     self.assertNotIn(web, tools, name)
 
+    def test_refiner_handles_re_refine_after_spike(self):
+        skill = (ROOT / "skills/refine/SKILL.md").read_text()
+        self.assertIn("Re-refine issue <N> after spike #<S>.", skill)
+        self.assertIn("## Re-refining after a spike", skill)
+        agent = (ROOT / "agents/baton-refiner.md").read_text()
+        self.assertIn("after spike", agent)
+
     def test_developer_has_no_spikes(self):
         skill = (ROOT / "skills/develop/SKILL.md").read_text()
         self.assertNotIn("## Spikes", skill)
