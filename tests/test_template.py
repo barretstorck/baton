@@ -244,3 +244,9 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("baton:baton-researcher", sprint)
         self.assertIn("researcher.model", sprint)
         self.assertIn("/baton:research", (ROOT / "README.md").read_text())
+
+    def test_sprint_follows_spike_outcome(self):
+        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        for want in ("Outcome:", "infeasible", "single", "multiple", "partial",
+                     "Re-refine issue <O> after spike #<S>.", "Spike for:", "Origin: outside"):
+            self.assertIn(want, text)
