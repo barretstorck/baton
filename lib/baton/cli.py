@@ -33,6 +33,11 @@ def cmd_git_hook(args):
     terms = scan.load_terms()
     if name == "pre-commit":
         return _report(githooks.pre_commit(os.getcwd(), terms), "commit")
+    if name == "commit-msg":
+        if len(args) < 2:
+            print("usage: baton git-hook commit-msg <message-file>", file=sys.stderr)
+            return 64
+        return _report(githooks.commit_msg(os.getcwd(), args[1], terms), "commit")
     if name == "pre-push":
         return _report(githooks.pre_push(os.getcwd(), sys.stdin.read(), terms), "push")
     print(f"baton: unknown git hook {name!r}", file=sys.stderr)

@@ -337,6 +337,38 @@ class PrePushTest(unittest.TestCase):
         self.assertEqual(githooks.pre_push(repo, f"(delete) {ZEROS} refs/heads/x {base}\n", TERMS), [])
 
 
+class CommitMsgDispatchTest(unittest.TestCase):
+    def test_install_writes_executable_commit_msg_hook(self):
+        repo = make_repo()
+        githooks.install(repo, "/opt/baton/bin/baton")
+        hook = pathlib.Path(repo, ".git", "hooks", "commit-msg")
+        self.assertTrue(hook.exists())
+        self.assertTrue(hook.stat().st_mode & 0o111)
+
+    def run_hook(self, text):
+        from baton import cli
+        repo = make_repo()
+        path = pathlib.Path(repo, "MSG")
+        path.write_text(text)
+        old = os.getcwd()
+        os.chdir(repo)
+        try:
+            with mock.patch.object(cli.scan, "load_terms", return_value=TERMS), \
+                    mock.patch("sys.stderr") as err:
+                code = cli.cmd_git_hook(["commit-msg", str(path)])
+        finally:
+            os.chdir(old)
+        return code, "".join(c.args[0] for c in err.write.call_args_list)
+
+    def test_clean_message_returns_zero(self):
+        self.assertEqual(self.run_hook("Fix it\n")[0], 0)
+
+    def test_private_message_is_blocked(self):
+        code, out = self.run_hook("Ask Zebrowski\n")
+        self.assertEqual(code, 1)
+        self.assertIn("Baton blocked this commit", out)
+
+
 class InstallTest(unittest.TestCase):
     def test_install_writes_tagged_executable_shims(self):
         repo = make_repo()
