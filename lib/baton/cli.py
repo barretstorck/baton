@@ -123,7 +123,7 @@ def cmd_merge_pr(args):
 
     notes = []
     try:
-        problems = merge.merge(int(args[0]), _require_config(), tolerant, notes)
+        problems = merge.merge(int(args[0]), _require_config(), tolerant, notes, bots=_bots())
     except merge.PlanRetired as note:
         print(f"baton: {note}; not merged yet")
         return 0

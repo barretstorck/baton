@@ -12,7 +12,7 @@ import tempfile
 
 from . import checklist, forbid, gate, labels, planfile, review, scan, state as item_state, verify
 from .run import RunError
-from .config import logins
+from .config import has_login, logins
 
 PR_FIELDS = ("number,state,isDraft,mergeable,headRefOid,headRefName,baseRefName,"
              "isCrossRepository,body,files,changedFiles,statusCheckRollup,"
@@ -99,14 +99,16 @@ def _check_ci(pr, cfg, runner=None, notes=None):
     return problems
 
 
-def _approved(pr, owner, runner, default_branch, touched):
+def _approved(pr, owner, runner, default_branch, touched, bots=()):
     """The owner approved the head commit, or an earlier one with the same protected changes:
     `/baton approve <sha>`."""
     head, fetched = pr.get("headRefOid", ""), False
     for comment in pr.get("comments") or []:
         body = comment.get("body", "")
         match = _APPROVE.match(body.strip())
-        if not match or gate.MARKER in body or comment.get("author", {}).get("login") not in logins(owner):
+        author = comment.get("author")
+        if (not match or gate.MARKER in body or has_login(author, list(bots))
+                or not has_login(author, owner)):
             continue
         sha = match.group(1)
         if not head.startswith(sha) and not fetched:
@@ -117,7 +119,7 @@ def _approved(pr, owner, runner, default_branch, touched):
     return False
 
 
-def check(pr, cfg, owner, default_branch, runner, notes=None):
+def check(pr, cfg, owner, default_branch, runner, notes=None, bots=()):
     problems = []
     if pr.get("isCrossRepository"):
         problems.append("pull request comes from a fork; Baton only merges its own branches")
@@ -147,18 +149,19 @@ def check(pr, cfg, owner, default_branch, runner, notes=None):
         problems.append("file list is incomplete (too many changed files to verify)")
 
     if cfg.data["review"]["required"]:
-        found = review.current(pr, owner, cfg, runner, default_branch)
+        trusted = list(logins(owner)) + sorted(bots)
+        found = review.current(pr, trusted, cfg, runner, default_branch)
         if found["state"] != "approved":
             problems.append("no reviewer approval of the change at the head commit "
                             f"(review state: {found['state']})")
-        recorded = review.verify_state(cfg, pr.get("comments"), owner, pr.get("headRefOid"))
+        recorded = review.verify_state(cfg, pr.get("comments"), trusted, pr.get("headRefOid"))
         if recorded not in ("none", "green"):
             problems.append(f"verification of {pr.get('headRefOid', '')[:7]} is {recorded} in the "
                             "latest review; the reviewer runs baton verify")
 
     protected = tuple(cfg.data["protected_paths"])
     touched = [f["path"] for f in files if protected and f["path"].startswith(protected)]
-    if touched and not _approved(pr, owner, runner, default_branch, touched):
+    if touched and not _approved(pr, owner, runner, default_branch, touched, bots):
         problems.append("protected paths changed without maintainer approval "
                         f"(comment `/baton approve <head commit sha>`): {', '.join(touched)}")
     rules = cfg.data["forbid_added"]
@@ -297,13 +300,13 @@ def _retire_plan(pr, repo, runner, cfg, notes=None):
             "again once they pass")
 
 
-def merge(number, cfg, runner, notes=None):
+def merge(number, cfg, runner, notes=None, bots=()):
     notes = [] if notes is None else notes
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", PR_FIELDS]))
     if pr.get("state") != "MERGED":
         problems = check(pr, cfg, cfg.maintainers(repo["owner"]["login"]), repo["defaultBranchRef"]["name"], runner,
-                         notes)
+                         notes, bots)
         if problems:
             return problems
         note = _retire_plan(pr, repo, runner, cfg, notes)
