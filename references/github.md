@@ -28,6 +28,8 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 
 ## Writing
 
+These commands are the rule, not only what the gate checks: every write to the forge goes through the `baton` command in this table. A raw `gh` write (`gh issue comment`, `gh pr create`, `gh pr merge`, `gh label ...`, `gh api -X POST ...`) is not allowed even where the gate lets it through, because it skips the Baton marker and the checks `baton` makes.
+
 | Step | Command |
 |---|---|
 | Set an issue's status | `baton set-status <N> status:<name>` (removes the previous status) |
@@ -36,7 +38,7 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Create the Baton labels | `baton labels --create` creates every missing label, including `priority:1`-`4` and `severity:1`-`4` |
 | Add or remove another label | `baton issue edit <N> --add-label <label>` / `--remove-label <label>`; use the names from `labels.map` in `baton config` |
 | Post a comment | `baton comment <issue\|pr> <N> <role> <kind> -` with the body as an inline heredoc on standard input, or a file path in place of `-`. It scans the text, adds the Baton marker and prints the comment URL. |
-| Close or reopen | `baton close\|reopen <issue\|pr> <N> <role> <reason-file \| ->`: posts a `baton:<role>:closed`/`reopened` marker comment with the reason, then closes or reopens. `close` on an issue also takes `--reason spam\|duplicate\|support\|wont-do\|completed`, `--duplicate-of <N>` (required with `duplicate`; links the original and comments on it) and `--lock`: `spam`, `support` and `wont-do` add the label `closed:<reason>` and close as not planned, `duplicate` adds `closed:duplicate`, `completed` adds no label; `--lock` locks the issue after closing. None of these apply to a pull request or to `reopen`. The label `awaiting-feedback` is only a label you may set; no command acts on it. `gh ... close\|reopen` is refused. An item closed with no such marker was closed by the maintainer: do not reopen it without asking. |
+| Close or reopen | `baton close\|reopen <issue\|pr> <N> <role> <reason-file \| ->`: posts a `baton:<role>:closed`/`reopened` marker comment with the reason, then closes or reopens. `close` on an issue also takes `--reason spam\|duplicate\|support\|wont-do\|completed`, `--duplicate-of <N>` (required with `duplicate`; links the original and comments on it) and `--lock`: `spam`, `support` and `wont-do` add the label `closed:<reason>` and close as not planned, `duplicate` adds `closed:duplicate`, `completed` adds no label; `--lock` locks the issue after closing. None of these apply to a pull request or to `reopen`. The label `awaiting-feedback` is only a label you may set; no command acts on it. Do not run `gh ... close\|reopen`. An item closed with no such marker was closed by the maintainer: do not reopen it without asking. |
 | Edit an issue description | Write the full new description to a file, then `baton issue edit <N> --body-file <file>` (it scans the text and refuses an empty body) |
 | Edit a pull request | `baton pr edit <N>` takes the same options as `baton issue edit` (`--title`, `--body-file`, `--add-label`, `--remove-label`, `--milestone`) |
 | Create an issue | Write the description to a file, then `baton issue create --title "<title>" --label <label> <file>` (repeat `--label`; `-` reads the body from standard input) |
@@ -52,7 +54,7 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Insert tasks into a plan | `baton plan insert <N> <before-task> <file>` (orchestrator only; the new tasks go before that number, later open tasks are renumbered with their `task <n>` references; done tasks are refused; `total + 1` appends) |
 | Set a plan's `Written against:` | `baton plan against <N> <full sha>` (refiner; edits the body) |
 | Create or edit a milestone | `baton milestone create --title <t> [--description <d>] [--due-on <ISO date>]`; `baton milestone edit <number or title> [--title <t>] [--description <d>] [--due-on <date>] [--state open\|closed]` |
-| Merge | `baton merge-pr <N>` only. `gh pr merge` is refused. |
+| Merge | `baton merge-pr <N>` only. Do not run `gh pr merge`. |
 
 Roles: `orchestrator`, `developer`, `refine`, `reviewer`. Kinds: `question`, `status`,
 `decision`, `plan`, `review`, `findings`, `reply`. Reviews are posted only with
