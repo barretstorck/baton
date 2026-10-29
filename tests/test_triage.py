@@ -114,6 +114,9 @@ class FakeCfg:
     def label(self, name):
         return name
 
+    def status_labels(self):
+        return ["status:refinement", "status:in-dev"]
+
 
 class CheckCommentTests(unittest.TestCase):
     def check(self, text, terms=()):
@@ -291,6 +294,50 @@ class ApplyTests(unittest.TestCase):
             apply_decision(valid("spam"), runner=runner)
         self.assertFalse([c for c in runner.lines() if c.startswith(WRITES)])
 
-    def test_real_category_not_yet(self):
-        with self.assertRaises(triage.TriageError):
-            apply_decision(valid("bug"))
+    def real(self, decision, author="outsider", labels=()):
+        bodies = []
+
+        class Reading(FakeRunner):
+            def __call__(inner, argv, cwd=None, input=None):
+                if "--body-file" in argv:
+                    with open(argv[argv.index("--body-file") + 1]) as handle:
+                        bodies.append((handle.name, handle.read()))
+                return super().__call__(argv, cwd, input)
+
+        view = json.loads(issue_json(author=author))
+        view["labels"] = [{"name": n} for n in labels]
+        view["body"] = "Intro\n\n## Triage summary\nold\n\n## Other\nkeep\n"
+        raw = json.dumps(view)
+        labels_reply = json.dumps({"labels": [{"name": "type:bug"}]})
+        runner = Reading({"gh issue view 5": raw,
+                          "gh issue view 5 --json labels": labels_reply})
+        _, line = apply_decision(decision, runner=runner)
+        return runner, bodies, line
+
+    def test_bug_order_and_summary(self):
+        data = dict(valid("bug"), priority=2, severity=3)
+        runner, bodies, line = self.real(data, labels=["type:feature"])
+        lines = runner.lines()
+        edit = self.index(lines, "gh issue edit 5 --body-file")
+        typ = self.index(lines, "gh issue edit 5 --add-label type:bug")
+        prio = self.index(lines, "gh issue edit 5 --add-label priority:2")
+        sev = self.index(lines, "gh issue edit 5 --add-label severity:3")
+        status = self.index(lines, "gh issue edit 5 --add-label status:refinement")
+        self.assertTrue(edit < typ < prio < sev < status)
+        self.assertIn("--remove-label type:feature", lines[typ])
+        text = bodies[0][1]
+        self.assertIn("Origin: outside (@outsider)", text)
+        self.assertNotIn("old", text)
+        self.assertIn("## Other\nkeep", text)
+        self.assertFalse([c for c in lines if c.startswith("gh issue close")])
+        self.assertIn("bug", line)
+        import os
+        self.assertFalse(os.path.exists(bodies[0][0]))
+
+    def test_maintainer_has_no_origin(self):
+        _, bodies, _ = self.real(valid("feature"), author="boss")
+        self.assertNotIn("Origin:", bodies[0][1])
+
+    def test_feature_without_priority(self):
+        runner, _, _ = self.real(valid("feature"))
+        self.assertFalse([c for c in runner.lines() if "priority:" in c or "severity:" in c])

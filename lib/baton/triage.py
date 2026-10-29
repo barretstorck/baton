@@ -1,8 +1,11 @@
 """Triage decisions: parsed and checked before anything is written."""
 import json
+import os
 import re
+import tempfile
 
 from . import comment as commentmod
+from . import labels
 from . import run as runmod
 from . import scan
 from . import state
@@ -241,4 +244,32 @@ def apply(cfg, runner, number, decision, maintainers, terms, owner, repo):
         if url is None:
             return f"#{number}: already notified"
         return f"notified the maintainers about #{number}"
-    raise TriageError("category not supported yet")
+    return _apply_real(cfg, runner, number, decision, issue, maintainers)
+
+
+def _apply_real(cfg, runner, number, decision, issue, maintainers):
+    category = decision["category"]
+    author = (issue.get("author") or {}).get("login", "")
+    section = render_summary(decision["summary"], author, maintainers)
+    body = with_summary(issue.get("body") or "", section)
+    handle, path = tempfile.mkstemp(suffix=".md")
+    try:
+        with os.fdopen(handle, "w") as out:
+            out.write(body)
+        runner(["gh", "issue", "edit", str(number), "--body-file", path])
+    finally:
+        os.unlink(path)
+    present = {item["name"] for item in issue.get("labels") or []}
+    target = cfg.label(f"type:{category}")
+    argv = ["gh", "issue", "edit", str(number), "--add-label", target]
+    for other in REAL:
+        name = cfg.label(f"type:{other}")
+        if name != target and name in present:
+            argv += ["--remove-label", name]
+    runner(argv)
+    if decision.get("priority") is not None:
+        labels.set_group(cfg, runner, number, "priority", decision["priority"])
+    if decision.get("severity") is not None:
+        labels.set_group(cfg, runner, number, "severity", decision["severity"])
+    labels.set_status(cfg, runner, number, "status:refinement")
+    return f"triaged #{number} as {category} and moved it to refinement"
