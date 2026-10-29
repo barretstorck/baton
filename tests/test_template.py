@@ -354,6 +354,11 @@ class TemplateTest(unittest.TestCase):
                        "follow-up", "set aside", "baton:orchestrator:status"):
             self.assertIn(phrase, text)
 
+    def test_refine_skill_judges_security_findings_against_responsibilities(self):
+        text = " ".join((ROOT / "skills" / "refine" / "SKILL.md").read_text().split())
+        self.assertIn("## Responsibilities", text)
+        self.assertIn("security finding", text)
+
     def test_skills_read_issues_through_baton_issue_read(self):
         for name in ("refine", "research", "develop", "review"):
             text = (ROOT / "skills" / name / "SKILL.md").read_text()
