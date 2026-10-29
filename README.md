@@ -141,6 +141,8 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton set-status <issue> <status:name>` | Switch an issue's status label |
 | `baton install-hooks` | Install the `pre-commit` and `pre-push` privacy hooks. The hooks record the plugin version's `baton` and fall back to `baton` on `PATH`; when a plugin update removes that version, the gate refuses commits and pushes until you run `baton install-hooks` again |
 | `baton verify <pr> <worktree>` | Run the brief's `verify.command` on the pull request's head; prints the result, the log path and the last 40 lines |
+| `baton sandbox run <command...>` | Run a command through the local brief's `## Sandbox` template in a fresh checkout of the default branch; prints the exit status, log path and last 40 lines; an error when no sandbox is configured |
+| `baton sandbox check` | Probe the sandbox for network access: prints `none`, `isolated`, `not-isolated` or `probe-failed`; exit 0 for `none` and `isolated` |
 | `baton merge-pr <number>` | Check the review, CI and the rest, then merge |
 | `baton comment <issue\|pr> <number> <role> <kind> <file \| ->` | Scan, stamp and post an agent comment |
 | `baton issue create\|edit ...` | Create an issue, or edit its title, description, labels or milestone; scans the text first |
