@@ -422,8 +422,9 @@ class RenderTest(unittest.TestCase):
 
     def test_bot_issue_and_comments(self):
         comments = [
-            {"author": _person("baton"), "body": "<!-- baton:developer:status -->\nbot status"},
-            {"author": _person("baton"), "body": "bot plain"},
+            {"author": {"login": "baton", "__typename": "Bot"},
+             "body": "<!-- baton:developer:status -->\nbot status"},
+            {"author": {"login": "baton", "__typename": "Bot"}, "body": "bot plain"},
         ]
         data = self.data(author="app/baton", comments=comments)
         out = issue.render(data, [OWNER], {"baton[bot]"})

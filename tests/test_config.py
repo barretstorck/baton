@@ -314,3 +314,12 @@ class ForgeKeysTest(unittest.TestCase):
                       'body_file_flags: [""]'):
             with self.assertRaises(config.ConfigError, msg=brief):
                 config.load(str(make_repo(f"---\n{brief}\n---\n")))
+
+
+class BotSlugTest(unittest.TestCase):
+    def test_bot_slug(self):
+        self.assertEqual(config.bot_slug("baton[bot]"), "baton")
+        self.assertEqual(config.bot_slug("App/Baton"), "baton")
+        self.assertIsNone(config.bot_slug("baton"))
+        self.assertIsNone(config.bot_slug("[bot]"))
+        self.assertIsNone(config.bot_slug("app/"))
