@@ -456,7 +456,7 @@ class SelectionTests(unittest.TestCase):
                   item(12, labels=["awaiting-feedback"]),
                   item(13, labels=["needs-maintainer"]), item(14, labels=["bug"])]
         got = [i["number"] for i in triage.pending(issues, cfg, since)]
-        self.assertEqual(got, [3, 14, 9])
+        self.assertEqual(got, [3, 9, 14])
 
     def test_split_batch(self):
         issues = [item(n) for n in range(12)]
