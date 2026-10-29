@@ -220,10 +220,20 @@ class GitIdentityTest(unittest.TestCase):
         self.addCleanup(p.stop)
         self.addCleanup(identity.use, None)
 
+    def test_refspec_problem(self):
+        self.assertIsNone(identity.refspec_problem("HEAD:refs/heads/b", "main"))
+        self.assertIsNone(identity.refspec_problem("HEAD:refs/heads/issue-258-x", "main"))
+        for bad in ["--delete", "-o", "--receive-pack=x", "--mirror", "+HEAD:refs/heads/b",
+                    ":refs/heads/b", "HEAD", "a:b:c", "HEAD:main", "HEAD:refs/tags/v1",
+                    "HEAD:refs/heads/", "HEAD:refs/heads/main"]:
+            with self.subTest(refspec=bad):
+                self.assertIsInstance(identity.refspec_problem(bad, "main"), str)
+        self.assertIsNone(identity.refspec_problem("HEAD:refs/heads/main", "trunk"))
+
     def test_tier0(self):
         identity.use(lambda: None)
         self.assertEqual(identity.push_command("HEAD:refs/heads/b", "o/r"),
-                         (["git", "push", "origin", "HEAD:refs/heads/b"], None))
+                         (["git", "push", "--", "origin", "HEAD:refs/heads/b"], None))
         self.assertIsNone(identity.commit_identity(self.runner))
         self.assertEqual(self.runner.calls, [])
 
@@ -231,7 +241,7 @@ class GitIdentityTest(unittest.TestCase):
         identity.use(lambda: self.ids)
         argv, env = identity.push_command("HEAD:refs/heads/b", "o/r")
         self.assertIn("https://github.com/o/r.git", argv)
-        self.assertEqual(argv[-1], "HEAD:refs/heads/b")
+        self.assertEqual(argv[-3:], ["--", "https://github.com/o/r.git", "HEAD:refs/heads/b"])
         self.assertEqual(argv[1:4], ["-c", "credential.helper=", "-c"])
         self.assertFalse(any("tok-baton" in a for a in argv))
         self.assertEqual(env, {"BATON_GIT_TOKEN": "tok-baton", "GIT_TERMINAL_PROMPT": "0"})
