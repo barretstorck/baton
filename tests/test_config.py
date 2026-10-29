@@ -119,6 +119,18 @@ class ConfigTest(unittest.TestCase):
                 with self.assertRaises(config.ConfigError):
                     config.load(str(make_repo(f"---\n{meta}\n---\n")))
 
+    def test_work_mix_default_and_valid(self):
+        self.assertEqual(config.DEFAULTS["work_mix"], {})
+        self.assertEqual(config.load(str(make_repo("# none\n"))).data["work_mix"], {})
+        brief = "---\nwork_mix:\n  feature: 60\n  maintenance: 30\n  bug: 10\n---\n"
+        cfg = config.load(str(make_repo(brief)))
+        self.assertEqual(cfg.data["work_mix"], {"feature": 60, "maintenance": 30, "bug": 10})
+
+    def test_work_mix_invalid_raises(self):
+        for meta in ("feature: 60", "feature: 50\n  chore: 50", "feature: 120\n  bug: -20", "feature: lots"):
+            with self.assertRaises(config.ConfigError, msg=meta):
+                config.load(str(make_repo(f"---\nwork_mix:\n  {meta}\n---\n")))
+
     def test_docs_dir_default_and_override(self):
         self.assertEqual(config.DEFAULTS["docs"], {"dir": "docs/baton"})
         self.assertEqual(config.load(str(make_repo("# none\n"))).data["docs"]["dir"], "docs/baton")
