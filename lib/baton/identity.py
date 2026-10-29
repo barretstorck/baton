@@ -1,7 +1,15 @@
 """Tier 1 identities: GitHub App entries read from ~/.baton/<owner>-<repo>/identity.toml."""
+import base64
+import datetime
+import json
+import os
+import tempfile
 import tomllib
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 
+from . import run as _run
 from . import verify
 
 NAMES = ("baton", "reviewer")
@@ -65,3 +73,68 @@ def load(owner, repo, home=None):
     if unknown:
         raise IdentityError(f"identity.toml has unknown entries: {', '.join(unknown)}")
     return Identities(**{name: _app(name, data[name]) for name in NAMES if name in data})
+
+
+def _b64(raw):
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def jwt(app, runner, now):
+    """Sign a GitHub App JWT; openssl does the RS256 signing so the key stays out of memory."""
+    head = _b64(json.dumps({"alg": "RS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    claims = _b64(json.dumps({"iat": int(now) - 60, "exp": int(now) + 540, "iss": app.app_id},
+                             separators=(",", ":")).encode())
+    signing_input = f"{head}.{claims}"
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, "sig")
+        try:
+            runner(["openssl", "dgst", "-sha256", "-sign", os.path.expanduser(app.key_path),
+                    "-out", out], input=signing_input)
+            with open(out, "rb") as f:
+                sig = f.read()
+        except (_run.RunError, OSError):
+            raise IdentityError("could not sign the App JWT with openssl")
+    if not sig:
+        raise IdentityError("could not sign the App JWT with openssl")
+    return f"{signing_input}.{_b64(sig)}"
+
+
+def _post(url, headers):
+    req = urllib.request.Request(url, data=b"", headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        raise IdentityError(f"token request failed: HTTP {e.code}")
+    except (urllib.error.URLError, OSError, ValueError):
+        raise IdentityError("token request failed")
+
+
+_cache = {}
+
+
+def _expiry(text):
+    return datetime.datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+
+
+def token(app, runner, post, now):
+    """An installation token, memoised in-process until 60 seconds before it expires."""
+    hit = _cache.get(app.installation_id)
+    if hit and now < hit[1] - 60:
+        return hit[0]
+    signed = jwt(app, runner, now)
+    url = f"https://api.github.com/app/installations/{app.installation_id}/access_tokens"
+    headers = {"Authorization": f"Bearer {signed}", "Accept": "application/vnd.github+json",
+               "X-GitHub-Api-Version": "2022-11-28"}
+    try:
+        reply = post(url, headers)
+        tok = reply["token"]
+        expires = _expiry(reply["expires_at"])
+    except IdentityError:
+        raise
+    except Exception:
+        raise IdentityError("token request failed or returned an unexpected reply")
+    if not isinstance(tok, str) or not tok:
+        raise IdentityError("token request returned no token")
+    _cache[app.installation_id] = (tok, expires)
+    return tok
