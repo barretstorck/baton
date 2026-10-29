@@ -1,13 +1,19 @@
 ---
+triager:
+  model: haiku
+  effort: medium
+refiner:
+  model: opus
+  effort: medium
+researcher:
+  model: opus
+  effort: medium
 developer:
   model: sonnet
   max_parallel: 1
   effort: medium
 reviewer:
-  model: sonnet
-  effort: medium
-refiner:
-  model: sonnet
+  model: opus
   effort: medium
 review:
   required: true              # false: merge-pr does not ask for a reviewer's approval
