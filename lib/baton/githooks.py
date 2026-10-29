@@ -7,7 +7,7 @@ from . import config, run, scan
 
 HOOK_TAG = "baton git-hook"
 ZEROS = "0" * 40
-HOOKS = ("pre-commit", "pre-push")
+HOOKS = ("pre-commit", "commit-msg", "pre-push")
 
 
 class HookError(Exception):
@@ -174,6 +174,17 @@ def pre_commit(cwd, terms):
     patch = run.run(git + ["diff", "--cached", "-U0", "--no-color"])
     new_files = _names(run.run(git + ["diff", "--cached", "--name-only", "--diff-filter=AR"]))
     return _check(cfg, patch, new_files, terms, cwd=cwd, branch=_current_branch(cwd))
+
+
+def commit_msg(cwd, message_path, terms):
+    """Scan a commit message file; lines starting with `#` are git comments and are skipped."""
+    cfg = config.load(cwd)
+    if cfg is None:
+        return []
+    text = pathlib.Path(message_path).read_text(errors="replace")
+    message = "\n".join(line for line in text.split("\n") if not line.startswith("#"))
+    findings = scan.scan_text(message, terms, cfg.data["privacy_allow"])
+    return [f"privacy: {kind} in the commit message" for kind in sorted({f.kind for f in findings})]
 
 
 def _pushed_branch(local_ref, remote_ref):

@@ -147,7 +147,31 @@ class PreCommitTest(unittest.TestCase):
         self.assertEqual(githooks.pre_commit(repo, TERMS), [])
 
 
-VERSION = ".".join(["10", "1", "2", "3"])
+class CommitMsgTest(unittest.TestCase):
+    def check(self, text):
+        repo = make_repo()
+        path = pathlib.Path(repo, "MSG")
+        path.write_text(text)
+        return githooks.commit_msg(repo, str(path), TERMS)
+
+    def test_clean_message_passes(self):
+        self.assertEqual(self.check("Fix the parser\n"), [])
+
+    def test_private_message_blocks(self):
+        problems = self.check("Ask Zebrowski\n")
+        self.assertTrue(any("private-term" in p and "commit message" in p for p in problems))
+
+    def test_private_text_on_a_comment_line_passes(self):
+        self.assertEqual(self.check("Fix it\n# Zebrowski\n"), [])
+
+    def test_non_baton_repo_is_ignored(self):
+        repo = make_repo(brief=None)
+        path = pathlib.Path(repo, "MSG")
+        path.write_text("Zebrowski\n")
+        self.assertEqual(githooks.commit_msg(repo, str(path), TERMS), [])
+
+
+VERSION =".".join(["10", "1", "2", "3"])
 
 
 class DependencyFileTest(unittest.TestCase):
@@ -317,7 +341,7 @@ class InstallTest(unittest.TestCase):
     def test_install_writes_tagged_executable_shims(self):
         repo = make_repo()
         written = githooks.install(repo, "/opt/baton/bin/baton")
-        self.assertEqual(len(written), 2)
+        self.assertEqual(len(written), 3)
         for path in written:
             content = pathlib.Path(path).read_text()
             self.assertIn(gate.HOOK_TAG, content)
@@ -353,12 +377,12 @@ class InstallTest(unittest.TestCase):
         bindir = tempfile.mkdtemp()
         marker = os.path.join(bindir, "ran")
         fake = pathlib.Path(bindir, "baton")
-        fake.write_text(f'#!/bin/sh\necho "$@" > "{marker}"\n')
+        fake.write_text(f'#!/bin/sh\necho "$@" >> "{marker}"\n')
         fake.chmod(0o755)
         git_dir = os.path.dirname(shutil.which("git"))
         result = self._commit_with_gone_baton([bindir, git_dir, "/bin"])
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(pathlib.Path(marker).read_text().split()[:2], ["git-hook", "pre-commit"])
+        self.assertEqual(pathlib.Path(marker).read_text().splitlines()[0].split()[:2], ["git-hook", "pre-commit"])
 
     def test_hook_without_any_baton_names_install_hooks(self):
         git_dir = os.path.dirname(shutil.which("git"))
