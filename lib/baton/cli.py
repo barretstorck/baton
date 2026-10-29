@@ -1,7 +1,7 @@
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import budget, checklist, clean, comment, config, gate, githooks, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
 
@@ -191,6 +191,10 @@ def _triage_queue():
     since, first_run = triage.resolve_since(cfg, owner, repo, now)
     issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "1000",
                                  "--json", "number,title,state,labels,body,author,createdAt,comments"]))
+    day_ago = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    closed = json.loads(run.run(["gh", "issue", "list", "--state", "closed",
+                                 "--search", "closed:>=" + day_ago, "--limit", "200",
+                                 "--json", "number,state,comments,createdAt"]) or "[]")
     block = cfg.data["triage"]
     batch, waiting = triage.split_batch(triage.pending(issues, cfg, since), block["max_per_run"])
     late = triage.overdue(waiting, now)
@@ -202,7 +206,7 @@ def _triage_queue():
         "overdue": late["number"] if late else None,
         "stale": triage.stale(issues, cfg, now, block["stale_days"], _maintainers(cfg)),
         "reproduce": triage.reproduce_candidates(
-            issues, cfg, now, block["max_reproductions_per_day"]),
+            issues, cfg, now, block["max_reproductions_per_day"], closed=closed),
     }, indent=2))
     return 0
 

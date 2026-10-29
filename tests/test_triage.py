@@ -541,7 +541,7 @@ class ReproduceTests(unittest.TestCase):
 
 
 class QueueCommandTests(unittest.TestCase):
-    def drive(self, issues, home, args=("triage", "queue"), since=""):
+    def drive(self, issues, home, args=("triage", "queue"), since="", closed=(), cap=3):
         import io
         import os
         from unittest import mock
@@ -550,9 +550,11 @@ class QueueCommandTests(unittest.TestCase):
         cfg.label.side_effect = lambda n: n
         cfg.status_labels.return_value = ["status:in-dev"]
         cfg.data = {"triage": {"since": since, "max_per_run": 10, "stale_days": 14,
-                                 "max_reproductions_per_day": 3}}
+                                 "max_reproductions_per_day": cap}}
         runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r"}',
-                             "gh issue list": json.dumps(issues)})
+                             "gh issue list": json.dumps(issues),
+                             "gh issue list --state closed": json.dumps(list(closed))})
+        self.runner = runner
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.dict(os.environ, {"BATON_HOME": home}), \
                 mock.patch.object(cli, "_require_config", return_value=cfg), \
@@ -594,6 +596,23 @@ class QueueCommandTests(unittest.TestCase):
         self.assertEqual(data["waiting"], [11, 12])
         self.assertEqual(data["overdue"], 11)
         self.assertEqual(data["stale"], [50])
+
+    def test_closed_handoff_reduces_reproduce(self):
+        issue = bug(2)
+        issue["state"] = "OPEN"
+        issue["createdAt"] = "2020-01-01T00:00:00Z"
+        stamp_now = datetime.now(timezone.utc) - timedelta(hours=1)
+        closed = [{"number": 1, "state": "CLOSED", "createdAt": "2020-01-01T00:00:00Z",
+                   "comments": [{"createdAt": stamp_now.isoformat(),
+                                 "body": comment.compose("orchestrator", "status",
+                                                         triage.REPRO_MARK + "\nhanded")}]}]
+        with tempfile.TemporaryDirectory() as home:
+            _, text = self.drive([issue], home, since="2020-06-01T00:00:00Z", cap=1)
+            self.assertEqual(json.loads(text)["reproduce"], [2])
+            _, text = self.drive([issue], home, since="2020-06-01T00:00:00Z", cap=1,
+                                 closed=closed)
+            self.assertEqual(json.loads(text)["reproduce"], [])
+            self.assertTrue(any("--state closed" in line for line in self.runner.lines()))
 
     def test_other_shape_keeps_usage(self):
         with tempfile.TemporaryDirectory() as home:
