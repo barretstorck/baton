@@ -10,7 +10,7 @@ import os
 import re
 import tempfile
 
-from . import checklist, comment, gate, run, verify as verifylog
+from . import checklist, comment, gate, identity, run, verify as verifylog
 from .config import logins
 
 # The one place a verdict is defined. `tasks` is "none" (a `## Tasks` section is
@@ -306,9 +306,9 @@ def tick_review(runner, number, owner, task_id):
     try:
         with os.fdopen(handle, "w", newline="") as out:
             out.write(new)
-        runner(["gh", "api", "-X", "PATCH",
-                f"repos/{{owner}}/{{repo}}/issues/comments/{found.group(1)}",
-                "-F", f"body=@{path}", "--silent"])
+        identity.write(runner, ["gh", "api", "-X", "PATCH",
+                                f"repos/{{owner}}/{{repo}}/issues/comments/{found.group(1)}",
+                                "-F", f"body=@{path}", "--silent"], "reviewer")
     finally:
         os.unlink(path)
     return True
@@ -384,6 +384,6 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, ho
             raise ReviewError(f"this is round {round_}: tasks must be open and numbered "
                               f"{round_}.1, {round_}.2 ... (not {', '.join(wrong)})")
     try:
-        return comment.publish(cfg, runner, "pr", number, text, terms)
+        return comment.publish(cfg, runner, "pr", number, text, terms, role="reviewer")
     except comment.CommentError as error:
         raise ReviewError(str(error)) from error
