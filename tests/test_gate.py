@@ -219,15 +219,42 @@ class GateTest(unittest.TestCase):
         self.assertEqual(gate.main(json.dumps(payload)), 0)
         self.assertEqual(gate.main("not json"), 0)
 
-    def test_main_fails_closed_on_unexpected_errors(self):
+    def _main(self, command, tool="Bash"):
+        payload = {"tool_name": tool, "cwd": "/", "tool_input": {"command": command}}
+        with contextlib.redirect_stderr(io.StringIO()):
+            return gate.main(json.dumps(payload))
+
+    def test_main_fails_closed_only_on_a_trigger(self):
         original = gate.decide
         gate.decide = lambda *args: 1 / 0
         try:
-            payload = {"tool_name": "Bash", "cwd": "/", "tool_input": {"command": "ls"}}
-            with contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(gate.main(json.dumps(payload)), 2)
+            self.assertEqual(self._main("ls"), 0)
+            self.assertEqual(self._main("gh issue comment 5 --body x"), 2)
+            self.assertEqual(self._main("git commit -m x"), 2)
         finally:
             gate.decide = original
+
+    def test_main_times_out_like_an_error(self):
+        import time
+        original, limit = gate.decide, gate.TIME_LIMIT
+        gate.decide = lambda *args: time.sleep(1) or []
+        gate.TIME_LIMIT = 0.1
+        try:
+            self.assertEqual(self._main("ls"), 0)
+            self.assertEqual(self._main("gh issue comment 5 --body x"), 2)
+        finally:
+            gate.decide, gate.TIME_LIMIT = original, limit
+
+    def test_decide_is_fast_on_pathological_text(self):
+        import time
+        for unit in ('"`', "'$(", '"'):
+            command = "gh issue comment 5 --body " + unit * 70000
+            start = time.monotonic()
+            gate.decide(command, "/", TERMS)
+            self.assertLess(time.monotonic() - start, 2.0)
+
+    def test_main_ignores_other_tools(self):
+        self.assertEqual(self._main("gh issue comment 5 --body x", tool="Read"), 0)
 
     def test_main_is_silent_when_private_terms_file_is_missing(self):
         payload = {"tool_name": "Bash", "cwd": "/", "tool_input": {"command": "ls"}}

@@ -16,6 +16,7 @@ that talks to the forge without one of these programs is outside its view.
 import json
 import os
 import re
+import signal
 import sys
 
 from . import config, githooks, scan
@@ -30,8 +31,8 @@ _HTTP_CLIS = ("curl", "wget", "http", "https", "xh")
 # Command position: start of text, after a separator, quote or newline, or after a launcher.
 _POS = (r"""(?:^|[;&|(`'"\n{]|\bsudo\b|\benv\b|\bxargs\b|\bexec\b|\bcommand\b|\btime\b|\bnohup\b)"""
         r"""\s*(?:[A-Za-z_]\w*=\S*\s+)*""")
-_FORGE = re.compile(_POS + r"(?:\S*/)?(" + "|".join(FORGE_CLIS) + r")(?![\w.-])")
-_GITPUB = re.compile(_POS + r"(?:\S*/)?git\b[^;&|\n]*?\b(?:commit|push|tag)\b")
+_FORGE = re.compile(_POS + r"(?:[\w.~+-]*/)*(" + "|".join(FORGE_CLIS) + r")(?![\w.-])")
+_GITPUB = re.compile(_POS + r"(?:[\w.~+-]*/)*git\b[^;&|\n]*?\b(?:commit|push|tag)\b")
 _BYPASS_TEXT = re.compile(
     r"--no-verify\b|--config-env\b|-c\s*core\.hooksPath|config\s+(?:--\S+\s+)*core\.hooksPath\s+\S"
     r"|(?:^|[\s;&|])(?:HOME|XDG_CONFIG_HOME|BATON_PRIVATE_TERMS|GIT_CONFIG\w*)=")
@@ -142,6 +143,17 @@ def decide(command, cwd, terms):
     return list(dict.fromkeys(problems))
 
 
+TIME_LIMIT = 2.0  # seconds one command may take to check
+
+
+class _TimedOut(Exception):
+    pass
+
+
+def _alarm(signum, frame):
+    raise _TimedOut(f"the check took longer than {TIME_LIMIT} seconds")
+
+
 def main(stdin_text):
     try:
         payload = json.loads(stdin_text)
@@ -153,11 +165,25 @@ def main(stdin_text):
         return 0
     if not isinstance(payload, dict) or payload.get("tool_name") != "Bash":
         return 0
+    command = ""
     try:
         command = payload.get("tool_input", {}).get("command", "")
         cwd = payload.get("cwd") or os.getcwd()
-        problems = decide(command, cwd, scan.load_terms(warn=False))
-    except Exception as error:  # fail closed: an unchecked command must not publish
+        previous = signal.signal(signal.SIGALRM, _alarm)
+        signal.setitimer(signal.ITIMER_REAL, TIME_LIMIT)
+        try:
+            problems = decide(command, cwd, scan.load_terms(warn=False))
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
+    except Exception as error:
+        # Fail closed only when the command could publish; any other command is allowed.
+        try:
+            triggered = forge_facing(command) if isinstance(command, str) else True
+        except Exception:
+            triggered = True
+        if not triggered:
+            return 0
         print(f"Baton publish gate could not check this command ({error!r}).", file=sys.stderr)
         return 2
     if not problems:
