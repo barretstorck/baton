@@ -49,7 +49,7 @@ def plan_text(runner, cfg, branch, number=None):
     try:
         issue = json.loads(runner(["gh", "issue", "view", str(number), "--json", "author,body"]))
         owner = json.loads(runner(["gh", "repo", "view", "--json", "owner"]))["owner"]["login"]
-        if issue["author"]["login"] != owner:
+        if issue["author"]["login"] not in cfg.maintainers(owner):
             return ""
         body = issue["body"] or ""
     except (RunError, ValueError, KeyError, TypeError):

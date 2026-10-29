@@ -214,6 +214,15 @@ class CheckTest(unittest.TestCase):
         ok = [approval(), {"author": {"login": OWNER}, "body": "/baton approve abc1234"}]
         self.assertEqual(problems(files=files, comments=ok), [])
 
+    def test_second_maintainer_approval_unlocks_but_a_stranger_does_not(self):
+        files = [{"path": ".github/workflows/ci.yml"}]
+        for login, ok in (("second", True), ("mallory", False)):
+            with self.subTest(login=login):
+                comments = [approval(), {"author": {"login": login}, "body": "/baton approve abc1234"}]
+                found = merge.check(make_pr(files=files, comments=comments), make_config(),
+                                    [OWNER, "second"], "main", FakeRunner())
+                self.assertEqual(not any("protected" in p for p in found), ok)
+
     def test_other_approvals_do_not_unlock(self):
         files = [{"path": ".baton/brief.md"}]
         cases = {

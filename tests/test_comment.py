@@ -96,6 +96,11 @@ class AnswersTest(unittest.TestCase):
         result = comment.pending_answers({"comments": [c(OWNER, "hello", 1)]}, OWNER)
         self.assertEqual(result, {"question": None, "answers": []})
 
+    def test_second_maintainer_answer_counts(self):
+        comments = [c(OWNER, Q, 1), c("second", "Use mode A.", 2), c("mallory", "No, B.", 3)]
+        result = comment.pending_answers({"comments": comments}, [OWNER, "second"])
+        self.assertEqual([a["body"] for a in result["answers"]], ["Use mode A."])
+
     def test_owner_comment_after_question_is_the_answer(self):
         comments = [c(OWNER, "earlier note", 1), c(OWNER, Q, 2), c(OWNER, "Use mode A.", 3)]
         result = comment.pending_answers({"comments": comments}, OWNER)

@@ -6,6 +6,7 @@ headed sections, an `Expected files:` line and `Blocked by:` lines.
 import re
 
 from . import checklist, planfile
+from .config import logins
 
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.M)
 _BLOCKED = re.compile(r"^\s*Blocked by:(.*)$", re.M | re.I)
@@ -53,7 +54,7 @@ def ready_problems(issue, cfg, owner, runner=None):
     labels = {label["name"] for label in issue.get("labels") or []}
     spike = cfg.label("type:spike") in labels
     problems = []
-    if issue.get("author", {}).get("login") != owner:
+    if issue.get("author", {}).get("login") not in logins(owner):
         problems.append("written by someone other than the maintainer; "
                         "only the maintainer may mark it ready")
     if not parts.get("context"):
