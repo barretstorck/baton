@@ -12,6 +12,7 @@ import tempfile
 
 from . import checklist, forbid, gate, labels, planfile, review, scan, state as item_state, verify
 from .run import RunError
+from .config import logins
 
 PR_FIELDS = ("number,state,isDraft,mergeable,headRefOid,headRefName,baseRefName,"
              "isCrossRepository,body,files,changedFiles,statusCheckRollup,"
@@ -105,7 +106,7 @@ def _approved(pr, owner, runner, default_branch, touched):
     for comment in pr.get("comments") or []:
         body = comment.get("body", "")
         match = _APPROVE.match(body.strip())
-        if not match or gate.MARKER in body or comment.get("author", {}).get("login") != owner:
+        if not match or gate.MARKER in body or comment.get("author", {}).get("login") not in logins(owner):
             continue
         sha = match.group(1)
         if not head.startswith(sha) and not fetched:
@@ -301,7 +302,7 @@ def merge(number, cfg, runner, notes=None):
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", PR_FIELDS]))
     if pr.get("state") != "MERGED":
-        problems = check(pr, cfg, repo["owner"]["login"], repo["defaultBranchRef"]["name"], runner,
+        problems = check(pr, cfg, cfg.maintainers(repo["owner"]["login"]), repo["defaultBranchRef"]["name"], runner,
                          notes)
         if problems:
             return problems

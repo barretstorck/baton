@@ -11,6 +11,7 @@ import re
 import tempfile
 
 from . import checklist, comment, gate, run, verify as verifylog
+from .config import logins
 
 # The one place a verdict is defined. `tasks` is "none" (a `## Tasks` section is
 # refused) or "required"; `round` says whether the verdict counts toward review.max_rounds.
@@ -79,7 +80,7 @@ def history(comments, owner):
     """Reviews and replies, oldest first. Only the owner's comments count: agents post as the owner."""
     events = []
     for item in comments or []:
-        if item.get("author", {}).get("login") != owner:
+        if item.get("author", {}).get("login") not in logins(owner):
             continue
         body = (item.get("body") or "").lstrip()
         match = _REVIEW.match(body)
@@ -262,7 +263,7 @@ def _latest_review(comments, owner):
     """The owner's latest review comment and its marker match, or (None, None)."""
     found = (None, None)
     for item in comments or []:
-        if item.get("author", {}).get("login") != owner:
+        if item.get("author", {}).get("login") not in logins(owner):
             continue
         match = _REVIEW.match((item.get("body") or "").lstrip())
         if match:
@@ -324,7 +325,8 @@ def _open_work(runner, pr, owner):
     return problems
 
 
-def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, home=None):
+def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, home=None,
+         maintainers=None):
     """Post a review of `commit`.
 
     Refuses if the branch moved while it was reviewed, if an approval would
@@ -344,7 +346,7 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, ho
         raise ReviewError(f"the pull request's head is now {head[:7]}, not {commit[:7]}; "
                           "review the new commits and post again")
     if verdict == "approve":
-        problems = _open_work(runner, pr, owner)
+        problems = _open_work(runner, pr, maintainers or owner)
         if verify not in ("green", "none"):
             problems.append(f"verification of {commit[:7]} is {verify}; "
                             f"run baton verify {number} <worktree>")
@@ -373,7 +375,7 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, ho
             raise ReviewError("cannot post a replan review: " + "; ".join(problems))
     else:
         tasks = checklist.tasks_under(body, "tasks")
-        round_ = state(pr.get("comments"), owner, 1 << 30)["rounds"] + 1
+        round_ = state(pr.get("comments"), maintainers or owner, 1 << 30)["rounds"] + 1
         if not tasks:
             raise ReviewError("a request for changes needs a '## Tasks' checklist")
         wrong = [task["id"] for task in tasks
