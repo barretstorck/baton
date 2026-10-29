@@ -72,6 +72,12 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("refs/spikes/", skill)
         self.assertIn("Prototype:", skill)
 
+    def test_refine_skill_sets_timebox(self):
+        text = " ".join((ROOT / "skills" / "refine" / "SKILL.md").read_text().split())
+        for needle in ("Timebox: <tokens> tokens, <minutes> min", "spike.tokens",
+                       "spike.minutes"):
+            self.assertIn(needle, text)
+
     def test_refiner_runs_in_own_worktree(self):
         meta, _ = frontmatter.split((ROOT / "agents" / "baton-refiner.md").read_text())
         self.assertIn("isolation: worktree", meta.splitlines())
