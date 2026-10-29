@@ -85,6 +85,13 @@ class PostTest(unittest.TestCase):
         self.assertEqual(runner.calls, [])
         self.assertNotIn("Zebrowski", str(caught.exception))
 
+    def test_credentials_are_refused(self):
+        for shape in ("ghs_" + "a1B2" * 6, "-----BEGIN " + "PRIVATE KEY-----"):
+            runner = FakeRunner()
+            with self.assertRaises(comment.CommentError):
+                comment.post(cfg(), runner, "issue", 7, "developer", "status", "got " + shape, [])
+            self.assertEqual(runner.calls, [])
+
     def test_bad_target_is_rejected(self):
         with self.assertRaises(comment.CommentError):
             comment.post(cfg(), FakeRunner(), "release", 7, "developer", "status", "x", [])
