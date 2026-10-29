@@ -149,6 +149,18 @@ class ConfigTest(unittest.TestCase):
                 with self.assertRaises(config.ConfigError):
                     config.load(str(make_repo(f"---\n{meta}\n---\n")))
 
+    def test_notify_default_and_valid(self):
+        self.assertEqual(config.DEFAULTS["notify"], {"severity": [], "labels": []})
+        self.assertEqual(config.load(str(make_repo("# none\n"))).data["notify"], {"severity": [], "labels": []})
+        brief = "---\nnotify:\n  severity: [1, 2]\n  labels: [security]\n---\n"
+        cfg = config.load(str(make_repo(brief)))
+        self.assertEqual(cfg.data["notify"], {"severity": [1, 2], "labels": ["security"]})
+
+    def test_notify_invalid_raises(self):
+        for meta in ("severity: [5]", "severity: [x]", "severity: 2", "severity: [0]", "labels: [1]"):
+            with self.subTest(meta=meta), self.assertRaises(config.ConfigError):
+                config.load(str(make_repo(f"---\nnotify:\n  {meta}\n---\n")))
+
     def test_work_mix_default_and_valid(self):
         self.assertEqual(config.DEFAULTS["work_mix"], {})
         self.assertEqual(config.load(str(make_repo("# none\n"))).data["work_mix"], {})
