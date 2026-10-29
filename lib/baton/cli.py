@@ -220,9 +220,22 @@ def _issue_missed(args):
     return 0
 
 
+def _issue_read(args):
+    if len(args) != 2 or not args[1].isdigit():
+        print("usage: baton issue read <issue>", file=sys.stderr)
+        return 64
+    cfg = _require_config()
+    data = json.loads(run.run(["gh", "issue", "view", args[1], "--json",
+                               "number,title,state,author,labels,body,comments"]))
+    print(issue.render(data, _maintainers(cfg)))
+    return 0
+
+
 def cmd_issue(args):
     if args[:1] == ["missed"]:
         return _issue_missed(args)
+    if args[:1] == ["read"]:
+        return _issue_read(args)
 
     def act(o, cfg, terms):
         if o["action"] == "create":

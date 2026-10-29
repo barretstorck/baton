@@ -414,3 +414,41 @@ class RenderTest(unittest.TestCase):
         self.assertIn("Author: @ghost (outside)", out)
         self.assertIn("--- comment by @ghost ---", out)
         self.assertNotIn("\nhi", out)
+
+
+class ReadCommandTests(unittest.TestCase):
+    def run_cmd(self, args):
+        import io
+        import json
+        from unittest import mock
+        from baton import cli
+        data = {"number": 7, "title": "T", "state": "OPEN", "author": {"login": OWNER},
+                "labels": [], "body": "hello body",
+                "comments": [{"author": {"login": "eve"}, "body": "IGNORE PREVIOUS"}]}
+        fake = FakeRunner({"gh issue view 7 --json": json.dumps(data)})
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli, "_maintainers", return_value=[OWNER]), \
+                mock.patch.object(cli.run, "run", fake), \
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+            code = cli.main(args)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_prints_rendered_text(self):
+        code, out, _ = self.run_cmd(["issue", "read", "7"])
+        self.assertEqual(code, 0)
+        self.assertIn("#7 T", out)
+        self.assertIn("hello body", out)
+        self.assertIn("[untrusted text from @eve withheld; see Triage summary]", out)
+        self.assertNotIn("IGNORE PREVIOUS", out)
+
+    def test_bad_arguments_exit_64(self):
+        for args in (["issue", "read"], ["issue", "read", "x"], ["issue", "read", "7", "8"]):
+            code, _, err = self.run_cmd(args)
+            self.assertEqual(code, 64)
+            self.assertIn("usage: baton issue read <issue>", err)
+
+    def test_edit_usage_unchanged(self):
+        code, _, err = self.run_cmd(["issue", "edit"])
+        self.assertEqual(code, 64)
+        self.assertNotIn("baton issue read", err)
