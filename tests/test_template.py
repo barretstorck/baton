@@ -10,8 +10,10 @@ class TemplateTest(unittest.TestCase):
         meta, body = frontmatter.split((ROOT / "templates" / "brief.md").read_text())
         self.assertEqual(frontmatter.parse(meta), config.DEFAULTS)
         self.assertIn("## Verification", body)
-        for role in ("developer", "reviewer", "refiner"):
-            self.assertEqual(config.DEFAULTS[role]["model"], "sonnet")
+        table = {"triager": "haiku", "refiner": "opus", "researcher": "opus",
+                 "developer": "sonnet", "reviewer": "opus"}
+        for role, model in table.items():
+            self.assertEqual(config.DEFAULTS[role]["model"], model)
             self.assertEqual(config.DEFAULTS[role]["effort"], "medium")
 
     def test_plan_template_describes_as_built_line(self):

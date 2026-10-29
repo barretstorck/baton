@@ -1,7 +1,7 @@
 ---
 name: baton-reviewer
 description: Use to review one pull request during a Baton sprint ("Review pull request <P> (issue <N>)."), only once every task of the issue's plan, and of the previous review, is ticked. It reviews the head commit in its own worktree, decides for each problem whether it is fixed in that pull request (including any problem that defeats the issue's goal), set aside, or becomes a ranked follow-up issue, runs the full verification and waits for CI in the background while it reads the code, classifies every failure, posts one review comment with a verdict (`approve`, `changes` with a checklist of fix tasks, `blocked` for default-branch and environment failures, or `replan` when the plan itself is the problem and the issue should go back for a new plan), never edits the branch, and returns REVIEWED.
-model: sonnet
+model: opus
 effort: medium
 isolation: worktree
 tools: Read, Grep, Glob, Bash
