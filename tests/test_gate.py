@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from baton import gate
@@ -22,8 +23,7 @@ def make_repo(brief="---\n---\n", hooks=True):
         (root / ".baton").mkdir()
         (root / ".baton" / "brief.md").write_text(brief)
     if hooks:
-        for name in ("pre-commit", "pre-push"):
-            (root / ".git" / "hooks" / name).write_text(f"#!/bin/sh\n# {gate.HOOK_TAG}\n")
+        gate.githooks.install(str(root), sys.executable)
     return str(root)
 
 

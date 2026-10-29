@@ -1,5 +1,7 @@
 import os
 import pathlib
+import re
+import shlex
 
 from . import config, run, scan
 
@@ -213,6 +215,19 @@ def pre_push(cwd, stdin_text, terms):
     return sorted(set(problems))
 
 
+def recorded_bin(text):
+    """The baton path a hook's text records (new or old format), or None."""
+    match = re.search(r"^baton_bin=(.+)$", text, re.M) or re.search(
+        r'^exec ("[^"\n]*") git-hook ', text, re.M)
+    if not match:
+        return None
+    try:
+        words = shlex.split(match.group(1))
+    except ValueError:
+        return None
+    return words[0] if len(words) == 1 and words[0] else None
+
+
 def installed(repo):
     try:
         directory = hooks_dir(repo)
@@ -220,7 +235,11 @@ def installed(repo):
         return False
     for name in HOOKS:
         try:
-            if HOOK_TAG not in (directory / name).read_text():
+            text = (directory / name).read_text()
+            if HOOK_TAG not in text:
+                return False
+            recorded = recorded_bin(text)
+            if recorded is None or not os.path.exists(recorded):
                 return False
         except OSError:
             return False
@@ -239,7 +258,15 @@ def install(repo, baton_bin):
         target.write_text(
             "#!/bin/sh\n"
             f"# {HOOK_TAG}: installed by `baton install-hooks`\n"
-            f'exec "{baton_bin}" git-hook {target.name} "$@"\n')
+            f"baton_bin={shlex.quote(str(baton_bin))}\n"
+            'recorded=$baton_bin\n'
+            'if [ ! -x "$baton_bin" ]; then baton_bin=$(command -v baton) || baton_bin=; fi\n'
+            'if [ -z "$baton_bin" ]; then\n'
+            '  echo "baton: this Baton git hook cannot find baton (installed from $recorded);'
+            ' run \\`baton install-hooks\\`" >&2\n'
+            "  exit 1\n"
+            "fi\n"
+            f'exec "$baton_bin" git-hook {target.name} "$@"\n')
         target.chmod(0o755)
         written.append(str(target))
     return written

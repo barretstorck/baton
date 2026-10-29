@@ -1,0 +1,143 @@
+## Context
+
+`baton install-hooks` (`lib/baton/githooks.py` `install()`) writes the absolute path of the plugin's `bin/baton` into the `pre-commit` and `pre-push` hooks. Plugin installs live in a versioned cache folder (`~/.claude/plugins/cache/baton/baton/<version>/`), so the path stops existing once old versions are pruned. Observed: the Baton clone's hooks still `exec` `.../0.3.0/bin/baton`, while only 0.4.0, 0.5.0 and 0.5.1 are cached.
+
+`githooks.installed()` only looks for the `baton git-hook` tag line. The gate therefore keeps reporting the hooks as installed while they point at a missing file, and every commit in that clone fails with a shell "not found" error and no hint to re-run `baton install-hooks`.
+
+The other findings of the original audit were split out: the gate's read-only false positives and refusal messages are #132, the forge-neutral gate design is the spike #133, and the private-terms warning and the fail-open note are #134.
+
+## Diagnosis
+
+- **Reproduced** with tests in a scratch worktree at f86c9cc. The hooks were installed with a `baton` path under a temporary `0.3.0/bin/` that does not exist. `githooks.installed(repo)` returned True (expected False), and `git commit` failed with `.git/hooks/pre-commit: exec: line 3: <path>/0.3.0/bin/baton: not found` (expected: the scans run, or a message naming `baton install-hooks`).
+- **Cause:** `githooks.install()` (`lib/baton/githooks.py:230-245`) writes a hook that `exec`s one fixed absolute path with no fallback. `githooks.installed()` (`lib/baton/githooks.py:216-227`) checks only the tag line, never that the path exists. `gate.decide()` (`lib/baton/gate.py:562-563`) relies on `installed()`.
+- **Not a regression:** the fixed path has been there since the hooks were added in 8e3266d.
+
+## Acceptance criteria
+
+- The hook that `baton install-hooks` writes runs the `baton` path it recorded when that file exists, else the `baton` found on `PATH`. When neither exists, it exits non-zero with a message on standard error that names `baton install-hooks`, never a bare shell "not found".
+- `githooks.installed()` returns False when a hook's recorded `baton` path does not exist, for hooks written in the old format (`exec "<path>" git-hook ...`) and the new one. The gate then refuses `git commit` and `git push` with a message to run `baton install-hooks`.
+- Tests in `tests/test_githooks.py` and `tests/test_gate.py` cover a hook whose target no longer exists: `installed()`, the PATH fallback, the message when there is no `baton` at all, and the gate's refusal.
+- `README.md` and `skills/init/SKILL.md` say that the gate asks to re-run `baton install-hooks` after a plugin update removes the old version.
+- `PYTHONPATH=lib python3 -m unittest discover -s tests` passes.
+
+## Out of scope
+
+- The gate's read-only false positives and refusal wording (#132).
+- The forge-neutral gate design (#133).
+- The private-terms warning and the fail-open note (#134).
+- Weakening the privacy scan patterns or the `merge-pr` acceptance checks.
+- Removing `planfile.py`.
+
+## Pointers
+
+Expected files: `lib/baton/githooks.py`, `lib/baton/gate.py`, `tests/test_githooks.py`, `tests/test_gate.py`, `README.md`, `skills/init/SKILL.md`
+
+`lib/baton/githooks.py` and `lib/baton/gate.py` are protected paths, so the pull request needs `/baton approve <sha>`.
+
+## Developer Plan
+
+Written against: f86c9ccd2c772f0c0adbd000b3d0f720c11886e9
+
+### Verification
+
+    PYTHONPATH=lib python3 -m unittest discover -s tests
+
+### Pattern
+
+Hook script text is built in `githooks.install()` (`lib/baton/githooks.py:230-245`). Tests build throwaway repositories with `make_repo()` and `write()` in `tests/test_githooks.py:18-35` and `tests/test_gate.py:18-27`, and call real `git` there (no `FakeRunner` for hooks).
+
+### Design notes
+
+- The hook tries its recorded path first, so a repository keeps the `baton` version that installed it as long as that exists; `PATH` is only the fallback, for a person committing in a terminal after the plugin update.
+- `installed()` treats a missing recorded path as "not installed" even when `PATH` would work. The gate then asks for a re-install, which pins the hooks to the current version again.
+- A tagged hook with no recorded path (a hand-written stub) counts as not installed. `tests/test_gate.py` `make_repo()` writes such stubs today, so task 2 changes it to install real hooks.
+
+- [x] Task 1: Add the failing tests for a hook whose baton is gone
+  <details>
+  <summary>Click to see plan details</summary>
+
+  - Files: `tests/test_githooks.py`, `tests/test_gate.py`
+  - Uses: `githooks.install(repo, baton_bin)` (`lib/baton/githooks.py:230`), `githooks.installed(repo)` (`lib/baton/githooks.py:216`), `gate.decide(command, cwd, terms)` (`lib/baton/gate.py:499`); test helpers `make_repo`, `write`, `git` (`tests/test_githooks.py:13-35`)
+  - Provides: the five tests below. Four fail before task 2; `test_hook_whose_baton_exists_is_installed` passes now and must keep passing.
+  - In `tests/test_githooks.py`, add `import os`, `import shutil` and `import sys` to the imports, and add these methods to `class InstallTest`, before `test_install_refuses_foreign_hook`:
+
+        def test_hook_whose_baton_is_gone_is_not_installed(self):
+            repo = make_repo()
+            githooks.install(repo, os.path.join(tempfile.mkdtemp(), "0.3.0", "bin", "baton"))
+            self.assertFalse(githooks.installed(repo))
+
+        def test_hook_whose_baton_exists_is_installed(self):
+            repo = make_repo()
+            githooks.install(repo, sys.executable)
+            self.assertTrue(githooks.installed(repo))
+
+        def _commit_with_gone_baton(self, path_dirs):
+            repo = make_repo()
+            githooks.install(repo, os.path.join(tempfile.mkdtemp(), "0.3.0", "bin", "baton"))
+            write(repo, "b.txt", "x\n")
+            git(repo, "add", "-A")
+            env = dict(os.environ, PATH=os.pathsep.join(path_dirs))
+            return subprocess.run(["git", "-C", repo, "commit", "-q", "-m", "b"],
+                                  capture_output=True, text=True, env=env)
+
+        def test_hook_falls_back_to_baton_on_path(self):
+            bindir = tempfile.mkdtemp()
+            marker = os.path.join(bindir, "ran")
+            fake = pathlib.Path(bindir, "baton")
+            fake.write_text(f'#!/bin/sh\necho "$@" > "{marker}"\n')
+            fake.chmod(0o755)
+            git_dir = os.path.dirname(shutil.which("git"))
+            result = self._commit_with_gone_baton([bindir, git_dir, "/bin"])
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(pathlib.Path(marker).read_text().split()[:2], ["git-hook", "pre-commit"])
+
+        def test_hook_without_any_baton_names_install_hooks(self):
+            git_dir = os.path.dirname(shutil.which("git"))
+            result = self._commit_with_gone_baton([git_dir, "/bin"])
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("baton install-hooks", result.stderr)
+            self.assertNotIn("not found", result.stderr)
+
+  - In `tests/test_gate.py`, add this method to `class GateTest`, before `test_hooks_must_be_in_the_effective_hooks_path` (around line 319):
+
+        def test_git_publish_refuses_hooks_whose_baton_is_gone(self):
+            repo = make_repo(hooks=False)
+            gate.githooks.install(repo, os.path.join(tempfile.mkdtemp(), "0.3.0", "bin", "baton"))
+            problems = gate.decide("git commit -m x", repo, TERMS)
+            self.assertTrue(any("install-hooks" in p for p in problems))
+
+  - Check: `PYTHONPATH=lib python3 -m unittest discover -s tests -p 'test_*hooks.py'` and `PYTHONPATH=lib python3 -m unittest discover -s tests -p test_gate.py`. Expect exactly these failures: `test_hook_whose_baton_is_gone_is_not_installed`, `test_hook_falls_back_to_baton_on_path`, `test_hook_without_any_baton_names_install_hooks` and `test_git_publish_refuses_hooks_whose_baton_is_gone`. Commit the failing tests.
+
+  </details>
+
+- [ ] Task 2: Hooks fall back to baton on PATH; installed() checks the recorded path
+  <details>
+  <summary>Click to see plan details</summary>
+
+  - Files: `lib/baton/githooks.py`, `lib/baton/gate.py`, `tests/test_gate.py`
+  - Uses: `install(repo, baton_bin)` (`lib/baton/githooks.py:230-245`), `installed(repo)` (`lib/baton/githooks.py:216-227`), `HOOK_TAG` (`lib/baton/githooks.py:6`); the gate's check at `lib/baton/gate.py:562-563`; `make_repo()` in `tests/test_gate.py:18-27`
+  - Provides: `githooks.recorded_bin(text) -> str | None`, the `baton` path a hook's text records, read from both the old line `exec "<path>" git-hook <name> "$@"` and the new format; None when there is none.
+  - `install()` writes a `/bin/sh` script that keeps the shebang and the `# baton git-hook: installed by `baton install-hooks`` tag line, records `baton_bin` (shell-quoted, in a form `recorded_bin` reads), uses it when it is executable, else `command -v baton`, else prints `baton: this Baton git hook cannot find baton (installed from <baton_bin>); run `baton install-hooks`` to standard error and exits 1. It finishes with `exec "$baton" git-hook <name> "$@"`.
+  - `installed()` returns False when a hook's `recorded_bin()` is None or that path does not exist (`os.path.exists`).
+  - In `gate.py:563`, change the message to `Baton git hooks are missing or point at a baton that no longer exists; run `baton install-hooks``. Keep the substring `install-hooks`, which the tests look for.
+  - In `tests/test_gate.py` `make_repo()` (lines 24-26), replace the hand-written stub hooks with `gate.githooks.install(str(root), sys.executable)` and add `import sys`, so existing gate tests keep seeing installed hooks.
+  - Check: `PYTHONPATH=lib python3 -m unittest discover -s tests -p 'test_*hooks.py'` and `PYTHONPATH=lib python3 -m unittest discover -s tests -p test_gate.py`, all passing.
+
+  </details>
+
+- [ ] Task 3: Document re-installing the hooks after a plugin update
+  <details>
+  <summary>Click to see plan details</summary>
+
+  - Files: `README.md`, `skills/init/SKILL.md`
+  - Uses: the `baton install-hooks` row at `README.md:141`; step 6 at `skills/init/SKILL.md:39-40`
+  - Provides: one sentence in each: the hooks record the plugin version's `baton` and fall back to `baton` on `PATH`; when a plugin update removes that version, the gate refuses commits and pushes until `baton install-hooks` is run again.
+  - Check: `PYTHONPATH=lib python3 -m unittest discover -s tests` (the full verification).
+
+  </details>
+
+## Decisions
+
+- Split into four issues: this one keeps the stale-hook fix; the false positives, the forge-neutral design spike and the small findings get their own issues. ([answer](https://github.com/barretstorck/baton/issues/131#issuecomment-6498145699))
+- The hook falls back to `baton` on `PATH` when its recorded path is gone, and `installed()` also detects the missing path so the gate refuses up front with a hint to re-run `baton install-hooks`. ([answer](https://github.com/barretstorck/baton/issues/131#issuecomment-6498145699))
+

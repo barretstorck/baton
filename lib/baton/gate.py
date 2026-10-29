@@ -702,7 +702,8 @@ def decide(command, cwd, terms):
                 texts.append(text)
         texts.extend(_heredoc_text(text) for text in item.texts)
     if any(item.hooked for item in publishing) and not githooks.installed(cfg.root):
-        problems.append("Baton git hooks are not installed; run `baton install-hooks`")
+        problems.append("Baton git hooks are missing or point at a baton that no longer exists; "
+            "run `baton install-hooks`")
 
     findings = scan.scan_text("\n".join(texts), terms, cfg.data["privacy_allow"])
     kinds = sorted({finding.kind for finding in findings})
