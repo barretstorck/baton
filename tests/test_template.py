@@ -58,13 +58,25 @@ class TemplateTest(unittest.TestCase):
                      "skills/init/SKILL.md", "skills/review/SKILL.md",
                      "skills/open-questions/SKILL.md", "agents/baton-developer.md",
                      "agents/baton-reviewer.md",
-                     "agents/baton-refiner.md", "bin/baton"):
+                     "agents/baton-refiner.md", "agents/baton-researcher.md",
+                     "skills/research/SKILL.md", "bin/baton"):
             self.assertTrue((ROOT / path).is_file(), path)
 
     def test_agents_run_at_medium_effort(self):
-        for name in ("baton-developer", "baton-reviewer", "baton-refiner"):
+        for name in ("baton-developer", "baton-reviewer", "baton-refiner",
+                     "baton-researcher"):
             meta, _ = frontmatter.split((ROOT / "agents" / f"{name}.md").read_text())
             self.assertIn("\neffort: medium\n", f"\n{meta}\n", name)
+
+    def test_researcher_agent_and_skill(self):
+        meta, _ = frontmatter.split((ROOT / "agents" / "baton-researcher.md").read_text())
+        lines = meta.splitlines()
+        self.assertIn("isolation: worktree", lines)
+        self.assertIn("model: opus", lines)
+        self.assertIn("  - baton:research", lines)
+        skill = (ROOT / "skills" / "research" / "SKILL.md").read_text()
+        self.assertIn("refs/spikes/", skill)
+        self.assertIn("Prototype:", skill)
 
     def test_refiner_runs_in_own_worktree(self):
         meta, _ = frontmatter.split((ROOT / "agents" / "baton-refiner.md").read_text())
@@ -106,9 +118,10 @@ class TemplateTest(unittest.TestCase):
 
     def test_agents_declare_restricted_tools(self):
         expected = {
-            "baton-developer": "tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch",
+            "baton-developer": "tools: Read, Grep, Glob, Bash, Edit, Write",
             "baton-reviewer": "tools: Read, Grep, Glob, Bash",
             "baton-refiner": "tools: Read, Grep, Glob, Bash, Write, WebSearch, WebFetch",
+            "baton-researcher": "tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch",
         }
         for name, line in expected.items():
             meta, _ = frontmatter.split((ROOT / "agents" / f"{name}.md").read_text())
@@ -118,10 +131,16 @@ class TemplateTest(unittest.TestCase):
                 self.assertNotIn(banned, tools, name)
             self.assertFalse([t for t in tools if t.startswith("mcp__")], name)
             for web in ("WebSearch", "WebFetch"):
-                if name == "baton-reviewer":
-                    self.assertNotIn(web, tools, name)
-                else:
+                if name in ("baton-refiner", "baton-researcher"):
                     self.assertIn(web, tools, name)
+                else:
+                    self.assertNotIn(web, tools, name)
+
+    def test_developer_has_no_spikes(self):
+        skill = (ROOT / "skills/develop/SKILL.md").read_text()
+        self.assertNotIn("## Spikes", skill)
+        agent = (ROOT / "agents/baton-developer.md").read_text()
+        self.assertNotIn("spike", agent.lower())
 
     def test_developer_instructions_forbid_ticking_review_tasks(self):
         for path in ("skills/develop/SKILL.md", "agents/baton-developer.md"):
@@ -212,3 +231,9 @@ class TemplateTest(unittest.TestCase):
         for text in (sprint, review):
             for gone in ("baton plan commit", "baton plan link", "baton plan pin"):
                 self.assertNotIn(gone, text)
+
+    def test_sprint_dispatches_spikes_to_researcher(self):
+        sprint = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        self.assertIn("baton:baton-researcher", sprint)
+        self.assertIn("researcher.model", sprint)
+        self.assertIn("/baton:research", (ROOT / "README.md").read_text())
