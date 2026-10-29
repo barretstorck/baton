@@ -802,11 +802,19 @@ COMMANDS = {
 }
 
 
+def _load_identity():
+    try:
+        repo = _repo_name()
+    except run.RunError as error:
+        raise identity.IdentityError(f"could not determine the repository to find identity.toml: {error}")
+    return identity.load(*repo.split("/", 1))
+
+
 def main(argv):
     if not argv or argv[0] not in COMMANDS:
         print("usage: baton <" + "|".join(sorted(COMMANDS)) + "> [args]", file=sys.stderr)
         return 64
-    identity.use(lambda: identity.load(*_repo_name().split("/", 1)))
+    identity.use(_load_identity)
     try:
         return COMMANDS[argv[0]](argv[1:])
     except (identity.IdentityError, checklist.TaskError, comment.CommentError, review.ReviewError,
@@ -816,3 +824,5 @@ def main(argv):
     except (config.ConfigError, run.RunError, sprint.SnapshotError, ValueError, OSError) as error:
         print(f"baton: {error}", file=sys.stderr)
         return 2
+    finally:
+        identity.use(None)

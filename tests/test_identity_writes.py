@@ -90,3 +90,19 @@ class Tier0Test(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MainScopeTest(unittest.TestCase):
+    def test_main_unregisters_loader(self):
+        from baton import cli
+        with mock.patch.object(cli, "_repo_name", lambda: "o/r"):
+            cli.main(["config"])
+        self.assertIsNone(identity._loader)
+
+    def test_repo_lookup_failure_is_identity_error(self):
+        from baton import cli, run
+        def boom():
+            raise run.RunError("gh repo view failed")
+        with mock.patch.object(cli, "_repo_name", boom):
+            with self.assertRaises(identity.IdentityError):
+                cli._load_identity()
