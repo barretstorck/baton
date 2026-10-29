@@ -70,6 +70,7 @@ _GH_READ_ACTIONS = {"view", "list", "status", "checks", "diff", "download", "che
 _GH_READ_GROUPS = {"", "status", "search", "help"}
 _METHOD_OPTS = {"-X", "--method"}
 _EVALUATORS = {"bash", "sh", "zsh", "dash", "eval", "xargs", "source", ".", "node", "perl", "ruby"}
+_SHELLS = {"sh", "bash", "zsh", "dash"}
 _GH_OR_GIT = re.compile(r"(?<![\w.\-])(?:gh|git)(?![\w.])")
 _KEYWORDS = {"if", "then", "else", "elif", "while", "until", "do", "!", "{"}
 _DIRECTORY_COMMANDS = ("cd", "pushd", "popd")
@@ -122,6 +123,7 @@ class Call:
     args: list
     bad_env: bool
     unknown_option: bool = False
+    stdin: str = ""
 
 
 @dataclass
@@ -148,17 +150,99 @@ def tokenize(command):
         return command.split()
 
 
-def _invocations(tokens):
-    current = []
+_REDIRECTS = {">", ">>", "<", "<<", "<<<", ">&", "<&", "&>", "&>>", ">|", "<>"}
+_HEREDOC_START = re.compile(r"<<(-?)[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\"|([^\s;&|()<>'\"]+))")
+
+
+def _split_heredocs(command):
+    """Cut heredocs that start outside quotes and outside $(...) out of `command`.
+
+    Each operator and delimiter becomes `<<` and a placeholder word; the map goes from
+    placeholder to body. Heredocs inside quoted values are left in place.
+    """
+    out, bodies, pending = [], {}, []
+    index, quote, depth, length = 0, "", 0, len(command)
+    while index < length:
+        char = command[index]
+        if quote == "'":
+            if char == "'":
+                quote = ""
+        elif char == "\\" and index + 1 < length:
+            out.append(char + command[index + 1])
+            index += 2
+            continue
+        elif quote == '"':
+            if char == '"':
+                quote = ""
+            elif command.startswith("$(", index):
+                depth += 1
+                out.append("$(")
+                index += 2
+                continue
+            elif char == ")" and depth:
+                depth -= 1
+        elif char in "'\"":
+            quote = char
+        elif command.startswith("$(", index):
+            depth += 1
+        elif char == ")" and depth:
+            depth -= 1
+        elif char == "<" and command.startswith("<<", index) and not depth \
+                and not command.startswith("<<<", index):
+            match = _HEREDOC_START.match(command, index)
+            if match:
+                word = match.group(2) or match.group(3) or match.group(4) or ""
+                name = f"__baton_heredoc_{len(bodies) + len(pending)}__"
+                pending.append((name, word, bool(match.group(1))))
+                out.append(f"<< {name}")
+                index = match.end()
+                continue
+        elif char == "\n" and pending and not depth:
+            out.append(char)
+            index += 1
+            for name, word, strip in pending:
+                lines = []
+                while index < length:
+                    end = command.find("\n", index)
+                    end = length if end < 0 else end
+                    line = command[index:end]
+                    index = min(end + 1, length)
+                    if (line.lstrip("\t") if strip else line) == word:
+                        break
+                    lines.append(line)
+                bodies[name] = "\n".join(lines)
+            pending = []
+            continue
+        out.append(char)
+        index += 1
+    for name, _, _ in pending:   # no newline followed: an empty body
+        bodies[name] = ""
+    return "".join(out), bodies
+
+
+def _invocations(tokens, heredocs=None):
+    """Yield (words, stdin) per invocation; redirections and their targets are dropped."""
+    heredocs = heredocs or {}
+    current, stdin, skip, here = [], "", False, False
     for token in tokens:
         if token and set(token) <= _PUNCTUATION:
+            if token in _REDIRECTS:
+                if current and current[-1].isdigit():
+                    current.pop()
+                skip, here = True, token in ("<<", "<<<")
+                continue
+            skip = False
             if current:
-                yield current
-            current = []
+                yield current, stdin
+            current, stdin = [], ""
+        elif skip:
+            skip = False
+            if here:
+                stdin = heredocs.get(token, token)
         else:
             current.append(token)
     if current:
-        yield current
+        yield current, stdin
 
 
 def _bad_name(name):
@@ -244,7 +328,7 @@ def _split_hit(words, start, end):
     return False
 
 
-def _call(words):
+def _call(words, stdin=""):
     bad_env, unknown, split_hit, index = False, False, False, 0
     while index < len(words):
         word = words[index]
@@ -266,8 +350,8 @@ def _call(words):
             break
     unknown = unknown and (split_hit or any(_GH_OR_GIT.search(w) for w in words[index:]))
     if index >= len(words):
-        return Call("", [], bad_env, unknown)
-    return Call(os.path.basename(words[index]), words[index + 1:], bad_env, unknown)
+        return Call("", [], bad_env, unknown, stdin)
+    return Call(os.path.basename(words[index]), words[index + 1:], bad_env, unknown, stdin)
 
 
 def _options(args, value_opts):
@@ -500,7 +584,8 @@ def _has_brief(path):
 
 
 def decide(command, cwd, terms):
-    calls = [_call(words) for words in _invocations(tokenize(command))]
+    stripped, heredocs = _split_heredocs(command)
+    calls = [_call(words, stdin) for words, stdin in _invocations(tokenize(stripped), heredocs)]
     named = _named_directories(calls)
     if not _has_brief(cwd):
         literal = [os.path.join(cwd, os.path.expanduser(name)) for name in named
@@ -512,6 +597,8 @@ def decide(command, cwd, terms):
     for call in calls:
         if call.unknown_option:
             problems.append(_WRAPPER_MESSAGE)
+        if call.program in _SHELLS and call.stdin:
+            problems.extend(decide(call.stdin, cwd, terms))
         if _is_evaluator(call.program):
             if any(_GH_OR_GIT.search(arg) for arg in call.args):
                 problems.append(_WRAPPER_MESSAGE)
