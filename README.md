@@ -278,7 +278,11 @@ issues Baton trusts (default `[]`, meaning the repository owner alone). At tier 
 under a maintainer's login, so every login on the list can answer questions, approve a merge with
 `/baton approve` and write issues that are ready to develop. Maintainers are matched by exact
 login (case-insensitive). Baton logins match only in bot form (`x[bot]`, `app/x`, or the bare slug
-reported as a Bot), so a person whose login is an App's slug is never trusted as that App. At tier 1
+reported as a Bot), so a person whose login is an App's slug is never trusted as that App. `gh ... --json comments`
+reports an App comment's author as the bare slug with no type, so at tier 1 Baton looks up the
+author type of such comments with one REST call per issue or pull request
+(`repos/{owner}/{repo}/issues/<n>/comments`) and only then matches them; no call is made at tier 0
+or when no author's login is an App's slug. At tier 1
 agent comments come from the Baton logins instead. Baton trusts those for marker comments
 (questions, decisions, replies) and for issue authorship, but never for answers, `/baton ready` or
 `/baton approve`; those stay with the maintainers. Review and verify markers count only from the
