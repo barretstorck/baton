@@ -93,7 +93,7 @@ def ready_problems(issue, cfg, owner, runner=None):
                         "(the exact command, or 'repo default')"
                         + (f" in {plan_where}" if link else ""))
     if not spike and not expected_files(body):
-        problems.append("Expected files line is missing (used to avoid overlapping work)")
+        problems.append("Expected files line is missing (used to show where issues may conflict)")
     if not spike:
         found = checklist.plan(plan_text) if plan_text is not None else None
         if plan_text is None:

@@ -34,8 +34,8 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
 4. **Choose.** From the ready issues, pick those that serve the goal.
    - Order them: dependencies first (`Blocked by:`), then what the goal needs most.
    - Mark each `deliverable` (the sprint commits to it) or `stretch` (if time allows).
-   - Prefer issues whose `Expected files:` do not overlap, so developers can work in parallel;
-     where they overlap, say so, because those will run one after another.
+   - Show where the issues' `Expected files:` overlap, because those pull requests are likely to
+     conflict and the merge order matters.
    - There are no size estimates. The number of plan tasks is the nearest thing: read it with
      `baton tasks issue <N>` (each task is one developer and one test cycle). Say plainly how
      many issues and tasks you propose and why that many fits the length; the maintainer adjusts.

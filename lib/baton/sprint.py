@@ -160,14 +160,6 @@ def default_branch_state(runner, owner, repo, branch, now=None):
     return default_branch_status(runner, owner, repo, branch, now)[0]
 
 
-def overlaps(first, second):
-    for a in first:
-        for b in second:
-            if a == b or (a.endswith("/") and b.startswith(a)) or (b.endswith("/") and a.startswith(b)):
-                return True
-    return False
-
-
 def _pr_ci(pr, cfg, runner=None):
     if not pr.get("statusCheckRollup"):
         return "none" if cfg.data["merge"]["allow_no_ci"] else "pending"
@@ -263,7 +255,7 @@ def snapshot(cfg, runner, milestone=None):
     result["parallel"] = (int(parallel.group(1)) if parallel
                           else cfg.data["developer"]["max_parallel"])
 
-    ready, busy_files, waiting = [], [], set()
+    ready, waiting = [], set()
     plan_cache = {}
     tracked = []  # the default branch's (files, reason it could not be listed), fetched once and only when a plan needs them
 
@@ -334,7 +326,6 @@ def snapshot(cfg, runner, milestone=None):
             }
         if status == "status:in-dev":
             result["in_dev"].append(number)
-            busy_files.append(files)
         elif status == "status:in-review":
             pr = pr_for.get(number)
             if pr and cfg.data["review"]["required"]:
@@ -349,7 +340,6 @@ def snapshot(cfg, runner, milestone=None):
                 "mergeable": pr["mergeable"] if pr else None,
                 "review": review_state, "rounds": rounds,
                 "verify": _pr_verify(pr, cfg, runner, owner) if pr else "none"})
-            busy_files.append(files)
         elif status == "status:verification":
             result["verification"].append(number)
         elif status == "status:refinement" and item["state"] == "OPEN":
@@ -391,13 +381,10 @@ def snapshot(cfg, runner, milestone=None):
             reason = f"plan names {missing_count(number)} missing paths; re-refine"
         elif open_blockers:
             reason = "blocked by " + ", ".join(f"#{n}" for n in open_blockers)
-        elif any(overlaps(files, other) for other in busy_files):
-            reason = "expected files overlap with work in flight"
         elif len(result["dispatchable"]) >= slots:
             reason = "no free developer slot"
         else:
             result["dispatchable"].append(number)
-            busy_files.append(files)
             continue
         result["held"].append({"number": number, "reason": reason})
 
