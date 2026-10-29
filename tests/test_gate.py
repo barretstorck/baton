@@ -322,3 +322,23 @@ class McpToolInputTest(unittest.TestCase):
         tool_input = {"body": IP}
         self.assertEqual(self.run_main("Read", tool_input, make_repo())[0], 0)
         self.assertEqual(self.run_main("mcp__x__y", tool_input, make_repo(brief=None))[0], 0)
+
+
+class BriefListsTest(unittest.TestCase):
+    def test_forge_clis_come_from_the_brief(self):
+        root = make_repo("---\nforge_clis: [myforge]\n---\n")
+        self.assertTrue(gate.decide(f'myforge issue comment 5 --body "{IP}"', root, TERMS))
+        self.assertEqual(gate.decide(f'gh issue comment 5 --body "{IP}"', root, TERMS), [])
+
+    def test_body_file_flags_come_from_the_brief(self):
+        root = make_repo("---\nforge_clis: [myforge]\nbody_file_flags: [--text-file]\n---\n")
+        pathlib.Path(root, "notes.md").write_text(f"see {IP}\n")
+        problems = gate.decide("myforge x --text-file notes.md", root, TERMS)
+        self.assertTrue(any(p.startswith("privacy:") for p in problems), problems)
+
+    def test_defaults_apply_without_a_brief(self):
+        root = make_repo(brief=None)
+        pathlib.Path(root, "notes.md").write_text(f"see {IP}\n")
+        self.assertTrue(gate.decide("gh issue comment 5 --body-file notes.md", root, TERMS))
+        self.assertTrue(gate.forge_facing("glab mr list"))
+        self.assertFalse(gate.forge_facing("glab mr list", ("gh",)))

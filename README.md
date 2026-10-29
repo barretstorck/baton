@@ -216,6 +216,13 @@ line; `baton merge-pr` repeats the check over the whole pull request diff. A pla
 line says so with `Allows: forbid_added "<glob>"` (the glob as written in `forbid_added`); only
 then is that rule skipped. Inline `# noqa` comments are not judged.
 
+## Publish gate programs
+
+`forge_clis` in `.baton/brief.md` lists the programs the publish gate treats as talking to the forge
+(default `gh`, `glab`, `tea`, `fj`, `curl`, `wget`, `http`, `https`, `xh`), and `body_file_flags`
+lists the flags that name a file holding the text to publish (default `-F`, `--body-file`,
+`--input`). A list in the brief replaces the default; it does not extend it. `baton config` shows both.
+
 ## Work mix
 
 `work_mix` in `.baton/brief.md` is an optional target share of work by type, for example
