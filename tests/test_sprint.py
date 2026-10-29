@@ -78,6 +78,44 @@ class SpikesFirstTest(unittest.TestCase):
         self.assertEqual(sprint.spikes_first([5, 2], self.FLAGS, 2)["order"], [5, 2])
 
 
+class SprintOrderCommandTest(unittest.TestCase):
+    def drive(self, args, max_per_sprint=2):
+        import io
+        from unittest import mock
+        from baton import cli
+        config_ = cfg()
+        config_.data["spike"]["max_per_sprint"] = max_per_sprint
+        listing = json.dumps([
+            {"number": 1, "labels": [{"name": "type:spike"}]},
+            {"number": 2, "labels": [{"name": "type:feature"}]},
+            {"number": 3, "labels": [{"name": "type:spike"}]},
+            {"number": 4, "labels": [{"name": "type:spike"}]}])
+        runner = FakeRunner({"gh issue list": listing})
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=config_), \
+                mock.patch.object(cli.run, "run", runner), \
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+            code = cli.main(["sprint-order"] + args)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_spikes_first(self):
+        code, out, _ = self.drive(["2", "1", "3"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), {"order": [1, 3, 2], "spikes": [1, 3],
+                                           "left_out": [], "cap": 2})
+
+    def test_more_spikes_than_cap_are_left_out(self):
+        code, out, _ = self.drive(["1", "3", "4", "2"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["left_out"], [4])
+
+    def test_no_argument_or_unknown_issue_exits_64(self):
+        for args in ([], ["x"], ["99"]):
+            code, _, err = self.drive(args)
+            self.assertEqual(code, 64)
+            self.assertIn("usage: baton sprint-order <issue>...", err)
+
+
 class StrictReadsTest(unittest.TestCase):
     def broken(self, key, reply):
         data = replies([issue(1, "ready")])
