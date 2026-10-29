@@ -457,6 +457,19 @@ class InstallTest(unittest.TestCase):
                 self.assertIn("baton install-hooks", result.stderr)
                 git(repo, "reset", "-q")
 
+    def test_repository_modules_cannot_hijack_the_resolver(self):
+        install_path, marker = self._fake_baton()
+        self._record(install_path)
+        repo = make_repo()
+        pwned = os.path.join(repo, "pwned")
+        for name in ("json.py", "os.py"):
+            write(repo, name, f"open({pwned!r}, 'w').close()\n")
+        githooks.install(repo, self._gone())
+        result = self._commit(repo)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(os.path.exists(pwned))
+        self.assertTrue(os.path.exists(marker))
+
     def test_existing_recorded_path_works_without_a_record(self):
         install_path, marker = self._fake_baton()
         repo = make_repo()

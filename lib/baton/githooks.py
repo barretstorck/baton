@@ -246,7 +246,7 @@ def recorded_bin(text):
 
 
 # Prints the first executable bin/baton among the baton@baton entries of the install record.
-# Run by the hook as `python3 -c <script> <root>`; keep it free of single quotes.
+# Run by the hook as `python3 -I -c <script> <root>`; keep it free of single quotes.
 RESOLVE_SCRIPT = (
     "import json, os, sys\n"
     "try:\n"
@@ -315,7 +315,7 @@ def install(repo, baton_bin):
             f"baton_bin={shlex.quote(str(baton_bin))}\n"
             'recorded=$baton_bin\n'
             'root=${CLAUDE_CODE_PLUGIN_CACHE_DIR:-$HOME/.claude/plugins}\n'
-            f"found=$(python3 -c '{RESOLVE_SCRIPT}' \"$root\" 2>/dev/null) || found=\n"
+            f"found=$(python3 -I -c '{RESOLVE_SCRIPT}' \"$root\" 2>/dev/null) || found=\n"
             'if [ -n "$found" ]; then baton_bin=$found\n'
             'elif [ ! -x "$baton_bin" ]; then baton_bin=$(command -v baton) || baton_bin=; fi\n'
             'if [ -z "$baton_bin" ]; then\n'
