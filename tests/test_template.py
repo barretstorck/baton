@@ -236,6 +236,13 @@ class TemplateTest(unittest.TestCase):
         text = (ROOT / "templates" / "brief.local.md").read_text()
         self.assertIn("## Sandbox", text)
 
+    def test_brief_template_has_responsibilities_section(self):
+        text = " ".join((ROOT / "templates" / "brief.md").read_text().split())
+        self.assertIn("## Responsibilities", text)
+        for phrase in ("sandbox", "incoming issues", "sensitive information",
+                       "guardrail", "remain the maintainer's"):
+            self.assertIn(phrase, text)
+
     def test_developer_instructions_forbid_copying_secret_files(self):
         for path in ("skills/develop/SKILL.md", "agents/baton-developer.md"):
             text = (ROOT / path).read_text()
