@@ -1,0 +1,15 @@
+{
+  "name": "spk",
+  "version": "0.0.1",
+  "description": "spike 229 harness",
+  "experimental": {
+    "monitors": [
+      {
+        "name": "orch-progress",
+        "command": "date >> \"${CLAUDE_PLUGIN_ROOT}/../logs/monitor-started\"; tail -n0 -F \"${CLAUDE_PLUGIN_ROOT}/../logs/progress-mon.log\"",
+        "description": "Orchestrator progress",
+        "when": "on-skill-invoke:sprint"
+      }
+    ]
+  }
+}

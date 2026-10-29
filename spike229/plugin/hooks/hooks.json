@@ -1,0 +1,54 @@
+{
+ "hooks": {
+  "PreCompact": [
+   {
+    "hooks": [
+     {
+      "type": "command",
+      "command": "\"${CLAUDE_PLUGIN_ROOT}/../plugin/hooks/log.sh\" plugin-PreCompact"
+     }
+    ]
+   }
+  ],
+  "PostCompact": [
+   {
+    "hooks": [
+     {
+      "type": "command",
+      "command": "\"${CLAUDE_PLUGIN_ROOT}/../plugin/hooks/log.sh\" plugin-PostCompact"
+     }
+    ]
+   }
+  ],
+  "SessionStart": [
+   {
+    "hooks": [
+     {
+      "type": "command",
+      "command": "\"${CLAUDE_PLUGIN_ROOT}/../plugin/hooks/log.sh\" plugin-SessionStart"
+     }
+    ]
+   }
+  ],
+  "SubagentStart": [
+   {
+    "hooks": [
+     {
+      "type": "command",
+      "command": "\"${CLAUDE_PLUGIN_ROOT}/../plugin/hooks/log.sh\" plugin-SubagentStart"
+     }
+    ]
+   }
+  ],
+  "SubagentStop": [
+   {
+    "hooks": [
+     {
+      "type": "command",
+      "command": "\"${CLAUDE_PLUGIN_ROOT}/../plugin/hooks/log.sh\" plugin-SubagentStop"
+     }
+    ]
+   }
+  ]
+ }
+}
