@@ -240,11 +240,9 @@ triage handed it over). The reproduction is yours alone.
 3. Run `baton sandbox check`.
    - `none`: run `baton notify <N> repro-skipped -` with the text
      `reproduction skipped: no sandbox configured`. Do not reproduce.
-   - Anything other than `isolated` or `none`: run `baton notify <N> repro-skipped -` with the text
-     `reproduction skipped: sandbox not isolated`. Do not reproduce.
-   - In both skipped cases record `Not reproduced (skipped)` in `## Diagnosis`; the issue gets no
+   - In that skipped case record `Not reproduced (skipped)` in `## Diagnosis`; the issue gets no
      plan and stays in `status:refinement`, because the bug is unverified.
-   - `isolated`: run your command with `baton sandbox run <command>` (it prints the log path and
+   - `configured`: run your command with `baton sandbox run <command>` (it prints the log path and
      exits with the command's status; 3 means timeout).
 4. Record one outcome in `## Diagnosis`:
    - `Reproduced`: the command, expected, actual and log path. Continue with steps 4 to 8 of

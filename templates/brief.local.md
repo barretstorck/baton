@@ -18,10 +18,12 @@ by its absolute path from any worktree. Nothing from it may appear in anything t
 
 ## Sandbox
 
-<!-- Optional. One line `Command: <template>` that runs a command in an isolated environment.
+<!-- Optional. One line `Command: <template>` that runs a command in a sandbox.
      `{checkout}` is the absolute path of a fresh clone of the default branch and `{command}`
      is the command to run; both are substituted already quoted, so write them unquoted.
      The template must contain both. Used by `baton sandbox run` and `baton sandbox check`.
+     Isolating the sandbox (network, credentials, file system) is the maintainer's
+     responsibility; Baton does not check it.
      Example:
      Command: docker run --rm --network none -v {checkout}:/work -w /work IMAGE sh -c {command} -->
 
