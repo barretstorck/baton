@@ -161,6 +161,45 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(out.getvalue().strip(), "https://example.com/c/9")
         self.assertEqual(runner.lines()[-1], "gh issue close 5")
 
+    def run_cli(self, argv, runner):
+        err = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.scan, "load_terms", return_value=[]), \
+                mock.patch.object(cli.run, "run", runner), \
+                mock.patch("sys.stdin", io.StringIO("Dup.")), \
+                mock.patch("sys.stdout", io.StringIO()), \
+                mock.patch("sys.stderr", err):
+            return cli.main(argv)
+
+    def test_close_duplicate_flags(self):
+        for argv in (["close", "issue", "5", "developer", "-", "--reason", "duplicate",
+                      "--duplicate-of", "3"],
+                     ["close", "--reason=duplicate", "issue", "5", "--duplicate-of=3",
+                      "developer", "-"]):
+            runner = FakeRunner({"gh issue view 3": '{"number": 3}'})
+            self.assertEqual(self.run_cli(argv, runner), 0)
+            lines = runner.lines()
+            self.assertTrue(lines[1].startswith("gh issue comment 5"))
+            self.assertEqual(lines[2], "gh issue edit 5 --add-label closed:duplicate")
+            self.assertEqual(lines[3], "gh issue close 5 --reason duplicate --duplicate-of 3")
+            self.assertTrue(lines[4].startswith("gh issue comment 3"))
+
+    def test_close_lock_flag(self):
+        runner = FakeRunner()
+        self.assertEqual(self.run_cli(["close", "issue", "5", "developer", "-", "--lock"],
+                                      runner), 0)
+        self.assertEqual(runner.lines()[-1], "gh issue lock 5")
+
+    def test_bad_flags_exit_64(self):
+        base = ["issue", "5", "developer", "-"]
+        for argv in (["close"] + base + ["--bogus"], ["close"] + base + ["--reason"],
+                     ["close"] + base + ["--duplicate-of", "x"],
+                     ["close"] + base + ["--duplicate-of"],
+                     ["reopen"] + base + ["--lock"], ["reopen"] + base + ["--reason", "spam"]):
+            runner = FakeRunner()
+            self.assertEqual(self.run_cli(argv, runner), 64, argv)
+            self.assertEqual(runner.calls, [])
+
     def test_empty_reason_exits_1(self):
         runner = FakeRunner()
         with mock.patch.object(cli, "_require_config", return_value=cfg()), \
