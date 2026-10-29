@@ -70,6 +70,22 @@ class LoadTest(unittest.TestCase):
             with self.assertRaises(identity.IdentityError, msg=text):
                 self.load(text)
 
+    def test_plain_login_is_refused(self):
+        with self.assertRaisesRegex(identity.IdentityError, "login must be an App login"):
+            self.load('[baton]\napp_id = 1\ninstallation_id = 2\nkey_path = "k"\nlogin = "baton"\n')
+
+
+class ReviewerLoginsTest(unittest.TestCase):
+    def test_reviewer_logins(self):
+        self.addCleanup(identity.use, None)
+        identity.use(lambda: identity.Identities(identity.App(1, 10, "k", "baton[bot]"),
+                                                 identity.App(2, 20, "k", "baton-reviewer[bot]")))
+        self.assertEqual(identity.reviewer_logins(), frozenset({"baton-reviewer[bot]"}))
+        identity.use(lambda: identity.Identities(identity.App(1, 10, "k", "baton[bot]"), None))
+        self.assertEqual(identity.reviewer_logins(), frozenset())
+        identity.use(None)
+        self.assertEqual(identity.reviewer_logins(), frozenset())
+
 
 if __name__ == "__main__":
     unittest.main()

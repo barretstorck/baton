@@ -57,14 +57,35 @@ class MaintainersTest(unittest.TestCase):
         self.assertEqual(review.state(comments, OWNER, 2)["state"], "none")
 
     def test_baton_login_review_counts_in_comment_form(self):
-        comments = [rev("changes", login="baton-reviewer")]
+        untyped = [rev("changes", login="baton-reviewer")]
+        self.assertEqual(
+            review.state(untyped, [OWNER, "baton-reviewer[bot]"], 2)["state"], "none")
+        item = rev("changes", login="baton-reviewer")
+        item["author"]["__typename"] = "Bot"
+        comments = [item]
         self.assertEqual(
             review.state(comments, [OWNER, "baton-reviewer[bot]"], 2)["state"], "changes")
         self.assertEqual(review.state(comments, OWNER, 2)["state"], "none")
 
     def test_baton_login_reply_is_a_reply_event(self):
-        events = review.history([reply("baton")], [OWNER, "baton[bot]"])
+        item = reply("baton")
+        item["author"]["__typename"] = "Bot"
+        events = review.history([item], [OWNER, "baton[bot]"])
         self.assertEqual([e["kind"] for e in events], ["reply"])
+
+    def test_developer_app_reply_counts_but_not_its_review(self):
+        def bot(item, login):
+            item["author"] = {"login": login, "__typename": "Bot"}
+            return item
+        owner, repliers = [OWNER, "baton-reviewer[bot]"], [OWNER, "baton[bot]", "baton-reviewer[bot]"]
+        comments = [bot(rev("changes"), "baton-reviewer"), bot(reply(), "baton")]
+        self.assertEqual(review.state(comments, owner, 2, repliers)["state"], "replied")
+        self.assertEqual(review.state(comments, owner, 2)["state"], "changes")
+        forged = [bot(rev("approve"), "baton")]
+        self.assertEqual(review.state(forged, owner, 2, repliers)["state"], "none")
+        plain = [bot(rev("changes"), "baton-reviewer"), bot(reply(), "baton")]
+        plain[1]["author"] = {"login": "baton"}
+        self.assertEqual(review.state(plain, owner, 2, repliers)["state"], "changes")
 
 
 class StateTest(unittest.TestCase):

@@ -76,22 +76,23 @@ def failure_ids(body):
     return ids
 
 
-def history(comments, owner):
-    """Reviews and replies, oldest first. `owner` is the logins trusted to post marker comments
-    (maintainers and Baton logins); only their comments count."""
+def history(comments, owner, repliers=None):
+    """Reviews and replies, oldest first. `owner` is the logins trusted to post review markers
+    (maintainers and the reviewer App); `repliers` the logins trusted to post reply markers
+    (maintainers and every Baton login, since the developer App replies), `owner` when omitted."""
     events = []
+    repliers = owner if repliers is None else repliers
     for item in comments or []:
-        if not has_login(item.get("author"), owner):
-            continue
         body = (item.get("body") or "").lstrip()
         match = _REVIEW.match(body)
-        if match:
+        if match and has_login(item.get("author"), owner):
             events.append({"kind": "review", "verdict": match.group(1),
                            "commit": match.group(2), "verify": match.group(3) or "missing",
                            "cause": _cause(body) if match.group(1) == "blocked" else None,
                            "failures": failure_ids(body),
                            "url": item.get("url")})
-        elif body.startswith(_REPLY) or body.startswith(_REFINE_REPLY):
+        elif ((body.startswith(_REPLY) or body.startswith(_REFINE_REPLY))
+              and has_login(item.get("author"), repliers)):
             events.append({"kind": "reply", "url": item.get("url")})
     return events
 
@@ -117,7 +118,7 @@ def verify_state(cfg, comments, owner, head):
     return "missing"
 
 
-def state(comments, owner, max_rounds):
+def state(comments, owner, max_rounds, repliers=None):
     """none, changes, replied, approved, blocked, replan, repeated or escalate; the rounds so far; the last review.
 
     Rounds count the requests for changes since the last approval: an approval
@@ -128,7 +129,7 @@ def state(comments, owner, max_rounds):
     review before it (blocked ones skipped) was also `replan`. A re-refinement changes the plan, so
     the count compared with `max_rounds` restarts: only round reviews after the last `replan` count.
     """
-    events = history(comments, owner)
+    events = history(comments, owner, repliers)
     reviews = [event for event in events if event["kind"] == "review"]
     if not reviews:
         return {"state": "none", "rounds": 0, "review": None}
@@ -248,9 +249,9 @@ def _only_plan_deleted(runner, pr, cfg, default_branch, approved):
                        [".", f":(exclude){path}"])
 
 
-def current(pr, owner, cfg, runner, default_branch):
+def current(pr, owner, cfg, runner, default_branch, repliers=None):
     """The review state at the pull request's head commit: an older approval may be stale."""
-    found = state(pr.get("comments"), owner, cfg.data["review"]["max_rounds"])
+    found = state(pr.get("comments"), owner, cfg.data["review"]["max_rounds"], repliers)
     if found["state"] == "approved" and found["review"]["commit"] != pr["headRefOid"]:
         fetch(runner, default_branch, pr["headRefName"])
         if not same_change(runner, f"origin/{default_branch}", found["review"]["commit"],

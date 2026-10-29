@@ -67,20 +67,38 @@ def logins(value):
     return frozenset(value or ())
 
 
-def login_key(login):
-    """One comparison key for a login: lower case, no leading `app/`, no trailing `[bot]`."""
+def bot_slug(login):
+    """The lower-case App slug of `x[bot]` or `app/x`, else None."""
     key = (login or "").strip().lower()
     if key.startswith("app/"):
         key = key[4:]
-    if key.endswith("[bot]"):
+    elif key.endswith("[bot]"):
         key = key[:-5]
-    return key
+    else:
+        return None
+    return key or None
 
 
 def has_login(person, value):
-    """Whether the author dict `person` (or None) is one of the logins in `value`."""
-    key = login_key((person or {}).get("login"))
-    return bool(key) and key in {login_key(v) for v in logins(value)}
+    """Whether the author dict `person` (or None) is one of the logins in `value`.
+
+    A bot-form entry (`x[bot]`, `app/x`) matches only a bot author with that slug; a plain
+    entry matches only a non-bot author with exactly that login (case-insensitive)."""
+    login = ((person or {}).get("login") or "").strip().lower()
+    if not login:
+        return False
+    slug = bot_slug(login)
+    is_bot = slug is not None or (person.get("__typename") == "Bot" or person.get("type") == "Bot")
+    if slug is None:
+        slug = login
+    for entry in logins(value):
+        want = bot_slug(entry)
+        if want is not None:
+            if is_bot and want == slug:
+                return True
+        elif not is_bot and (entry or "").strip().lower() == login:
+            return True
+    return False
 
 
 @dataclass
