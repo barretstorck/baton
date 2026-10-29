@@ -63,6 +63,21 @@ def snap(issues, config_=None, **kwargs):
     return sprint.snapshot(config_ or cfg(), FakeRunner(replies(issues, **kwargs)))
 
 
+class SpikesFirstTest(unittest.TestCase):
+    FLAGS = {1: True, 2: False, 3: True, 4: True, 5: False}
+
+    def test_cap_keeps_first_spikes_and_leaves_out_the_rest(self):
+        found = sprint.spikes_first([5, 1, 2, 3, 4], self.FLAGS, 2)
+        self.assertEqual(found, {"order": [1, 3, 5, 2], "spikes": [1, 3], "left_out": [4], "cap": 2})
+
+    def test_cap_zero_leaves_all_out(self):
+        found = sprint.spikes_first([1, 2, 3], self.FLAGS, 0)
+        self.assertEqual((found["order"], found["spikes"], found["left_out"]), ([2], [], [1, 3]))
+
+    def test_no_spikes_keeps_the_input_order(self):
+        self.assertEqual(sprint.spikes_first([5, 2], self.FLAGS, 2)["order"], [5, 2])
+
+
 class StrictReadsTest(unittest.TestCase):
     def broken(self, key, reply):
         data = replies([issue(1, "ready")])
@@ -109,6 +124,21 @@ class BranchStateTest(unittest.TestCase):
 
 
 class SnapshotTest(unittest.TestCase):
+    def test_spikes_are_dispatched_first(self):
+        ms = [{"number": 3, "title": "Sprint 2026-10-01-1",
+               "description": "Goal: x\nOrder: #1\nParallel: 1", "due_on": None}]
+        items = [issue(1, "ready", "deliverable"), issue(2, "ready", "type:spike")]
+        self.assertEqual(snap(items, milestones=ms)["dispatchable"], [2])
+        ms[0]["description"] = "Goal: x\nOrder: #1\nParallel: 2"
+        self.assertEqual(snap(items, milestones=ms)["dispatchable"], [2, 1])
+
+    def test_repair_outranks_a_spike(self):
+        ms = [{"number": 3, "title": "Sprint 2026-10-01-1", "description": "Goal: x\nParallel: 1",
+               "due_on": None}]
+        items = [issue(1, "ready", "type:spike"),
+                 issue(2, "ready", cfg().label("broken-default-branch"))]
+        self.assertEqual(snap(items, milestones=ms)["dispatchable"][:1], [2])
+
     def test_no_open_sprint(self):
         result = sprint.snapshot(cfg(), FakeRunner(replies([], milestones=[])))
         self.assertIsNone(result["sprint"])

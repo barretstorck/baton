@@ -223,6 +223,13 @@ def _next_task_url(owner, name, link, text, found):
             f"?plain=1#L{line}")
 
 
+def spikes_first(entries, spike_flags, cap):
+    """Put the first `cap` spikes of `entries` ahead of the others; list the spikes left out."""
+    spikes = [n for n in entries if spike_flags.get(n)]
+    return {"order": spikes[:cap] + [n for n in entries if not spike_flags.get(n)],
+            "spikes": spikes[:cap], "left_out": spikes[cap:], "cap": cap}
+
+
 def snapshot(cfg, runner, milestone=None):
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     owner, branch = repo["owner"]["login"], repo["defaultBranchRef"]["name"]
@@ -393,7 +400,8 @@ def snapshot(cfg, runner, milestone=None):
     def rank(entry):
         item, tier, _, repair = entry
         number = item["number"]
-        return (0 if repair else 1, {"deliverable": 0, "stretch": 1}.get(tier, 2),
+        spike = cfg.label("type:spike") in {label["name"] for label in item.get("labels") or []}
+        return (0 if repair else 1, 0 if spike else 1, {"deliverable": 0, "stretch": 1}.get(tier, 2),
                 order.index(number) if number in order else len(order), number)
 
     def missing_count(number):
