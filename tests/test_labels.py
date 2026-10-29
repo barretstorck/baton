@@ -35,6 +35,21 @@ class LabelsTest(unittest.TestCase):
         self.assertIn("P1", missing)
         self.assertNotIn("priority:1", missing)
 
+    def test_missing_on_empty_repository_reports_closing_labels(self):
+        cfg = make_config()
+        missing = labels.missing(cfg, FakeRunner({"gh label list": label_list([])}))
+        for name in ("closed:spam", "closed:duplicate", "closed:support", "closed:wont-do", "awaiting-feedback"):
+            self.assertIn(name, missing)
+            self.assertIn(name, labels._STYLE)
+
+    def test_closing_label_map_override_is_honoured(self):
+        cfg = make_config({"closed:spam": "Spam", "awaiting-feedback": "Waiting"})
+        missing = labels.missing(cfg, FakeRunner({"gh label list": label_list([])}))
+        self.assertIn("Spam", missing)
+        self.assertIn("Waiting", missing)
+        self.assertNotIn("closed:spam", missing)
+        self.assertNotIn("awaiting-feedback", missing)
+
     def test_ensure_creates_missing_labels(self):
         cfg = make_config()
         all_but_one = [n for n in cfg.data["labels"]["map"].values() if n != "stretch"]

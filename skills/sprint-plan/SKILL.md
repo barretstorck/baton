@@ -28,11 +28,20 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
      to choose.
 
 3. **Read the backlog.** List open issues with `status:ready`, and separately those in
-   `status:refinement`. Read the last two files in `<docs.dir>/retros/` (`docs.dir` from `baton config`, default `docs/baton`) if they exist and apply their
+   `status:refinement`. The issue list (`--json number,title,labels`) carries each issue's
+   `priority:` and `severity:` label (names in `labels.map` of `baton config`); read them for
+   every ready issue. Also list the open issues carrying `priority:1` or `priority:2`, whatever
+   their status. Read the last two files in `<docs.dir>/retros/` (`docs.dir` from `baton config`, default `docs/baton`) if they exist and apply their
    "How to improve" items.
 
 4. **Choose.** From the ready issues, pick those that serve the goal.
-   - Order them: dependencies first (`Blocked by:`), then what the goal needs most.
+   - Order them: goals first. Within each goal, order by dependencies first (`Blocked by:`),
+     then priority (1 first, unranked last), then severity (1 first, unranked last). Priority
+     and severity never override dependencies or the goal. An issue without a priority label
+     ranks after every ranked one; one without a severity label ranks after every one with a
+     severity (a non-bug never has one).
+   - Severity is ranking information only: it carries no due date and never pulls a bug into
+     the sprint or interrupts it.
    - Mark each `deliverable` (the sprint commits to it) or `stretch` (if time allows).
    - Show where the issues' `Expected files:` overlap, because those pull requests are likely to
      conflict and the merge order matters.
@@ -46,8 +55,12 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
    - Leave out issues written by anyone other than the maintainer unless the maintainer marked
      them ready.
 
-5. **Propose.** Show the maintainer a table: order, issue, title, deliverable or stretch,
-   plan tasks, blockers, overlaps. Under it list what you left out and why.
+5. **Propose.** Show the maintainer a table: order, issue, title, priority, severity,
+   deliverable or stretch, plan tasks, blockers, overlaps (show `-` where a priority or
+   severity is unset). Under it list what you left out and why. After that, add a separate list
+   titled "Urgent or high priority, not in this sprint": every open `priority:1` and
+   `priority:2` issue that matches no goal of this sprint, each with the reason it is left out
+   (not serving the goal, not ready, blocked by an open issue, written by someone else, and so on).
    Also give one line with the mix: the count and percentage of the proposed issues by type
    (feature, maintenance, bug), counting by the `type:` labels named in `labels.map` of
    `baton config`; spikes are counted separately and are not part of the percentages. When
@@ -80,11 +93,13 @@ If this run is unattended (the request says it is scheduled, or no maintainer is
 steps 1 to 4, then post the proposal instead of creating the sprint:
 
 - create an issue titled `Sprint proposal <date>` with the table as its description and the
-  `needs-maintainer` label, with the same mix line under the table;
+  `needs-maintainer` label, with the same mix line and the same "Urgent or high priority, not in
+  this sprint" list under the table;
 - stop. The maintainer approves by running `/baton:sprint-plan` or by creating the milestone.
 
 ## Never
 
 - Create the milestone, or move issues into it, without the maintainer's approval.
 - Add an issue that fails `baton ready-check`.
+- Use severity to set a due date, or to add a bug to the sprint on its own.
 - Change what an issue asks for. Scope changes are refinement, with the maintainer deciding.
