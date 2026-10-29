@@ -183,6 +183,14 @@ every checkout; `baton merge-pr` deletes the folder after a merge. The result go
 show it as `verify`. With `review.required: false` no review carries the result, so `verify` reads `none`.
 When an approved pull request's head moves only by merging the default branch in, the reviewer re-approves it briefly: it runs `baton verify` again and posts a new review for the new head.
 
+## Maintainers
+
+`maintainers` in `.baton/brief.md` lists the GitHub logins whose comments, reviews, approvals and
+issues Baton trusts (default `[]`, meaning the repository owner alone). Agents post under a
+maintainer's login, so every login on the list can answer questions, approve a merge with
+`/baton approve` and write issues that are ready to develop. `baton config` prints the resolved
+list. Log folders and API paths still use the repository owner.
+
 ## Forbidden diff patterns
 
 `forbid_added` in `.baton/brief.md` maps a path glob to a regular expression, for example

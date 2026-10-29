@@ -302,7 +302,7 @@ def merge(number, cfg, runner, notes=None):
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", PR_FIELDS]))
     if pr.get("state") != "MERGED":
-        problems = check(pr, cfg, repo["owner"]["login"], repo["defaultBranchRef"]["name"], runner,
+        problems = check(pr, cfg, cfg.maintainers(repo["owner"]["login"]), repo["defaultBranchRef"]["name"], runner,
                          notes)
         if problems:
             return problems
