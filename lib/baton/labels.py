@@ -19,6 +19,7 @@ _STYLE = {
     "broken-default-branch": ("b60205", "The default branch is failing; top priority"),
     "needs-maintainer": ("d93f0b", "Waiting for the maintainer"),
     "awaiting-feedback": ("fef2c0", "Waiting for the reporter to answer"),
+    "missed-sprint": ("e99695", "Was in a sprint and not finished"),
     "closed:spam": ("e4e669", "Closed as spam"),
     "closed:duplicate": ("cfd3d7", "Closed as a duplicate of another issue"),
     "closed:support": ("cfd3d7", "Closed: a support request, not a change"),

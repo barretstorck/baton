@@ -58,3 +58,11 @@ def open_questions(issues, cfg, owner, now):
         not e["repair"], -len(e["blocks"]), tier_rank[e["tier"]],
         e["age_days"] is None, -(e["age_days"] or 0), e["number"]))
     return entries
+
+
+def notify_matches(issues, cfg):
+    """Numbers of the open issues the brief's `notify:` rule matches, ascending."""
+    rule = cfg.data["notify"]
+    wanted = set(rule["labels"]) | {cfg.label(f"severity:{n}") for n in rule["severity"]}
+    return sorted(item["number"] for item in issues
+                  if item.get("state") == "OPEN" and wanted & _labels(item))

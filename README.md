@@ -117,7 +117,8 @@ a `Prototype:` link to the commit.
 | `/baton:refine <issue>` | Bring an issue up to the definition of ready, including its plan |
 | `/baton:sprint-plan` | Plan a sprint with the maintainer and create its milestone |
 | `/baton:sprint` | Work a sprint: dispatch developers and reviewers, collect answers, merge, retrospective |
-| `/baton:develop` | Do one task: a plan task, a review task or a spike (used by the `baton-developer` subagent) |
+| `/baton:develop` | Do one task: a plan task or a review task (used by the `baton-developer` subagent) |
+| `/baton:research <issue>` | Do one spike and post its findings (used by the `baton-researcher` subagent) |
 | `/baton:review <pr>` | Review one pull request and post a verdict (used by the `baton-reviewer` subagent) |
 
 Each of the five roles (triager, refiner, researcher, developer, reviewer) has its own `model`
@@ -125,7 +126,7 @@ and `effort` in the brief. The defaults are Haiku for the triager, Opus for the 
 researcher and reviewer, and Sonnet for the developer, all at medium effort. The allowed models
 are `opus`, `sonnet`, `fable` and `haiku` (efforts: `low`, `medium`, `high`, `xhigh` or `max`). Medium is the default because a
 developer's thinking is about half of its context and every call re-reads that context, so
-thinking is the largest single cost of a sprint. For bulk refinement, dispatch
+thinking is the largest single cost of a sprint. The researcher has web access; the developer has no web tools. For bulk refinement, dispatch
 `baton-refiner` agents with at most about three issues each.
 The refiner runs in its own worktree, where it can build the project and run quick experiments; for a
 `type:bug` issue it reproduces the bug and writes a `## Diagnosis` section into the description.
@@ -166,6 +167,8 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton review state <pr>` | The pull request's review state at its head commit |
 | `baton review post <pr> <approve\|changes\|blocked\|replan> <sha> <file \| ->` | Post a review of that commit |
 | `baton answers <issue>` | The latest agent question and the maintainer's replies |
+| `baton notify <issue> <cause> <file \| ->` | Add `needs-maintainer` and post one `status` comment mentioning the maintainers, once per issue per cause (`stuck`, `approval`, `triage-unsure`, `spike-infeasible`, `repro-skipped`, `rule`); prints the URL or `already notified`. `/baton:open-questions` is unchanged |
+| `baton notify --rules` | Run `notify` with cause `rule` for each open issue matching the brief's `notify:` severities or labels; one line per issue |
 | `baton open-questions` | List open issues waiting on the maintainer (unanswered question, `status:blocked` or `needs-maintainer`) as JSON, most pressing first |
 | `baton ready-check <issue>` | The mechanical half of the definition of ready |
 | `baton tasks <issue\|pr> <number>` | An issue's plan tasks, or the latest review's tasks, as JSON |
