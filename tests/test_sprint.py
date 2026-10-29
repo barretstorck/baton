@@ -695,7 +695,7 @@ class PrStateCommandTests(unittest.TestCase):
                                "workflowName": "ci", "headSha": head,
                                "url": "https://github.com/octo/proj/actions/runs/123"})
         runner = FakeRunner({
-            "gh pr view 13 --json isDraft,statusCheckRollup,headRefOid": json.dumps(pr),
+            "gh pr view 13 --json number,isDraft,statusCheckRollup,headRefOid": json.dumps(pr),
             "gh run view 123": run_view})
         out = io.StringIO()
         with mock.patch.object(cli, "_require_config", return_value=cfg()), \

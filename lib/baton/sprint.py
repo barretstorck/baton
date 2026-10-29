@@ -175,7 +175,7 @@ def _pr_ci(pr, cfg, runner=None):
     return "red" if problems else "green"
 
 
-PR_STATE_FIELDS = "isDraft,statusCheckRollup,headRefOid,comments"  # headRefOid lets _settle settle lagging runs
+PR_STATE_FIELDS = "number,isDraft,statusCheckRollup,headRefOid,comments"  # headRefOid lets _settle settle lagging runs
 
 
 def _pr_verify(pr, cfg, runner, owner, reviewers=()):

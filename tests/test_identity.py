@@ -143,6 +143,61 @@ class MarkAuthorsTest(unittest.TestCase):
         self.assertEqual(comments, [self.c("IC_1", "baton")])
 
 
+class CliMarkingTest(unittest.TestCase):
+    OWNER = "octo"
+
+    def setUp(self):
+        self.addCleanup(identity.use, None)
+        identity.use(lambda: identity.Identities(identity.App(1, 10, "k", "baton[bot]"),
+                                                 identity.App(2, 20, "k", "baton-reviewer[bot]")))
+
+    def thread(self):
+        question = {"id": "IC_1", "url": "u1", "author": {"login": "baton"},
+                    "body": "<!-- baton:developer:question -->\nWhich one?"}
+        answer = {"id": "IC_2", "url": "u2", "author": {"login": self.OWNER}, "body": "The first."}
+        return {"number": 5, "title": "t", "state": "OPEN", "author": {"login": self.OWNER},
+                "labels": [], "body": "b", "comments": [question, answer]}
+
+    def run_cmd(self, fn, args, rest_type):
+        import contextlib
+        import copy
+        import io
+        import pathlib
+        from baton import cli
+        cfg = config.Config(root=pathlib.Path("."), data=copy.deepcopy(config.DEFAULTS))
+        runner = FakeRunner({"gh issue view": json.dumps(self.thread()),
+                             "gh api": f"IC_1\t{rest_type}\nIC_2\tUser\n"})
+        out = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg), \
+                mock.patch.object(cli, "_maintainers", return_value=[self.OWNER]), \
+                mock.patch.object(cli.run, "run", runner), contextlib.redirect_stdout(out):
+            self.assertEqual(getattr(cli, fn)(args), 0)
+        return out.getvalue(), runner
+
+    def test_answers_trust_a_bot_question(self):
+        out, _ = self.run_cmd("cmd_answers", ["5"], "Bot")
+        self.assertEqual(json.loads(out)["question"], "u1")
+        self.assertEqual([a["url"] for a in json.loads(out)["answers"]], ["u2"])
+
+    def test_answers_ignore_a_human_named_baton(self):
+        out, _ = self.run_cmd("cmd_answers", ["5"], "User")
+        self.assertIsNone(json.loads(out)["question"])
+
+    def test_issue_read_prints_a_bot_comment_in_full(self):
+        out, _ = self.run_cmd("_issue_read", ["read", "5"], "Bot")
+        self.assertIn("Which one?", out)
+
+    def test_issue_read_withholds_a_human_comment(self):
+        out, _ = self.run_cmd("_issue_read", ["read", "5"], "User")
+        self.assertNotIn("Which one?", out)
+
+    def test_tier_zero_makes_no_rest_call(self):
+        identity.use(None)
+        for fn, args in (("cmd_answers", ["5"]), ("_issue_read", ["read", "5"])):
+            _, runner = self.run_cmd(fn, args, "Bot")
+            self.assertFalse(any(line.startswith("gh api") for line in runner.lines()))
+
+
 if __name__ == "__main__":
     unittest.main()
 

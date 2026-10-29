@@ -276,6 +276,7 @@ def _issue_read(args):
     cfg = _require_config()
     data = json.loads(run.run(["gh", "issue", "view", args[1], "--json",
                                "number,title,state,author,labels,body,comments"]))
+    data["comments"] = identity.mark_authors(run.run, int(args[1]), data.get("comments"))
     print(issue.render(data, _maintainers(cfg), _bots()))
     return 0
 
@@ -384,6 +385,7 @@ def cmd_review(args):
         repo = json.loads(run.run(["gh", "repo", "view", "--json", "owner,defaultBranchRef"]))
         pr = json.loads(run.run(["gh", "pr", "view", args[1], "--json",
                                  "number,headRefName,headRefOid,comments"]))
+        pr["comments"] = identity.mark_authors(run.run, int(args[1]), pr.get("comments"))
         print(json.dumps(review.current(pr, _trusted(cfg), cfg, run.run,
                                         repo["defaultBranchRef"]["name"],
                                         list(_maintainers(cfg)) + sorted(_bots())),
@@ -415,6 +417,7 @@ def cmd_tasks(args):
     if len(args) == 2 and args[0] == "pr" and args[1].isdigit():
         cfg = _require_config()
         pr = json.loads(run.run(["gh", "pr", "view", args[1], "--json", "comments"]))
+        pr["comments"] = identity.mark_authors(run.run, int(args[1]), pr.get("comments"))
         print(json.dumps(review.review_tasks(pr, _trusted(cfg)), indent=2))
         return 0
     print("usage: baton tasks <issue|pr> <number>", file=sys.stderr)
@@ -534,6 +537,7 @@ def cmd_answers(args):
         return 64
     cfg = _require_config()
     data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "comments"]))
+    data["comments"] = identity.mark_authors(run.run, int(args[0]), data.get("comments"))
     print(json.dumps(comment.pending_answers(data, _maintainers(cfg), _bots()), indent=2))
     return 0
 
@@ -545,6 +549,8 @@ def cmd_open_questions(args):
     cfg = _require_config()
     issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "300",
                                  "--json", "number,title,state,labels,body,author,comments"]))
+    for item in issues:
+        item["comments"] = identity.mark_authors(run.run, item["number"], item.get("comments"))
     found = questions.open_questions(issues, cfg, _maintainers(cfg), datetime.now(timezone.utc),
                                      bots=_bots())
     print(json.dumps(found, indent=2))
@@ -589,6 +595,7 @@ def cmd_ready_check(args):
         return 64
     cfg = _require_config()
     data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "author,body,labels,comments"]))
+    data["comments"] = identity.mark_authors(run.run, int(args[0]), data.get("comments"))
     maintainers = _maintainers(cfg)
     problems = issue.ready_problems(data, cfg, maintainers, run.run, _bots())
     for problem in problems:
@@ -698,6 +705,9 @@ def cmd_pr_state(args):
         return 64
     cfg = _require_config()
     pr = json.loads(run.run(["gh", "pr", "view", args[0], "--json", sprint.PR_STATE_FIELDS]))
+    number = pr.get("number") or (int(args[0]) if args[0].isdigit() else None)
+    if number:
+        pr["comments"] = identity.mark_authors(run.run, number, pr.get("comments"))
     print(json.dumps(sprint.pr_state(pr, cfg, run.run, reviewers=_reviewers()), indent=2))
     return 0
 
