@@ -312,3 +312,14 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("spike.max_per_sprint", plan)
         sprint = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
         self.assertIn("spikes before", sprint)
+
+    def test_skills_read_issues_through_baton_issue_read(self):
+        for name in ("refine", "research", "develop", "review"):
+            text = (ROOT / "skills" / name / "SKILL.md").read_text()
+            flat = " ".join(text.split())
+            self.assertIn("baton issue read", flat, name)
+            self.assertIn("withheld; see Triage summary", flat, name)
+            # `gh issue view` may appear only where the line names the replacement.
+            for line in text.splitlines():
+                if "gh issue view" in line:
+                    self.assertIn("baton issue read", line, name)

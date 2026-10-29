@@ -181,6 +181,74 @@ def ready_problems(issue, cfg, owner, runner=None):
     return problems
 
 
+UNTRUSTED = "[untrusted text from @{author} withheld; see Triage summary]"
+_KEPT_OUTSIDE = ("triage summary", "developer plan")
+_TITLE_MAX = 120
+
+
+def _login(person):
+    return (person or {}).get("login") or "ghost"
+
+
+def _clean_title(title):
+    text = "".join(" " if ch in "\r\n\t" else ch for ch in (title or ""))
+    text = "".join(ch for ch in text if ch.isprintable())
+    return text[:_TITLE_MAX]
+
+
+def _kept_sections(body):
+    """The `Triage summary` and `Developer Plan` sections of `body`, with their headings."""
+    body = body or ""
+    found = list(_HEADING.finditer(body))
+    kept = []
+    for index, match in enumerate(found):
+        if match.group(1).lower() not in _KEPT_OUTSIDE:
+            continue
+        level = len(match.group(0)) - len(match.group(0).lstrip("#"))
+        end = len(body)
+        for later in found[index + 1:]:
+            if len(later.group(0)) - len(later.group(0).lstrip("#")) <= level:
+                end = later.start()
+                break
+        kept.append(body[match.start():end].strip())
+    return kept
+
+
+def render(data, maintainers):
+    """The issue as text for an agent, with outsider-written text withheld.
+
+    A maintainer's text is printed in full. On an issue by anyone else the body is replaced
+    by a placeholder, keeping only the Triage summary and Developer Plan sections; a comment
+    by anyone else is replaced by the placeholder.
+    """
+    allowed = {name.lower() for name in logins(maintainers)}
+    author = _login(data.get("author"))
+    trusted = author.lower() in allowed
+    labels = ", ".join(label["name"] for label in data.get("labels") or []) or "none"
+    lines = [
+        f"#{data.get('number')} {_clean_title(data.get('title'))}",
+        f"State: {data.get('state')}",
+        f"Author: @{author} ({'maintainer' if trusted else 'outside'})",
+        f"Labels: {labels}",
+        "--- body ---",
+    ]
+    if trusted:
+        lines.append((data.get("body") or "").strip())
+    else:
+        lines.append(UNTRUSTED.format(author=author))
+        for text in _kept_sections(data.get("body")):
+            lines.extend(["", text])
+    lines.append("--- comments ---")
+    for comment in data.get("comments") or []:
+        who = _login(comment.get("author"))
+        lines.append(f"--- comment by @{who} ---")
+        if who.lower() in allowed:
+            lines.append((comment.get("body") or "").strip())
+        else:
+            lines.append(UNTRUSTED.format(author=who))
+    return "\n".join(lines) + "\n"
+
+
 def _timebox_problems(body, cfg):
     try:
         box = timebox(body)
