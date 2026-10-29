@@ -126,6 +126,15 @@ thinking is the largest single cost of a sprint. For bulk refinement, dispatch
 The refiner runs in its own worktree, where it can build the project and run quick experiments; for a
 `type:bug` issue it reproduces the bug and writes a `## Diagnosis` section into the description.
 
+The `follow_ups` setting says where each follow-up goes, by severity (`critical`, `important`,
+`minor`). The placements are `deliverable`, `stretch`, `goal` (join as `stretch` only when it
+serves the sprint goal, else backlog), `backlog` (`status:refinement`, outside the sprint) and
+`skip`. The defaults are `critical: deliverable`, `important: goal`, `minor: skip`.
+`follow_ups.scheduled` sets the same for scheduled runs (defaults `critical: deliverable`,
+`important: backlog`); a severity missing there uses the interactive value. With no open sprint
+everything but `skip` goes to the backlog, and a rule in the milestone description overrides the
+brief for that sprint.
+
 Typical use:
 
     /baton:sprint Pick issues that can be completed within 1 day. Use up to 4 parallel subagents.

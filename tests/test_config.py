@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from baton import config
 
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+
 
 def make_repo(brief=None):
     root = pathlib.Path(tempfile.mkdtemp())
@@ -33,6 +35,41 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(cfg.label("status:blocked"), "status:blocked")
         self.assertIn("In Progress", cfg.status_labels())
         self.assertEqual(len(cfg.status_labels()), 7)
+
+    def _fu(self, body):
+        return config.load(str(make_repo("---\nfollow_ups:\n" + body + "---\n"))).data["follow_ups"]
+
+    def test_follow_ups_defaults(self):
+        fu = config.load(str(make_repo("# none\n"))).data["follow_ups"]
+        self.assertEqual((fu["critical"], fu["important"], fu["minor"]), ("deliverable", "goal", "skip"))
+        self.assertEqual(fu["scheduled"], {"critical": "deliverable", "important": "backlog", "minor": "skip"})
+
+    def test_template_brief_matches_follow_ups_defaults(self):
+        text = (ROOT / "templates" / "brief.md").read_text()
+        cfg = config.load(str(make_repo(text)))
+        self.assertEqual(cfg.data["follow_ups"], {
+            "critical": "deliverable", "important": "goal", "minor": "skip",
+            "scheduled": {"critical": "deliverable", "important": "backlog", "minor": "skip"}})
+
+    def test_follow_ups_full_override(self):
+        fu = self._fu("  critical: stretch\n  important: deliverable\n  minor: backlog\n"
+                      "  scheduled:\n    critical: goal\n    important: skip\n    minor: stretch\n")
+        self.assertEqual((fu["critical"], fu["important"], fu["minor"]), ("stretch", "deliverable", "backlog"))
+        self.assertEqual(fu["scheduled"], {"critical": "goal", "important": "skip", "minor": "stretch"})
+
+    def test_follow_ups_partial_scheduled(self):
+        fu = self._fu("  scheduled:\n    minor: backlog\n")
+        self.assertEqual(fu["scheduled"], {"critical": "deliverable", "important": "backlog", "minor": "backlog"})
+        fu = self._fu("  minor: backlog\n  scheduled:\n    critical: stretch\n")
+        self.assertEqual(fu["scheduled"], {"critical": "stretch", "important": "backlog", "minor": "backlog"})
+        fu = self._fu("  important: stretch\n")
+        self.assertEqual(fu["scheduled"]["important"], "backlog")
+
+    def test_follow_ups_invalid(self):
+        for body in ("  important: maybe\n", "  urgent: skip\n", "  scheduled: skip\n",
+                     "  scheduled:\n    minor: maybe\n", "  scheduled:\n    urgent: skip\n"):
+            with self.assertRaises(config.ConfigError, msg=body):
+                self._fu(body)
 
     def test_forbid_added_default_and_valid(self):
         self.assertEqual(config.DEFAULTS["forbid_added"], {})

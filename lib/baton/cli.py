@@ -218,16 +218,55 @@ def cmd_milestone(args):
     return _publish_cmd(publish.parse_milestone, args, act)
 
 
+def _close_flags(args):
+    """Split close's flags from its positional arguments; None when malformed."""
+    rest, flags, i = [], {}, 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--lock":
+            flags["lock"] = True
+        elif arg.startswith(("--reason", "--duplicate-of")):
+            name, eq, value = arg.partition("=")
+            if name not in ("--reason", "--duplicate-of"):
+                return None
+            if not eq:
+                i += 1
+                if i >= len(args):
+                    return None
+                value = args[i]
+            if name == "--duplicate-of":
+                if not value.isdigit():
+                    return None
+                flags["duplicate_of"] = int(value)
+            else:
+                flags["close_reason"] = value
+        elif arg.startswith("--"):
+            return None
+        else:
+            rest.append(arg)
+        i += 1
+    return rest, flags
+
+
 def _change_state(action, args):
-    if len(args) != 4:
-        print(f"usage: baton {action} <issue|pr> <number> <role> <reason-file | ->",
+    flags = {}
+    if action == "close":
+        parsed = _close_flags(args)
+        if parsed is not None:
+            args, flags = parsed
+    elif any(a.startswith("--") for a in args):
+        args = []
+    if len(args) != 4 or (action == "close" and parsed is None):
+        reason_usage = " [--reason spam|duplicate|support|wont-do|completed]" \
+                       " [--duplicate-of <N>] [--lock]" if action == "close" else ""
+        print(f"usage: baton {action} <issue|pr> <number> <role> <reason-file | ->{reason_usage}",
               file=sys.stderr)
         return 64
     target, number, role, path = args
     try:
         reason = comment.read_body(path, sys.stdin)
         print(state.change(_require_config(), run.run, action, target, int(number), role,
-                           reason, scan.load_terms()))
+                           reason, scan.load_terms(), **flags))
     except comment.CommentError as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
