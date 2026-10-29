@@ -501,12 +501,12 @@ is running:
    to Baton itself is written up for the maintainer; never edit the plugin's files.
 3. For each unfinished issue: remove it from the milestone and add the label
    `missed-sprint` and a `Missed sprint:` line to its description (`baton issue missed <N> "<sprint title>"`) ([GitLab's milestone cleanup](https://handbook.gitlab.com/handbook/engineering/workflow/#milestone-cleanup)).
-4. List spike prototypes in the retrospective.
+4. List each spike with its outcome and its prototype in the retrospective.
 5. Close the milestone: `baton milestone edit <title> --state closed`.
 6. End with a regular, full response, not the three-section update. This is the only point in a
    sprint where details are given in the session. Give: what was delivered and what was carried
    over (each with links), the decisions made, what went wrong and its root cause, quota use, the
-   spike prototypes, the retrospective pull request, and what still needs the maintainer.
+   spike outcomes and prototypes, the retrospective pull request, and what still needs the maintainer.
 
 ## Scheduled runs
 

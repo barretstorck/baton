@@ -221,6 +221,14 @@ class TemplateTest(unittest.TestCase):
         text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
         self.assertIn("Fill the two follow-up rows from the sprint's review comments", text)
 
+    def test_retro_lists_spike_outcomes(self):
+        retro = (ROOT / "templates/retro.md").read_text()
+        self.assertIn("## Spike outcomes", retro)
+        self.assertIn("| Outcome |", retro)
+        self.assertLess(retro.index("## Spike outcomes"), retro.index("## Spike prototypes"))
+        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        self.assertIn("List each spike with its outcome", text)
+
     def test_develop_skill_uses_body_plan(self):
         text = (ROOT / "skills/develop/SKILL.md").read_text()
         self.assertIn("## Developer Plan", text)

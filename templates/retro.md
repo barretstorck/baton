@@ -50,6 +50,15 @@ Each item names where the change belongs: this repository's brief, an issue, or 
 
 1.
 
+## Spike outcomes
+
+One row per spike closed in the sprint. Outcome is one of `infeasible`, `single`, `multiple`,
+`partial`; "What followed" names the issues filed, re-refined or flagged.
+
+| Issue | Title | Outcome | What followed |
+|---|---|---|---|
+|  |  |  |  |
+
 ## Spike prototypes
 
 One line per spike with a prototype: issue, ref (`refs/spikes/<N>`), link. For reference only;
