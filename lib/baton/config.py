@@ -44,6 +44,8 @@ DEFAULTS = {
     "protected_paths": [".github/", ".baton/", ".claude/"],
     "fixtures_paths": [],
     "privacy_allow": [],
+    "forge_clis": ["gh", "glab", "tea", "fj", "curl", "wget", "http", "https", "xh"],
+    "body_file_flags": ["-F", "--body-file", "--input"],
     "forbid_added": {},
     "budgets": {},
     "work_mix": {},
@@ -116,6 +118,14 @@ def _check_forbid_added(data):
             re.compile(pattern)
         except re.error as error:
             raise ConfigError(f".baton/brief.md: forbid_added[{glob!r}] is not a valid regular expression: {error}") from error
+
+
+def _check_forge(data):
+    for key in ("forge_clis", "body_file_flags"):
+        for entry in data[key]:
+            if not entry or re.search(r"\s", entry) or (key == "body_file_flags" and not entry.startswith("-")):
+                raise ConfigError(f".baton/brief.md: {key} entries must be non-empty words without spaces"
+                                  + (" that start with -" if key == "body_file_flags" else ""))
 
 
 def _check_follow_ups(data):
@@ -198,5 +208,6 @@ def load(path):
     _check_follow_ups(merged)
     _check_forbid_added(merged)
     _check_docs_dir(merged)
+    _check_forge(merged)
     _check_work_mix(merged)
     return Config(root=root, data=merged)

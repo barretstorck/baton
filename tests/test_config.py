@@ -221,3 +221,26 @@ class ConfigTest(unittest.TestCase):
         root = make_repo("x\n")
         (root / "src").mkdir()
         self.assertEqual(config.load(str(root / "src")).root.resolve(), root.resolve())
+
+
+class ForgeKeysTest(unittest.TestCase):
+    def test_defaults(self):
+        data = config.load(str(make_repo("x\n"))).data
+        self.assertEqual(data["forge_clis"], ["gh", "glab", "tea", "fj", "curl", "wget", "http", "https", "xh"])
+        self.assertEqual(data["body_file_flags"], ["-F", "--body-file", "--input"])
+        import json
+        dumped = json.dumps(data)
+        self.assertIn("forge_clis", dumped)
+        self.assertIn("body_file_flags", dumped)
+
+    def test_brief_replaces(self):
+        data = config.load(str(make_repo("---\nforge_clis: [gh, glab]\nbody_file_flags: [--body-file]\n---\n"))).data
+        self.assertEqual(data["forge_clis"], ["gh", "glab"])
+        self.assertEqual(data["body_file_flags"], ["--body-file"])
+
+    def test_bad_values(self):
+        for brief in ("forge_clis: gh", 'forge_clis: [""]', 'forge_clis: ["a b"]',
+                      "body_file_flags: x", 'body_file_flags: ["a b"]', "body_file_flags: [body]",
+                      'body_file_flags: [""]'):
+            with self.assertRaises(config.ConfigError, msg=brief):
+                config.load(str(make_repo(f"---\n{brief}\n---\n")))

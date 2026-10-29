@@ -71,6 +71,8 @@ protected_paths: [".github/", ".baton/", ".claude/"]
 fixtures_paths: []            # the only places new image files may be added
 privacy_allow: []             # literal strings the privacy scan should ignore
                               # (Python dependency files are already exempt from private-ip: see README)
+forge_clis: [gh, glab, tea, fj, curl, wget, http, https, xh]   # programs the publish gate treats as forge-facing; a list here replaces this one
+body_file_flags: [-F, --body-file, --input]   # their flags that read a request body from a file; a list here replaces this one
 forbid_added: {}              # path glob: regex; a commit or pull request adding a matching line to a matching file is refused (see Conventions)
 budgets: {}
 work_mix: {}                  # optional target share of work by type, shown by sprint-plan, never enforced; e.g. feature: 60, maintenance: 30, bug: 10 (must add up to 100; empty: no target)
