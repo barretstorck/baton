@@ -236,6 +236,17 @@ class TemplateTest(unittest.TestCase):
         text = (ROOT / "templates" / "brief.local.md").read_text()
         self.assertIn("## Sandbox", text)
 
+    def test_brief_template_has_responsibilities_section(self):
+        text = " ".join((ROOT / "templates" / "brief.md").read_text().split())
+        self.assertIn("## Responsibilities", text)
+        for phrase in ("sandbox", "incoming issues", "sensitive information",
+                       "guardrail", "remain the maintainer's"):
+            self.assertIn(phrase, text)
+
+    def test_repo_brief_has_responsibilities_section(self):
+        text = (ROOT / ".baton" / "brief.md").read_text()
+        self.assertIn("## Responsibilities", text)
+
     def test_developer_instructions_forbid_copying_secret_files(self):
         for path in ("skills/develop/SKILL.md", "agents/baton-developer.md"):
             text = (ROOT / path).read_text()
@@ -340,6 +351,17 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("spike.max_per_sprint", plan)
         sprint = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
         self.assertIn("spikes before", sprint)
+
+    def test_review_skill_requires_security_note_dispositions(self):
+        text = " ".join((ROOT / "skills" / "review" / "SKILL.md").read_text().split())
+        for phrase in ("## Responsibilities", "## Security notes", "fix task",
+                       "follow-up", "set aside", "baton:orchestrator:status"):
+            self.assertIn(phrase, text)
+
+    def test_refine_skill_judges_security_findings_against_responsibilities(self):
+        text = " ".join((ROOT / "skills" / "refine" / "SKILL.md").read_text().split())
+        self.assertIn("## Responsibilities", text)
+        self.assertIn("security finding", text)
 
     def test_skills_read_issues_through_baton_issue_read(self):
         for name in ("refine", "research", "develop", "review", "sprint", "open-questions"):

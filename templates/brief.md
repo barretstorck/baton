@@ -121,6 +121,21 @@ command into tasks that delete or move modules.
 - New behaviour has tests.
 - (add project rules)
 
+## Responsibilities
+
+**The maintainer is responsible for:**
+
+- a sandbox environment that isolates agents;
+- making sure incoming issues are safe to work on (with the help of the triager);
+- making sure sensitive information is not exposed.
+
+**Baton helps but does not guarantee:**
+
+- the publish gate is a guardrail that stops well-meaning agents from accidentally publishing private or sensitive information; it is not a security boundary against deliberate evasion;
+- the sandbox probe and triage summaries are aids to the maintainer's judgement.
+
+Baton may help with or ease these responsibilities, but they remain the maintainer's.
+
 ## Conventions
 
 - (branching, commit style, documentation rules)
