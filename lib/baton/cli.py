@@ -149,6 +149,10 @@ def _maintainers(cfg):
     return cfg.maintainers(_owner())
 
 
+def _bots():
+    return identity.bot_logins()
+
+
 def cmd_comment(args):
     if len(args) != 5:
         print("usage: baton comment <issue|pr> <number> <role> <kind> <body-file | ->",

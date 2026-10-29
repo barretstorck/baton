@@ -67,6 +67,22 @@ def logins(value):
     return frozenset(value or ())
 
 
+def login_key(login):
+    """One comparison key for a login: lower case, no leading `app/`, no trailing `[bot]`."""
+    key = (login or "").strip().lower()
+    if key.startswith("app/"):
+        key = key[4:]
+    if key.endswith("[bot]"):
+        key = key[:-5]
+    return key
+
+
+def has_login(person, value):
+    """Whether the author dict `person` (or None) is one of the logins in `value`."""
+    key = login_key((person or {}).get("login"))
+    return bool(key) and key in {login_key(v) for v in logins(value)}
+
+
 @dataclass
 class Config:
     root: pathlib.Path
