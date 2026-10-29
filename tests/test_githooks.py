@@ -1,6 +1,9 @@
 import json
+import os
 import pathlib
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -326,6 +329,43 @@ class InstallTest(unittest.TestCase):
         githooks.install(repo, "/opt/baton/bin/baton")
         githooks.install(repo, "/other/bin/baton")
         self.assertIn("/other/bin/baton", pathlib.Path(repo, ".git/hooks/pre-push").read_text())
+
+    def test_hook_whose_baton_is_gone_is_not_installed(self):
+        repo = make_repo()
+        githooks.install(repo, os.path.join(tempfile.mkdtemp(), "0.3.0", "bin", "baton"))
+        self.assertFalse(githooks.installed(repo))
+
+    def test_hook_whose_baton_exists_is_installed(self):
+        repo = make_repo()
+        githooks.install(repo, sys.executable)
+        self.assertTrue(githooks.installed(repo))
+
+    def _commit_with_gone_baton(self, path_dirs):
+        repo = make_repo()
+        githooks.install(repo, os.path.join(tempfile.mkdtemp(), "0.3.0", "bin", "baton"))
+        write(repo, "b.txt", "x\n")
+        git(repo, "add", "-A")
+        env = dict(os.environ, PATH=os.pathsep.join(path_dirs))
+        return subprocess.run(["git", "-C", repo, "commit", "-q", "-m", "b"],
+                              capture_output=True, text=True, env=env)
+
+    def test_hook_falls_back_to_baton_on_path(self):
+        bindir = tempfile.mkdtemp()
+        marker = os.path.join(bindir, "ran")
+        fake = pathlib.Path(bindir, "baton")
+        fake.write_text(f'#!/bin/sh\necho "$@" > "{marker}"\n')
+        fake.chmod(0o755)
+        git_dir = os.path.dirname(shutil.which("git"))
+        result = self._commit_with_gone_baton([bindir, git_dir, "/bin"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(pathlib.Path(marker).read_text().split()[:2], ["git-hook", "pre-commit"])
+
+    def test_hook_without_any_baton_names_install_hooks(self):
+        git_dir = os.path.dirname(shutil.which("git"))
+        result = self._commit_with_gone_baton([git_dir, "/bin"])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("baton install-hooks", result.stderr)
+        self.assertNotIn("not found", result.stderr)
 
     def test_install_refuses_foreign_hook(self):
         repo = make_repo()

@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from baton import gate
@@ -22,8 +23,7 @@ def make_repo(brief="---\n---\n", hooks=True):
         (root / ".baton").mkdir()
         (root / ".baton" / "brief.md").write_text(brief)
     if hooks:
-        for name in ("pre-commit", "pre-push"):
-            (root / ".git" / "hooks" / name).write_text(f"#!/bin/sh\n# {gate.HOOK_TAG}\n")
+        gate.githooks.install(str(root), sys.executable)
     return str(root)
 
 
@@ -314,6 +314,12 @@ class GateTest(unittest.TestCase):
 
     def test_git_publish_requires_installed_hooks(self):
         problems = gate.decide("git commit -m x", make_repo(hooks=False), TERMS)
+        self.assertTrue(any("install-hooks" in p for p in problems))
+
+    def test_git_publish_refuses_hooks_whose_baton_is_gone(self):
+        repo = make_repo(hooks=False)
+        gate.githooks.install(repo, os.path.join(tempfile.mkdtemp(), "0.3.0", "bin", "baton"))
+        problems = gate.decide("git commit -m x", repo, TERMS)
         self.assertTrue(any("install-hooks" in p for p in problems))
 
     def test_hooks_must_be_in_the_effective_hooks_path(self):

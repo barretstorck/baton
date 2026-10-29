@@ -138,7 +138,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton config` | Print the resolved settings from `.baton/brief.md` |
 | `baton labels [--create]` | Check or create the labels Baton uses |
 | `baton set-status <issue> <status:name>` | Switch an issue's status label |
-| `baton install-hooks` | Install the `pre-commit` and `pre-push` privacy hooks |
+| `baton install-hooks` | Install the `pre-commit` and `pre-push` privacy hooks. The hooks record the plugin version's `baton` and fall back to `baton` on `PATH`; when a plugin update removes that version, the gate refuses commits and pushes until you run `baton install-hooks` again |
 | `baton verify <pr> <worktree>` | Run the brief's `verify.command` on the pull request's head; prints the result, the log path and the last 40 lines |
 | `baton merge-pr <number>` | Check the review, CI and the rest, then merge |
 | `baton comment <issue\|pr> <number> <role> <kind> <file \| ->` | Scan, stamp and post an agent comment |
