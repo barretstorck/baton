@@ -7,8 +7,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-from baton import identity
+from baton import config, identity
 from baton.run import run
+from tests.fakes import FakeRunner
 
 VALID = """
 [baton]
@@ -85,6 +86,61 @@ class ReviewerLoginsTest(unittest.TestCase):
         self.assertEqual(identity.reviewer_logins(), frozenset())
         identity.use(None)
         self.assertEqual(identity.reviewer_logins(), frozenset())
+
+
+class MarkAuthorsTest(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(identity.use, None)
+        identity.use(lambda: identity.Identities(identity.App(1, 10, "k", "baton[bot]"),
+                                                 identity.App(2, 20, "k", "baton-reviewer[bot]")))
+
+    @staticmethod
+    def c(id_, login):
+        return {"id": id_, "author": {"login": login}}
+
+    def mark(self, comments, reply, number=7):
+        runner = FakeRunner({"gh api": reply})
+        return identity.mark_authors(runner, number, comments), runner
+
+    def test_bot_comment_is_trusted(self):
+        out, _ = self.mark([self.c("IC_1", "baton")], "IC_1\tBot\n")
+        self.assertEqual(out[0]["author"]["type"], "Bot")
+        self.assertTrue(config.has_login(out[0]["author"], ["baton[bot]"]))
+
+    def test_human_comment_is_not_trusted(self):
+        out, _ = self.mark([self.c("IC_2", "baton")], "IC_2\tUser\n")
+        self.assertEqual(out[0]["author"]["type"], "User")
+        self.assertFalse(config.has_login(out[0]["author"], ["baton[bot]"]))
+
+    def test_missing_id_and_error_fail_closed(self):
+        out, _ = self.mark([self.c("IC_3", "baton")], "IC_9\tBot\n")
+        self.assertEqual(out[0]["author"]["type"], "User")
+
+        def boom(argv, **kw):
+            raise identity._run.RunError("x")
+        out = identity.mark_authors(boom, 7, [self.c("IC_3", "baton")])
+        self.assertEqual(out[0]["author"]["type"], "User")
+
+    def test_one_call_per_thread(self):
+        out, runner = self.mark([self.c("IC_1", "baton"), self.c("IC_2", "baton")],
+                                "IC_1\tBot\nIC_2\tUser\n")
+        self.assertEqual(len(runner.calls), 1)
+        self.assertIn("repos/{owner}/{repo}/issues/7/comments?per_page=100", runner.calls[0])
+        self.assertEqual([c["author"]["type"] for c in out], ["Bot", "User"])
+
+    def test_no_call_without_candidates(self):
+        comments = [self.c("IC_1", "barretstorck"), self.c("IC_2", "baton[bot]")]
+        out, runner = self.mark(comments, "")
+        self.assertEqual(runner.calls, [])
+        self.assertEqual(out, comments)
+        identity.use(None)
+        out, runner = self.mark([self.c("IC_1", "baton")], "")
+        self.assertEqual(runner.calls, [])
+
+    def test_input_not_changed(self):
+        comments = [self.c("IC_1", "baton")]
+        self.mark(comments, "IC_1\tBot\n")
+        self.assertEqual(comments, [self.c("IC_1", "baton")])
 
 
 if __name__ == "__main__":
