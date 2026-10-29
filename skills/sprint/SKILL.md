@@ -232,7 +232,9 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
 Merge **one pull request at a time**. After each merge, the others are behind: when one of them
 conflicts and no developer is running for it, dispatch one with
 `Update pull request <P> (issue <N>).` Merging the
-default branch in does not void its review.
+default branch in does not void its review. Issues that touch the same files run in parallel, and
+the conflicts that follow a merge are expected: the `Update pull request` developer resolves them,
+never the orchestrator.
 
 #### Dispatching a reviewer
 
@@ -319,8 +321,8 @@ both read it; nothing else goes in but the repository and the sprint goal:
    re-refinement, is dispatched like a resumed one): `Do task <progress.<N>.plan.next> of issue <N>.` (task 1 for a fresh issue,
    a later task for one resumed after a question), `Do spike issue <N>.`, or the refiner when it
    is `unplanned`. `baton sprint-status` has already
-   applied the rules: ready issues only, written by the maintainer, blockers closed, no file
-   overlap with work in flight, within the free slots.
+   applied the rules: ready issues only, written by the maintainer, blockers closed, within
+   the free slots.
 
 Do not paste the issue text, the task brief, your notes or other issues into the prompt.
 
