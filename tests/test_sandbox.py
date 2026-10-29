@@ -92,16 +92,11 @@ class SandboxRunTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as empty:
             with self.assertRaises(sandbox.SandboxError):
                 sandbox.run_in_sandbox(self.runner, "o", "r", "main", "x", 1, home=empty)
-            self.assertEqual(sandbox.check(self.runner, "o", "r", "main", 1, home=empty),
-                             ("none", None))
+            self.assertEqual(sandbox.check("o", "r", home=empty), "none")
 
-    def test_check_states(self):
-        for text, want in (("UNREACHABLE\n", "isolated"), ("REACHABLE\n", "not-isolated"),
-                           ("Traceback\n", "probe-failed")):
-            state, log = sandbox.check(self.runner, "o", "r", "main", 5,
-                                       execute=self.fake(text), home=self.home)
-            self.assertEqual(state, want)
-            self.assertIn("socket", self.seen["command"])
+    def test_check_configured(self):
+        self.assertEqual(sandbox.check("o", "r", home=self.home), "configured")
+        self.assertNotIn("command", self.seen)
 
 
 if __name__ == "__main__":
