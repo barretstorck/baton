@@ -243,6 +243,10 @@ class TemplateTest(unittest.TestCase):
                        "guardrail", "remain the maintainer's"):
             self.assertIn(phrase, text)
 
+    def test_repo_brief_has_responsibilities_section(self):
+        text = (ROOT / ".baton" / "brief.md").read_text()
+        self.assertIn("## Responsibilities", text)
+
     def test_developer_instructions_forbid_copying_secret_files(self):
         for path in ("skills/develop/SKILL.md", "agents/baton-developer.md"):
             text = (ROOT / path).read_text()
