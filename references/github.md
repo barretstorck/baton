@@ -12,6 +12,7 @@ How each step in the Baton skills is done on GitHub. Run everything from inside 
 | Does it meet the definition of ready | `baton ready-check <N>` |
 | The latest agent question and the maintainer's replies | `baton answers <N>` |
 | Every open issue waiting on the maintainer | `baton open-questions` (JSON list sorted most pressing first: `number`, `title`, `kind`, `question_url`, `tier`, `repair`, `blocks`, `age_days`; `[]` when nothing) |
+| Spikes first, capped | `baton sprint-order <N>...` (JSON: `order` with spikes first, `spikes`, `left_out` for spikes over `spike.max_per_sprint`, `cap`; exit 64 on a number that is not an open issue) |
 | Open pull requests | `gh pr list --state open --json number,title,headRefName,isDraft,closingIssuesReferences` |
 | A pull request's checks | `gh pr checks <N>` |
 | A pull request's draft state and CI state (reviewer) | `baton pr-state <N>` (JSON: `draft`, `ci`: `green`, `red`, `cancelled` (only cancelled checks failed: CI did not finish), `pending` or `none`, `verify`: `none`, `missing`, `green`, `red` or `timeout`, `problems`) |

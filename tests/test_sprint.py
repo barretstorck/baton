@@ -63,6 +63,59 @@ def snap(issues, config_=None, **kwargs):
     return sprint.snapshot(config_ or cfg(), FakeRunner(replies(issues, **kwargs)))
 
 
+class SpikesFirstTest(unittest.TestCase):
+    FLAGS = {1: True, 2: False, 3: True, 4: True, 5: False}
+
+    def test_cap_keeps_first_spikes_and_leaves_out_the_rest(self):
+        found = sprint.spikes_first([5, 1, 2, 3, 4], self.FLAGS, 2)
+        self.assertEqual(found, {"order": [1, 3, 5, 2], "spikes": [1, 3], "left_out": [4], "cap": 2})
+
+    def test_cap_zero_leaves_all_out(self):
+        found = sprint.spikes_first([1, 2, 3], self.FLAGS, 0)
+        self.assertEqual((found["order"], found["spikes"], found["left_out"]), ([2], [], [1, 3]))
+
+    def test_no_spikes_keeps_the_input_order(self):
+        self.assertEqual(sprint.spikes_first([5, 2], self.FLAGS, 2)["order"], [5, 2])
+
+
+class SprintOrderCommandTest(unittest.TestCase):
+    def drive(self, args, max_per_sprint=2):
+        import io
+        from unittest import mock
+        from baton import cli
+        config_ = cfg()
+        config_.data["spike"]["max_per_sprint"] = max_per_sprint
+        listing = json.dumps([
+            {"number": 1, "labels": [{"name": "type:spike"}]},
+            {"number": 2, "labels": [{"name": "type:feature"}]},
+            {"number": 3, "labels": [{"name": "type:spike"}]},
+            {"number": 4, "labels": [{"name": "type:spike"}]}])
+        runner = FakeRunner({"gh issue list": listing})
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=config_), \
+                mock.patch.object(cli.run, "run", runner), \
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+            code = cli.main(["sprint-order"] + args)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_spikes_first(self):
+        code, out, _ = self.drive(["2", "1", "3"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), {"order": [1, 3, 2], "spikes": [1, 3],
+                                           "left_out": [], "cap": 2})
+
+    def test_more_spikes_than_cap_are_left_out(self):
+        code, out, _ = self.drive(["1", "3", "4", "2"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["left_out"], [4])
+
+    def test_no_argument_or_unknown_issue_exits_64(self):
+        for args in ([], ["x"], ["99"]):
+            code, _, err = self.drive(args)
+            self.assertEqual(code, 64)
+            self.assertIn("usage: baton sprint-order <issue>...", err)
+
+
 class StrictReadsTest(unittest.TestCase):
     def broken(self, key, reply):
         data = replies([issue(1, "ready")])
@@ -109,6 +162,21 @@ class BranchStateTest(unittest.TestCase):
 
 
 class SnapshotTest(unittest.TestCase):
+    def test_spikes_are_dispatched_first(self):
+        ms = [{"number": 3, "title": "Sprint 2026-10-01-1",
+               "description": "Goal: x\nOrder: #1\nParallel: 1", "due_on": None}]
+        items = [issue(1, "ready", "deliverable"), issue(2, "ready", "type:spike")]
+        self.assertEqual(snap(items, milestones=ms)["dispatchable"], [2])
+        ms[0]["description"] = "Goal: x\nOrder: #1\nParallel: 2"
+        self.assertEqual(snap(items, milestones=ms)["dispatchable"], [2, 1])
+
+    def test_repair_outranks_a_spike(self):
+        ms = [{"number": 3, "title": "Sprint 2026-10-01-1", "description": "Goal: x\nParallel: 1",
+               "due_on": None}]
+        items = [issue(1, "ready", "type:spike"),
+                 issue(2, "ready", cfg().label("broken-default-branch"))]
+        self.assertEqual(snap(items, milestones=ms)["dispatchable"][:1], [2])
+
     def test_no_open_sprint(self):
         result = sprint.snapshot(cfg(), FakeRunner(replies([], milestones=[])))
         self.assertIsNone(result["sprint"])
@@ -1004,9 +1072,9 @@ class SprintMetricsCommandTest(unittest.TestCase):
         self.assertIn("milestone not found", err)
 
 
-def _retro_text(days, done, tasks, tokens="1000"):
+def _retro_text(days, done, tasks, tokens="1000", spikes="0"):
     return (f"# Sprint\n\n## Metrics\n\nduration_days: {days}\nissues_worked: {done}\n"
-            f"issues_completed: {done}\nissues_missed: 0\nplan_tasks_done: {tasks}\nspikes: 0\n"
+            f"issues_completed: {done}\nissues_missed: 0\nplan_tasks_done: {tasks}\nspikes: {spikes}\n"
             f"tokens: {tokens}\n\n## Other\nx\n")
 
 
@@ -1051,6 +1119,21 @@ class CapacityTests(unittest.TestCase):
     def test_no_retros(self):
         self.assertEqual(sprint.capacity([], 7), {"retros": 0, "days": 7, "note": "no past retros"})
         self.assertEqual(sprint.recent_metrics(self.root, "missing"), [])
+
+    def test_spikes_leave_throughput(self):
+        self.put("Sprint 2026-01-01-1.md", _retro_text(7, 6, 6, spikes=2))
+        self.put("Sprint 2026-01-02-1.md", _retro_text(7, 6, 6, spikes=2))
+        result = sprint.capacity(self.recent(), 7)
+        self.assertEqual(result["issues_per_day"], 0.57)
+        self.assertEqual(result["tasks_per_day"], 0.86)
+
+    def test_blank_spikes_count_all_issues(self):
+        self.put("Sprint 2026-01-01-1.md", _retro_text(7, 7, 7, spikes=""))
+        self.assertEqual(sprint.capacity(self.recent(), 7)["issues_per_day"], 1.0)
+
+    def test_spikes_above_completed_count_zero(self):
+        self.put("Sprint 2026-01-01-1.md", _retro_text(7, 2, 2, spikes=5))
+        self.assertEqual(sprint.capacity(self.recent(), 7)["issues_per_day"], 0.0)
 
     def test_low_throughput_proposes_one(self):
         self.put("Sprint 2026-01-01-1.md", _retro_text(30, 1, 1))

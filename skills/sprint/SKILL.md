@@ -357,7 +357,7 @@ both read it; nothing else goes in but the repository and the sprint goal:
      `baton set-status <N> status:in-review`. The pull request stays a draft until the next pass
      marks it ready (step 4); CI runs once, and the reviewer comes only when `ci` is `green` or
      `none`.
-2. **New issues:** for each number in `dispatchable`, in order, dispatch the same way from its
+2. **New issues:** `dispatchable` lists spikes before other issues, so spikes start before plan tasks when slots allow. For each number in `dispatchable`, in order, dispatch the same way from its
    `progress` entry (a ready issue that already has a branch and a pull request, as after a
    re-refinement, is dispatched like a resumed one): `Do task <progress.<N>.plan.next> of issue <N>.` (task 1 for a fresh issue,
    a later task for one resumed after a question), `Do spike issue <N>.` (to `baton:baton-researcher`, see "Dispatching a researcher"), or the refiner when it

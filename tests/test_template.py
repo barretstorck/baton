@@ -306,6 +306,13 @@ class TemplateTest(unittest.TestCase):
                      "Re-refine issue <O> after spike #<S>.", "Spike for:", "Origin: outside"):
             self.assertIn(want, text)
 
+    def test_spikes_first_in_plan_and_sprint(self):
+        plan = " ".join((ROOT / "skills/sprint-plan/SKILL.md").read_text().split())
+        self.assertIn("baton sprint-order", plan)
+        self.assertIn("spike.max_per_sprint", plan)
+        sprint = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        self.assertIn("spikes before", sprint)
+
     def test_skills_read_issues_through_baton_issue_read(self):
         for name in ("refine", "research", "develop", "review"):
             text = (ROOT / "skills" / name / "SKILL.md").read_text()

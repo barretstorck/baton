@@ -50,7 +50,7 @@ DEFAULTS = {
     "forbid_added": {},
     "budgets": {},
     "work_mix": {},
-    "spike": {"tokens": {}, "minutes": {}},
+    "spike": {"tokens": {}, "minutes": {}, "max_per_sprint": 2},
 }
 
 
@@ -182,7 +182,10 @@ def _check_work_mix(data):
 
 
 def _check_spike(data):
-    for part, mapping in data["spike"].items():
+    if data["spike"]["max_per_sprint"] < 0:
+        raise ConfigError(".baton/brief.md: spike.max_per_sprint must be at least 0")
+    for part in ("tokens", "minutes"):
+        mapping = data["spike"][part]
         for key, value in mapping.items():
             if key not in ("min", "max"):
                 raise ConfigError(f".baton/brief.md: spike.{part} key {key!r} must be min or max")

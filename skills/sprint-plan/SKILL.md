@@ -41,6 +41,13 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
      and severity never override dependencies or the goal. An issue without a priority label
      ranks after every ranked one; one without a severity label ranks after every one with a
      severity (a non-bug never has one).
+   - Spikes first: run `baton sprint-order <N>...` with the chosen issues and use its `order`
+     (spikes lead, as the handbook schedules spikes at the start of an iteration). When
+     `left_out` is not empty, say in the proposal that `spike.max_per_sprint` kept only
+     `spikes` and name the spikes left out; they stay `status:ready`.
+   - Each spike counts as one issue toward the capacity from `baton sprint-capacity` (it has no
+     plan tasks). The capacity itself is measured on non-spike issues. The proposal says how
+     many of its issues are spikes.
    - Severity is ranking information only: it carries no due date and never pulls a bug into
      the sprint or interrupts it.
    - Mark each `deliverable` (the sprint commits to it) or `stretch` (if time allows).

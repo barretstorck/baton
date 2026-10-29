@@ -210,6 +210,17 @@ class ConfigTest(unittest.TestCase):
             with self.assertRaises(config.ConfigError, msg=meta):
                 config.load(str(make_repo(f"---\nwork_mix:\n  {meta}\n---\n")))
 
+    def test_spike_max_per_sprint(self):
+        self.assertEqual(config.load(str(make_repo("# none\n"))).data["spike"]["max_per_sprint"], 2)
+        for value in (1, 0):
+            cfg = config.load(str(make_repo(f"---\nspike:\n  max_per_sprint: {value}\n---\n")))
+            self.assertEqual(cfg.data["spike"]["max_per_sprint"], value)
+
+    def test_spike_max_per_sprint_invalid_raises(self):
+        for value in ("-1", "x"):
+            with self.assertRaises(config.ConfigError):
+                config.load(str(make_repo(f"---\nspike:\n  max_per_sprint: {value}\n---\n")))
+
     def test_docs_dir_default_and_override(self):
         self.assertEqual(config.DEFAULTS["docs"], {"dir": "docs/baton"})
         self.assertEqual(config.load(str(make_repo("# none\n"))).data["docs"]["dir"], "docs/baton")

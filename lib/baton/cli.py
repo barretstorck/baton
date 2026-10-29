@@ -558,6 +558,25 @@ def cmd_sprint_status(args):
     return 0
 
 
+def cmd_sprint_order(args):
+    if not args or not all(a.isdigit() for a in args):
+        print("usage: baton sprint-order <issue>...", file=sys.stderr)
+        return 64
+    cfg = _require_config()
+    issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "300",
+                                 "--json", "number,labels"]))
+    spike = cfg.label("type:spike")
+    flags = {i["number"]: any(l.get("name") == spike for l in i.get("labels", []))
+             for i in issues}
+    numbers = [int(a) for a in args]
+    if any(n not in flags for n in numbers):
+        print("usage: baton sprint-order <issue>...", file=sys.stderr)
+        return 64
+    found = sprint.spikes_first(numbers, flags, cfg.data["spike"]["max_per_sprint"])
+    print(json.dumps(found, indent=2))
+    return 0
+
+
 _CAPACITY_USAGE = "usage: baton sprint-capacity <days> [--retros <n>]"
 
 
@@ -744,6 +763,7 @@ COMMANDS = {
     "set-priority": cmd_set_priority,
     "set-severity": cmd_set_severity,
     "sprint-capacity": cmd_sprint_capacity,
+    "sprint-order": cmd_sprint_order,
     "sprint-status": cmd_sprint_status,
     "task": cmd_task,
     "tasks": cmd_tasks,

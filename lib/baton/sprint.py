@@ -223,6 +223,13 @@ def _next_task_url(owner, name, link, text, found):
             f"?plain=1#L{line}")
 
 
+def spikes_first(entries, spike_flags, cap):
+    """Put the first `cap` spikes of `entries` ahead of the others; list the spikes left out."""
+    spikes = [n for n in entries if spike_flags.get(n)]
+    return {"order": spikes[:cap] + [n for n in entries if not spike_flags.get(n)],
+            "spikes": spikes[:cap], "left_out": spikes[cap:], "cap": cap}
+
+
 def snapshot(cfg, runner, milestone=None):
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     owner, branch = repo["owner"]["login"], repo["defaultBranchRef"]["name"]
@@ -393,7 +400,8 @@ def snapshot(cfg, runner, milestone=None):
     def rank(entry):
         item, tier, _, repair = entry
         number = item["number"]
-        return (0 if repair else 1, {"deliverable": 0, "stretch": 1}.get(tier, 2),
+        spike = cfg.label("type:spike") in {label["name"] for label in item.get("labels") or []}
+        return (0 if repair else 1, 0 if spike else 1, {"deliverable": 0, "stretch": 1}.get(tier, 2),
                 order.index(number) if number in order else len(order), number)
 
     def missing_count(number):
@@ -602,7 +610,9 @@ def capacity(metrics, days, buffer=BUFFER):
     if not metrics:
         return {"retros": 0, "days": days, "note": "no past retros"}
     total = sum(m["duration_days"] for m in metrics)
-    issues_rate = sum(m["issues_completed"] for m in metrics) / total
+    # Spikes count toward capacity but not toward throughput.
+    issues_rate = sum(max(m["issues_completed"] - (m.get("spikes") or 0), 0)
+                      for m in metrics) / total
     tasks_rate = sum(m["plan_tasks_done"] for m in metrics) / total
     timed = [m for m in metrics if m.get("tokens") is not None]
     timed_days = sum(m["duration_days"] for m in timed)
