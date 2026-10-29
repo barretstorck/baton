@@ -110,6 +110,33 @@ class MilestoneTest(unittest.TestCase):
             publish.edit_milestone(cfg(), r, "1", [], state="weird")
 
 
+class MissedTest(unittest.TestCase):
+    REPLIES = {"gh api repos/{owner}/{repo}/milestones?state=all":
+               '[{"number": 3, "title": "Sprint 1", "html_url": "http://m/3"}]',
+               "gh issue view 7": '{"body": "## Pointers\\nBlocked by: none\\n"}'}
+
+    def test_marks(self):
+        r = Capture(dict(self.REPLIES))
+        publish.mark_missed(cfg(), r, 7, "Sprint 1", [])
+        edit = r.calls[-1]
+        self.assertEqual(edit[:4], ["gh", "issue", "edit", "7"])
+        self.assertIn("--remove-milestone", edit)
+        self.assertEqual(edit[edit.index("--add-label") + 1], "missed-sprint")
+        self.assertIn("--body-file", edit)
+        self.assertIn("Missed sprint: [Sprint 1](http://m/3)", r.body)
+
+    def test_by_number(self):
+        r = Capture(dict(self.REPLIES))
+        publish.mark_missed(cfg(), r, 7, "3", [])
+        self.assertIn("--remove-milestone", r.calls[-1])
+
+    def test_unknown_milestone_edits_nothing(self):
+        r = Capture(dict(self.REPLIES))
+        with self.assertRaises(CommentError):
+            publish.mark_missed(cfg(), r, 7, "Nope", [])
+        self.assertFalse([c for c in r.calls if c[:3] == ["gh", "issue", "edit"]])
+
+
 class ParseTest(unittest.TestCase):
     def test_issue_create(self):
         o = publish.parse_issue(["create", "--title", "T", "--label", "a", "--label=b",

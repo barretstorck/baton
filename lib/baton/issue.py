@@ -26,6 +26,25 @@ def sections(body):
     return result
 
 
+def add_missed_line(body, title, url):
+    """Add `Missed sprint: [title](url)` as the last line of `## Pointers`.
+
+    Earlier lines stay. A body without a Pointers section gets one at the end.
+    """
+    body = body or ""
+    line = f"Missed sprint: [{title}]({url})"
+    found = list(_HEADING.finditer(body))
+    for index, match in enumerate(found):
+        if match.group(1).lower() != "pointers":
+            continue
+        end = found[index + 1].start() if index + 1 < len(found) else len(body)
+        text = body[match.end():end].rstrip()
+        rest = body[end:]
+        gap = "\n\n" if rest else "\n"
+        return body[:match.end()] + text + "\n" + line + gap + rest
+    return body.rstrip("\n") + ("\n\n" if body.strip() else "") + "## Pointers\n" + line + "\n"
+
+
 def blocked_by(body):
     numbers = []
     for line in _BLOCKED.findall(body or ""):
