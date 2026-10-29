@@ -458,7 +458,9 @@ Act on each result with commands on their own, reading each one's output; never 
 When `finished` is true (every issue is complete or waiting on the maintainer) and no developer
 is running:
 
-1. Write the retrospective from `${CLAUDE_PLUGIN_ROOT}/templates/retro.md` to
+1. Run `baton sprint-metrics "<sprint title>" --since <the sprint's first dispatch, as UTC ISO time>` and paste its
+   output unchanged into the retrospective's `## Metrics` section.
+   Write the retrospective from `${CLAUDE_PLUGIN_ROOT}/templates/retro.md` to
    `<docs.dir>/retros/<sprint title>.md` on a branch, and open a pull request for it. Fill it from the
    forge: merged pull requests, decisions with their links, what was carried over. Fill the two follow-up rows from the sprint's review comments: the follow-ups filed, counted as `critical` / `important`, and the problems the reviews fixed in the pull request instead of filing them. Be specific
    about what went wrong, what it cost, and the root cause. Add a "Quota use" section with the
