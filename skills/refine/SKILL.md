@@ -77,8 +77,13 @@ issue body, written by `baton plan set`.
    - *Several outcomes:* split it. Keep this issue for the first piece, create one issue per other
      piece from the template in `status:refinement`, and add `Blocked by:` lines where order
      matters.
-   - *Unknowns that need investigation before anyone can write acceptance criteria:* make it a
-     `type:spike` whose acceptance criteria are the questions to answer.
+   - *Unknowns that need investigation before anyone can write acceptance criteria:* create a
+     spike for them, whose acceptance criteria are the questions to answer. Create it with
+     `baton issue create --title "[SPIKE] <title>" --label type:spike` from the issue template, in
+     `status:refinement`. Put `Spike for: #<original>` in the spike's Pointers. If the original's
+     description has a line starting `Origin: outside`, copy that line into the spike's Pointers
+     unchanged. Then add `Blocked by: #<spike>` to the original's Pointers (append to an existing
+     `Blocked by:` line) and keep the original in `status:refinement` until the spike is done.
    - *Needs a product or design decision:* go to "Questions".
 
 4. **Write the plan** (not for spikes). From your investigation in step 2, write the
