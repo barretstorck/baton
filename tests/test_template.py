@@ -162,6 +162,12 @@ class TemplateTest(unittest.TestCase):
             self.assertIn(needed, text)
         for banned in ("Edit", "gh issue edit", "gh issue close"):
             self.assertNotIn(banned, text)
+        agent = (ROOT / "agents/baton-triager.md").read_text()
+        for cmd in ("gh repo view", "gh search issues", "gh issue view",
+                    "gh issue list", "baton config", "baton triage apply"):
+            self.assertIn(cmd, text, cmd)
+            self.assertIn(cmd, agent, cmd)
+        self.assertNotIn("ready-check", agent)
 
     def test_refiner_handles_re_refine_after_spike(self):
         skill = (ROOT / "skills/refine/SKILL.md").read_text()

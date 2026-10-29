@@ -22,7 +22,8 @@ When it runs inside the `baton-triager` agent, do the steps below.
 
 1. Read the issue: `gh issue view <N> --json title,body,labels,author,comments`.
 2. Apply the spam screen below.
-3. Search for duplicates: `gh search issues "<key words>" --repo <owner>/<repo> --state all` and
+3. Search for duplicates: `gh search issues "<key words>" --repo <owner>/<repo> --state all` (the owner from
+   `gh repo view --json owner`, with the repository name) and
    `gh issue list --state all --search "<key words>"`. Read candidates with `gh issue view`.
 4. Pick the category: `spam`, `duplicate`, `support`, `unclear`, `feature`, `bug`, `maintenance`
    or `unsure` (use it when you cannot tell; the maintainer is notified).
@@ -58,8 +59,8 @@ could be a real report):
 
 ## Maintainer issues
 
-Compare `author.login` with the maintainers (`maintainers` in `baton config`, else the repository
-owner from `gh repo view --json owner`). An issue written by a maintainer only gets labels: use
+Compare `author.login` with the maintainers (`maintainers` from `baton config`; when that list is
+empty, the owner from `gh repo view --json owner`). An issue written by a maintainer only gets labels: use
 only feature, bug or maintenance (with `priority` and `severity`), no `comment`, and never spam,
 duplicate, support or unclear.
 
