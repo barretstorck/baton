@@ -307,6 +307,25 @@ class LinkedPlanReadyTest(unittest.TestCase):
         self.assertEqual(self.problems(BODY, RaisingRunner()), [])
 
 
+class AddMissedLineTest(unittest.TestCase):
+    LINE = "Missed sprint: [S2](http://x/2)"
+
+    def test_appends_under_pointers_keeping_earlier(self):
+        body = "## Context\nc\n\n## pointers\nBlocked by: none\nMissed sprint: [S1](http://x/1)\n"
+        out = issue.add_missed_line(body, "S2", "http://x/2")
+        self.assertIn("Missed sprint: [S1](http://x/1)\n" + self.LINE + "\n", out)
+        self.assertEqual(out.count("## "), 2)
+
+    def test_adds_section_when_absent(self):
+        out = issue.add_missed_line("## Context\nc\n", "S2", "http://x/2")
+        self.assertEqual(out, "## Context\nc\n\n## Pointers\n" + self.LINE + "\n")
+
+    def test_pointers_followed_by_section(self):
+        body = "## Pointers\nExpected files: a\n\n## Verification\nrun\n"
+        out = issue.add_missed_line(body, "S2", "http://x/2")
+        self.assertEqual(out, "## Pointers\nExpected files: a\n" + self.LINE
+                         + "\n\n## Verification\nrun\n")
+
 class ReadyCheckNoteTest(unittest.TestCase):
     def check(self, data):
         import contextlib
