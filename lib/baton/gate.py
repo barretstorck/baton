@@ -19,6 +19,7 @@ import os
 import re
 import signal
 import sys
+import tempfile
 
 from . import config, githooks, scan
 
@@ -231,6 +232,27 @@ def decide_mcp(tool_input, cwd, terms):
     return [f"privacy: {kind} in the tool input" for kind in sorted({f.kind for f in findings})]
 
 
+MERGE_HINT = "baton merge-pr <N> checks CI and review first; the sprint skill says who merges"
+_MERGE_RE = re.compile(r"(?<![\w-])gh\s+(?:-\S+\s+)*pr\s+merge\b")
+
+
+def _hint(payload):
+    """The merge hint, once per session, for an allowed merge command; else None."""
+    session = payload.get("session_id")
+    if not isinstance(session, str) or not re.fullmatch(r"[\w.-]+", session):
+        return None
+    command = (payload.get("tool_input") or {}).get("command")
+    if not isinstance(command, str) or not _MERGE_RE.search(command):
+        return None
+    marker = os.path.join(tempfile.gettempdir(), f"baton-gate-hint-{session}")
+    try:
+        fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except OSError:
+        return None
+    os.close(fd)
+    return MERGE_HINT
+
+
 def main(stdin_text):
     try:
         payload = json.loads(stdin_text)
@@ -273,6 +295,14 @@ def main(stdin_text):
         print(f"Baton publish gate could not check this command ({error!r}).", file=sys.stderr)
         return 2
     if not problems:
+        if not mcp:
+            try:
+                hint = _hint(payload)
+            except Exception:
+                hint = None
+            if hint:
+                print(json.dumps({"hookSpecificOutput": {
+                    "hookEventName": "PreToolUse", "additionalContext": hint}}))
         return 0
     print("Baton publish gate blocked this command:", file=sys.stderr)
     for problem in problems:

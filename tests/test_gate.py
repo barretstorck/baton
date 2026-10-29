@@ -247,6 +247,37 @@ class GateTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             return gate.main(json.dumps(payload))
 
+    def test_merge_hint_once_per_session(self):
+        def run(command, session="s1"):
+            payload = {"tool_name": "Bash", "cwd": "/", "tool_input": {"command": command}}
+            if session:
+                payload["session_id"] = session
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                code = gate.main(json.dumps(payload))
+            return code, out.getvalue()
+
+        tmp = tempfile.mkdtemp()
+        original, decide = tempfile.gettempdir, gate.decide
+        tempfile.gettempdir = lambda: tmp
+        try:
+            code, out = run("gh pr merge 5")
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(out), {"hookSpecificOutput": {
+                "hookEventName": "PreToolUse", "additionalContext": gate.MERGE_HINT}})
+            self.assertEqual(run("gh pr merge 5"), (0, ""))
+            code, out = run("gh pr merge 5", "s2")
+            self.assertEqual(code, 0)
+            self.assertIn(gate.MERGE_HINT, out)
+            self.assertEqual(run("gh pr merge 5", None), (0, ""))
+            self.assertEqual(run("gh pr view 5", "s3"), (0, ""))
+            gate.decide = lambda *args: ["privacy: x"]
+            code, out = run("gh pr merge 5", "s4")
+            self.assertEqual((code, out), (2, ""))
+        finally:
+            tempfile.gettempdir = original
+            gate.decide = decide
+
     def test_main_fails_closed_only_on_a_trigger(self):
         original = gate.decide
         gate.decide = lambda *args: 1 / 0
