@@ -418,12 +418,14 @@ def cmd_ready_check(args):
         print("usage: baton ready-check <issue-number>", file=sys.stderr)
         return 64
     cfg = _require_config()
-    data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "author,body,labels"]))
-    problems = issue.ready_problems(data, cfg, _maintainers(cfg), run.run)
+    data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "author,body,labels,comments"]))
+    maintainers = _maintainers(cfg)
+    problems = issue.ready_problems(data, cfg, maintainers, run.run)
     for problem in problems:
         print(f"- {problem}")
     if not problems:
-        print("ready")
+        print("ready (outside issue: the maintainer marks it ready)"
+              if issue.is_outside(data, maintainers) else "ready")
     return 1 if problems else 0
 
 

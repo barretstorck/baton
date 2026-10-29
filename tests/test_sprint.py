@@ -732,6 +732,27 @@ class DefaultBranchStateTest(unittest.TestCase):
         with self.assertRaises(run_module.RunError):
             sprint.actions_enabled(Broken({}), OWNER, "proj")
 
+    def _outside(self, comments=()):
+        return snap([issue(5, "ready", "deliverable", author="stranger", comments=list(comments))])
+
+    def test_outside_issue_without_approval_is_held(self):
+        result = self._outside()
+        self.assertEqual(result["dispatchable"], [])
+        self.assertEqual(result["held"], [{"number": 5, "reason":
+                         "outside issue without a maintainer's '/baton ready' comment"}])
+
+    def test_outside_issue_with_maintainer_approval_is_dispatchable(self):
+        result = self._outside([comment(OWNER, "/baton ready", 1)])
+        self.assertEqual(result["dispatchable"], [5])
+        self.assertEqual(result["held"], [])
+
+    def test_marker_or_non_maintainer_approval_leaves_outside_issue_held(self):
+        for item in (comment(OWNER, "<!-- baton:refine:status -->\n/baton ready", 1),
+                     comment("stranger", "/baton ready", 2)):
+            result = self._outside([item])
+            self.assertEqual(result["dispatchable"], [])
+            self.assertEqual(len(result["held"]), 1)
+
     def test_snapshot_contains_the_grace_field(self):
         data = replies([issue(1, "ready")], runs=[])
         data["gh api repos/octo/proj/commits/main"] = commit_reply("2026-10-22T11:57:00Z")
