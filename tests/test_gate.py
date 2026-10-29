@@ -191,10 +191,10 @@ class GateTest(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertTrue(gate.decide(cmd, plain, TERMS))
 
-    def test_an_unresolvable_directory_is_refused_in_a_baton_repository(self):
+    def test_an_unresolvable_directory_is_refused_when_publishing(self):
         repo = make_repo()
-        for cmd in ("cd $DIR && gh issue comment 5 --body x", "cd ~bob && ls",
-                    "git -C $DIR log", "pushd /tmp/*/x"):
+        for cmd in ("cd $DIR && git push", "git -C $DIR commit -m x",
+                    "pushd /tmp/*/x && git tag -m x v1", "cd ~bob && git push"):
             with self.subTest(cmd=cmd):
                 problems = gate.decide(cmd, repo, TERMS)
                 self.assertTrue(any("cannot be resolved" in p for p in problems), problems)
@@ -406,3 +406,74 @@ class GateTest(unittest.TestCase):
         payload["tool_name"] = "Read"
         self.assertEqual(gate.main(json.dumps(payload)), 0)
         self.assertEqual(gate.main("not json"), 0)
+
+
+class ReadOnlyCommandsTest(unittest.TestCase):
+    """Commands that publish nothing are allowed; publishing stays refused (#132)."""
+
+    def test_read_only_commands_are_allowed(self):
+        repo = make_repo()
+        for cmd in ('git -C "$dir" rev-parse --git-path hooks', 'git -C "$dir" status',
+                    'for r in a b; do git -C "$r" rev-parse --git-path hooks; done',
+                    "for r in a b; do git status; done", 'cd "$D" && ls', "cd ~bob && ls",
+                    "cd /x && W=a/b && git worktree add $W origin/main && cd $W && ls",
+                    f"sh {repo}/.git/hooks/pre-commit", "python3 .git/x.py", "make test-git",
+                    "cat > t.py <<'EOF'\nfrom test_githooks import git, make_repo\nEOF",
+                    "cat > t.md <<'EOF'\nRun git push when done.\nEOF",
+                    "baton comment issue 5 refine status - <<'EOF'\nUse gh and git here.\nEOF",
+                    "sh <<'EOF'\nls\nEOF"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [])
+
+    def test_heredoc_reaching_a_shell_is_checked(self):
+        repo = make_repo()
+        for cmd in ("cat <<'EOF' | sh\ngh issue close 1\nEOF",
+                    "cat <<EOF\n$(gh issue close 1)\nEOF",
+                    "cat <<EOF\n`gh issue close 1`\nEOF"):
+            with self.subTest(cmd=cmd):
+                self.assertTrue(gate.decide(cmd, repo, TERMS))
+        for cmd in ("cat <<'EOF' | sh\nls\nEOF", "cat <<EOF\n$(date)\nEOF",
+                    "cat <<'EOF'\n$(gh issue close 1)\nEOF"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [])
+
+    def test_publishing_stays_refused(self):
+        repo = make_repo()
+        for cmd in ('git -C "$dir" commit -m x', 'git -C "$dir" push', 'cd "$D" && git push',
+                    'git -C "$dir" tag -m x v1', "git commit --no-verify -m x",
+                    "git -c core.hooksPath=/dev/null commit -m x", "GIT_DIR=x git push",
+                    "if true; then gh issue close 1; fi", "for i in 1; do gh pr ready 5; done",
+                    "cd $DIR && gh issue comment 5 --body x", "sh -c 'git push'",
+                    "python3 x.py git push", "/usr/bin/gh issue close 1"):
+            with self.subTest(cmd=cmd):
+                self.assertTrue(gate.decide(cmd, repo, TERMS))
+
+    def test_heredoc_into_a_shell_is_decided_as_a_command(self):
+        repo = make_repo()
+        for cmd, refused in (("bash <<'EOF'\ngh issue close 1\nEOF", True),
+                             ("sh <<'EOF'\ngit commit --no-verify -m x\nEOF", True),
+                             ("bash <<'EOF'\ngit status\ngit log --oneline | head\nEOF", False),
+                             ("python3 - <<'EOF'\nimport subprocess\n"
+                              "subprocess.run(['git', 'rev-parse', 'HEAD'])\nEOF", False)):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(bool(gate.decide(cmd, repo, TERMS)), refused)
+
+    def test_refusals_say_what_to_do_instead(self):
+        repo = make_repo()
+        for cmd, hint in (("sh -c 'git push'", "directly"),
+                          ("git commit --no-verify -m x", "without"),
+                          ('cd "$D" && git push', "literally"),
+                          ("cd sub && git push", "repository's directory")):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, repo, TERMS)
+                self.assertTrue(any(hint in p for p in problems), problems)
+
+    def test_privacy_hint_only_for_privacy_findings(self):
+        repo = make_repo()
+        os.environ["BATON_PRIVATE_TERMS"] = "/nonexistent"
+        for cmd, shown in (("gh pr ready 5", False), (f'git commit -m "{IP}"', True)):
+            payload = {"tool_name": "Bash", "cwd": repo, "tool_input": {"command": cmd}}
+            stderr = io.StringIO()
+            with self.subTest(cmd=cmd), contextlib.redirect_stderr(stderr):
+                self.assertEqual(gate.main(json.dumps(payload)), 2)
+            self.assertEqual("placeholders" in stderr.getvalue(), shown, stderr.getvalue())

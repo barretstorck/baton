@@ -70,7 +70,9 @@ _GH_READ_ACTIONS = {"view", "list", "status", "checks", "diff", "download", "che
 _GH_READ_GROUPS = {"", "status", "search", "help"}
 _METHOD_OPTS = {"-X", "--method"}
 _EVALUATORS = {"bash", "sh", "zsh", "dash", "eval", "xargs", "source", ".", "node", "perl", "ruby"}
-_GH_OR_GIT = re.compile(r"\b(?:gh|git)\b")
+_SHELLS = {"sh", "bash", "zsh", "dash"}
+_GH_OR_GIT = re.compile(r"(?<![\w.\-])(?:gh|git)(?![\w.])")
+_KEYWORDS = {"if", "then", "else", "elif", "while", "until", "do", "!", "{"}
 _DIRECTORY_COMMANDS = ("cd", "pushd", "popd")
 _PLAIN_GIT_OPTS = {"--git-dir", "--work-tree", "--exec-path", "--namespace", "--config-env"}
 _API_VALUE_OPTS = {"--jq", "-q", "-H", "--header", "--hostname", "--cache", "--template", "-t"}
@@ -95,11 +97,15 @@ _AWKS = {"awk", "gawk", "mawk"}
 _CHECKED = {"sed", "find"} | _AWKS
 _EXPORTERS = {"export", "declare", "typeset", "readonly", "local"}
 _NAME = re.compile(r"^([A-Za-z_]\w*)(?:\[[^\]]*\])?(?:\+?=.*)?$", re.S)
-_ALIAS = "aliases and --config-env can run gh or git behind the gate; not allowed here"
-_BYPASS = "git hook bypass (--no-verify, -n, core.hooksPath or an overridden environment) is not allowed here"
-_NOT_PLAIN = "git publishing must be a plain command in the repository's own directory"
-_WRAPPER_MESSAGE = "cannot tell whether this writes to the forge"
-_NO_BRIEF = "no Baton brief found from the working directory; cannot check this command"
+_ALIAS = "aliases and --config-env can run gh or git behind the gate; write the git command out in full"
+_BYPASS = ("git hook bypass (--no-verify, -n, core.hooksPath or an overridden environment) is not allowed here; "
+           "commit or push without it so the Baton hooks scan the change")
+_NOT_PLAIN = ("git publishing must be a plain command: run it from the repository's directory, "
+              "without cd, pushd or -C in the same command")
+_WRAPPER_MESSAGE = ("cannot tell whether this runs gh or git; run the gh or git command directly, "
+                    "as a command of its own, so the gate can check it")
+_NO_BRIEF = ("no Baton brief found from the working directory, so this command cannot be checked; "
+             "run it from the repository's directory")
 _NO_COMMAND = "no baton command does this; ask the maintainer"
 _USE = {
     ("issue", "comment"): "baton comment", ("pr", "comment"): "baton comment",
@@ -121,6 +127,9 @@ class Call:
     args: list
     bad_env: bool
     unknown_option: bool = False
+    stdin: str = ""
+    expands: bool = False
+    piped: bool = False
 
 
 @dataclass
@@ -147,17 +156,104 @@ def tokenize(command):
         return command.split()
 
 
-def _invocations(tokens):
-    current = []
+_REDIRECTS = {">", ">>", "<", "<<", "<<<", ">&", "<&", "&>", "&>>", ">|", "<>"}
+_HEREDOC_START = re.compile(r"<<(-?)[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\"|([^\s;&|()<>'\"]+))")
+
+
+def _split_heredocs(command):
+    """Cut heredocs that start outside quotes and outside $(...) out of `command`.
+
+    Each operator and delimiter becomes `<<` and a placeholder word; the map goes from
+    placeholder to body. Heredocs inside quoted values are left in place.
+    """
+    out, bodies, pending, expanding = [], {}, [], set()
+    index, quote, depth, length = 0, "", 0, len(command)
+    while index < length:
+        char = command[index]
+        if quote == "'":
+            if char == "'":
+                quote = ""
+        elif char == "\\" and index + 1 < length:
+            out.append(char + command[index + 1])
+            index += 2
+            continue
+        elif quote == '"':
+            if char == '"':
+                quote = ""
+            elif command.startswith("$(", index):
+                depth += 1
+                out.append("$(")
+                index += 2
+                continue
+            elif char == ")" and depth:
+                depth -= 1
+        elif char in "'\"":
+            quote = char
+        elif command.startswith("$(", index):
+            depth += 1
+        elif char == ")" and depth:
+            depth -= 1
+        elif char == "<" and command.startswith("<<", index) and not depth \
+                and not command.startswith("<<<", index):
+            match = _HEREDOC_START.match(command, index)
+            if match:
+                word = match.group(2) or match.group(3) or match.group(4) or ""
+                name = f"__baton_heredoc_{len(bodies) + len(pending)}__"
+                pending.append((name, word, bool(match.group(1))))
+                if match.group(4) is not None:
+                    expanding.add(name)
+                out.append(f"<< {name}")
+                index = match.end()
+                continue
+        elif char == "\n" and pending and not depth:
+            out.append(char)
+            index += 1
+            for name, word, strip in pending:
+                lines = []
+                while index < length:
+                    end = command.find("\n", index)
+                    end = length if end < 0 else end
+                    line = command[index:end]
+                    index = min(end + 1, length)
+                    if (line.lstrip("\t") if strip else line) == word:
+                        break
+                    lines.append(line)
+                bodies[name] = "\n".join(lines)
+            pending = []
+            continue
+        out.append(char)
+        index += 1
+    for name, _, _ in pending:   # no newline followed: an empty body
+        bodies[name] = ""
+    return "".join(out), bodies, expanding
+
+
+def _invocations(tokens, heredocs=None, expanding=()):
+    """Yield (words, stdin, expands, piped) per invocation; redirections and their targets
+    are dropped. `expands` marks a heredoc whose delimiter was unquoted; `piped` marks a
+    command whose output goes into the next one."""
+    heredocs = heredocs or {}
+    current, stdin, skip, here, expands = [], "", False, False, False
     for token in tokens:
         if token and set(token) <= _PUNCTUATION:
+            if token in _REDIRECTS:
+                if current and current[-1].isdigit():
+                    current.pop()
+                skip, here = True, token in ("<<", "<<<")
+                continue
+            skip = False
             if current:
-                yield current
-            current = []
+                yield current, stdin, expands, token in ("|", "|&")
+            current, stdin, expands = [], "", False
+        elif skip:
+            skip = False
+            if here:
+                stdin = heredocs.get(token, token)
+                expands = token in expanding
         else:
             current.append(token)
     if current:
-        yield current
+        yield current, stdin, expands, False
 
 
 def _bad_name(name):
@@ -243,12 +339,14 @@ def _split_hit(words, start, end):
     return False
 
 
-def _call(words):
+def _call(words, stdin=""):
     bad_env, unknown, split_hit, index = False, False, False, 0
     while index < len(words):
         word = words[index]
         wrapper = os.path.basename(word)
-        if _ASSIGNMENT.match(word):
+        if word in _KEYWORDS:
+            index += 1
+        elif _ASSIGNMENT.match(word):
             bad_env = bad_env or _bad_env(word)
             index += 1
         elif wrapper in _WRAPPERS:
@@ -263,8 +361,8 @@ def _call(words):
             break
     unknown = unknown and (split_hit or any(_GH_OR_GIT.search(w) for w in words[index:]))
     if index >= len(words):
-        return Call("", [], bad_env, unknown)
-    return Call(os.path.basename(words[index]), words[index + 1:], bad_env, unknown)
+        return Call("", [], bad_env, unknown, stdin)
+    return Call(os.path.basename(words[index]), words[index + 1:], bad_env, unknown, stdin)
 
 
 def _options(args, value_opts):
@@ -496,22 +594,62 @@ def _has_brief(path):
         return False
 
 
+def _reaches_shell(calls, number):
+    """True when the call is a shell, or pipes into one later in its pipeline."""
+    while True:
+        if calls[number].program in _SHELLS:
+            return True
+        if not calls[number].piped or number + 1 >= len(calls):
+            return False
+        number += 1
+
+
+def _substitutions(text):
+    """Contents of `$(...)` and backtick substitutions in the body of an unquoted heredoc."""
+    found, index = [], 0
+    while index < len(text):
+        if text[index] == "\\":
+            index += 2
+        elif text.startswith("$(", index):
+            depth, end = 1, index + 2
+            while end < len(text) and depth:
+                depth += {"(": 1, ")": -1}.get(text[end], 0)
+                end += 1
+            found.append(text[index + 2:end - 1 if depth == 0 else end])
+            index = end
+        elif text[index] == "`":
+            end = text.find("`", index + 1)
+            end = len(text) if end < 0 else end
+            found.append(text[index + 1:end])
+            index = end + 1
+        else:
+            index += 1
+    return found
+
+
 def decide(command, cwd, terms):
-    calls = [_call(words) for words in _invocations(tokenize(command))]
+    stripped, heredocs, expanding = _split_heredocs(command)
+    calls = []
+    for words, stdin, expands, piped in _invocations(tokenize(stripped), heredocs, expanding):
+        call = _call(words, stdin)
+        call.expands, call.piped = expands, piped
+        calls.append(call)
     named = _named_directories(calls)
     if not _has_brief(cwd):
         literal = [os.path.join(cwd, os.path.expanduser(name)) for name in named
                    if _literal(name)]
         if not any(_has_brief(path) for path in literal):
             return []
-    elif any(not _literal(name) for name in named):
-        return ["a directory named by the command cannot be resolved (variable, "
-                "substitution, glob or ~user); name it literally"]
     problems, items = [], []
     moves = any(_changes_directory(call) for call in calls)
-    for call in calls:
+    for number, call in enumerate(calls):
         if call.unknown_option:
             problems.append(_WRAPPER_MESSAGE)
+        if call.stdin and _reaches_shell(calls, number):
+            problems.extend(decide(call.stdin, cwd, terms))
+        elif call.stdin and call.expands:
+            for inner in _substitutions(call.stdin):
+                problems.extend(decide(inner, cwd, terms))
         if _is_evaluator(call.program):
             if any(_GH_OR_GIT.search(arg) for arg in call.args):
                 problems.append(_WRAPPER_MESSAGE)
@@ -534,6 +672,10 @@ def decide(command, cwd, terms):
     if not publishing:
         return list(dict.fromkeys(problems))
 
+    if _has_brief(cwd) and any(not _literal(name) for name in named):
+        problems.append("a directory named by a command that commits, pushes or tags "
+                        "cannot be resolved (variable, substitution, glob or ~user); "
+                        "name it literally")
     if moves or not all(item.plain for item in publishing):
         problems.append(_NOT_PLAIN)
     if any(call.bad_env for call in calls):
@@ -587,5 +729,6 @@ def main(stdin_text):
     print("Baton publish gate blocked this command:", file=sys.stderr)
     for problem in problems:
         print(f"- {problem}", file=sys.stderr)
-    print("Replace private details with placeholders and retry.", file=sys.stderr)
+    if any(problem.startswith("privacy:") for problem in problems):
+        print("Replace private details with placeholders and retry.", file=sys.stderr)
     return 2
