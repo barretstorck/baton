@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 
+from . import issue as issue_mod
 from . import scan
 from .comment import CommentError
 
@@ -124,6 +125,22 @@ def edit_milestone(cfg, runner, ref, terms, title=None, description=None, due_on
         if value is not None and value != "":
             argv += ["-f", f"{key}={value}"]
     return runner(argv).strip()
+
+
+def mark_missed(cfg, runner, number, milestone_ref, terms):
+    """Record that an issue missed its sprint: description line, label, no milestone."""
+    ref = str(milestone_ref)
+    listing = json.loads(runner(["gh", "api", _MILESTONES + "?state=all"]) or "[]")
+    found = [m for m in listing
+             if m.get("title") == ref or str(m.get("number")) == ref]
+    if not found:
+        raise CommentError(f"no milestone {ref!r}")
+    milestone = found[0]
+    data = json.loads(runner(["gh", "issue", "view", str(number), "--json", "body"]) or "{}")
+    body = issue_mod.add_missed_line(data.get("body") or "", milestone["title"],
+                                     milestone.get("html_url", ""))
+    return edit(cfg, runner, "issue", number, terms, body=body,
+                add_labels=[cfg.label("missed-sprint")], remove_milestone=True)
 
 
 class UsageError(CommentError):

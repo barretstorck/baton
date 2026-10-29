@@ -10,7 +10,7 @@
 |---|---|
 | Issues completed | |
 | Pull requests merged | |
-| Issues carried over (`missed`) | |
+| Issues carried over (`missed-sprint`) | |
 | Follow-up issues filed (critical / important) | |
 | Problems fixed in review instead of filed | |
 | Default branch at the end | |

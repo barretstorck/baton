@@ -469,8 +469,7 @@ is running:
    same pull request, which the maintainer must approve because `.baton/` is protected. A change
    to Baton itself is written up for the maintainer; never edit the plugin's files.
 3. For each unfinished issue: remove it from the milestone and add the label
-   `missed:<sprint title>` (`baton issue edit <N> --remove-milestone --add-label missed:<title>`) ([GitLab's milestone cleanup](https://handbook.gitlab.com/handbook/engineering/workflow/#milestone-cleanup)).
-   Create the label if it does not exist.
+   `missed-sprint` and a `Missed sprint:` line to its description (`baton issue missed <N> "<sprint title>"`) ([GitLab's milestone cleanup](https://handbook.gitlab.com/handbook/engineering/workflow/#milestone-cleanup)).
 4. List spike prototypes in the retrospective.
 5. Close the milestone: `baton milestone edit <title> --state closed`.
 6. End with a regular, full response, not the three-section update. This is the only point in a

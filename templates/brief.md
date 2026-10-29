@@ -47,6 +47,7 @@ labels:
     broken-default-branch: "broken-default-branch"
     needs-maintainer: "needs-maintainer"
     awaiting-feedback: "awaiting-feedback"
+    missed-sprint: "missed-sprint"
     closed:spam: "closed:spam"
     closed:duplicate: "closed:duplicate"
     closed:support: "closed:support"
