@@ -83,6 +83,7 @@ work_mix: {}                  # optional target share of work by type, shown by 
 spike:                        # limits for a spike's Timebox: line, picked by the refiner; each part is optional
   tokens: {}                  # weighted tokens as `baton usage` counts them; write optional min: and max: on indented lines
   minutes: {}                 # wall-clock minutes; the same form, e.g. min: 30 then max: 120 on indented lines
+  max_per_sprint: 2           # most spikes sprint-plan proposes per sprint; 0: none
 ---
 # Baton brief
 
