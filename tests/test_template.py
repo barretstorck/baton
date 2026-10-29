@@ -264,3 +264,14 @@ class TemplateTest(unittest.TestCase):
         for want in ("Outcome:", "infeasible", "single", "multiple", "partial",
                      "Re-refine issue <O> after spike #<S>.", "Spike for:", "Origin: outside"):
             self.assertIn(want, text)
+
+    def test_skills_read_issues_through_baton_issue_read(self):
+        for name in ("refine", "research", "develop", "review"):
+            text = (ROOT / "skills" / name / "SKILL.md").read_text()
+            flat = " ".join(text.split())
+            self.assertIn("baton issue read", flat, name)
+            self.assertIn("withheld; see Triage summary", flat, name)
+            # `gh issue view` may appear only where the line names the replacement.
+            for line in text.splitlines():
+                if "gh issue view" in line:
+                    self.assertIn("baton issue read", line, name)
