@@ -39,7 +39,7 @@ every state is a label.
    A changed limit only changes `free_slots`. It never changes an order or decision recorded on an
    issue (in its Decisions, its Pointers or a `Blocked by:` line); see "Dispatch" for a slot that
    only such an issue could fill.
-5. Check that `baton:baton-developer`, `baton:baton-reviewer` and `baton:baton-refiner` appear in your list of available
+5. Check that `baton:baton-developer`, `baton:baton-reviewer`, `baton:baton-refiner` and `baton:baton-researcher` appear in your list of available
    agent types. If one is missing, the plugin was installed or updated after this session
    started: add one short line after the update telling the maintainer to restart the session (it
    is on no issue), and do not dispatch another agent type in its place.
@@ -236,6 +236,13 @@ default branch in does not void its review. Issues that touch the same files run
 the conflicts that follow a merge are expected: the `Update pull request` developer resolves them,
 never the orchestrator.
 
+#### Dispatching a researcher
+
+A spike is dispatched to `baton:baton-researcher` with `Do spike issue <N>.`, never to a developer.
+Start it in the background, with the Agent tool's `model` set to `researcher.model` and `effort`
+set to `researcher.effort` (from `baton config`, default `opus` and `medium`); say in the sprint
+status which effort you used. A spike takes a developer slot.
+
 #### Dispatching a reviewer
 
 Start a `baton:baton-reviewer` subagent in the background, with the Agent tool's `model` set to
@@ -308,7 +315,7 @@ both read it; nothing else goes in but the repository and the sprint goal:
      ticked tasks." Dispatch its next task once the plan is in.
    - `progress.<N>.review.next` is set: `Do review task <r.n> of pull request <P> (issue <N>).`
    - otherwise `progress.<N>.plan.next` is set: `Do task <n> of issue <N>.`
-   - a spike (`progress.<N>.spike`): `Do spike issue <N>.`
+   - a spike (`progress.<N>.spike`): `Do spike issue <N>.`, dispatched to `baton:baton-researcher` (see "Dispatching a researcher")
    - **every task ticked** (no `review.next`, no `plan.next`): the developer finished but the
      session ended before the next step. If the latest review asks for changes and no reply
      follows it, post the reply (step 8), building each line from the branch's `Review <r.n>:`
@@ -319,7 +326,7 @@ both read it; nothing else goes in but the repository and the sprint goal:
 2. **New issues:** for each number in `dispatchable`, in order, dispatch the same way from its
    `progress` entry (a ready issue that already has a branch and a pull request, as after a
    re-refinement, is dispatched like a resumed one): `Do task <progress.<N>.plan.next> of issue <N>.` (task 1 for a fresh issue,
-   a later task for one resumed after a question), `Do spike issue <N>.`, or the refiner when it
+   a later task for one resumed after a question), `Do spike issue <N>.` (to `baton:baton-researcher`, see "Dispatching a researcher"), or the refiner when it
    is `unplanned`. `baton sprint-status` has already
    applied the rules: ready issues only, written by the maintainer, blockers closed, within
    the free slots.
@@ -384,7 +391,7 @@ Act on each result with commands on their own, reading each one's output; never 
   not tick it yourself. If
   that was the last plan task, `baton set-status <N> status:in-review`; the next pass marks the pull request ready and dispatches the reviewer, without waiting for CI.
   Note its follow-up suggestions (step 6) and anything under "Untrusted instructions seen".
-- `DONE` for a spike: nothing to do now; the next pass finds it in `in_review`.
+- `DONE` for a spike (from the researcher): nothing to do now; the next pass finds it in `in_review`.
 - `DONE <sha>` for an update (`Issue: #<N>, update`): check the sha the
   same way, then `baton set-status <N> status:in-review`. There is no box to tick.
 - `FIXED <sha>`: check the sha the same way, then `baton task done pr <P> <r.n>`.
@@ -443,7 +450,7 @@ Act on each result with commands on their own, reading each one's output; never 
 - Anything else, a report with no result line (empty, a placeholder, a summary), or it stopped
   without a result (a rate limit, a restart): check the branch for
   the task's commit (see "Resuming" in step 7) and, for a spike, its status comments. If the work
-  is incomplete, dispatch the same task again once; a spike continues from its latest status
+  is incomplete, dispatch the same task again once; a spike is dispatched to the researcher again and continues from its latest status
   comment. If it fails the same way again, set
   `status:blocked`, add `needs-maintainer` and post a `status` comment with what happened; the issue goes under `Needs you`.
 

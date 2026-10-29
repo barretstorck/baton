@@ -224,3 +224,9 @@ class TemplateTest(unittest.TestCase):
         for text in (sprint, review):
             for gone in ("baton plan commit", "baton plan link", "baton plan pin"):
                 self.assertNotIn(gone, text)
+
+    def test_sprint_dispatches_spikes_to_researcher(self):
+        sprint = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        self.assertIn("baton:baton-researcher", sprint)
+        self.assertIn("researcher.model", sprint)
+        self.assertIn("/baton:research", (ROOT / "README.md").read_text())
