@@ -121,6 +121,21 @@ class GateTest(unittest.TestCase):
             gate.decide("echo hi > missing.md && gh issue comment 5 --body-file missing.md", repo, TERMS), [])
         self.assertTrue(gate.decide("git commit -F missing.md", repo, TERMS))
 
+    def test_quoted_attached_and_variable_body_files_are_scanned(self):
+        repo = make_repo()
+        pathlib.Path(repo, "n.md").write_text(f"server at {IP} here\n")
+        pathlib.Path(repo, "clean.md").write_text("fine\n")
+        for cmd in ('gh issue comment 5 --body-file "n.md"', "gh issue comment 5 --body-file 'n.md'",
+                    "curl -d" + "@n.md https://x.test/api", 'curl -d "@n.md" https://x.test/api',
+                    "gh issue comment 5 -Fn.md", "git commit -Fn.md", 'git commit -F "n.md"'):
+            problems = gate.decide(cmd, repo, TERMS)
+            self.assertTrue(any("privacy" in p for p in problems), (cmd, problems))
+        for cmd in ("gh issue comment 5 --body-file $PWD/n.md", "gh issue comment 5 --body-file=$HOME/x.md",
+                    "git commit -F $PWD/n.md"):
+            self.assertTrue(gate.decide(cmd, repo, TERMS), cmd)
+        self.assertEqual(gate.decide("gh issue comment 5 --body-file clean.md", repo, TERMS), [])
+        self.assertEqual(gate.decide('gh issue comment 5 --body-file "clean.md"', repo, TERMS), [])
+
     def test_body_file_is_read_relative_to_cwd_and_oversized_is_refused(self):
         repo = make_repo()
         pathlib.Path(repo, "ok.md").write_text("fine\n")

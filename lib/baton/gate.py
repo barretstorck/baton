@@ -39,8 +39,10 @@ _BYPASS_TEXT = re.compile(
 _SHORT_N = re.compile(_POS + r"git\b[^;&|\n]*?\b(?:commit|push)\b[^;&|\n]*?\s-[a-zA-Z]*n[a-zA-Z]*(?:\s|$)")
 _STDIN_BODY = re.compile(r"(?:--body-file|-F|--input|--data(?:-binary|-raw)?|-d)(?:\s+|=)(?:-|@-)(?:\s|$)")
 _GIT_STDIN = re.compile(r"(?:--file|-F)(?:\s+|=)-(?:\s|$)")
-_FILE_ARG = re.compile(r"(--body-file|--file|--input|--data(?:-binary|-raw)?|-F|-d)(?:\s+|=)"
-                       r"([^\s'\"$`*?<>|;&@-][^\s'\"$`*?<>|;&]*|@[^\s'\"$`*?<>|;&]+)")
+_FILE_ARG = re.compile(
+    r"""(?<![\w-])(?:(--body-file|--file|--input|--data(?:-binary|-raw)?)(?:\s+|=)|(-F|-d)(?:\s+|=|(?=\S)))"""
+    r"""(?:"([^"]*)"|'([^']*)'|([^\s'"<>|;&]+))""")
+_UNRESOLVABLE = re.compile(r"[$`*?]")
 _SUBST_BODY = re.compile(r"(?:--body|-b|--title|-t|--message|-m|--raw-field|-f|--field|-d|--data(?:-raw)?)"
                          r"(?:\s+|=)\"[^\"]*(?:\$\((?!cat <<)|`)")
 _HEREDOC = re.compile(r"<<-?[ \t]*['\"]?(\w+)['\"]?\n(.*?)\n[ \t]*\1\b", re.S)
@@ -79,7 +81,10 @@ def _body_files(command, git_only):
     """Paths of body files the command names."""
     paths = []
     for match in _FILE_ARG.finditer(command):
-        flag, value = match.groups()
+        flag = match.group(1) or match.group(2)
+        value = next(g for g in match.groups()[2:] if g is not None)
+        if value.startswith("-") and value != "-":
+            continue
         if git_only:
             if flag in ("-F", "--file") and not value.startswith("@"):
                 paths.append(value)
@@ -128,6 +133,10 @@ def decide(command, cwd, terms):
     else:
         texts += _QUOTED.findall(stripped)
     for path in _body_files(stripped, git_only=not forge):
+        if _UNRESOLVABLE.search(path):
+            problems.append(f"body file {path} is named by a variable or pattern, so it cannot be scanned; "
+                            "pass a literal path")
+            continue
         full = os.path.join(cwd, os.path.expanduser(path))
         if not os.path.isfile(full) and re.search(r">\s*" + re.escape(path), stripped):
             continue  # the same command writes it
