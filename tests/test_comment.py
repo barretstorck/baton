@@ -179,3 +179,66 @@ class NotifyTest(unittest.TestCase):
         issue = {"comments": [c("octo", text, 1)]}
         self.assertEqual(comment.pending_answers(issue, OWNER),
                          comment.pending_answers({"comments": []}, OWNER))
+
+
+class NotifyCliTest(unittest.TestCase):
+    def _run(self, args, issues=None, comments=None):
+        import io
+        from unittest import mock
+        from baton import cli
+        calls = []
+
+        def runner(cmd, *a, **k):
+            calls.append(cmd)
+            if cmd[:3] == ["gh", "issue", "list"]:
+                return json.dumps(issues or [])
+            if cmd[:3] == ["gh", "issue", "view"]:
+                return json.dumps({"comments": comments or []})
+            if cmd[:3] == ["gh", "issue", "comment"]:
+                return "https://x/1#c"
+            return ""
+        cfg = mock.MagicMock()
+        cfg.maintainers.return_value = ["me"]
+        cfg.label.side_effect = lambda n: n
+        cfg.data = {"privacy_allow": []}
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg), \
+                mock.patch.object(cli, "_owner", return_value="me"), \
+                mock.patch.object(cli.run, "run", runner), \
+                mock.patch.object(cli.scan, "load_terms", return_value=[]), \
+                mock.patch.object(cli.questions, "notify_matches",
+                                  return_value=[7] if issues else []), \
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+            code = cli.main(args)
+        return code, out.getvalue(), err.getvalue(), calls
+
+    def test_registered(self):
+        from baton import cli
+        self.assertIn("notify", cli.COMMANDS)
+
+    def test_wrong_arguments_exit_64(self):
+        for args in (["notify"], ["notify", "1", "bogus", "-"], ["notify", "x", "stuck", "-"],
+                     ["notify", "--rules", "1"]):
+            code, _, err, _ = self._run(args)
+            self.assertEqual(code, 64, args)
+            self.assertIn("stuck", err)
+
+    def test_notify_posts_then_already(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".txt") as f:
+            f.write("blocked")
+            f.flush()
+            code, out, _, calls = self._run(["notify", "5", "stuck", f.name])
+            self.assertEqual((code, out.strip()), (0, "https://x/1#c"))
+            self.assertTrue(any(c[:3] == ["gh", "issue", "edit"] for c in calls))
+            marked = [{"body": "<!-- baton:notify:stuck -->"}]
+            code, out, _, _ = self._run(["notify", "5", "stuck", f.name], comments=marked)
+            self.assertEqual((code, out.strip()), (0, "already notified"))
+
+    def test_rules_once(self):
+        issues = [{"number": 7}]
+        code, out, _, _ = self._run(["notify", "--rules"], issues=issues)
+        self.assertEqual((code, out.strip()), (0, "#7 https://x/1#c"))
+        marked = [{"body": "<!-- baton:notify:rule -->"}]
+        code, out, _, _ = self._run(["notify", "--rules"], issues=issues, comments=marked)
+        self.assertEqual(out.strip(), "#7 already notified")
