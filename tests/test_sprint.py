@@ -1034,9 +1034,9 @@ class SprintMetricsCommandTest(unittest.TestCase):
         self.assertIn("milestone not found", err)
 
 
-def _retro_text(days, done, tasks, tokens="1000"):
+def _retro_text(days, done, tasks, tokens="1000", spikes="0"):
     return (f"# Sprint\n\n## Metrics\n\nduration_days: {days}\nissues_worked: {done}\n"
-            f"issues_completed: {done}\nissues_missed: 0\nplan_tasks_done: {tasks}\nspikes: 0\n"
+            f"issues_completed: {done}\nissues_missed: 0\nplan_tasks_done: {tasks}\nspikes: {spikes}\n"
             f"tokens: {tokens}\n\n## Other\nx\n")
 
 
@@ -1081,6 +1081,21 @@ class CapacityTests(unittest.TestCase):
     def test_no_retros(self):
         self.assertEqual(sprint.capacity([], 7), {"retros": 0, "days": 7, "note": "no past retros"})
         self.assertEqual(sprint.recent_metrics(self.root, "missing"), [])
+
+    def test_spikes_leave_throughput(self):
+        self.put("Sprint 2026-01-01-1.md", _retro_text(7, 6, 6, spikes=2))
+        self.put("Sprint 2026-01-02-1.md", _retro_text(7, 6, 6, spikes=2))
+        result = sprint.capacity(self.recent(), 7)
+        self.assertEqual(result["issues_per_day"], 0.57)
+        self.assertEqual(result["tasks_per_day"], 0.86)
+
+    def test_blank_spikes_count_all_issues(self):
+        self.put("Sprint 2026-01-01-1.md", _retro_text(7, 7, 7, spikes=""))
+        self.assertEqual(sprint.capacity(self.recent(), 7)["issues_per_day"], 1.0)
+
+    def test_spikes_above_completed_count_zero(self):
+        self.put("Sprint 2026-01-01-1.md", _retro_text(7, 2, 2, spikes=5))
+        self.assertEqual(sprint.capacity(self.recent(), 7)["issues_per_day"], 0.0)
 
     def test_low_throughput_proposes_one(self):
         self.put("Sprint 2026-01-01-1.md", _retro_text(30, 1, 1))

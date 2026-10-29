@@ -610,7 +610,9 @@ def capacity(metrics, days, buffer=BUFFER):
     if not metrics:
         return {"retros": 0, "days": days, "note": "no past retros"}
     total = sum(m["duration_days"] for m in metrics)
-    issues_rate = sum(m["issues_completed"] for m in metrics) / total
+    # Spikes count toward capacity but not toward throughput.
+    issues_rate = sum(max(m["issues_completed"] - (m.get("spikes") or 0), 0)
+                      for m in metrics) / total
     tasks_rate = sum(m["plan_tasks_done"] for m in metrics) / total
     timed = [m for m in metrics if m.get("tokens") is not None]
     timed_days = sum(m["duration_days"] for m in timed)
