@@ -97,11 +97,15 @@ _AWKS = {"awk", "gawk", "mawk"}
 _CHECKED = {"sed", "find"} | _AWKS
 _EXPORTERS = {"export", "declare", "typeset", "readonly", "local"}
 _NAME = re.compile(r"^([A-Za-z_]\w*)(?:\[[^\]]*\])?(?:\+?=.*)?$", re.S)
-_ALIAS = "aliases and --config-env can run gh or git behind the gate; not allowed here"
-_BYPASS = "git hook bypass (--no-verify, -n, core.hooksPath or an overridden environment) is not allowed here"
-_NOT_PLAIN = "git publishing must be a plain command in the repository's own directory"
-_WRAPPER_MESSAGE = "cannot tell whether this writes to the forge"
-_NO_BRIEF = "no Baton brief found from the working directory; cannot check this command"
+_ALIAS = "aliases and --config-env can run gh or git behind the gate; write the git command out in full"
+_BYPASS = ("git hook bypass (--no-verify, -n, core.hooksPath or an overridden environment) is not allowed here; "
+           "commit or push without it so the Baton hooks scan the change")
+_NOT_PLAIN = ("git publishing must be a plain command: run it from the repository's directory, "
+              "without cd, pushd or -C in the same command")
+_WRAPPER_MESSAGE = ("cannot tell whether this runs gh or git; run the gh or git command directly, "
+                    "as a command of its own, so the gate can check it")
+_NO_BRIEF = ("no Baton brief found from the working directory, so this command cannot be checked; "
+             "run it from the repository's directory")
 _NO_COMMAND = "no baton command does this; ask the maintainer"
 _USE = {
     ("issue", "comment"): "baton comment", ("pr", "comment"): "baton comment",
@@ -678,5 +682,6 @@ def main(stdin_text):
     print("Baton publish gate blocked this command:", file=sys.stderr)
     for problem in problems:
         print(f"- {problem}", file=sys.stderr)
-    print("Replace private details with placeholders and retry.", file=sys.stderr)
+    if any(problem.startswith("privacy:") for problem in problems):
+        print("Replace private details with placeholders and retry.", file=sys.stderr)
     return 2

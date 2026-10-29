@@ -59,6 +59,9 @@ Where a row says "write ... to a file", an inline heredoc works too and needs no
 
 ## Rules the publish gate enforces
 
+The gate checks only commands that publish (raw `gh` writes, and git commit, push and tag).
+Harmless commands that mention `.git` paths, variables or heredoc text are allowed.
+
 - Body files must exist before the command that posts them runs. Write the file in one step and
   post it in the next.
 - No text from stdin, a shell variable or `$(...)` in a title, body or commit message. Inline text
