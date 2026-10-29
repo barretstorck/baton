@@ -137,6 +137,38 @@ class MissedTest(unittest.TestCase):
         self.assertFalse([c for c in r.calls if c[:3] == ["gh", "issue", "edit"]])
 
 
+class MissedCliTest(unittest.TestCase):
+    def _main(self, argv, runner):
+        import contextlib, io
+        from unittest import mock
+        from baton import cli
+        err = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.run, "run", runner), \
+                mock.patch.object(cli.scan, "load_terms", return_value=[]), \
+                contextlib.redirect_stderr(err):
+            return cli.main(argv), err.getvalue()
+
+    def test_missed_runs_edit(self):
+        r = Capture(dict(MissedTest.REPLIES))
+        code, _ = self._main(["issue", "missed", "7", "Sprint 1"], r)
+        self.assertEqual(code, 0)
+        self.assertIn("--remove-milestone", r.calls[-1])
+
+    def test_usage_errors(self):
+        for argv in (["issue", "missed"], ["issue", "missed", "7"],
+                     ["issue", "missed", "x", "S"], ["issue", "missed", "7", "S", "extra"]):
+            r = Capture({})
+            code, err = self._main(argv, r)
+            self.assertEqual(code, 64)
+            self.assertIn("usage", err)
+            self.assertEqual(r.calls, [])
+
+    def test_unknown_milestone_exits_1(self):
+        code, _ = self._main(["issue", "missed", "7", "Nope"], Capture(dict(MissedTest.REPLIES)))
+        self.assertEqual(code, 1)
+
+
 class ParseTest(unittest.TestCase):
     def test_issue_create(self):
         o = publish.parse_issue(["create", "--title", "T", "--label", "a", "--label=b",

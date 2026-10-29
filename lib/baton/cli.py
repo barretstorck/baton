@@ -188,7 +188,23 @@ def _edit(target, opts, cfg, terms):
     return None
 
 
+def _issue_missed(args):
+    if len(args) != 3 or not args[1].isdigit():
+        print("usage: baton issue missed <issue number> <milestone title or number>",
+              file=sys.stderr)
+        return 64
+    try:
+        publish.mark_missed(_require_config(), run.run, int(args[1]), args[2], scan.load_terms())
+    except comment.CommentError as error:
+        print(f"baton: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_issue(args):
+    if args[:1] == ["missed"]:
+        return _issue_missed(args)
+
     def act(o, cfg, terms):
         if o["action"] == "create":
             return publish.create_issue(cfg, run.run, o["title"], _body(o), o["labels"],
