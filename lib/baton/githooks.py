@@ -7,7 +7,7 @@ from . import config, run, scan
 
 HOOK_TAG = "baton git-hook"
 ZEROS = "0" * 40
-HOOKS = ("pre-commit", "pre-push")
+HOOKS = ("pre-commit", "commit-msg", "pre-push")
 
 
 class HookError(Exception):
@@ -176,6 +176,17 @@ def pre_commit(cwd, terms):
     return _check(cfg, patch, new_files, terms, cwd=cwd, branch=_current_branch(cwd))
 
 
+def commit_msg(cwd, message_path, terms):
+    """Scan a commit message file; lines starting with `#` are git comments and are skipped."""
+    cfg = config.load(cwd)
+    if cfg is None:
+        return []
+    text = pathlib.Path(message_path).read_text(errors="replace")
+    message = "\n".join(line for line in text.split("\n") if not line.startswith("#"))
+    findings = scan.scan_text(message, terms, cfg.data["privacy_allow"])
+    return [f"privacy: {kind} in the commit message" for kind in sorted({f.kind for f in findings})]
+
+
 def _pushed_branch(local_ref, remote_ref):
     """The remote branch name when the push is tied to the issue it names, else "" (no allowances).
 
@@ -212,6 +223,11 @@ def pre_push(cwd, stdin_text, terms):
             git + ["log", "--diff-filter=AR", "--name-only", "--format="] + revs))
         branch = _pushed_branch(local_ref, remote_ref)
         problems.extend(_check(cfg, patch, new_files, terms, messages, cwd=cwd, branch=branch))
+        if remote_ref.startswith("refs/tags/") and run.run(git + ["cat-file", "-t", local_sha]).strip() == "tag":
+            raw = run.run(git + ["cat-file", "tag", local_sha])
+            tag_message = raw.split("\n\n", 1)[1] if "\n\n" in raw else ""
+            findings = scan.scan_text(tag_message, terms, cfg.data["privacy_allow"])
+            problems.extend(f"privacy: {kind} in the tag message" for kind in sorted({f.kind for f in findings}))
     return sorted(set(problems))
 
 

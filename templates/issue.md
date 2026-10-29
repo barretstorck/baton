@@ -1,3 +1,5 @@
+<!-- The maintainer ranks the issue with `baton set-priority` and `baton set-severity` (bugs only). -->
+
 ## Context
 
 What is wrong or missing, and why it matters. Check a claim about current behaviour or past measurements against the code or a linked comment, or mark it unverified and name its source (for example "per the developer of #N").

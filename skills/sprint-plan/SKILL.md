@@ -47,7 +47,13 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
      them ready.
 
 5. **Propose.** Show the maintainer a table: order, issue, title, deliverable or stretch,
-   plan tasks, blockers, overlaps. Under it list what you left out and why. Wait for approval or changes.
+   plan tasks, blockers, overlaps. Under it list what you left out and why.
+   Also give one line with the mix: the count and percentage of the proposed issues by type
+   (feature, maintenance, bug), counting by the `type:` labels named in `labels.map` of
+   `baton config`; spikes are counted separately and are not part of the percentages. When
+   `work_mix` in `baton config` is not empty, add the target next to each type and the difference
+   in percentage points. The mix is information only: it never blocks, holds back or changes a plan.
+   Wait for approval or changes.
    **Do not create anything before the maintainer says yes.**
 
 6. **Create the sprint**, once approved.
@@ -74,7 +80,7 @@ If this run is unattended (the request says it is scheduled, or no maintainer is
 steps 1 to 4, then post the proposal instead of creating the sprint:
 
 - create an issue titled `Sprint proposal <date>` with the table as its description and the
-  `needs-maintainer` label;
+  `needs-maintainer` label, with the same mix line under the table;
 - stop. The maintainer approves by running `/baton:sprint-plan` or by creating the milestone.
 
 ## Never

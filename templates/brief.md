@@ -38,6 +38,14 @@ labels:
     stretch: "stretch"
     broken-default-branch: "broken-default-branch"
     needs-maintainer: "needs-maintainer"
+    priority:1: "priority:1"
+    priority:2: "priority:2"
+    priority:3: "priority:3"
+    priority:4: "priority:4"
+    severity:1: "severity:1"
+    severity:2: "severity:2"
+    severity:3: "severity:3"
+    severity:4: "severity:4"
 merge:
   allow_no_ci: false          # true only for repositories with no CI at all; the reviewer then starts without waiting for CI
 verify:
@@ -52,6 +60,7 @@ privacy_allow: []             # literal strings the privacy scan should ignore
                               # (Python dependency files are already exempt from private-ip: see README)
 forbid_added: {}              # path glob: regex; a commit or pull request adding a matching line to a matching file is refused (see Conventions)
 budgets: {}
+work_mix: {}                  # optional target share of work by type, shown by sprint-plan, never enforced; e.g. feature: 60, maintenance: 30, bug: 10 (must add up to 100; empty: no target)
 ---
 # Baton brief
 
