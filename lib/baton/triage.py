@@ -2,6 +2,7 @@
 import json
 import re
 
+from . import run as runmod
 from . import scan
 from .comment import CommentError
 
@@ -151,3 +152,50 @@ def with_summary(body, section):
     if not after:
         return body[:found.start()] + section + "\n"
     return body[:found.start()] + section + "\n\n" + body[after.start():]
+
+
+CLOSING = ("spam", "duplicate", "support")
+
+
+def load_issue(runner, number):
+    """The issue as the forge reports it, or TriageError when it does not exist."""
+    try:
+        reply = runner(["gh", "issue", "view", str(number), "--json",
+                        "number,author,body,labels,state"])
+    except runmod.RunError as err:
+        raise TriageError(f"issue #{number} could not be read: {err}")
+    if not reply or not reply.strip():
+        raise TriageError(f"issue #{number} does not exist")
+    try:
+        issue = json.loads(reply)
+    except ValueError:
+        raise TriageError(f"issue #{number} could not be read")
+    if not isinstance(issue, dict):
+        raise TriageError(f"issue #{number} could not be read")
+    return issue
+
+
+def _exists(runner, number):
+    try:
+        reply = runner(["gh", "issue", "view", str(number), "--json", "number"])
+    except runmod.RunError:
+        return False
+    return bool(reply and reply.strip())
+
+
+def check(cfg, runner, number, decision, issue, maintainers, terms, owner, repo):
+    """Refuse a decision that does not fit the issue. Runs no write command."""
+    if str(issue.get("state", "")).upper() == "CLOSED":
+        raise TriageError(f"issue #{number} is closed")
+    category = decision["category"]
+    author = ((issue.get("author") or {}).get("login") or "").lower()
+    if category in CLOSING and author in {name.lower() for name in maintainers}:
+        raise TriageError("never closes an issue written by a maintainer")
+    original = decision.get("duplicate_of")
+    if category == "duplicate":
+        if original == number:
+            raise TriageError("duplicate_of is the issue itself")
+        if not _exists(runner, original):
+            raise TriageError(f"duplicate_of #{original} does not exist")
+    if decision.get("comment"):
+        check_comment(cfg, decision["comment"], terms, owner, repo)

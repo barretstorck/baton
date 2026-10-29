@@ -3,6 +3,7 @@ import json
 import unittest
 
 from baton import triage
+from tests.fakes import FakeRunner
 
 
 def valid(category):
@@ -162,3 +163,65 @@ class SummaryTests(unittest.TestCase):
     def test_with_summary_replaces_last(self):
         out = triage.with_summary("Intro\n\n## Triage summary\n\nOld", "## Triage summary\n\nNew")
         self.assertEqual(out, "Intro\n\n## Triage summary\n\nNew\n")
+
+
+WRITES = ("gh issue edit", "gh issue close", "gh issue comment", "gh issue lock")
+
+
+def issue_json(author="outsider", state="OPEN"):
+    return json.dumps({"number": 5, "author": {"login": author}, "body": "b",
+                       "labels": [], "state": state})
+
+
+def run_check(testcase, decision, issue, replies=None, maintainers=("Boss",)):
+    runner = FakeRunner(replies or {})
+    triage.check(FakeCfg(), runner, 5, triage.parse_decision(json.dumps(decision)),
+                 issue, list(maintainers), [], "o", "r")
+    testcase.assertFalse([c for c in runner.lines() if c.startswith(WRITES)])
+    return runner
+
+
+class CheckTests(unittest.TestCase):
+    def issue(self, **kw):
+        return json.loads(issue_json(**kw))
+
+    def refuse(self, decision, issue, fragment, replies=None):
+        with self.assertRaises(triage.TriageError) as ctx:
+            run_check(self, decision, issue, replies)
+        self.assertIn(fragment, str(ctx.exception))
+
+    def test_closed_issue(self):
+        self.refuse(valid("spam"), self.issue(state="CLOSED"), "closed")
+
+    def test_maintainer_issue_not_closed(self):
+        for category in ("spam", "duplicate", "support"):
+            self.refuse(valid(category), self.issue(author="boss"),
+                        "never closes an issue written by a maintainer",
+                        {"gh issue view 3": '{"number": 3}'})
+
+    def test_maintainer_issue_accepted(self):
+        for category in ("unclear", "bug", "unsure"):
+            run_check(self, valid(category), self.issue(author="boss"))
+
+    def test_duplicate_of_self(self):
+        data = valid("duplicate")
+        data["duplicate_of"] = 5
+        self.refuse(data, self.issue(), "itself")
+
+    def test_duplicate_missing(self):
+        self.refuse(valid("duplicate"), self.issue(), "does not exist")
+
+    def test_duplicate_found(self):
+        run_check(self, valid("duplicate"), self.issue(),
+                  {"gh issue view 3": '{"number": 3}'})
+
+    def test_comment_refused(self):
+        data = valid("support")
+        data["comment"] = "see https://example.com/x"
+        self.refuse(data, self.issue(), "outside the repository")
+
+    def test_load_issue(self):
+        runner = FakeRunner({"gh issue view 5": issue_json()})
+        self.assertEqual(triage.load_issue(runner, 5)["number"], 5)
+        with self.assertRaises(triage.TriageError):
+            triage.load_issue(FakeRunner(), 5)
