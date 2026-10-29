@@ -62,13 +62,15 @@ absent at tier 0. A file that exists but is malformed fails closed; it is not re
     app_id = 123456
     installation_id = 7890123
     key_path = "~/.baton/keys/baton.pem"
-    # login = "baton[bot]"            # optional
+    # login = "baton[bot]"            # optional; must be an App login
 
     [reviewer]
     app_id = 123457
     installation_id = 7890124
     key_path = "~/.baton/keys/reviewer.pem"
     # login = "baton-reviewer[bot]"   # optional
+
+A `login` must be an App login (`<slug>[bot]`); a plain name is refused.
 
 The `reviewer` role writes as the reviewer App; every other role writes as the `baton` App, with no
 fallback to your login. Permissions: `baton[bot]` has issues, pull requests and contents write;
@@ -274,10 +276,14 @@ When an approved pull request's head moves only by merging the default branch in
 `maintainers` in `.baton/brief.md` lists the GitHub logins whose comments, reviews, approvals and
 issues Baton trusts (default `[]`, meaning the repository owner alone). At tier 0 agents post
 under a maintainer's login, so every login on the list can answer questions, approve a merge with
-`/baton approve` and write issues that are ready to develop. At tier 1 agent comments come from the
-Baton logins instead. Baton trusts those for marker comments (questions, reviews, replies,
-decisions) and for issue authorship, but never for answers, `/baton ready` or `/baton approve`;
-those stay with the maintainers. `baton config` prints the resolved list. Log folders and API
+`/baton approve` and write issues that are ready to develop. Maintainers are matched by exact
+login (case-insensitive). Baton logins match only in bot form (`x[bot]`, `app/x`, or the bare slug
+reported as a Bot), so a person whose login is an App's slug is never trusted as that App. At tier 1
+agent comments come from the Baton logins instead. Baton trusts those for marker comments
+(questions, decisions, replies) and for issue authorship, but never for answers, `/baton ready` or
+`/baton approve`; those stay with the maintainers. Review and verify markers count only from the
+maintainers and the reviewer App, never from `baton[bot]`.
+`baton config` prints the resolved list. Log folders and API
 paths still use the repository owner.
 
 ## Forbidden diff patterns
