@@ -439,6 +439,15 @@ class RenderTest(unittest.TestCase):
             self.assertNotIn(dropped, out)
         self.assertIn("maintainer words", out)
 
+    def test_outside_issue_keeps_plan_subheadings(self):
+        body = ("## Developer Plan\n### Verification\nrun it\n- [ ] Task 1: x\n"
+                "#### brief\ndetails\n## Decisions\nSECRET DECISION\n")
+        out = issue.render(self.data(author="eve", body=body), [OWNER])
+        self.assertIn("### Verification\nrun it", out)
+        self.assertIn("- [ ] Task 1: x", out)
+        self.assertIn("#### brief\ndetails", out)
+        self.assertNotIn("SECRET DECISION", out)
+
     def test_labels(self):
         self.assertIn("Labels: none", issue.render(self.data(), [OWNER]))
         out = issue.render(self.data(labels=[{"name": "a"}, {"name": "b"}]), [OWNER])

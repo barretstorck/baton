@@ -204,7 +204,12 @@ def _kept_sections(body):
     for index, match in enumerate(found):
         if match.group(1).lower() not in _KEPT_OUTSIDE:
             continue
-        end = found[index + 1].start() if index + 1 < len(found) else len(body)
+        level = len(match.group(0)) - len(match.group(0).lstrip("#"))
+        end = len(body)
+        for later in found[index + 1:]:
+            if len(later.group(0)) - len(later.group(0).lstrip("#")) <= level:
+                end = later.start()
+                break
         kept.append(body[match.start():end].strip())
     return kept
 
