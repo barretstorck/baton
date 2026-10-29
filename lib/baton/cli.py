@@ -11,7 +11,9 @@ def cmd_config(args):
     if cfg is None:
         print("not a Baton repository: .baton/brief.md not found", file=sys.stderr)
         return 1
-    print(json.dumps(cfg.data, indent=2))
+    data = dict(cfg.data)
+    data["maintainers"] = list(data["maintainers"]) or cfg.maintainers(_owner())
+    print(json.dumps(data, indent=2))
     return 0
 
 
@@ -114,6 +116,10 @@ def cmd_merge_pr(args):
 
 def _owner():
     return json.loads(run.run(["gh", "repo", "view", "--json", "owner"]))["owner"]["login"]
+
+
+def _maintainers(cfg):
+    return cfg.maintainers(_owner())
 
 
 def cmd_comment(args):

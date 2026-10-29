@@ -39,6 +39,7 @@ verify:
   timeout_minutes: 10         # the run is killed after this many minutes and counts as a timeout
 docs:
   dir: docs/baton             # where plans and retrospectives live: relative, no "..", not protected
+maintainers: []              # logins whose comments count as the maintainer's; empty: the repository owner
 protected_paths: [".github/", ".baton/", ".claude/"]
 fixtures_paths: []            # the only places new image files may be added
 privacy_allow: []             # literal strings the privacy scan should ignore
