@@ -522,6 +522,40 @@ def cmd_sprint_status(args):
     return 0
 
 
+_CAPACITY_USAGE = "usage: baton sprint-capacity <days> [--retros <n>]"
+
+
+def cmd_sprint_capacity(args):
+    rest, days, count = list(args), None, sprint.RETRO_COUNT
+    while rest:
+        arg = rest.pop(0)
+        if arg == "--retros" and rest:
+            value = rest.pop(0)
+            if not value.isdigit() or int(value) < 1:
+                print(_CAPACITY_USAGE, file=sys.stderr)
+                return 64
+            count = int(value)
+        elif not arg.startswith("--") and days is None:
+            try:
+                days = float(arg)
+            except ValueError:
+                days = 0
+            if not 0 < days < float("inf"):
+                print(_CAPACITY_USAGE, file=sys.stderr)
+                return 64
+            days = int(days) if days == int(days) else days
+        else:
+            print(_CAPACITY_USAGE, file=sys.stderr)
+            return 64
+    if days is None:
+        print(_CAPACITY_USAGE, file=sys.stderr)
+        return 64
+    cfg = _require_config()
+    found = sprint.recent_metrics(cfg.root, cfg.data["docs"]["dir"], count)
+    print(json.dumps(sprint.capacity(found, days), indent=2))
+    return 0
+
+
 _METRICS_USAGE = "usage: baton sprint-metrics <milestone> [--since <UTC ISO time>] [--dir <projects dir>]"
 
 
@@ -672,6 +706,7 @@ COMMANDS = {
     "set-status": cmd_set_status,
     "set-priority": cmd_set_priority,
     "set-severity": cmd_set_severity,
+    "sprint-capacity": cmd_sprint_capacity,
     "sprint-status": cmd_sprint_status,
     "task": cmd_task,
     "tasks": cmd_tasks,
