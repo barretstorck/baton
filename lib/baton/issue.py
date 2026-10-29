@@ -12,6 +12,8 @@ _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.M)
 _BLOCKED = re.compile(r"^\s*Blocked by:(.*)$", re.M | re.I)
 _NO_BLOCKERS = re.compile(r"^\(?none", re.I)
 _FILES = re.compile(r"^\s*Expected files:(.*)$", re.M | re.I)
+_TIMEBOX = re.compile(r"^\s*Timebox:(.*)$", re.M | re.I)
+_TIMEBOX_PART = re.compile(r"^(\d+)\s*(tokens|min)$", re.I)
 _ORIGIN_OUTSIDE = re.compile(r"^\s*Origin:\s*outside\s*\(@[\w-]+\)\s*$", re.M | re.I)
 APPROVAL = "/baton ready"
 _LIST_ITEM = re.compile(r"^\s*(?:[-*]|\d+\.)\s+\S", re.M)
@@ -61,6 +63,26 @@ def expected_files(body):
     for line in _FILES.findall(body or ""):
         files.extend(part.strip().strip("`") for part in line.split(",") if part.strip().strip("`"))
     return files
+
+
+def timebox(body):
+    """The spike's `Timebox:` line as {"tokens": int | None, "minutes": int | None}, or None.
+
+    Raises ValueError when the line is not `<integer> tokens`, `<integer> min` or both, comma-separated.
+    """
+    found = _TIMEBOX.search(body or "")
+    if not found:
+        return None
+    line = found.group(0).strip()
+    result = {"tokens": None, "minutes": None}
+    for part in found.group(1).split(","):
+        match = _TIMEBOX_PART.match(part.strip())
+        key = None if not match else ("tokens" if match.group(2).lower() == "tokens" else "minutes")
+        if key is None or result[key] is not None:
+            raise ValueError(f"cannot read the line {line!r} "
+                             "(write 'Timebox: <tokens> tokens, <minutes> min', either part optional)")
+        result[key] = int(match.group(1))
+    return result
 
 
 def is_outside(issue, maintainers):
@@ -151,7 +173,31 @@ def ready_problems(issue, cfg, owner, runner=None):
             ids = [task["id"] for task in found["tasks"]]
             if ids != [str(n) for n in range(1, len(ids) + 1)]:
                 problems.append("plan tasks must be numbered 1, 2, 3 ... in order")
+    if spike:
+        problems.extend(_timebox_problems(body, cfg))
     if not any(name.startswith("type:") or name == cfg.label("type:spike") for name in labels):
         problems.append("a type label is missing (type:feature, type:bug, "
                         "type:maintenance or type:spike)")
+    return problems
+
+
+def _timebox_problems(body, cfg):
+    try:
+        box = timebox(body)
+    except ValueError as error:
+        return [f"Timebox: {error}"]
+    if box is None:
+        return []
+    problems = []
+    for part, unit in (("tokens", "tokens"), ("minutes", "min")):
+        limits = cfg.data.get("spike", {}).get(part) or {}
+        value = box[part]
+        low, high = limits.get("min"), limits.get("max")
+        if value is None:
+            if high is not None:
+                problems.append(f"Timebox: {part} is left out but the brief sets spike.{part}.max "
+                                f"= {high} (no limit exceeds the maximum)")
+        elif (low is not None and value < low) or (high is not None and value > high):
+            bounds = f"{low if low is not None else '-'} to {high if high is not None else '-'}"
+            problems.append(f"Timebox: {part} {value} {unit} is outside the brief's range ({bounds})")
     return problems
