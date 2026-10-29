@@ -1,4 +1,5 @@
 """Agent comments: stamped, scanned, and told apart from the maintainer's."""
+import json
 import os
 import tempfile
 
@@ -11,6 +12,8 @@ KINDS = {"question", "status", "decision", "plan", "review", "findings", "reply"
 TARGETS = {"issue", "pr"}
 _QUESTION = ":question -->"
 _DECISION = ":decision -->"
+NOTIFY_CAUSES = ("stuck", "approval", "triage-unsure", "spike-infeasible",
+                 "repro-skipped", "rule")
 
 
 class CommentError(Exception):
@@ -59,6 +62,40 @@ def post(cfg, runner, target, number, role, kind, body, terms):
     if target not in TARGETS:
         raise CommentError(f"unknown target {target!r}; use issue or pr")
     return publish(cfg, runner, target, number, compose(role, kind, body), terms)
+
+
+def _notify_marker(cause):
+    return f"<!-- baton:notify:{cause} -->"
+
+
+def notified(comments, cause):
+    """True when any comment already carries the notify marker for this cause."""
+    marker = _notify_marker(cause)
+    return any(marker in (item.get("body") or "") for item in comments or [])
+
+
+def notify(cfg, runner, number, cause, text, maintainers, terms):
+    """Label an issue needs-maintainer and mention the maintainers, once per cause.
+
+    Returns the comment's URL, or None when the issue was already notified for it.
+    """
+    if cause not in NOTIFY_CAUSES:
+        raise CommentError(f"unknown cause {cause!r}; use one of {list(NOTIFY_CAUSES)}")
+    if not maintainers:
+        raise CommentError("no maintainers to mention")
+    found = json.loads(runner(["gh", "issue", "view", str(number), "--json", "comments"])
+                       or "{}")
+    if notified(found.get("comments"), cause):
+        return None
+    mentions = " ".join(f"@{handle}" for handle in maintainers)
+    body = f"{_notify_marker(cause)}\n{mentions}\n{text.strip()}"
+    text_out = compose("orchestrator", "status", body)
+    findings = scan.scan_text(text_out, terms, cfg.data["privacy_allow"])
+    if findings:
+        raise CommentError("comment not posted; privacy scan found: "
+                           + "; ".join(scan.describe(findings)))
+    runner(["gh", "issue", "edit", str(number), "--add-label", cfg.label("needs-maintainer")])
+    return publish(cfg, runner, "issue", number, text_out, terms)
 
 
 def _first_line(body):
