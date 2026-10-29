@@ -112,6 +112,48 @@ def _post(url, headers):
         raise IdentityError("token request failed")
 
 
+def _get(url, headers):
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        raise IdentityError(f"request failed: HTTP {e.code}")
+    except (urllib.error.URLError, OSError, ValueError):
+        raise IdentityError("request failed")
+
+
+def _headers(bearer):
+    return {"Authorization": f"Bearer {bearer}", "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28"}
+
+
+def app_login(app, runner, get, now):
+    """The App's actual login on GitHub: <slug>[bot]."""
+    reply = get("https://api.github.com/app", _headers(jwt(app, runner, now)))
+    slug = reply.get("slug") if isinstance(reply, dict) else None
+    if not isinstance(slug, str) or not slug:
+        raise IdentityError("GET /app returned no slug")
+    return f"{slug}[bot]"
+
+
+def installation_repos(token, get):
+    """The full_name of every repository the installation token can reach."""
+    names, page = set(), 1
+    while True:
+        reply = get(f"https://api.github.com/installation/repositories?per_page=100&page={page}",
+                    _headers(token))
+        repos = reply.get("repositories") if isinstance(reply, dict) else None
+        if not isinstance(repos, list):
+            raise IdentityError("GET /installation/repositories returned no repositories")
+        names.update(r["full_name"] for r in repos
+                     if isinstance(r, dict) and isinstance(r.get("full_name"), str))
+        total = reply.get("total_count")
+        if not repos or not isinstance(total, int) or len(names) >= total:
+            return names
+        page += 1
+
+
 _cache = {}
 
 
