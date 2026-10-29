@@ -519,3 +519,11 @@ class ReadOnlyCommandsTest(unittest.TestCase):
             with self.subTest(cmd=cmd), contextlib.redirect_stderr(stderr):
                 self.assertEqual(gate.main(json.dumps(payload)), 2)
             self.assertEqual("placeholders" in stderr.getvalue(), shown, stderr.getvalue())
+
+    def test_hooks_json_registers_mcp_matcher(self):
+        path = pathlib.Path(__file__).resolve().parent.parent / "hooks" / "hooks.json"
+        entries = json.loads(path.read_text())["hooks"]["PreToolUse"]
+        cmd = "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" gate"
+        self.assertTrue(any(e["matcher"] == "mcp__.*"
+                            and any(h.get("command") == cmd for h in e["hooks"])
+                            for e in entries), entries)

@@ -6,6 +6,12 @@
         "hooks": [
           { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" gate" }
         ]
+      },
+      {
+        "matcher": "mcp__.*",
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" gate" }
+        ]
       }
     ]
   }
