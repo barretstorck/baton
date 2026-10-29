@@ -479,3 +479,62 @@ class SelectionTests(unittest.TestCase):
                   item(5, {"days": 20}, label, author="boss"),
                   item(6, {"days": 20}), item(7, {"days": 20}, label, state="CLOSED")]
         self.assertEqual(triage.stale(issues, cfg, NOW, 14, ["boss"]), [2, 4])
+
+
+class QueueCommandTests(unittest.TestCase):
+    def drive(self, issues, home, args=("triage", "queue"), since=""):
+        import io
+        import os
+        from unittest import mock
+        from baton import cli
+        cfg = mock.MagicMock()
+        cfg.label.side_effect = lambda n: n
+        cfg.status_labels.return_value = ["status:in-dev"]
+        cfg.data = {"triage": {"since": since, "max_per_run": 10, "stale_days": 14}}
+        runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r"}',
+                             "gh issue list": json.dumps(issues)})
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, {"BATON_HOME": home}), \
+                mock.patch.object(cli, "_require_config", return_value=cfg), \
+                mock.patch.object(cli, "_maintainers", return_value=["Boss"]), \
+                mock.patch.object(cli.run, "run", runner), \
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+            code = cli.main(list(args))
+        return code, out.getvalue()
+
+    def test_first_run_records_and_triages_nothing(self):
+        import os
+        issue = {"number": 1, "state": "OPEN", "labels": [], "comments": [],
+                 "author": {"login": "x"}, "createdAt": "2020-01-01T00:00:00Z"}
+        with tempfile.TemporaryDirectory() as home:
+            code, text = self.drive([issue], home)
+            data = json.loads(text)
+            self.assertEqual(code, 0)
+            self.assertTrue(data["first_run"])
+            self.assertEqual(data["batch"], [])
+            self.assertTrue(os.path.exists(triage.since_path("o", "r", home)))
+            _, text = self.drive([issue], home)
+            self.assertFalse(json.loads(text)["first_run"])
+
+    def test_later_run_caps_batch(self):
+        old = datetime.now(timezone.utc) - timedelta(days=3)
+        issues = [{"number": n, "state": "OPEN", "labels": [], "comments": [],
+                   "author": {"login": "x"},
+                   "createdAt": (old + timedelta(minutes=n)).isoformat()} for n in range(1, 13)]
+        issues.append({"number": 50, "state": "OPEN", "labels": [{"name": "awaiting-feedback"}],
+                       "comments": [], "author": {"login": "x"},
+                       "createdAt": "2020-01-01T00:00:00Z"})
+        with tempfile.TemporaryDirectory() as home:
+            code, text = self.drive(issues, home, since="2020-06-01T00:00:00Z")
+        data = json.loads(text)
+        self.assertEqual(code, 0)
+        self.assertFalse(data["first_run"])
+        self.assertEqual(data["batch"], list(range(1, 11)))
+        self.assertEqual(data["waiting"], [11, 12])
+        self.assertEqual(data["overdue"], 11)
+        self.assertEqual(data["stale"], [50])
+
+    def test_other_shape_keeps_usage(self):
+        with tempfile.TemporaryDirectory() as home:
+            code, _ = self.drive([], home, args=("triage", "queue", "x"))
+        self.assertEqual(code, 64)
