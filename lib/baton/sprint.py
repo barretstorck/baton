@@ -374,8 +374,8 @@ def snapshot(cfg, runner, milestone=None):
         number = item["number"]
         open_blockers = [n for n in issue_fields.blocked_by(item.get("body"))
                          if _blocker_open(n, by_number, runner)]
-        if item.get("author", {}).get("login") not in maintainers:
-            reason = "written by someone other than the maintainer"
+        if issue_fields.is_outside(item, maintainers) and not issue_fields.approved(item, maintainers):
+            reason = "outside issue without a maintainer's '/baton ready' comment"
         elif red and not repair:
             reason = "default branch is red; only the repair issue may proceed"
         elif missing_count(number) >= STALE_MISSING_PATHS:
