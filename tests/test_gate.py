@@ -191,10 +191,10 @@ class GateTest(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.assertTrue(gate.decide(cmd, plain, TERMS))
 
-    def test_an_unresolvable_directory_is_refused_in_a_baton_repository(self):
+    def test_an_unresolvable_directory_is_refused_when_publishing(self):
         repo = make_repo()
-        for cmd in ("cd $DIR && gh issue comment 5 --body x", "cd ~bob && ls",
-                    "git -C $DIR log", "pushd /tmp/*/x"):
+        for cmd in ("cd $DIR && git push", "git -C $DIR commit -m x",
+                    "pushd /tmp/*/x && git tag -m x v1", "cd ~bob && git push"):
             with self.subTest(cmd=cmd):
                 problems = gate.decide(cmd, repo, TERMS)
                 self.assertTrue(any("cannot be resolved" in p for p in problems), problems)

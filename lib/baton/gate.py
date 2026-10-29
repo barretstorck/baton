@@ -507,9 +507,6 @@ def decide(command, cwd, terms):
                    if _literal(name)]
         if not any(_has_brief(path) for path in literal):
             return []
-    elif any(not _literal(name) for name in named):
-        return ["a directory named by the command cannot be resolved (variable, "
-                "substitution, glob or ~user); name it literally"]
     problems, items = [], []
     moves = any(_changes_directory(call) for call in calls)
     for call in calls:
@@ -537,6 +534,10 @@ def decide(command, cwd, terms):
     if not publishing:
         return list(dict.fromkeys(problems))
 
+    if _has_brief(cwd) and any(not _literal(name) for name in named):
+        problems.append("a directory named by a command that commits, pushes or tags "
+                        "cannot be resolved (variable, substitution, glob or ~user); "
+                        "name it literally")
     if moves or not all(item.plain for item in publishing):
         problems.append(_NOT_PLAIN)
     if any(call.bad_env for call in calls):
