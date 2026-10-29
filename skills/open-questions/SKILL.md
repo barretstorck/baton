@@ -9,6 +9,8 @@ Walk the maintainer through everything that waits on them, **one question at a t
 answer on its issue, and send the answered issues back to refinement. You write comments only. You
 never change labels, statuses or descriptions: the refiners and the sprint do that.
 
+The mention comments that `baton notify` posts are `status` comments, so the list and the order it shows are unchanged.
+
 Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`. Read
 `${CLAUDE_PLUGIN_ROOT}/references/habits.md` first.
 

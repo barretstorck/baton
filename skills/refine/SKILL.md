@@ -153,8 +153,8 @@ issue body, written by `baton plan set`.
 7. **Set the outcome.**
    - Ready, and `refine.may_mark_ready` is true in `baton config`, and `ready-check` did not
      report that the issue was written by someone else: `baton set-status <N> status:ready`.
-   - Ready, but one of those conditions fails: `baton set-status <N> status:refinement`, add the
-     `needs-maintainer` label, and post a `status` comment saying it is ready for the maintainer
+   - Ready, but one of those conditions fails: `baton set-status <N> status:refinement`, run
+     `baton notify <N> stuck <file | ->` (it adds the `needs-maintainer` label and posts a `status` comment) saying it is ready for the maintainer
      to mark.
    - Not ready: `baton set-status <N> status:refinement` and post what is missing.
 
@@ -167,7 +167,7 @@ When only the maintainer can settle something:
 
 1. Write the question to a file: what must be decided, the options, and your recommendation.
 2. `baton comment issue <N> refine question <file>`
-3. `baton set-status <N> status:refinement` and add `needs-maintainer`.
+3. `baton set-status <N> status:refinement` and run `baton notify <N> stuck <file | ->` (it adds `needs-maintainer` and mentions the maintainers).
 
 When the answer arrives (`baton answers <N>`), record it under `## Decisions` as one line ending
 with a link to the answering comment, for example:
@@ -208,8 +208,8 @@ separate and stays as it is.
    the plan": write the test's code in task 1's brief. Its `Check:` is that test, and it must fail
    before the fix. Later tasks make it pass.
 4. **Not reproduced:** the bug is not ready. Post a question as under "Questions" asking the
-   reporter for steps, version and logs, then `baton set-status <N> status:refinement` and add the
-   `needs-maintainer` label.
+   reporter for steps, version and logs, then `baton set-status <N> status:refinement` and run
+   `baton notify <N> repro-skipped <file | ->` (it adds the `needs-maintainer` label).
 
 ## Re-refining after a review
 
@@ -226,7 +226,7 @@ branch as it stands. Work in your own worktree and do these in order:
    at the code as the branch stands: what the ticked tasks did, and which files and line ranges
    the open tasks name have moved. Run tests there if useful.
 3. **Decide.** When the acceptance criteria cannot be met or are wrong, ask the maintainer as
-   under "Questions", add `needs-maintainer` and stop; the plan stays untouched. Criteria change
+   under "Questions", run `baton notify <N> stuck <file | ->` and stop; the plan stays untouched. Criteria change
    only after the maintainer agrees on the issue, recorded under `## Decisions`. Otherwise go on.
 4. **Rewrite the open tasks.** Keep every ticked task. Write the new open tasks to a file in the
    plan's task form (checkbox line plus details block) and run `baton plan replace <N> <first-open-task> <file>` (add
@@ -240,7 +240,7 @@ branch as it stands. Work in your own worktree and do these in order:
 7. **Reply on the pull request.** `baton comment pr <P> refine reply -` with an inline heredoc:
    the tasks kept, replaced and added, the head sha, and the first open task.
 8. **Set the outcome** as in step 7 above (ready when `refine.may_mark_ready` is true and the
-   maintainer wrote the issue, else `needs-maintainer`) and report.
+   maintainer wrote the issue, else `baton notify <N> stuck <file | ->`) and report.
 
 The description is rewritten only when criteria or Decisions changed. The work is repeatable:
 when the plan already has `Written against:` equal to the head and an open task, only re-check
