@@ -57,6 +57,8 @@ def _app(name, table):
     login = table.get("login", DEFAULT_LOGINS[name])
     if not isinstance(login, str) or not login:
         raise IdentityError(f"identity.toml [{name}] login must be a non-empty string")
+    if config.bot_slug(login) is None:
+        raise IdentityError(f"identity.toml [{name}] login must be an App login such as {DEFAULT_LOGINS[name]}")
     return App(_int(name, "app_id", table["app_id"]),
                _int(name, "installation_id", table["installation_id"]), key_path, login)
 
@@ -212,6 +214,14 @@ def bot_logins():
     """The login of each configured App; empty at tier 0 or with no loader."""
     ids = _identities()
     return frozenset(ids.logins()) if ids is not None else frozenset()
+
+
+def reviewer_logins():
+    """The reviewer App's login; empty at tier 0, with no loader or with no reviewer entry."""
+    ids = _identities()
+    if ids is None or ids.reviewer is None:
+        return frozenset()
+    return frozenset({ids.reviewer.login})
 
 
 def write(runner, argv, role, **kw):
