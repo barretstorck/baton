@@ -13,6 +13,7 @@ installed and not bypassed.
 This guards against mistakes and nudged agents. It is not a sandbox: a script
 that talks to the forge without one of these programs is outside its view.
 """
+import functools
 import json
 import os
 import re
@@ -25,13 +26,21 @@ MARKER = "<!-- baton:"
 HOOK_TAG = githooks.HOOK_TAG
 _MAX_FILE = 1_000_000
 
-FORGE_CLIS = ("gh", "glab", "tea", "fj", "curl", "wget", "http", "https", "xh")
+FORGE_CLIS = tuple(config.DEFAULTS["forge_clis"])
+BODY_FILE_FLAGS = tuple(config.DEFAULTS["body_file_flags"])
 _HTTP_CLIS = ("curl", "wget", "http", "https", "xh")
 
 # Command position: start of text, after a separator, quote or newline, or after a launcher.
 _POS = (r"""(?:^|[;&|(`'"\n{]|\bsudo\b|\benv\b|\bxargs\b|\bexec\b|\bcommand\b|\btime\b|\bnohup\b)"""
         r"""\s*(?:[A-Za-z_]\w*=\S*\s+)*""")
-_FORGE = re.compile(_POS + r"(?:[\w.~+-]*/)*(" + "|".join(FORGE_CLIS) + r")(?![\w.-])")
+
+
+@functools.lru_cache(maxsize=16)
+def _forge_re(clis):
+    names = "|".join(re.escape(name) for name in sorted(clis, key=len, reverse=True)) or "(?!)"
+    return re.compile(_POS + r"(?:[\w.~+-]*/)*(" + names + r")(?![\w.-])")
+
+
 _GITPUB = re.compile(_POS + r"(?:[\w.~+-]*/)*git\b[^;&|\n]*?\b(?:commit|push|tag)\b")
 # Run on the command with quoted strings blanked, so a commit message may mention these.
 _BYPASS_TEXT = re.compile(
@@ -41,11 +50,31 @@ _BYPASS_TEXT = re.compile(
 _BYPASS_CFG = re.compile(
     r"""-c\s*["']?core\.hooksPath|config\s+(?:--\S+\s+)*["']?core\.hooksPath["']?\s+\S""")
 _SHORT_N = re.compile(_POS + r"git\b[^;&|\n]*?\b(?:commit|push)\b[^;&|\n]*?\s-[a-zA-Z]*n[a-zA-Z]*(?:\s|$)")
-_STDIN_BODY = re.compile(r"(?:--body-file|-F|--input|--data(?:-binary|-raw)?|-d)(?:\s+|=)(?:-|@-)(?:\s|$)")
+
+
+@functools.lru_cache(maxsize=16)
+def _stdin_re(flags):
+    names = "|".join([re.escape(f) for f in sorted(flags, key=len, reverse=True)]
+                     + [r"--data(?:-binary|-raw)?", "-d"])
+    return re.compile(r"(?:" + names + r")(?:\s+|=)(?:-|@-)(?:\s|$)")
+
+
 _GIT_STDIN = re.compile(r"(?:--file|-F)(?:\s+|=)-(?:\s|$)")
-_FILE_ARG = re.compile(
-    r"""(?<![\w-])(?:(--body-file|--file|--input|--data(?:-binary|-raw)?)(?:\s+|=)|(-F|-d)(?:\s+|=|(?=\S)))"""
-    r"""(?:"([^"]*)"|'([^']*)'|([^\s'"<>|;&]+))""")
+
+
+@functools.lru_cache(maxsize=16)
+def _file_arg_re(flags):
+    names = {f for f in flags} | {"--file", "-F"}
+    longs = sorted((re.escape(f) for f in names if f.startswith("--")), key=len, reverse=True)
+    shorts = sorted((re.escape(f) for f in names if not f.startswith("--")), key=len, reverse=True)
+    longs.append(r"--data(?:-binary|-raw)?")
+    shorts.append("-d")
+    return re.compile(
+        r"""(?<![\w-])(?:(""" + "|".join(longs) + r""")(?:\s+|=)|(""" + "|".join(shorts)
+        + r""")(?:\s+|=|(?=\S)))"""
+        r"""(?:"([^"]*)"|'([^']*)'|([^\s'"<>|;&]+))""")
+
+
 _UNRESOLVABLE = re.compile(r"[$`*?]")
 _SUBST_BODY = re.compile(r"(?:--body|-b|--title|-t|--message|-m|--raw-field|-f|--field|-d|--data(?:-raw)?)"
                          r"(?:\s+|=)\"[^\"]*(?:\$\((?!cat <<)|`)")
@@ -62,9 +91,20 @@ _HOOKS_MISSING = ("Baton git hooks are missing or point at a baton that no longe
                   "run `baton install-hooks`")
 
 
-def forge_facing(command):
+def forge_facing(command, forge_clis=FORGE_CLIS):
     """True when the command names a forge-facing program or publishes with git."""
-    return bool(_FORGE.search(command) or _GITPUB.search(command))
+    return bool(_forge_re(tuple(forge_clis)).search(command) or _GITPUB.search(command))
+
+
+def _brief_lists(cwd):
+    """(forge_clis, body_file_flags) from the brief, or the defaults when there is none."""
+    try:
+        cfg = config.load(cwd)
+    except config.ConfigError:
+        return FORGE_CLIS, BODY_FILE_FLAGS
+    if cfg is None:
+        return FORGE_CLIS, BODY_FILE_FLAGS
+    return tuple(cfg.data["forge_clis"]), tuple(cfg.data["body_file_flags"])
 
 
 def _read(path, base):
@@ -81,10 +121,11 @@ def _read(path, base):
         return handle.read(), None
 
 
-def _body_files(command, git_only):
+def _body_files(command, git_only, flags=BODY_FILE_FLAGS):
     """Paths of body files the command names."""
     paths = []
-    for match in _FILE_ARG.finditer(command):
+    flags = tuple(flags)
+    for match in _file_arg_re(flags).finditer(command):
         flag = match.group(1) or match.group(2)
         value = next(g for g in match.groups()[2:] if g is not None)
         if value.startswith("-") and value != "-":
@@ -92,11 +133,11 @@ def _body_files(command, git_only):
         if git_only:
             if flag in ("-F", "--file") and not value.startswith("@"):
                 paths.append(value)
-        elif flag in ("--body-file", "--input"):
+        elif flag in flags and flag.startswith("--"):
             paths.append(value.lstrip("@"))
-        elif value.startswith("@"):
+        elif value.startswith("@") and (flag in flags or flag == "-d" or flag.startswith("--data")):
             paths.append(value[1:])
-        elif flag == "-F":
+        elif flag in flags:
             if "=@" in value:
                 paths.append(value.split("=@", 1)[1])
             elif "=" not in value:
@@ -106,7 +147,8 @@ def _body_files(command, git_only):
 
 def decide(command, cwd, terms):
     stripped = _HEREDOC.sub("<<HD", command)
-    forge = [m.group(1) for m in _FORGE.finditer(stripped)]
+    clis, flags = _brief_lists(cwd)
+    forge = [m.group(1) for m in _forge_re(clis).finditer(stripped)]
     git = _GITPUB.search(stripped)
     if not (forge or git):
         return []
@@ -127,7 +169,7 @@ def decide(command, cwd, terms):
             problems.append(_HOOKS_MISSING)
 
     http_only = bool(forge) and not git and all(name in _HTTP_CLIS for name in forge)
-    stdin_pattern = _STDIN_BODY if forge else _GIT_STDIN
+    stdin_pattern = _stdin_re(flags) if forge else _GIT_STDIN
     if stdin_pattern.search(stripped) and "<<" not in stripped and "|" not in stripped:
         problems.append(_STDIN)
     if forge and _SUBST_BODY.search(stripped):
@@ -138,7 +180,7 @@ def decide(command, cwd, terms):
         texts += [m.group(1) for m in _DATA_FLAG.finditer(stripped)]
     else:
         texts += _QUOTED.findall(stripped)
-    for path in _body_files(stripped, git_only=not forge):
+    for path in _body_files(stripped, git_only=not forge, flags=flags):
         if _UNRESOLVABLE.search(path):
             problems.append(f"body file {path} is named by a variable or pattern, so it cannot be scanned; "
                             "pass a literal path")
@@ -205,6 +247,7 @@ def main(stdin_text):
     if tool != "Bash" and not mcp:
         return 0
     command = ""
+    cwd = os.getcwd()
     try:
         if not mcp:
             command = payload.get("tool_input", {}).get("command", "")
@@ -222,7 +265,7 @@ def main(stdin_text):
     except Exception as error:
         # Fail closed only when the command could publish; any other command is allowed.
         try:
-            triggered = mcp or (forge_facing(command) if isinstance(command, str) else True)
+            triggered = mcp or (forge_facing(command, _brief_lists(cwd)[0]) if isinstance(command, str) else True)
         except Exception:
             triggered = True
         if not triggered:
