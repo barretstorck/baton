@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Spike #228 Q4 prototype (throwaway, not for merge).
+"""Spike #228 Q4 / spike #236 Q3 prototype (throwaway, not for merge).
 
 Runs the GitHub App manifest flow from a local CLI with the standard library only:
 
@@ -12,7 +12,13 @@ Runs the GitHub App manifest flow from a local CLI with the standard library onl
 4. Prints the install URL; the manifest's setup_url points back at the local
    server, so the installation_id is caught when the user clicks "Install".
 
-Usage: manifest_flow.py <baton|reviewer> <outdir> [--org ORG]
+5. With --user-token (spike #236 Q3): after the install redirect, sends the user
+   through the OAuth web flow (callback_urls points at the same local server),
+   exchanges the code with the client secret held in memory only, and writes the
+   user access token to <outdir>/<slug>.user-token with mode 0600. The client
+   secret is never written to disk.
+
+Usage: manifest_flow.py <baton|reviewer|issues-only> <outdir> [--org ORG] [--user-token]
 """
 import html
 import http.server
@@ -42,6 +48,7 @@ def manifest(role, base):
         "hook_attributes": {"url": "https://example.invalid/unused", "active": False},
         "redirect_url": base + "/created",
         "setup_url": base + "/installed",
+        "callback_urls": [base + "/installed"],
         "public": False,
         "default_permissions": PERMS[role],
         "default_events": [],
@@ -56,11 +63,24 @@ def convert(code):
         return json.load(r)
 
 
+def user_token(client_id, client_secret, code, redirect_uri):
+    body = urllib.parse.urlencode({"client_id": client_id, "client_secret": client_secret,
+                                   "code": code, "redirect_uri": redirect_uri}).encode()
+    req = urllib.request.Request(f"{WEB}/login/oauth/access_token", data=body, method="POST",
+                                 headers={"Accept": "application/json"})
+    with urllib.request.urlopen(req) as r:
+        return json.load(r)
+
+
 def main():
     role, outdir = sys.argv[1], sys.argv[2]
-    org = sys.argv[4] if len(sys.argv) > 4 and sys.argv[3] == "--org" else None
+    args = sys.argv[3:]
+    org = args[args.index("--org") + 1] if "--org" in args else None
+    want_user = "--user-token" in args
     state = secrets.token_urlsafe(16)
     result = {}
+    secret = {}  # client_secret, memory only
+    done = {"flag": False}
 
     class H(http.server.BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -88,6 +108,7 @@ def main():
                     self.reply("state mismatch; ignored")
                     return
                 app = convert(q["code"])
+                secret["client_secret"] = app.get("client_secret")
                 os.makedirs(outdir, mode=0o700, exist_ok=True)
                 pem = os.path.join(outdir, app["slug"] + ".pem")
                 fd = os.open(pem, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -103,16 +124,47 @@ def main():
                 self.send_response(302)
                 self.send_header("Location", f"{WEB}/apps/{app['slug']}/installations/new")
                 self.end_headers()
-            elif u.path == "/installed":
+            elif u.path == "/installed" and "code" not in q:
                 result["installation_id"] = int(q.get("installation_id", 0))
                 print("installed:", q, flush=True)
-                self.reply("Installed. You can close this tab.")
+                if not want_user:
+                    done["flag"] = True
+                    self.reply("Installed. You can close this tab.")
+                    return
+                auth = urllib.parse.urlencode({"client_id": result["client_id"],
+                                               "redirect_uri": base + "/installed",
+                                               "state": state})
+                self.send_response(302)
+                self.send_header("Location", f"{WEB}/login/oauth/authorize?{auth}")
+                self.end_headers()
+            elif u.path == "/installed":  # OAuth web-flow callback
+                if q.get("state") != state:
+                    self.reply("state mismatch; ignored")
+                    return
+                if "installation_id" in q:  # request_oauth_on_install style callback
+                    result["installation_id"] = int(q["installation_id"])
+                tok = user_token(result["client_id"], secret["client_secret"], q["code"],
+                                 base + "/installed")
+                if "access_token" not in tok:
+                    print("user token exchange failed:", {k: v for k, v in tok.items()
+                                                          if "token" not in k}, flush=True)
+                    self.reply("User token exchange failed; see the terminal.")
+                    done["flag"] = True
+                    return
+                path = os.path.join(outdir, result["slug"] + ".user-token")
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w") as f:
+                    f.write(tok["access_token"])
+                result["user_token_path"] = path
+                print("user token written:", path, flush=True)
+                done["flag"] = True
+                self.reply("Installed and authorized. You can close this tab.")
 
     srv = http.server.HTTPServer(("127.0.0.1", 0), H)
     base = f"http://127.0.0.1:{srv.server_port}"
     print("open:", base, flush=True)
     webbrowser.open(base)
-    while "installation_id" not in result:
+    while not done["flag"]:
         srv.handle_request()
     with open(os.path.join(outdir, result["slug"] + ".json"), "w") as f:
         json.dump(result, f, indent=2)
