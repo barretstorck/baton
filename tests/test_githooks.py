@@ -171,7 +171,7 @@ class CommitMsgTest(unittest.TestCase):
         self.assertEqual(githooks.commit_msg(repo, str(path), TERMS), [])
 
 
-VERSION =".".join(["10", "1", "2", "3"])
+VERSION = ".".join(["10", "1", "2", "3"])
 
 
 class DependencyFileTest(unittest.TestCase):
