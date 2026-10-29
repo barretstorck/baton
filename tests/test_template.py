@@ -72,6 +72,12 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("refs/spikes/", skill)
         self.assertIn("Prototype:", skill)
 
+    def test_research_skill_keeps_timebox(self):
+        text = " ".join((ROOT / "skills" / "research" / "SKILL.md").read_text().split())
+        for needle in ("Timebox reached", "Started:", "Timebox:",
+                       "Token budget reached", "baton budget"):
+            self.assertIn(needle, text)
+
     def test_refine_skill_sets_timebox(self):
         text = " ".join((ROOT / "skills" / "refine" / "SKILL.md").read_text().split())
         for needle in ("Timebox: <tokens> tokens, <minutes> min", "spike.tokens",

@@ -31,13 +31,14 @@ filters, send long output to a file, chain related commands, wait for a long run
 
 ## The spike
 
-1. `baton set-status <N> status:in-dev`.
+1. `baton set-status <N> status:in-dev`. Read the `Timebox:` line (see "Timebox").
 2. Investigate. Prototype code is optional. If you write some, commit it on
    `issue-<N>-<slug>`. Do not open a pull request: a spike has none.
 3. About every 30 minutes, post a short `status` comment on the issue: what is done, what is
    running, and where the working files are (the branch, or the shared work area the local brief
    names). Never keep working files only in a temporary directory. Push work in progress at the
-   same points. If you are interrupted, the next researcher continues from those comments.
+   same points. The first status comment states your approach and the start time (see "Timebox").
+   If you are interrupted, the next researcher continues from those comments.
 4. When the findings are ready and there is prototype code, keep it in a custom ref named by the
    issue. Find the old value with `git ls-remote origin refs/spikes/<N>`: if it prints a sha (a
    re-run spike), push with `git push --force-with-lease=refs/spikes/<N>:<old sha> origin
@@ -45,7 +46,7 @@ filters, send long output to a file, chain related commands, wait for a long run
    cannot work); if it prints nothing, a plain `git push origin HEAD:refs/spikes/<N>`.
 5. Post the findings (see "Posting a comment"): the answer to each question in the description,
    the evidence, what you would do next, and proposed follow-up issues (title plus two lines
-   each). End with a `Prototype:` line that links the commit by its full sha, not the ref name:
+   each). If a limit ended the run, see "Timebox". End with a `Prototype:` line that links the commit by its full sha, not the ref name:
 
        Prototype: [<short sha>](https://github.com/<owner>/<repo>/tree/<full sha>) · `git fetch origin refs/spikes/<N>`
 
@@ -53,6 +54,27 @@ filters, send long output to a file, chain related commands, wait for a long run
 6. Delete the remote branch with `git push origin --delete issue-<N>-<slug>` (a spike without
    prototype code has no branch), then `baton set-status <N> status:in-review`.
 7. Return `DONE` with the findings comment URL and the prototype ref, if any.
+
+## Timebox
+
+A spike may carry a limit in tokens, minutes or both.
+
+- At the start, read the `Timebox:` line from your dispatch prompt. A prompt without it: read the
+  spike with `gh issue view <N> --json body -q .body`. No `Timebox:` line means no limit.
+- Your first status comment states your approach (the questions in order and how you will answer
+  each) and a line `Started: <UTC time>`, taken from `date -u +%Y-%m-%dT%H:%M:%SZ`. If you resume
+  an interrupted spike, take the start from the earliest researcher status comment that has a
+  `Started:` line; do not restart the clock.
+- Between steps, and before each status comment, compute the elapsed minutes from `Started:` with
+  `date`. When you reach the minutes part, stop investigating.
+- Tokens are weighted tokens as `baton usage` counts them. A hook (`baton budget`) blocks every
+  tool except `baton comment` once the limit is spent, with a message starting `Token budget
+  reached`. When you see it, post at once. The hook is approximate (one request late), so also
+  stop on your own when you judge the tokens part nearly used.
+- On either limit, post the findings so far under a first line `Timebox reached` that names which
+  limit ended the run (`tokens` or `minutes`), with the questions answered, the questions still
+  open and a recommended next step. Then finish like normal findings: the prototype ref if any,
+  delete the branch, `status:in-review`, `DONE`.
 
 ## Posting a comment
 
