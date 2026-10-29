@@ -132,3 +132,58 @@ class TokenTest(unittest.TestCase):
             identity.token(self.app, run, post, 1000)
         self.assertNotIn("eyJ", str(cm.exception))
         self.assertNotIn("boom", str(cm.exception))
+
+
+class WriteTest(unittest.TestCase):
+    def setUp(self):
+        from tests.fakes import FakeRunner
+        self.runner = FakeRunner()
+        self.minted = []
+        self._token = identity.token
+        identity.token = lambda app, runner, post, now: (self.minted.append(app.app_id) or f"tok{app.app_id}")
+        self.ids = identity.Identities(identity.App(1, 11, "k", "baton[bot]"),
+                                       identity.App(2, 22, "k", "baton-reviewer[bot]"))
+
+    def tearDown(self):
+        identity.token = self._token
+        identity.use(None)
+
+    def test_route(self):
+        self.assertEqual(identity.route("reviewer"), "reviewer")
+        for role in ("developer", "orchestrator", "refine", "triager", "researcher"):
+            self.assertEqual(identity.route(role), "baton")
+
+    def test_tier0_has_no_env(self):
+        identity.use(lambda: None)
+        identity.write(self.runner, ["gh", "x"], "developer", cwd="d")
+        self.assertEqual(self.runner.envs, [None])
+        self.assertEqual(self.minted, [])
+
+    def test_tier1_routes_token(self):
+        identity.use(lambda: self.ids)
+        identity.write(self.runner, ["gh", "x"], "developer")
+        identity.write(self.runner, ["gh", "y"], "reviewer")
+        self.assertEqual([e["GH_TOKEN"] for e in self.runner.envs], ["tok1", "tok2"])
+        self.assertEqual(self.runner.envs[0]["GH_PROMPT_DISABLED"], "1")
+
+    def test_loader_called_once(self):
+        calls = []
+        identity.use(lambda: calls.append(1) or self.ids)
+        identity.write(self.runner, ["gh"], "developer")
+        identity.write(self.runner, ["gh"], "developer")
+        self.assertEqual(len(calls), 1)
+
+    def test_missing_entry_raises(self):
+        identity.use(lambda: identity.Identities(baton=self.ids.baton))
+        with self.assertRaises(identity.IdentityError):
+            identity.write(self.runner, ["gh"], "reviewer")
+        self.assertEqual(self.runner.calls, [])
+
+    def test_failed_mint_never_runs(self):
+        def boom(*a):
+            raise identity.IdentityError("nope")
+        identity.token = boom
+        identity.use(lambda: self.ids)
+        with self.assertRaises(identity.IdentityError):
+            identity.write(self.runner, ["gh"], "developer")
+        self.assertEqual(self.runner.calls, [])

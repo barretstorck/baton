@@ -4,6 +4,7 @@ import datetime
 import json
 import os
 import tempfile
+import time
 import tomllib
 import urllib.error
 import urllib.request
@@ -138,3 +139,40 @@ def token(app, runner, post, now):
         raise IdentityError("token request returned no token")
     _cache[app.installation_id] = (tok, expires)
     return tok
+
+
+def route(role):
+    """The identity entry a role writes as: the reviewer uses its own App, every other role `baton`."""
+    return "reviewer" if role == "reviewer" else "baton"
+
+
+_UNSET = object()
+_loader = None
+_loaded = _UNSET
+
+
+def use(loader):
+    """Register the zero-argument loader of Identities (or None); it is called once, on the first write."""
+    global _loader, _loaded
+    _loader = loader
+    _loaded = _UNSET
+
+
+def _identities():
+    global _loaded
+    if _loaded is _UNSET:
+        _loaded = _loader() if _loader else None
+    return _loaded
+
+
+def write(runner, argv, role, **kw):
+    """Run a forge write as the role's App at tier 1; exactly `runner(argv, **kw)` at tier 0."""
+    ids = _identities()
+    if ids is None:
+        return runner(argv, **kw)
+    name = route(role)
+    app = getattr(ids, name)
+    if app is None:
+        raise IdentityError(f"identity.toml has no [{name}] entry for role {role}")
+    tok = token(app, _run.run, _post, time.time())
+    return runner(argv, env={"GH_TOKEN": tok, "GH_PROMPT_DISABLED": "1"}, **kw)
