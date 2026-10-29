@@ -1,4 +1,4 @@
-"""Decide whether a Bash command may publish to the forge.
+"""Decide whether a Bash command or an MCP tool call may publish to the forge.
 
 Runs as a Claude Code PreToolUse hook. The gate is a text scanner: it does not
 parse shell and does not know which `gh` subcommand writes. For a command that
@@ -154,6 +154,26 @@ def _alarm(signum, frame):
     raise _TimedOut(f"the check took longer than {TIME_LIMIT} seconds")
 
 
+def _strings(value):
+    """Yield every string in nested dict/list JSON (dict keys are not scanned)."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _strings(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _strings(item)
+
+
+def decide_mcp(tool_input, cwd, terms):
+    cfg = config.load(cwd)
+    if cfg is None:
+        return []
+    findings = scan.scan_text("\n".join(_strings(tool_input)), terms, cfg.data["privacy_allow"])
+    return [f"privacy: {kind} in the tool input" for kind in sorted({f.kind for f in findings})]
+
+
 def main(stdin_text):
     try:
         payload = json.loads(stdin_text)
@@ -163,23 +183,31 @@ def main(stdin_text):
         # inside Baton's own checks (below) blocks instead, because there the command was
         # understood and may publish.
         return 0
-    if not isinstance(payload, dict) or payload.get("tool_name") != "Bash":
+    if not isinstance(payload, dict):
+        return 0
+    tool = payload.get("tool_name")
+    mcp = isinstance(tool, str) and tool.startswith("mcp__")
+    if tool != "Bash" and not mcp:
         return 0
     command = ""
     try:
-        command = payload.get("tool_input", {}).get("command", "")
+        if not mcp:
+            command = payload.get("tool_input", {}).get("command", "")
         cwd = payload.get("cwd") or os.getcwd()
         previous = signal.signal(signal.SIGALRM, _alarm)
         signal.setitimer(signal.ITIMER_REAL, TIME_LIMIT)
         try:
-            problems = decide(command, cwd, scan.load_terms(warn=False))
+            if mcp:
+                problems = decide_mcp(payload.get("tool_input"), cwd, scan.load_terms(warn=False))
+            else:
+                problems = decide(command, cwd, scan.load_terms(warn=False))
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
     except Exception as error:
         # Fail closed only when the command could publish; any other command is allowed.
         try:
-            triggered = forge_facing(command) if isinstance(command, str) else True
+            triggered = mcp or (forge_facing(command) if isinstance(command, str) else True)
         except Exception:
             triggered = True
         if not triggered:
