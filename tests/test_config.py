@@ -99,8 +99,10 @@ class ConfigTest(unittest.TestCase):
 
     def test_triage_defaults_and_overrides(self):
         cfg = config.load(str(make_repo("# none\n")))
-        self.assertEqual(cfg.data["triage"], {"since": "", "max_per_run": 10, "stale_days": 14})
-        for key, value in (("since", "2026-10-01T00:00:00Z"), ("max_per_run", 3), ("stale_days", 30)):
+        self.assertEqual(cfg.data["triage"], {"since": "", "max_per_run": 10, "stale_days": 14,
+                                                  "max_reproductions_per_day": 3})
+        for key, value in (("since", "2026-10-01T00:00:00Z"), ("max_per_run", 3), ("stale_days", 30),
+                           ("max_reproductions_per_day", 0)):
             with self.subTest(key=key):
                 cfg = config.load(str(make_repo(f"---\ntriage:\n  {key}: {value}\n---\n")))
                 self.assertEqual(cfg.data["triage"][key], value)
@@ -108,6 +110,7 @@ class ConfigTest(unittest.TestCase):
     def test_triage_invalid_raises(self):
         for meta, text in (("max_per_run: 0", "triage.max_per_run must be at least 1"),
                            ("stale_days: 0", "triage.stale_days must be at least 1"),
+                           ("max_reproductions_per_day: -1", "triage.max_reproductions_per_day must be 0 or more"),
                            ("since: yesterday", "triage.since must be an ISO 8601 time")):
             with self.subTest(meta=meta):
                 with self.assertRaisesRegex(config.ConfigError, text):
