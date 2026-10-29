@@ -18,6 +18,14 @@ _STYLE = {
     "stretch": ("bfd4f2", "In the sprint if time allows"),
     "broken-default-branch": ("b60205", "The default branch is failing; top priority"),
     "needs-maintainer": ("d93f0b", "Waiting for the maintainer"),
+    "priority:1": ("b60205", "Priority 1: urgent"),
+    "priority:2": ("d93f0b", "Priority 2: high"),
+    "priority:3": ("fbca04", "Priority 3: medium"),
+    "priority:4": ("c2e0c6", "Priority 4: low"),
+    "severity:1": ("b60205", "Severity 1: critical (bugs; ranking only)"),
+    "severity:2": ("d93f0b", "Severity 2: major (bugs; ranking only)"),
+    "severity:3": ("fbca04", "Severity 3: minor (bugs; ranking only)"),
+    "severity:4": ("c2e0c6", "Severity 4: low (bugs; ranking only)"),
 }
 
 

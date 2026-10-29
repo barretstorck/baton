@@ -13,6 +13,8 @@ OTHER_LABELS = [
     "type:feature", "type:bug", "type:maintenance", "type:spike", "deliverable", "stretch", "broken-default-branch",
     "needs-maintainer",
 ]
+PRIORITIES = [f"priority:{n}" for n in range(1, 5)]
+SEVERITIES = [f"severity:{n}" for n in range(1, 5)]
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 DEFAULTS = {
     "developer": {"model": "sonnet", "max_parallel": 1, "effort": "medium"},
@@ -22,7 +24,7 @@ DEFAULTS = {
     "refine": {"may_mark_ready": True},
     "labels": {
         "auto_create": True,
-        "map": {name: name for name in STATUSES + OTHER_LABELS},
+        "map": {name: name for name in STATUSES + OTHER_LABELS + PRIORITIES + SEVERITIES},
     },
     "merge": {"allow_no_ci": False},
     "verify": {"command": "", "timeout_minutes": 10},
