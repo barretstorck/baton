@@ -14,10 +14,14 @@ OTHER_LABELS = [
     "needs-maintainer",
 ]
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
+MODELS = ("opus", "sonnet", "fable", "haiku")
+ROLES = ("triager", "refiner", "researcher", "developer", "reviewer")
 DEFAULTS = {
+    "triager": {"model": "haiku", "effort": "medium"},
+    "refiner": {"model": "opus", "effort": "medium"},
+    "researcher": {"model": "opus", "effort": "medium"},
     "developer": {"model": "sonnet", "max_parallel": 1, "effort": "medium"},
-    "reviewer": {"model": "sonnet", "effort": "medium"},
-    "refiner": {"model": "sonnet", "effort": "medium"},
+    "reviewer": {"model": "opus", "effort": "medium"},
     "review": {"required": True, "max_rounds": 2},
     "refine": {"may_mark_ready": True},
     "labels": {
@@ -27,6 +31,7 @@ DEFAULTS = {
     "merge": {"allow_no_ci": False},
     "verify": {"command": "", "timeout_minutes": 10},
     "docs": {"dir": "docs/baton"},
+    "maintainers": [],
     "protected_paths": [".github/", ".baton/", ".claude/"],
     "fixtures_paths": [],
     "privacy_allow": [],
@@ -40,6 +45,13 @@ class ConfigError(Exception):
     pass
 
 
+def logins(value):
+    """A login or an iterable of logins as a frozenset."""
+    if isinstance(value, str):
+        return frozenset([value])
+    return frozenset(value or ())
+
+
 @dataclass
 class Config:
     root: pathlib.Path
@@ -47,6 +59,9 @@ class Config:
 
     def label(self, name):
         return self.data["labels"]["map"].get(name, name)
+
+    def maintainers(self, owner):
+        return list(self.data["maintainers"]) or [owner]
 
     def status_labels(self):
         return [self.label(name) for name in STATUSES]
@@ -149,9 +164,11 @@ def load(path):
         raise ConfigError(f".baton/brief.md: {error}") from error
     merged = _merge(copy.deepcopy(DEFAULTS), data)
     _validate(merged, DEFAULTS)
-    for role in ("developer", "reviewer", "refiner"):
+    for role in ROLES:
         if merged[role]["effort"] not in EFFORTS:
             raise ConfigError(f".baton/brief.md: {role}.effort must be one of " + ", ".join(EFFORTS))
+        if merged[role]["model"] not in MODELS:
+            raise ConfigError(f".baton/brief.md: {role}.model must be one of " + ", ".join(MODELS))
     if merged["review"]["max_rounds"] < 1:
         raise ConfigError(".baton/brief.md: review.max_rounds must be at least 1")
     if merged["verify"]["timeout_minutes"] < 1:

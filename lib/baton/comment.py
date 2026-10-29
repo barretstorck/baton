@@ -3,6 +3,7 @@ import os
 import tempfile
 
 from . import gate, scan
+from .config import logins
 
 ROLES = {"orchestrator", "developer", "refine", "reviewer"}
 KINDS = {"question", "status", "decision", "plan", "review", "findings", "reply",
@@ -81,7 +82,7 @@ def pending_answers(issue, owner):
         return {"question": None, "answers": []}
     answers = []
     for item in comments[question_at + 1:]:
-        if item.get("author", {}).get("login") != owner:
+        if item.get("author", {}).get("login") not in logins(owner):
             continue
         line = _first_line(item.get("body"))
         if line.startswith(gate.MARKER) and _DECISION not in line:

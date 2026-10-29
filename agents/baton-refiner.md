@@ -1,7 +1,7 @@
 ---
 name: baton-refiner
 description: Use to refine forge issues in bulk for Baton. Give it the repository and at most about three issue numbers ("Refine issues <N>, <M>."), or to re-refine one issue after a review that sent its plan back ("Re-refine issue <N> after the review of pull request <P>."). It brings each issue to the definition of ready, including a plan of small tasks, asks the maintainer on the issue where only they can decide, and returns a short report per issue.
-model: sonnet
+model: opus
 effort: medium
 tools: Read, Grep, Glob, Bash, Write, WebSearch, WebFetch
 isolation: worktree

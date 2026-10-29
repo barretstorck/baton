@@ -116,9 +116,10 @@ a `Prototype:` link to the commit.
 | `/baton:develop` | Do one task: a plan task, a review task or a spike (used by the `baton-developer` subagent) |
 | `/baton:review <pr>` | Review one pull request and post a verdict (used by the `baton-reviewer` subagent) |
 
-The developer, reviewer and refiner subagents run on Sonnet at medium effort; `model` and
-`effort` under `developer`, `reviewer` and `refiner` in the brief change each one's model and
-effort (efforts: `low`, `medium`, `high`, `xhigh` or `max`). Medium is the default because a
+Each of the five roles (triager, refiner, researcher, developer, reviewer) has its own `model`
+and `effort` in the brief. The defaults are Haiku for the triager, Opus for the refiner,
+researcher and reviewer, and Sonnet for the developer, all at medium effort. The allowed models
+are `opus`, `sonnet`, `fable` and `haiku` (efforts: `low`, `medium`, `high`, `xhigh` or `max`). Medium is the default because a
 developer's thinking is about half of its context and every call re-reads that context, so
 thinking is the largest single cost of a sprint. For bulk refinement, dispatch
 `baton-refiner` agents with at most about three issues each.
@@ -182,6 +183,14 @@ every checkout; `baton merge-pr` deletes the folder after a merge. The result go
 (`baton review post` refuses an approval unless it is `green`), and `baton pr-state` and `baton sprint-status`
 show it as `verify`. With `review.required: false` no review carries the result, so `verify` reads `none`.
 When an approved pull request's head moves only by merging the default branch in, the reviewer re-approves it briefly: it runs `baton verify` again and posts a new review for the new head.
+
+## Maintainers
+
+`maintainers` in `.baton/brief.md` lists the GitHub logins whose comments, reviews, approvals and
+issues Baton trusts (default `[]`, meaning the repository owner alone). Agents post under a
+maintainer's login, so every login on the list can answer questions, approve a merge with
+`/baton approve` and write issues that are ready to develop. `baton config` prints the resolved
+list. Log folders and API paths still use the repository owner.
 
 ## Forbidden diff patterns
 

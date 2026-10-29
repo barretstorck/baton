@@ -46,6 +46,24 @@ class ConfigTest(unittest.TestCase):
                 with self.assertRaises(config.ConfigError):
                     config.load(str(make_repo(f"---\n{meta}\n---\n")))
 
+    def test_maintainers_default_and_override(self):
+        cfg = config.load(str(make_repo("# none\n")))
+        self.assertEqual(cfg.data["maintainers"], [])
+        self.assertEqual(cfg.maintainers("owner"), ["owner"])
+        cfg = config.load(str(make_repo("---\nmaintainers: [a, b]\n---\n")))
+        self.assertEqual(cfg.data["maintainers"], ["a", "b"])
+        self.assertEqual(cfg.maintainers("owner"), ["a", "b"])
+
+    def test_maintainers_invalid_raises(self):
+        for meta in ('maintainers: a', 'maintainers: [1]'):
+            with self.subTest(meta=meta):
+                with self.assertRaises(config.ConfigError):
+                    config.load(str(make_repo(f"---\n{meta}\n---\n")))
+
+    def test_logins(self):
+        self.assertEqual(config.logins("x"), frozenset(["x"]))
+        self.assertEqual(config.logins(["x", "y"]), frozenset(["x", "y"]))
+
     def test_bad_front_matter_raises(self):
         with self.assertRaises(config.ConfigError):
             config.load(str(make_repo("---\nnot a mapping\n---\n")))
@@ -63,7 +81,7 @@ class ConfigTest(unittest.TestCase):
                     config.load(str(make_repo(f"---\n{meta}\n---\n")))
 
     def test_reviewer_and_review_defaults(self):
-        self.assertEqual(config.DEFAULTS["reviewer"], {"model": "sonnet", "effort": "medium"})
+        self.assertEqual(config.DEFAULTS["reviewer"], {"model": "opus", "effort": "medium"})
         self.assertEqual(config.DEFAULTS["review"], {"required": True, "max_rounds": 2})
 
     def test_developer_default_is_one_at_a_time(self):
@@ -78,16 +96,28 @@ class ConfigTest(unittest.TestCase):
             config.load(str(make_repo("---\ndeveloper:\n  effort: turbo\n---\n")))
 
     def test_refiner_defaults(self):
-        self.assertEqual(config.DEFAULTS["refiner"], {"model": "sonnet", "effort": "medium"})
+        self.assertEqual(config.DEFAULTS["refiner"], {"model": "opus", "effort": "medium"})
         self.assertEqual(config.load(str(make_repo("# none\n"))).data["refiner"],
-                         {"model": "sonnet", "effort": "medium"})
+                         {"model": "opus", "effort": "medium"})
+
+    def test_role_model_table(self):
+        table = {"triager": "haiku", "refiner": "opus", "researcher": "opus",
+                 "developer": "sonnet", "reviewer": "opus"}
+        self.assertEqual(config.ROLES, tuple(table))
+        self.assertEqual(config.MODELS, ("opus", "sonnet", "fable", "haiku"))
+        data = config.load(str(make_repo("# none\n"))).data
+        for role, model in table.items():
+            self.assertEqual(data[role]["model"], model)
+            self.assertEqual(data[role]["effort"], "medium")
 
     def test_reviewer_and_refiner_effort_and_model_override_and_rejection(self):
-        for role in ("developer", "reviewer", "refiner"):
+        for role in config.ROLES:
             with self.subTest(role=role):
-                cfg = config.load(str(make_repo(f"---\n{role}:\n  model: opus\n  effort: high\n---\n")))
+                cfg = config.load(str(make_repo(f"---\n{role}:\n  model: fable\n  effort: high\n---\n")))
                 self.assertEqual(cfg.data[role]["effort"], "high")
-                self.assertEqual(cfg.data[role]["model"], "opus")
+                self.assertEqual(cfg.data[role]["model"], "fable")
+                with self.assertRaisesRegex(config.ConfigError, f"{role}.model"):
+                    config.load(str(make_repo(f"---\n{role}:\n  model: gpt\n---\n")))
                 with self.assertRaisesRegex(config.ConfigError, f"{role}.effort"):
                     config.load(str(make_repo(f"---\n{role}:\n  effort: turbo\n---\n")))
 

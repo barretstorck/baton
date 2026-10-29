@@ -72,6 +72,10 @@ class ReadyTest(unittest.TestCase):
     def test_complete_issue_is_ready(self):
         self.assertEqual(issue.ready_problems(make(), cfg(), OWNER), [])
 
+    def test_issue_by_second_maintainer_is_ready(self):
+        self.assertEqual(issue.ready_problems(make(author="second"), cfg(), [OWNER, "second"]), [])
+        self.assertTrue(issue.ready_problems(make(author="second"), cfg(), OWNER))
+
     def test_each_missing_part_is_reported(self):
         cases = {
             "Context": BODY.replace("Users cannot pass a flag.", ""),

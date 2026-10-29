@@ -181,7 +181,7 @@ def _pr_verify(pr, cfg, runner, owner):
         return "none"
     if owner is None:
         owner = json.loads(runner(["gh", "repo", "view", "--json", "owner"]))["owner"]["login"]
-    return review.verify_state(cfg, pr.get("comments"), owner, pr.get("headRefOid"))
+    return review.verify_state(cfg, pr.get("comments"), cfg.maintainers(owner), pr.get("headRefOid"))
 
 
 def pr_state(pr, cfg, runner=None, owner=None):
@@ -223,6 +223,7 @@ def _next_task_url(owner, name, link, text, found):
 def snapshot(cfg, runner, milestone=None):
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     owner, branch = repo["owner"]["login"], repo["defaultBranchRef"]["name"]
+    maintainers = cfg.maintainers(owner)
     milestones = _load(
         runner, ["gh", "api", f"repos/{owner}/{repo['name']}/milestones?state=open&per_page=100"],
         "milestones")
@@ -308,7 +309,7 @@ def snapshot(cfg, runner, milestone=None):
             except checklist.TaskError:
                 text, link = "", None
             found = checklist.plan(text)
-            fixes = review.review_tasks(pr, owner) if pr else None
+            fixes = review.review_tasks(pr, maintainers) if pr else None
             spike = cfg.label("type:spike") in labels
             behind = behind_default(pr) if status in ("status:in-dev", "status:in-review") else None
             result["progress"][str(number)] = {
@@ -329,7 +330,7 @@ def snapshot(cfg, runner, milestone=None):
         elif status == "status:in-review":
             pr = pr_for.get(number)
             if pr and cfg.data["review"]["required"]:
-                found = review.current(pr, owner, cfg, runner, branch)
+                found = review.current(pr, maintainers, cfg, runner, branch)
                 review_state, rounds = found["state"], found["rounds"]
             else:
                 review_state, rounds = "not-required", 0
@@ -348,7 +349,7 @@ def snapshot(cfg, runner, milestone=None):
                 result["re_refine"].append({"number": number, "pr": pr["number"],
                                             "draft": pr["isDraft"]})
         elif status == "status:blocked":
-            pending = comment.pending_answers(item, owner)
+            pending = comment.pending_answers(item, maintainers)
             if pending["answers"]:
                 result["answered"].append({"number": number, **pending})
             else:
@@ -373,7 +374,7 @@ def snapshot(cfg, runner, milestone=None):
         number = item["number"]
         open_blockers = [n for n in issue_fields.blocked_by(item.get("body"))
                          if _blocker_open(n, by_number, runner)]
-        if item.get("author", {}).get("login") != owner:
+        if item.get("author", {}).get("login") not in maintainers:
             reason = "written by someone other than the maintainer"
         elif red and not repair:
             reason = "default branch is red; only the repair issue may proceed"
@@ -390,7 +391,7 @@ def snapshot(cfg, runner, milestone=None):
 
     result["waiting_on_maintainer"] = sorted(waiting)
     for number in result["waiting_on_maintainer"]:
-        pending = comment.pending_answers(by_number[number], owner)
+        pending = comment.pending_answers(by_number[number], maintainers)
         result["waiting_links"][str(number)] = (
             pending["question"] if pending["question"] and not pending["answers"] else None)
     result["finished"] = bool(issues) and all(

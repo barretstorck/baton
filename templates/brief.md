@@ -1,13 +1,19 @@
 ---
+triager:
+  model: haiku
+  effort: medium
+refiner:
+  model: opus
+  effort: medium
+researcher:
+  model: opus
+  effort: medium
 developer:
   model: sonnet
   max_parallel: 1
   effort: medium
 reviewer:
-  model: sonnet
-  effort: medium
-refiner:
-  model: sonnet
+  model: opus
   effort: medium
 review:
   required: true              # false: merge-pr does not ask for a reviewer's approval
@@ -39,6 +45,7 @@ verify:
   timeout_minutes: 10         # the run is killed after this many minutes and counts as a timeout
 docs:
   dir: docs/baton             # where plans and retrospectives live: relative, no "..", not protected
+maintainers: []              # logins whose comments count as the maintainer's; empty: the repository owner
 protected_paths: [".github/", ".baton/", ".claude/"]
 fixtures_paths: []            # the only places new image files may be added
 privacy_allow: []             # literal strings the privacy scan should ignore
