@@ -45,11 +45,11 @@ def _forge_re(clis):
 _GITPUB = re.compile(_POS + r"(?:[\w.~+-]*/)*git\b[^;&|\n]*?\b(?:commit|push|tag)\b")
 # Run on the command with quoted strings blanked, so a commit message may mention these.
 _BYPASS_TEXT = re.compile(
-    r"--no-verify\b|--config-env\b"
+    r"--no-v[a-z-]*|--config-env\b"
     r"|(?:^|[\s;&|])(?:HOME|XDG_CONFIG_HOME|BATON_PRIVATE_TERMS|GIT_CONFIG\w*)=")
 # Run on the unblanked command: a quoted `-c "core.hooksPath=/x"` value must still be refused.
 _BYPASS_CFG = re.compile(
-    r"""-c\s*["']?core\.hooksPath|config\s+(?:--\S+\s+)*["']?core\.hooksPath["']?\s+\S""")
+    r"""-c\s*["']?core\.hooksPath|config\s+(?:--\S+\s+)*["']?core\.hooksPath["']?\s+\S""", re.IGNORECASE)
 _SHORT_N = re.compile(_POS + r"git\b[^;&|\n]*?\b(?:commit|push)\b[^;&|\n]*?\s-[a-zA-Z]*n[a-zA-Z]*(?:\s|$)")
 
 
