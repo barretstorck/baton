@@ -34,10 +34,6 @@ class DocsMatchGate(unittest.TestCase):
         self.assertEqual(bad, [], "docs name gh commands the gate refuses")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class DenyRules(unittest.TestCase):
     """The README's `permissions.deny` rules for the identity keys."""
 
@@ -105,3 +101,7 @@ class DenyRules(unittest.TestCase):
             "~/.baton/owner-repo/brief.md",
         ):
             self.assertFalse(self._matches(path), path)
+
+
+if __name__ == "__main__":
+    unittest.main()
