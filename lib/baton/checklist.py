@@ -207,8 +207,10 @@ def _path_tokens(block):
             token = _LINE_SUFFIX.sub("", token)
             if not token:
                 continue
-            if " " in token or "<" in token:
-                continue
+            if " " in token or "<" in token or ":" in token:
+                continue  # prose, placeholders, images and URLs
+            if any("." in part.lstrip(".") for part in token.split("/")[:-1]):
+                continue  # a host name or dotted code reference, not a directory
             if "." not in token.rsplit("/", 1)[-1] and token.count("/") < 2:
                 continue
             if "/" in token or token.endswith(_PATH_EXT):
@@ -227,19 +229,22 @@ def created_paths(text):
 def named_paths(text):
     """Sorted, unique paths named on the Files, Uses and Port from lines of unticked tasks.
 
-    A path marked '(new' in the same or an earlier task (ticked or not) is not reported.
+    A path marked '(new' in the same or an earlier task (ticked or not) is not reported, nor is
+    a bare file name that is short for a longer path the plan names anywhere.
     """
     where = span(text, "plan")
     if where is None:
         return []
-    found, created = set(), set()
+    found, created, full = set(), set(), set()
     for block in _blocks(text[where[0]:where[1]])[1]:
         tokens = list(_path_tokens(block))
         created.update(token for token, is_new in tokens if is_new)
+        full.update(token for token, _ in tokens if "/" in token)
         if block["done"]:
             continue
         found.update(token for token, is_new in tokens if not is_new and token not in created)
-    return sorted(found)
+    return sorted(p for p in found
+                  if "/" in p or not any(f.endswith("/" + p) for f in full))
 
 
 def _title(block):

@@ -369,7 +369,10 @@ Do not paste the issue text, the task brief, your notes or other issues into the
 
 **Stale plans and far-behind branches.** `progress.<N>.stale` is
 `{"missing_paths", "ambiguous_paths", "path_check_skipped", "plan_behind"}` for every issue with a plan: the paths its
-open tasks name that no longer exist on the default branch (null when the check did not run),
+open tasks name that no longer exist on the default branch (null when the check did not run;
+it does not count a path that the same or an earlier task, or an open blocker or a blocker of
+one, marks `(new)`, a bare name short for such a path, a directory a listed path starts with, or
+a token that is not a repository path, such as a container image or a dotted code reference),
 the bare names among them that match several tracked files, as a map from name to those paths
 (`{}` when none, null when the check did not run; the hold reason lists the matches),
 why the check was skipped (null when it ran), and how many default-branch commits the plan's `Written against:` commit lacks.
