@@ -16,7 +16,7 @@ maintainer has refined them and marked them ready. That is a safety rule, not a 
 ## Pull requests
 
 - Open an issue first for anything larger than a small fix.
-- Run the verification before you open the pull request:
+- Run the verification before you open the pull request, with Python 3.11 or newer as `python3`:
 
       PYTHONPATH=lib python3 -m unittest discover -s tests
 

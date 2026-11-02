@@ -27,7 +27,10 @@ installed build by the commit SHA of `main`, shown as `version` in
 
 Requirements: [Claude Code](https://docs.claude.com/en/docs/claude-code), `git`, the
 [GitHub CLI](https://cli.github.com/) (`gh`) signed in to an account that can push to your
-repository, and Python 3 (CI tests 3.12). Only GitHub is supported as the forge for now.
+repository, and Python 3.11 or newer (CI tests 3.12). `baton` runs the first Python that is new
+enough: `$BATON_PYTHON` when set, then each `python3` on `PATH` in order, then `python3.11` and
+later names, so an older system `python3` earlier on `PATH` is skipped. Only GitHub is supported
+as the forge for now.
 
     claude plugin marketplace add barretstorck/baton
     claude plugin install baton@baton
