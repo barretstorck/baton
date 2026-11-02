@@ -873,6 +873,21 @@ Written against: {SHA}
                           "- [ ] **2. B**", "  - Files: `lib/n.py` (new)")
         self.assertEqual(checklist.named_paths(text), ["lib/n.py"])
 
+    def test_images_and_dotted_code_references_are_not_paths(self):
+        text = self._plan("- [ ] **1. A**",
+                          "  - Uses: `ghcr.io/home-assistant/hassfest`, `ghcr.io/hacs/action:main`, "
+                          "`Data.children/reports/moments/badges`, `.github/workflows/ci.yml`, "
+                          "`lib/a.py`")
+        self.assertEqual(checklist.named_paths(text), [".github/workflows/ci.yml", "lib/a.py"])
+
+    def test_bare_name_short_for_a_plan_path_is_dropped(self):
+        for mark in (" ", "x"):
+            with self.subTest(mark=mark):
+                text = self._plan(f"- [{mark}] **1. A**", "  - Files: `pkg/const.py` (new)",
+                                  "- [ ] **2. B**", "  - Uses: `const.py`, `tests/common.py`",
+                                  "- [ ] **3. C**", "  - Uses: `common.py`, `other.py`")
+                self.assertEqual(checklist.named_paths(text), ["other.py", "tests/common.py"])
+
     def test_created_paths(self):
         text = self._plan("- [x] **1. A**", "  - Files: `lib/a.py` (new), `lib/z.py`",
                           "- [ ] **2. B**", "  - Files: `lib/b.py` (new)", "  - Check: `t.py` (new)")
