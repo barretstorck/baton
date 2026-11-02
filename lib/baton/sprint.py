@@ -285,9 +285,15 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
         return tracked[0]
 
     def blocker_created(item):
-        """Paths that the plans of this issue's open blockers mark (new."""
-        created = set()
-        for blocker in issue_fields.blocked_by(item.get("body")):
+        """Paths that the plans of this issue's open blockers, and of their open blockers in
+        turn, mark (new."""
+        created, seen = set(), {item["number"]}
+        todo = list(issue_fields.blocked_by(item.get("body")))
+        while todo:
+            blocker = todo.pop(0)
+            if blocker in seen:
+                continue
+            seen.add(blocker)
             if not _blocker_open(blocker, by_number, runner):
                 continue
             try:
@@ -296,6 +302,7 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
                 else:
                     body = json.loads(runner(["gh", "issue", "view", str(blocker),
                                              "--json", "body"]))["body"]
+                todo.extend(issue_fields.blocked_by(body))
                 text, _ = checklist.plan_source(runner, body or "", plan_cache,
                                                 cfg.data["docs"]["dir"])
                 created |= checklist.created_paths(text)
@@ -319,7 +326,11 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
             def present(path):
                 if path in files or path in created:
                     return True
-                return "/" not in path and basenames[path] == 1
+                if path.endswith("/"):
+                    return any(f.startswith(path) for f in files | created)
+                if "/" in path:
+                    return False
+                return basenames[path] == 1 or any(f.endswith("/" + path) for f in created)
             missing = [p for p in named if not present(p)]
             ambiguous = {p: sorted(f for f in files if f.rsplit("/", 1)[-1] == p)
                          for p in missing if "/" not in p and p not in created and basenames[p] > 1}

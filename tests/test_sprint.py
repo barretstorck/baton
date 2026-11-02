@@ -921,6 +921,46 @@ class DefaultBranchStateTest(unittest.TestCase):
         self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"],
                          ["lib/gone.py", "lib/new_b.py"])
 
+    def _chain_snap(self, files_line, middle_state="OPEN", tracked="lib/keep.py\n"):
+        """Issue 7 blocked by 8, blocked by 9; 9 creates lib/root.py and tests/fixtures/a.json."""
+        def planned(number, files, blocked):
+            item = issue(number, "ready", "deliverable", blocked=blocked)
+            item["body"] += ("## Plan\nWritten against: " + "c" * 40 + "\n\n- [ ] **1. A**\n"
+                             f"  - Files: {files}\n")
+            return item
+        items = [planned(7, files_line, "#8"), planned(8, "`lib/mid.py` (new)", "#9"),
+                 planned(9, "`lib/root.py` (new), `tests/fixtures/a.json` (new)", "")]
+        items[1]["state"] = middle_state
+        runner = FakeRunner(replies(items, extra={"git ls-tree": tracked, "git rev-list": "0\n"}))
+        return sprint.snapshot(cfg(), runner)
+
+    def test_path_a_blocker_of_a_blocker_creates_is_not_missing(self):
+        result = self._chain_snap("`lib/root.py`, `lib/mid.py`, `lib/gone.py`")
+        self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], ["lib/gone.py"])
+
+    def test_closed_blocker_stops_the_walk(self):
+        result = self._chain_snap("`lib/root.py`, `lib/mid.py`", middle_state="CLOSED")
+        self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"],
+                         ["lib/mid.py", "lib/root.py"])
+
+    def test_bare_name_a_blocker_creates_is_not_missing(self):
+        result = self._chain_snap("`a.json`, `root.py`, `gone.json`")
+        self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], ["gone.json"])
+
+    def test_directory_is_present_when_a_path_starts_with_it(self):
+        result = self._chain_snap("`tests/fixtures/`, `lib/sub/`, `lib/none/`",
+                                  tracked="lib/sub/x.py\n")
+        self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"], ["lib/none/"])
+
+    def test_deleted_and_moved_files_are_still_held(self):
+        result, _ = self._stale_snap("`lib/old_name.py`, `lib/removed.py`, `lib/keep.py`",
+                                     tracked="lib/keep.py\nlib/new_name.py\n",
+                                     blocker="`lib/other.py` (new)", blocked_line="Blocked by: #8")
+        self.assertEqual(result["progress"]["7"]["stale"]["missing_paths"],
+                         ["lib/old_name.py", "lib/removed.py"])
+        self.assertEqual(result["held"],
+                         [{"number": 7, "reason": "plan names 2 missing paths; re-refine"}])
+
     def _plan_item(self):
         item = issue(7, "ready", "deliverable")
         item["body"] += ("## Plan\nWritten against: " + "c" * 40 + "\n\n- [ ] **1. A**\n"
