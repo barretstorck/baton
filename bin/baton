@@ -1,3 +1,20 @@
 #!/bin/sh
-here="$(cd "$(dirname "$0")/.." && pwd)"
-PYTHONPATH="$here/lib${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m baton "$@"
+# Baton needs Python 3.11 or newer. Run the first that is: $BATON_PYTHON, then each python3 on
+# PATH in order, then the versioned names, so an older python3 earlier on PATH does not win.
+here="$(cd "${0%/*}/.." && pwd)"
+export PYTHONPATH="$here/lib${PYTHONPATH:+:$PYTHONPATH}"
+new_enough() {
+  [ -n "$1" ] && "$1" -I -S -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null
+}
+new_enough "$BATON_PYTHON" && exec "$BATON_PYTHON" -m baton "$@"
+rest=$PATH:
+while [ -n "$rest" ]; do
+  dir=${rest%%:*}
+  rest=${rest#*:}
+  [ -x "${dir:-.}/python3" ] && new_enough "${dir:-.}/python3" && exec "${dir:-.}/python3" -m baton "$@"
+done
+for name in python3.11 python3.12 python3.13 python3.14 python3.15 python3.16; do
+  found=$(command -v "$name") && new_enough "$found" && exec "$found" -m baton "$@"
+done
+echo "baton: needs Python 3.11 or newer, and found none on PATH; install one, or set BATON_PYTHON to its path" >&2
+exit 1
