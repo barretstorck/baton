@@ -598,3 +598,82 @@ class BriefListsTest(unittest.TestCase):
         self.assertTrue(gate.decide("gh issue comment 5 --body-file notes.md", root, TERMS))
         self.assertTrue(gate.forge_facing("glab mr list"))
         self.assertFalse(gate.forge_facing("glab mr list", ("gh",)))
+
+
+class DetachedPrCreateTest(unittest.TestCase):
+    OK = "claude-code_2-1-290_agent"
+
+    def repo(self, branch="issue-216-detached", detach=True):
+        root = make_repo()
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q",
+                        "--allow-empty", "--no-verify", "-m", "x"], cwd=root, check=True)
+        if detach:
+            subprocess.run(["git", "checkout", "-q", "--detach"], cwd=root, check=True)
+        if branch:
+            subprocess.run(["git", "update-ref", f"refs/remotes/origin/{branch}", "HEAD"], cwd=root, check=True)
+        return root
+
+    def run_main(self, command, root, agent=OK):
+        payload = {"tool_name": "Bash", "cwd": root,
+                   "tool_input": {"command": command, "description": "Open"}}
+        env = {"AI_AGENT": agent, "BATON_PRIVATE_TERMS": "/nonexistent"}
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, env), contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(err):
+            code = gate.main(json.dumps(payload))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_head_is_added(self):
+        code, out, _ = self.run_main("gh pr create --title t --body x", self.repo())
+        self.assertEqual(code, 0)
+        hook = json.loads(out)["hookSpecificOutput"]
+        self.assertNotIn("permissionDecision", hook)
+        self.assertEqual(hook["updatedInput"]["command"],
+                         "gh pr create --head issue-216-detached --title t --body x")
+        self.assertEqual(hook["updatedInput"]["description"], "Open")
+        self.assertIn("--head issue-216-detached", hook["additionalContext"])
+
+    def test_head_word_in_a_body_is_still_rewritten(self):
+        code, out, _ = self.run_main('gh pr create --body "use --head here"', self.repo())
+        self.assertEqual(code, 0)
+        self.assertIn("updatedInput", out)
+
+    def test_given_head_or_attached_head_is_left_alone(self):
+        self.assertEqual(self.run_main("gh pr create --head issue-216-x --title t", self.repo())[:2], (0, ""))
+        self.assertEqual(self.run_main("gh pr create --title t", self.repo(detach=False))[:2], (0, ""))
+
+    def test_no_single_pushed_branch_is_refused(self):
+        for branch in (None, "issue-216-a;b"):
+            with self.subTest(branch=branch):
+                code, out, err = self.run_main("gh pr create --title t", self.repo(branch=branch))
+                self.assertEqual((code, out), (2, ""))
+                self.assertIn("--head <branch>", err)
+
+    def test_compound_commands_are_refused_with_the_flag(self):
+        root = self.repo()
+        for command in ("cd . && gh pr create --title t --body x",
+                        "gh pr create --title t --body x; echo y",
+                        "gh pr create --title t --body x\necho y"):
+            with self.subTest(command=command):
+                code, out, err = self.run_main(command, root)
+                self.assertEqual((code, out), (2, ""))
+                self.assertIn("Add `--head issue-216-detached`", err)
+
+    def test_mentions_are_not_touched(self):
+        root = self.repo()
+        for command in ('echo "gh pr create" && ls', 'gh issue comment 5 --body "gh pr create"'):
+            with self.subTest(command=command):
+                self.assertEqual(self.run_main(command, root)[:2], (0, ""))
+
+    def test_old_or_unknown_claude_code_is_refused(self):
+        root = self.repo()
+        for agent in ("claude-code_2-1-289_agent", ""):
+            with self.subTest(agent=agent):
+                code, out, err = self.run_main("gh pr create --title t", root, agent)
+                self.assertEqual((code, out), (2, ""))
+                self.assertIn("--head issue-216-detached", err)
+
+    def test_privacy_finding_still_refuses(self):
+        code, out, err = self.run_main(f'gh pr create --title t --body "see {IP}"', self.repo())
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("privacy", err)
