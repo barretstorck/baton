@@ -61,24 +61,7 @@ of "Talking to the maintainer". Answers it records are orchestrator `decision` c
 
 ### 1. Default branch
 
-If `default_branch.state` is `red`, the repair comes before everything else
-([GitLab: broken master](https://handbook.gitlab.com/handbook/engineering/workflow/#broken-master)).
-
-- If `repair_issue` is null: create an issue describing the failure (failing job, first bad
-  commit, a short log excerpt with private details replaced), with labels
-  `broken-default-branch`, `deliverable` and `type:bug`, in the sprint milestone. Then dispatch
-  `baton:baton-refiner` with `Refine issues <N>.` to diagnose it and write its plan. The refiner
-  is always started with the Agent tool's `model` set to `refiner.model` and `effort` set to
-  `refiner.effort` (from `baton config`, default `opus` and `medium`), here and in every other
-  refiner dispatch below; say in the sprint status which effort you used.
-- Dispatch a developer to the repair issue at once, even if that exceeds the parallel limit by one.
-- Until the branch is green again: dispatch nothing else and merge nothing else. Developers
-  already running may continue; their pull requests wait.
-- If the cause is a pull request you just merged, reverting it is the preferred repair.
-
-`pending` or `none` is not red; carry on, but do not mark anything `status:complete` on `pending`.
-`none` usually means CI runs only on pull requests; a red default branch then shows up as
-pull requests failing on code they did not touch. When two or more do, treat it as red.
+If `default_branch.state` is `red`, the repair comes before everything else: dispatch nothing else and merge nothing else until it is green. Read `${CLAUDE_PLUGIN_ROOT}/references/sprint-default-branch.md` for the repair issue and the `pending` and `none` states.
 
 ### 2. Budgets
 
@@ -90,25 +73,7 @@ limit in one short line only if it is on no issue.
 
 For each entry in `answered`, the maintainer has replied to a blocked issue.
 
-1. Read the question and the answers. If the answers do not actually settle the question, post a
-   `question` comment saying what is still open, and leave the issue blocked.
-2. Otherwise add one line per decision to the description's `## Decisions` section, each ending
-   with a link to the answering comment:
-
-       - <the decision, in one sentence>. ([answer](<comment URL>))
-
-   If the decision sets the order of two issues, also add `Blocked by: #N` (the earlier issue) to
-   the later issue's Pointers in the same description edit. `sprint-status` holds an issue on that
-   line and does not read Decisions, so use it instead of prose alone; it releases when the blocker
-   closes, which its merged pull request does.
-
-   Write the full new description to a file and update the issue. Keep all earlier decisions.
-3. `baton set-status <N> status:ready`. A developer will resume it from its branch.
-
-**Answers given in this session.** If the maintainer answers a question here in the conversation,
-the issue must still be the record. Post it first:
-`baton comment issue <N> orchestrator decision <file>`, quoting the maintainer's words, then do
-steps 2 and 3 using that comment's URL.
+Read `${CLAUDE_PLUGIN_ROOT}/references/sprint-answers.md` to record the decision and release the issue, also for answers given in this session.
 
 ### 4. Review and merge
 
@@ -156,6 +121,8 @@ Developers return follow-up suggestions. For each one worth keeping, create an i
 Read `${CLAUDE_PLUGIN_ROOT}/references/sprint-follow-ups.md` before filing one: it says how to check its claim and where to place it by severity.
 
 ### 7. Dispatch
+
+The refiner is always started with the Agent tool's `model` set to `refiner.model` and `effort` set to `refiner.effort` (from `baton config`, default `opus` and `medium`), in every refiner dispatch; say in the sprint status which effort you used.
 
 An issue in development has **one developer at a time**, doing **one task**. Every task gets a
 fresh `baton:baton-developer` subagent, started in the background with the model from
