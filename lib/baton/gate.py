@@ -175,6 +175,9 @@ _BODY_WRITE = re.compile(
 _EMPTY_INLINE = re.compile(r"""(?<![\w-])(?:--body|-b)(?:\s+|=)(?:"\s*"|'\s*')(?=\s|[;&|)]|$)""")
 
 
+_BODY_FILE_FLAG = re.compile(r"\s*(?:--body-file|-F)(?![\w-])")
+
+
 def _body_write_spans(command):
     """(start, end) offsets of each `gh [-R repo] issue|pr create|edit` segment in `command`.
 
@@ -431,6 +434,9 @@ def decide(command, cwd, terms):
             problems.append(problem)
         else:
             texts.append(text)
+            if (cfg is not None and forge and not text.strip() and _BODY_FILE_FLAG.match(stripped, start)
+                    and any(a <= start < b for a, b in _body_write_spans(stripped))):
+                problems.append(_EMPTY_BODY)
 
     findings = scan.scan_text("\n".join(texts), terms, allow)
     kinds = sorted({finding.kind for finding in findings})
