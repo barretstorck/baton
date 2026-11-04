@@ -283,6 +283,35 @@ class GateTest(unittest.TestCase):
             for repo in (with_brief, without):
                 self.assertEqual(gate.decide(cmd, repo, TERMS), [], cmd)
 
+    def test_close_marker_rewrites_the_comment(self):
+        import shlex
+        env = {"AI_AGENT": "claude-code_2-1-296_agent"}
+        repo = make_repo()
+        cases = [
+            ("gh issue close 5 --comment \"Done in #6\"", None, "orchestrator", "closed", "Done in #6"),
+            ("gh pr reopen 5 -c again", "baton:baton-developer", "developer", "reopened", "again"),
+            ("gh pr reopen 5 --comment=again", None, "orchestrator", "reopened", "again"),
+            ("gh pr reopen 5 -cagain", None, "orchestrator", "reopened", "again"),
+        ]
+        for cmd, agent, role, kind, reason in cases:
+            new, problems = gate.close_marker(cmd, repo, agent, env)
+            self.assertEqual(problems, [], cmd)
+            stamp = gate._stamp(role, kind, reason)
+            want = [a.replace(reason, stamp) if a.endswith(reason) else a for a in shlex.split(cmd)]
+            self.assertEqual(shlex.split(new), want, cmd)
+        marked = "gh issue close 5 --comment '<!-- baton:developer:closed -->\nx'"
+        self.assertEqual(gate.close_marker(marked, repo, None, env), (None, []))
+        for bad in ({}, {"AI_AGENT": "claude-code_2-1-289_agent"}):
+            new, problems = gate.close_marker("gh issue close 5 --comment x", repo, None, bad)
+            self.assertIsNone(new)
+            self.assertIn("<!-- baton:orchestrator:closed -->", problems[0])
+        for cmd in ('gh issue close 5 --comment "$R"', "cd sub && gh issue close 5 -c x",
+                    "gh issue close 5 -c \"$(cat <<'EOF'\nx\nEOF\n)\"", "gh issue close 5 -c x <<EOF\ny\nEOF"):
+            new, problems = gate.close_marker(cmd, repo, "baton:baton-developer", env)
+            self.assertIsNone(new, cmd)
+            self.assertIn("<!-- baton:developer:closed -->", problems[0], cmd)
+        self.assertEqual(gate.close_marker("gh issue close 5 -c x", make_repo(brief=None), None, env), (None, []))
+
     def test_rewrite_helpers(self):
         from baton import comment
         self.assertEqual(gate._claude_version({"AI_AGENT": "claude-code_2-1-296_agent"}), (2, 1, 296))

@@ -202,6 +202,53 @@ def _body_files(command, git_only, flags=BODY_FILE_FLAGS):
     return [p for p in paths if p != "-"]
 
 
+_MARKED = re.compile(re.escape(MARKER) + r"(?:developer|refine|reviewer|researcher|orchestrator):(?:closed|reopened) -->")
+
+
+def close_marker(command, cwd, agent_type, env):
+    """(new_command, problems) for a gh issue|pr close|reopen that has a reason.
+
+    (None, []) when there is nothing to do; (new_command, []) when the comment gets Baton's marker;
+    (None, [refusal]) when the marker cannot be added and the agent has to write it.
+    """
+    stripped = _HEREDOC.sub("<<HD", command)
+    found = _close_command(stripped)
+    if not found or not found[2] or _MARKED.search(command):
+        return None, []
+    try:
+        if config.load(cwd) is None:
+            return None, []
+    except config.ConfigError:
+        return None, []
+    target, action, _ = found
+    kind = "closed" if action == "close" else "reopened"
+    role = _role(agent_type)
+    line = f"{MARKER}{role}:{kind} -->"
+    version = _claude_version(env)
+    if version is None or version < REWRITE_FLOOR:
+        return None, [f"`gh {target} {action}`: add `{line}` as the first line of the --comment text "
+                      "(this Claude Code version cannot have Baton add it)"]
+    argv = _simple_argv(command)
+    if argv is None:
+        return None, [f"`gh {target} {action}`: add `{line}` as the first line of the --comment text "
+                      "(Baton cannot add it to a compound command or one with variables, substitutions, "
+                      "heredocs or several lines)"]
+    if "gh" not in argv:
+        return None, []
+    for i in range(argv.index("gh"), len(argv)):
+        arg = argv[i]
+        if arg in ("-c", "--comment") and i + 1 < len(argv):
+            argv[i + 1] = _stamp(role, kind, argv[i + 1])
+        elif arg.startswith("--comment="):
+            argv[i] = "--comment=" + _stamp(role, kind, arg[len("--comment="):])
+        elif arg.startswith("-c") and not arg.startswith("--") and len(arg) > 2:
+            argv[i] = "-c" + _stamp(role, kind, arg[2:])
+        else:
+            continue
+        return shlex.join(argv), []
+    return None, []
+
+
 def decide(command, cwd, terms):
     stripped = _HEREDOC.sub("<<HD", command)
     clis, flags = _brief_lists(cwd)
