@@ -1,8 +1,9 @@
 """Corpus of command shapes for gate.decide.
 
 ALLOWED holds harmless shapes, grouped by what a new rule might hurt; a failing subTest names
-the group. REFUSED holds publishes whose text carries one private finding each, hook bypasses, and close
-and reopen commands without a reason, refused only where there is a brief. Every private
+the group. REFUSED holds publishes whose text carries one private finding each, text the gate cannot read
+("unreadable"), hook bypasses, and close and reopen commands without a reason, refused only where
+there is a brief. Every private
 value is assembled from pieces so the commit scan sees no literal private detail.
 """
 import pathlib
@@ -71,6 +72,21 @@ ALLOWED = {
         'gh issue comment 5 --body "$(cat notes.md)"',
         'cd sub && gh pr create --title t --body "$(cat notes.md)"',
     ),
+    # (i) variables, pipes and unquoted values
+    "i variables, pipes and unquoted values": (
+        "gh issue comment 5 --body plain-word",
+        "gh api -X POST repos/example-org/example-repo/issues -f title=Word",
+        "glab issue create -t t -d Word",
+        "tea issues create -t t",
+        'gh issue comment 5 --body "costs $5"',
+        "gh pr create --base $BASE --head $BRANCH --title t --body x",
+        'gh pr list --search "author:$USER"',
+        "gh api repos/$OWNER/example-repo/pulls --jq .[].number",
+        "git checkout -b $BRANCH && git push -u origin $BRANCH && gh pr create --title t --body x",
+        "cat <<'EOF' | gh issue comment 5 --body-file -\nA clean comment\nEOF",
+        "echo msg | git commit -F -",
+        "gh pr view 5 | head -5",
+    ),
     # (g) repository selectors
     "g repository selectors": (
         "gh -R example-org/example-repo issue view 5",
@@ -122,6 +138,16 @@ REFUSED = (
     ('git commit "--no-verify";echo x', "bypass"),
     ("git push '-n' origin x", "bypass"),
     ("git config set core.hooksPath /dev/null && git push", "bypass"),
+    ("gh issue comment 5 --body %s" % IP, "private-ip"),
+    ("gh api -X POST repos/example-org/example-repo/issues -f title=%s" % TERM, "private-term"),
+    ("glab issue create -t t -d %s" % MAIL, "email"),
+    ("cat <<'EOF' | gh issue comment 5 --body-file -\nhost %s\nEOF" % IP, "private-ip"),
+    ('gh issue comment 5 --body "$B"', "unreadable"),
+    ("gh issue comment 5 --body $B", "unreadable"),
+    ('gh pr create --title "${T}" --body x', "unreadable"),
+    ("gh api -X POST repos/example-org/example-repo/issues -f title=$T", "unreadable"),
+    ("echo x | gh issue comment 5 --body-file -", "unreadable"),
+    ("glab issue create -t t --description -", "unreadable"),
     ("gh issue close 5", "close-reason"),
     ("gh pr close 5 --delete-branch", "close-reason"),
     ("gh issue reopen 5", "close-reason"),
@@ -163,7 +189,9 @@ class CorpusTest(unittest.TestCase):
                             self.assertEqual(problems, [])
                         continue
                     self.assertTrue(problems)
-                    if kind == "bypass":
+                    if kind == "unreadable":
+                        self.assertTrue(any("cannot be scanned" in p for p in problems), problems)
+                    elif kind == "bypass":
                         self.assertTrue(any("bypass" in p for p in problems), problems)
                     else:
                         self.assertTrue(
