@@ -34,6 +34,28 @@ class DocsMatchGate(unittest.TestCase):
         self.assertEqual(bad, [], "docs name gh commands the gate refuses")
 
 
+class ReferencedPaths(unittest.TestCase):
+    PATH = re.compile(
+        r"(?:\$\{CLAUDE_PLUGIN_ROOT\}/)?((?:references|templates)/[A-Za-z0-9_.-]+\.md)")
+
+    def test_referenced_files_exist(self):
+        bad = []
+        for path in doc_files():
+            with open(path, encoding="utf-8") as f:
+                for number, line in enumerate(f, 1):
+                    for ref in self.PATH.findall(line):
+                        if not os.path.exists(os.path.join(ROOT, ref)):
+                            bad.append(f"{os.path.relpath(path, ROOT)}:{number}: {ref}")
+        self.assertEqual(bad, [], "docs name files that do not exist")
+
+    def test_sprint_references_are_named(self):
+        with open(os.path.join(ROOT, "skills/sprint/SKILL.md"), encoding="utf-8") as f:
+            skill = f.read()
+        for path in sorted(glob.glob(os.path.join(ROOT, "references/sprint-*.md"))):
+            name = os.path.basename(path)
+            self.assertIn(name, skill, f"{name} is not named in the sprint skill")
+
+
 class DenyRules(unittest.TestCase):
     """The README's `permissions.deny` rules for the identity keys."""
 
