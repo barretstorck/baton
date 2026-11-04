@@ -84,9 +84,11 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("name: baton-orchestrator", lines)
         self.assertIn("autoCompactWindow: 250000", lines)
         self.assertIn("  - baton:sprint", lines)
-        for key in ("isolation:", "model:", "effort:", "tools:"):
+        self.assertIn("tools: Agent, SendMessage, Skill, Bash, Read, Grep, Glob, Write", lines)
+        for key in ("isolation:", "model:", "effort:"):
             self.assertFalse(any(l.startswith(key) for l in lines), key)
-        for phrase in ("baton sprint-status", "compaction", "Talking to the maintainer"):
+        for phrase in ("baton sprint-status", "compaction", "Talking to the maintainer",
+                       'to: "main"', "The coordinator sent a message"):
             self.assertIn(phrase, body)
 
     def test_researcher_agent_and_skill(self):
