@@ -290,6 +290,12 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("Spike for:", tmpl)
         self.assertIn("Origin: outside", tmpl)
 
+    def test_sprint_skill_reconnects_orchestrator(self):
+        text = " ".join((ROOT / "references/sprint-parent.md").read_text().split())
+        for needle in ("baton orchestrator-agent", "SendMessage", "partial"):
+            self.assertIn(needle, text)
+        self.assertNotIn("#248", text)
+
     def test_sprint_skill_names_orchestrator_role_variable(self):
         text = sprint_text()
         self.assertIn("BATON_ROLE", text)

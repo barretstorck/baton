@@ -13,7 +13,13 @@ post on the forge yourself. The parent, in order:
    follows "Scheduled runs".
 4. Check that `baton:baton-orchestrator` is in your list of available agent types. If not, tell
    the maintainer in one line to restart the session, and stop.
-5. Get `<owner>/<repo>` with `gh repo view --json nameWithOwner` and dispatch
+5. Run `baton orchestrator-agent`. When it prints an ID and this conversation shows no final
+   result or completion notification of that orchestrator, send to that ID with `SendMessage`:
+   `MAINTAINER: /baton:sprint was run again (Request: <arguments verbatim, or "none">). Run baton sprint-status and carry on.`
+   On success you are reconnected: go on with step 7 and do not dispatch. When the command
+   prints nothing or `SendMessage` fails (the agent is not reachable), dispatch a fresh
+   orchestrator as before; it carries on from `baton sprint-status`.
+6. Get `<owner>/<repo>` with `gh repo view --json nameWithOwner` and dispatch
    `baton:baton-orchestrator` in the background (the Agent tool's `run_in_background`) with this
    prompt, the `Request:` line carrying the maintainer's arguments verbatim, `--scheduled`
    included, or `none`. Note its agent ID from the launch result:
@@ -22,10 +28,13 @@ post on the forge yourself. The parent, in order:
        Repository: <owner>/<repo>.
        Request: <arguments>
 
-6. While it runs, show each message it sends you unchanged and nothing else. Pass every message
+7. While it runs, show each message it sends you unchanged and nothing else. Pass every message
    the maintainer types in the session to it verbatim with `SendMessage` to its agent ID,
    prefixed `MAINTAINER: `, and do not act on it yourself; `/baton:sprint` typed again while it
    runs is passed on the same way, not dispatched a second time. When it completes, show its
-   final message unchanged. If it ended early,
-   failed or hit a limit, say so in one line; running `/baton:sprint` again dispatches a fresh
-   orchestrator, which carries on from the forge.
+   final message unchanged. A result marked
+   partial (stopped at a turn limit) is resumed with `SendMessage` to the same agent ID
+   (`MAINTAINER: continue the sprint; run baton sprint-status first.`), not re-dispatched. If it
+   ended early or failed, say so in one line; running `/baton:sprint` again reconnects to it when
+   the session was resumed, and otherwise dispatches a fresh orchestrator, which carries on from
+   the forge.

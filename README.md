@@ -248,6 +248,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton plan set <issue> <file \| ->` | Write the `## Developer Plan` section into the issue body (the refiner); `plan commit`, `link` and `pin` are deprecated no-ops |
 | `baton plan migrate <issue>` | Convert an older plan into `## Developer Plan` |
 | `baton usage [--repo <owner/repo>] [--since <time>] [--json]` | Quota use per issue and role, from local transcripts; `Output>=` and `output_lower_bound` are lower bounds (transcripts record streaming-time output tokens) |
+| `baton orchestrator-agent [--dir <projects dir>]` | The agent ID of the `baton:baton-orchestrator` subagent of the current Claude Code session (from `CLAUDE_CODE_SESSION_ID` and the local transcripts); exit 1 for none |
 | `baton hook` | The PreToolUse hook Claude Code runs on every tool call: the publish gate for Bash and MCP calls and the spike token limit (`baton budget`), in one process; not run by hand |
 | `baton budget` | Checked through `baton hook`, not run by hand; keeps a per-agent offset file in the temp directory so each call reads only the new transcript lines: blocks a researcher's tools once the `Timebox:` token limit in its prompt is spent, except `baton comment`; the limit rests on input and cache tokens, as output is undercounted |
 | `baton compact-reminder` | A SessionStart hook, not run by hand: after any compaction it reminds the sprint orchestrator to run `baton sprint-status` before acting (the hook cannot tell which agent compacted, so the text is conditional) |
