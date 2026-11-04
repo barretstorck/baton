@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
-from baton import gate
+from baton import gate, identity
 
 TERMS = ["Zebrowski"]
 IP = ".".join(["192", "168", "7", "7"])  # assembled so the commit scan sees no literal
@@ -793,3 +793,75 @@ class GhWriteOffsetTest(unittest.TestCase):
         ]:
             with self.subTest(command):
                 self.assertIsNone(gate._gh_write_offset(command))
+
+
+class ExecRewriteTest(DetachedPrCreateTest):
+    IDS = identity.Identities(
+        baton=identity.App(app_id=1, installation_id=2, key_path="k", login="baton[bot]"),
+        reviewer=identity.App(app_id=3, installation_id=4, key_path="k", login="baton-reviewer[bot]"))
+
+    def go(self, command, root=None, agent=DetachedPrCreateTest.OK, ids=IDS, agent_type=None):
+        root = root or make_repo()
+        payload = {"tool_name": "Bash", "cwd": root,
+                   "tool_input": {"command": command, "description": "Do"}}
+        if agent_type:
+            payload["agent_type"] = agent_type
+        env = {"BATON_PRIVATE_TERMS": "/nonexistent"}
+        if agent:
+            env["AI_AGENT"] = agent
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, env), \
+                mock.patch.object(gate.identity, "configured_for", return_value=ids), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            if not agent:
+                os.environ.pop("AI_AGENT", None)
+            code = gate.main(json.dumps(payload))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_tier_one_orchestrator(self):
+        code, out, _ = self.go("gh issue comment 5 --body x")
+        self.assertEqual(code, 0)
+        hook = json.loads(out)["hookSpecificOutput"]
+        self.assertNotIn("permissionDecision", hook)
+        self.assertEqual(hook["updatedInput"]["command"],
+                         "baton exec --role orchestrator gh issue comment 5 --body x")
+        self.assertEqual(hook["updatedInput"]["description"], "Do")
+        self.assertIn("baton[bot]", hook["additionalContext"])
+
+    def test_roles(self):
+        for agent_type, role, login in (("baton:baton-reviewer", "reviewer", "baton-reviewer[bot]"),
+                                        ("baton:baton-developer", "developer", "baton[bot]")):
+            _, out, _ = self.go("gh issue comment 5 --body x", agent_type=agent_type)
+            hook = json.loads(out)["hookSpecificOutput"]
+            self.assertEqual(hook["updatedInput"]["command"],
+                             f"baton exec --role {role} gh issue comment 5 --body x")
+            self.assertIn(login, hook["additionalContext"])
+
+    def test_cd_prefix_kept(self):
+        root = make_repo()
+        os.mkdir(os.path.join(root, "wt"))
+        pathlib.Path(root, "wt", "notes.md").write_text("hello\n")
+        _, out, _ = self.go("cd wt && gh issue comment 5 -F notes.md", root)
+        self.assertEqual(json.loads(out)["hookSpecificOutput"]["updatedInput"]["command"],
+                         "cd wt && baton exec --role orchestrator gh issue comment 5 -F notes.md")
+
+    def test_tier_zero_and_old_version_and_read(self):
+        self.assertEqual(self.go("gh issue comment 5 --body x", ids=None)[1], "")
+        self.assertEqual(self.go("gh issue comment 5 --body x", agent="claude-code_2-1-289_agent")[1], "")
+        self.assertEqual(self.go("gh issue comment 5 --body x", agent=None)[1], "")
+        code, out, _ = self.go("gh issue view 5")
+        self.assertEqual((code, out), (0, ""))
+
+    def test_privacy_finding_refused(self):
+        code, out, _ = self.go(f"gh issue comment 5 --body 'host {IP}'")
+        self.assertEqual(code, 2)
+        self.assertEqual(out, "")
+
+    def test_head_and_exec_together(self):
+        code, out, _ = self.go("gh pr create --title t --body x", self.repo())
+        self.assertEqual(code, 0)
+        hook = json.loads(out)["hookSpecificOutput"]
+        self.assertEqual(hook["updatedInput"]["command"],
+                         "baton exec --role orchestrator gh pr create --head issue-216-detached --title t --body x")
+        self.assertIn("--head issue-216-detached", hook["additionalContext"])
+        self.assertIn("baton[bot]", hook["additionalContext"])

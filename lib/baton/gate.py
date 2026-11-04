@@ -44,7 +44,7 @@ import signal
 import sys
 import tempfile
 
-from . import branches, config, githooks, run, scan
+from . import branches, config, githooks, identity, run, scan
 
 MARKER = "<!-- baton:"
 HOOK_TAG = githooks.HOOK_TAG
@@ -585,7 +585,7 @@ def _count_cd(prefix):
     return len(re.findall(r"(?:^|&&)\s*cd[ \t]", prefix))
 
 
-def _complete(command, cwd, env, runner=run.run):
+def _head_step(command, cwd, env, runner=run.run):
     """Add --head to a `gh pr create` from a detached HEAD: a Completion, or None when not needed."""
     stripped = _QUOTED.sub('""', _HEREDOC.sub("<<HD", command))
     if not _PR_CREATE_RE.search(stripped) or _HEAD_FLAG.search(stripped):
@@ -613,6 +613,32 @@ def _complete(command, cwd, env, runner=run.run):
     new = command[:match.end()] + f" --head {name}" + command[match.end():]
     note = (f"Baton added `--head {name}` to `gh pr create` (HEAD is detached). "
             f"The command that ran: {new}")
+    return Completion(new, note, None)
+
+
+def _complete(command, cwd, env, runner=run.run, agent_type=None):
+    """The --head step, then at tier 1 the `baton exec` prefix on a recognised gh write."""
+    done = _head_step(command, cwd, env, runner)
+    if done is not None and done.problem:
+        return done
+    current = done.command if done is not None and done.command else command
+    version = _claude_version(env)
+    if version is None or version < REWRITE_FLOOR:
+        return done
+    offset = _gh_write_offset(current)
+    if offset is None:
+        return done
+    ids = identity.configured_for(cwd, runner)
+    if ids is None:
+        return done
+    role = _role(agent_type)
+    app = getattr(ids, identity.route(role))
+    if app is None:
+        return done
+    new = current[:offset] + f"baton exec --role {role} " + current[offset:]
+    note = f"Baton ran this write as the {app.login} App: {new}"
+    if done is not None and done.command:
+        note = f"{done.note} {note}"
     return Completion(new, note, None)
 
 
@@ -702,8 +728,10 @@ def main(stdin_text):
                     rewritten, problems = close_marker(
                         command, cwd, payload.get("agent_type"), os.environ)
                 if not problems:
+                    agent_type = payload.get("agent_type")
                     completion = _complete(
-                        rewritten if rewritten is not None else command, cwd, os.environ)
+                        rewritten if rewritten is not None else command, cwd, os.environ,
+                        agent_type=agent_type if isinstance(agent_type, str) else None)
                     if completion is not None and completion.problem:
                         problems = [completion.problem]
         finally:
