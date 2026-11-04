@@ -135,6 +135,20 @@ def _declare_gate(subs):
     _add(subs, "gate", "usage: baton gate", lenient=True)
 
 
+def _declare_compact_reminder(subs):
+    _add(subs, "compact-reminder", "usage: baton compact-reminder", lenient=True)
+
+
+def _declare_hook(subs):
+    _add(subs, "hook", "usage: baton hook", lenient=True)
+
+
+def _declare_orchestrator_agent(subs):
+    p = _add(subs, "orchestrator-agent",
+             "usage: baton orchestrator-agent [--dir <projects dir>]")
+    p.add_argument("--dir", default="~/.claude/projects")
+
+
 def _declare_install_hooks(subs):
     _add(subs, "install-hooks", "usage: baton install-hooks", lenient=True)
 
@@ -511,7 +525,9 @@ def build() -> BatonParser:
                     _declare_review, _declare_tasks, _declare_task,
                     _declare_plan, _declare_notify, _declare_triage,
                     _declare_git_hook, _declare_usage, _declare_sprint_capacity,
-                    _declare_sprint_metrics, _declare_sandbox, _declare_lock):
+                    _declare_sprint_metrics, _declare_sandbox, _declare_lock,
+                    _declare_compact_reminder, _declare_hook,
+                    _declare_orchestrator_agent):
         declare(subs)
     _declare_state_change(subs, "close")
     _declare_state_change(subs, "reopen")

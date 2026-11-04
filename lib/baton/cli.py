@@ -25,7 +25,8 @@ def cmd_budget(opts):
     return budget.main(sys.stdin.read())
 
 
-def cmd_compact_reminder(args):
+@cliargs.command("compact-reminder")
+def cmd_compact_reminder(opts):
     return compact.main(sys.stdin.read())
 
 
@@ -34,7 +35,8 @@ def cmd_gate(opts):
     return gate.main(sys.stdin.read())
 
 
-def cmd_hook(args):
+@cliargs.command("hook")
+def cmd_hook(opts):
     from . import hook
     return hook.main(sys.stdin.read())
 
@@ -374,16 +376,9 @@ def _tick_pr(opts, cfg):
     return review.tick_review(run.run, opts.number, _trusted(cfg), opts.task)
 
 
-def cmd_orchestrator_agent(args):
-    root, rest = "~/.claude/projects", list(args)
-    while rest:
-        flag = rest.pop(0)
-        if flag == "--dir" and rest:
-            root = rest.pop(0)
-        else:
-            print("usage: baton orchestrator-agent [--dir <projects dir>]", file=sys.stderr)
-            return 64
-    found = orchestrator.find_agent(root, os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
+@cliargs.command("orchestrator-agent")
+def cmd_orchestrator_agent(opts):
+    found = orchestrator.find_agent(opts.dir, os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
     if not found:
         return 1
     print(found)
