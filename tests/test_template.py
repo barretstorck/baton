@@ -67,7 +67,7 @@ class TemplateTest(unittest.TestCase):
                      "skills/open-questions/SKILL.md", "agents/baton-developer.md",
                      "agents/baton-reviewer.md",
                      "agents/baton-refiner.md", "agents/baton-researcher.md",
-                     "agents/baton-triager.md",
+                     "agents/baton-triager.md", "agents/baton-orchestrator.md",
                      "skills/research/SKILL.md", "skills/triage/SKILL.md",
                      "bin/baton"):
             self.assertTrue((ROOT / path).is_file(), path)
@@ -77,6 +77,17 @@ class TemplateTest(unittest.TestCase):
                      "baton-researcher", "baton-triager"):
             meta, _ = frontmatter.split((ROOT / "agents" / f"{name}.md").read_text())
             self.assertIn("\neffort: medium\n", f"\n{meta}\n", name)
+
+    def test_orchestrator_agent_sets_compact_window(self):
+        meta, body = frontmatter.split((ROOT / "agents" / "baton-orchestrator.md").read_text())
+        lines = meta.splitlines()
+        self.assertIn("name: baton-orchestrator", lines)
+        self.assertIn("autoCompactWindow: 250000", lines)
+        self.assertIn("  - baton:sprint", lines)
+        for key in ("isolation:", "model:", "effort:", "tools:"):
+            self.assertFalse(any(l.startswith(key) for l in lines), key)
+        for phrase in ("baton sprint-status", "compaction", "Talking to the maintainer"):
+            self.assertIn(phrase, body)
 
     def test_researcher_agent_and_skill(self):
         meta, _ = frontmatter.split((ROOT / "agents" / "baton-researcher.md").read_text())
