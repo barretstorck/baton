@@ -1,8 +1,9 @@
 """Corpus of command shapes for gate.decide.
 
 ALLOWED holds harmless shapes, grouped by what a new rule might hurt; a failing subTest names
-the group. REFUSED holds publishes whose text carries one private finding each, hook bypasses, and close
-and reopen commands without a reason, refused only where there is a brief. Every private
+the group. REFUSED holds publishes whose text carries one private finding each, text the gate cannot read
+("unreadable"), hook bypasses, close and reopen commands without a reason, and empty bodies, refused only
+where there is a brief. Every private
 value is assembled from pieces so the commit scan sees no literal private detail.
 """
 import pathlib
@@ -71,6 +72,21 @@ ALLOWED = {
         'gh issue comment 5 --body "$(cat notes.md)"',
         'cd sub && gh pr create --title t --body "$(cat notes.md)"',
     ),
+    # (i) variables, pipes and unquoted values
+    "i variables, pipes and unquoted values": (
+        "gh issue comment 5 --body plain-word",
+        "gh api -X POST repos/example-org/example-repo/issues -f title=Word",
+        "glab issue create -t t -d Word",
+        "tea issues create -t t",
+        'gh issue comment 5 --body "costs $5"',
+        "gh pr create --base $BASE --head $BRANCH --title t --body x",
+        'gh pr list --search "author:$USER"',
+        "gh api repos/$OWNER/example-repo/pulls --jq .[].number",
+        "git checkout -b $BRANCH && git push -u origin $BRANCH && gh pr create --title t --body x",
+        "cat <<'EOF' | gh issue comment 5 --body-file -\nA clean comment\nEOF",
+        "echo msg | git commit -F -",
+        "gh pr view 5 | head -5",
+    ),
     # (g) repository selectors
     "g repository selectors": (
         "gh -R example-org/example-repo issue view 5",
@@ -95,6 +111,17 @@ ALLOWED = {
         "gh issue view 5 --comments",
         "gh issue list --state closed",
         'gh issue comment 5 --body "close this"',
+    ),
+    # (k) bodies that are not empty
+    "k bodies that are not empty": (
+        "gh issue create --title t --body x",
+        "gh issue edit 5 --body-file notes.md",
+        "gh pr edit 5 --title t",
+        "gh issue edit 5 --milestone m",
+        "gh pr create --fill",
+        'gh issue list --search ""',
+        'gh pr list --search ""',
+        "echo hi > new.md && gh pr edit 5 --body-file new.md",
     ),
 }
 
@@ -122,12 +149,28 @@ REFUSED = (
     ('git commit "--no-verify";echo x', "bypass"),
     ("git push '-n' origin x", "bypass"),
     ("git config set core.hooksPath /dev/null && git push", "bypass"),
+    ("gh issue comment 5 --body %s" % IP, "private-ip"),
+    ("gh api -X POST repos/example-org/example-repo/issues -f title=%s" % TERM, "private-term"),
+    ("glab issue create -t t -d %s" % MAIL, "email"),
+    ("cat <<'EOF' | gh issue comment 5 --body-file -\nhost %s\nEOF" % IP, "private-ip"),
+    ('gh issue comment 5 --body "$B"', "unreadable"),
+    ("gh issue comment 5 --body $B", "unreadable"),
+    ('gh pr create --title "${T}" --body x', "unreadable"),
+    ("gh api -X POST repos/example-org/example-repo/issues -f title=$T", "unreadable"),
+    ("echo x | gh issue comment 5 --body-file -", "unreadable"),
+    ("glab issue create -t t --description -", "unreadable"),
     ("gh issue close 5", "close-reason"),
     ("gh pr close 5 --delete-branch", "close-reason"),
     ("gh issue reopen 5", "close-reason"),
     ("gh pr reopen 5", "close-reason"),
     ("gh issue close --help; gh issue close 6", "close-reason"),
     ("gh issue close 5 --comment x; gh issue close 6", "close-reason"),
+    ('gh issue create --title t --body ""', "empty-body"),
+    ('gh pr create --title t --body "  "', "empty-body"),
+    ("gh issue edit 5 --body ''", "empty-body"),
+    ('gh pr edit 5 -b ""', "empty-body"),
+    ("gh issue edit 5 --body-file empty.md", "empty-body"),
+    ("gh pr edit 5 -F empty.md", "empty-body"),
     ("gh issue close 5 --comment '<!-- baton:developer:closed -->x'; gh issue close 6", "close-reason"),
 )
 
@@ -150,12 +193,19 @@ class CorpusTest(unittest.TestCase):
     def test_private_publishes_are_refused(self):
         for cwd in self.directories():
             (pathlib.Path(cwd) / "private.md").write_text("host %s\n" % IP)
+            (pathlib.Path(cwd) / "empty.md").write_text("")
             (pathlib.Path(cwd) / "sub").mkdir(exist_ok=True)
             (pathlib.Path(cwd) / "sub" / "private.md").write_text("host %s\n" % IP)
             has_brief = pathlib.Path(cwd, ".baton").exists()
             for cmd, kind in REFUSED:
                 with self.subTest(cmd=cmd, brief=has_brief):
                     problems = gate.decide(cmd, cwd, TERMS)
+                    if kind == "empty-body":
+                        if has_brief:
+                            self.assertIn(gate._EMPTY_BODY, problems)
+                        else:
+                            self.assertEqual(problems, [])
+                        continue
                     if kind == "close-reason":
                         if has_brief:
                             self.assertIn(gate._CLOSE_REASON, problems)
@@ -163,7 +213,9 @@ class CorpusTest(unittest.TestCase):
                             self.assertEqual(problems, [])
                         continue
                     self.assertTrue(problems)
-                    if kind == "bypass":
+                    if kind == "unreadable":
+                        self.assertTrue(any("cannot be scanned" in p for p in problems), problems)
+                    elif kind == "bypass":
                         self.assertTrue(any("bypass" in p for p in problems), problems)
                     else:
                         self.assertTrue(

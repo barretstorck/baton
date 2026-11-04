@@ -75,8 +75,11 @@ filters, send long output to a file, chain related commands, wait for a long run
    - *Task 1:* `baton set-status <N> status:in-dev`; create `issue-<N>-<short-slug>` from
      `origin/<default>` (`git fetch --quiet origin <default> && git checkout --detach
      origin/<default>`, pushed as `HEAD:refs/heads/<branch>` in step 6). Do the task (steps 4 to 6);
-     then open a **draft** pull request whose body has `Closes #<N>` on its own line and a short
-     summary of the plan. Drafts may not run CI, which saves minutes.
+     then, after the push in step 6, open a **draft** pull request from the detached checkout with
+     `baton pr create --draft --title "<title>" <file>`; it uses the pushed `issue-<N>-*` branch as
+     the head (or takes `--head <branch>`), so do not create a local branch. The body has
+     `Closes #<N>` on its own line and a short summary of the plan. Drafts may not run CI, which
+     saves minutes.
    - *Later tasks:* `git fetch --quiet origin <branch> && git checkout --detach origin/<branch>`.
      A worktree left by an earlier task may still hold the branch; a detached checkout never
      conflicts with it. See what earlier tasks did with

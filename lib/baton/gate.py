@@ -4,9 +4,13 @@ Runs as a Claude Code PreToolUse hook. The gate is a text scanner: it does not
 parse shell and does not know which `gh` subcommand writes. For a command that
 names a forge-facing program (`FORGE_CLIS`) or publishes with git (`commit`,
 `push`, `tag`), it scans every quoted string, heredoc body and body file the
-command would send. It refuses only for four safety reasons: a privacy finding
-in that text, text it cannot read (stdin, a missing body file, command
-substitution in a double-quoted body), a git hook bypass, and missing hooks.
+command would send, and the unquoted value of a title, body, message, field or
+description flag. It refuses only for four safety reasons: a privacy finding
+in that text, text it cannot read (a stdin body without a heredoc, even when
+piped, and `--description -`; a missing body file; a variable such as `$B` or
+`${B}`, or command substitution, in the value of such a flag), a git hook
+bypass, and missing hooks. The refusal says to pass the text literally, as an
+inline heredoc, or as a file.
 A body file is read relative to the last literal `cd` before it in the same
 command (else the hook's working directory). A double-quoted body whose only
 substitutions are `$(cat <literal path>)` is scanned by reading those files;
@@ -14,6 +18,8 @@ any other substitution or backticks, or a `cd` to a non-literal target, is
 still refused as unreadable text.
 Diffs are scanned by the git hooks (githooks.py), which the gate requires to be
 installed and not bypassed.
+In a Baton repository (a brief exists) it also refuses an empty or whitespace-only
+`--body` / `-b` value or `--body-file` / `-F` file on `gh issue|pr create|edit`.
 
 In a Baton repository a raw `gh issue|pr close|reopen` also needs `--comment`.
 From Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or
@@ -21,9 +27,14 @@ From Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or
 the permission prompt; otherwise, or for a compound command, it refuses and
 names the marker line to add.
 
+The gate also completes one command: a `gh pr create` from a detached HEAD gets
+`--head <branch>` added (the one pushed issue branch at HEAD) through the same
+rewrite; it never changes a command otherwise.
+
 This guards against mistakes and nudged agents. It is not a sandbox: a script
 that talks to the forge without one of these programs is outside its view.
 """
+import collections
 import functools
 import json
 import os
@@ -33,7 +44,7 @@ import signal
 import sys
 import tempfile
 
-from . import config, githooks, scan
+from . import branches, config, githooks, run, scan
 
 MARKER = "<!-- baton:"
 HOOK_TAG = githooks.HOOK_TAG
@@ -70,7 +81,7 @@ _SHORT_N = re.compile(_POS + r"git\b[^;&|\n]*?\b(?:commit|push)\b[^;&|\n]*?\s-[a
 @functools.lru_cache(maxsize=16)
 def _stdin_re(flags):
     names = "|".join([re.escape(f) for f in sorted(flags, key=len, reverse=True)]
-                     + [r"--data(?:-binary|-raw)?", "-d"])
+                     + [r"--data(?:-binary|-raw)?", "-d", "--description"])
     return re.compile(r"(?:" + names + r")(?:\s+|=)(?:-|@-)(?:\s|$)")
 
 
@@ -93,8 +104,12 @@ def _file_arg_re(flags):
 _UNRESOLVABLE = re.compile(r"[$`*?]")
 _SUBST_BODY = re.compile(r"(?:--body|-b|--title|-t|--message|-m|--raw-field|-f|--field|-d|--data(?:-raw)?)"
                          r"(?:\s+|=)\"[^\"]*(?:\$\((?!cat <<)|`)")
+_BODY_VALUE = re.compile(
+    r"""(?<![\w-])(?:--body|-b|--title|-t|--message|-m|--raw-field|-f|--field|-F|--description|-d"""
+    r"""|--data(?:-raw)?)(?:\s+|=)(?:"([^"]*)"|'([^']*)'|([^\s'"<>|;&]+))""")
+_VARIABLE = re.compile(r"\$[A-Za-z_{]")
 _CAT_SUBST = re.compile(r"""\$\(cat\s+(?:'([^\s'$`]+)'|([^\s'"$`()<>|;&*?\\-][^\s'"$`()<>|;&*?\\]*))\s*\)""")
-_HEREDOC = re.compile(r"<<-?[ \t]*['\"]?(\w+)['\"]?\n(.*?)\n[ \t]*\1\b", re.S)
+_HEREDOC = re.compile(r"<<-?[ \t]*['\"]?(\w+)['\"]?([^\n]*)\n(.*?)\n[ \t]*\1\b", re.S)
 _QUOTED = re.compile(r"""'[^']*'|"[^"]*\"""")
 _DATA_FLAG = re.compile(r"""(?:--data(?:-raw|-binary|-urlencode)?|--json|--form|-[dF])(?:\s+|=)('[^']*'|"[^"]*"|\S+)""")
 
@@ -161,11 +176,48 @@ def _close_command(stripped):
 
 _BYPASS = ("git hook bypass (--no-verify, -n, core.hooksPath or an overridden environment) is not allowed here; "
            "commit or push without it so the Baton hooks scan the change")
-_STDIN = "a body read from stdin cannot be scanned; pass --body or a file path"
-_SUBSTITUTED = ("text built from a command substitution or backticks in a double-quoted body cannot be "
-                "scanned; pass it literally, as an inline heredoc, or as a file")
+_STDIN = ("a body read from stdin cannot be scanned unless a heredoc in the same command supplies it; "
+          "pass the text literally, as an inline heredoc, or as a file")
+_SUBSTITUTED = ("text built from a variable, a command substitution or backticks in a title, body or "
+                "field cannot be scanned; pass it literally, as an inline heredoc, or as a file")
+_EMPTY_BODY = ("the body is empty or only whitespace, so this would publish a blank issue or pull request "
+               "text; write the full text first, then pass it with --body or --body-file")
 _HOOKS_MISSING = ("Baton git hooks are missing or point at a baton that no longer exists; "
                   "run `baton install-hooks`")
+
+
+_BODY_WRITE = re.compile(
+    _POS + r"""gh\s+(?:(?:-R|--repo)(?:\s+|=)\S+\s+|--repo=\S+\s+)?(?:issue|pr)\s+(?:create|edit)(?=\s|$)""")
+_EMPTY_INLINE = re.compile(r"""(?<![\w-])(?:--body|-b)(?:\s+|=)(?:"\s*"|'\s*')(?=\s|[;&|)]|$)""")
+
+
+_BODY_FILE_FLAG = re.compile(r"\s*(?:--body-file|-F)(?![\w-])")
+
+
+def _body_write_spans(command):
+    """(start, end) offsets of each `gh [-R repo] issue|pr create|edit` segment in `command`.
+
+    A segment runs to the next unquoted ; & | or newline."""
+    spans = []
+    for match in _BODY_WRITE.finditer(command):
+        index, quote = match.end(), None
+        while index < len(command):
+            char = command[index]
+            if quote:
+                if char == quote:
+                    quote = None
+            elif char in "\"'":
+                quote = char
+            elif char in ";&|\n":
+                break
+            index += 1
+        spans.append((match.start(), index))
+    return spans
+
+
+def _empty_inline_body(command, spans):
+    """True when a quoted --body / -b value inside one of the spans is empty or only whitespace."""
+    return any(_EMPTY_INLINE.search(command, start, end) for start, end in spans)
 
 
 def forge_facing(command, forge_clis=FORGE_CLIS):
@@ -276,7 +328,7 @@ def close_marker(command, cwd, agent_type, env):
     (None, []) when there is nothing to do; (new_command, []) when the comment gets Baton's marker;
     (None, [refusal]) when the marker cannot be added and the agent has to write it.
     """
-    stripped = _HEREDOC.sub("<<HD", command)
+    stripped = _HEREDOC.sub(r"<<HD\2", command)
     found = _close_command(stripped)
     if not found or not found[2]:
         return None, []
@@ -322,8 +374,35 @@ def close_marker(command, cwd, agent_type, env):
     return None, []
 
 
+def _has_variable(segment):
+    for m in _BODY_VALUE.finditer(segment):
+        value = m.group(1) if m.group(1) is not None else m.group(3)
+        if value and _VARIABLE.search(value):
+            return True
+    return False
+
+
+def _forge_segments(command, clis):
+    """The parts of `command`, split at ; && || | & and newlines outside quotes, that run a forge CLI."""
+    segments, current, quote = [], [], ""
+    for ch in command:
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "'\"":
+            quote = ch
+        elif ch in ";&|\n":
+            segments.append("".join(current))
+            current = []
+            continue
+        current.append(ch)
+    segments.append("".join(current))
+    pattern = _forge_re(tuple(clis))
+    return [seg for seg in segments if pattern.search(seg)]
+
+
 def decide(command, cwd, terms):
-    stripped = _HEREDOC.sub("<<HD", command)
+    stripped = _HEREDOC.sub(r"<<HD\2", command)
     clis, flags = _brief_lists(cwd)
     forge = [m.group(1) for m in _forge_re(clis).finditer(stripped)]
     git = _GITPUB.search(stripped)
@@ -345,13 +424,16 @@ def decide(command, cwd, terms):
         if cfg is not None and not githooks.installed(cfg.root):
             problems.append(_HOOKS_MISSING)
 
+    if cfg is not None and forge and _empty_inline_body(stripped, _body_write_spans(stripped)):
+        problems.append(_EMPTY_BODY)
+
     closing = _close_command(stripped) if cfg is not None else None
     if closing and not closing[2]:
         problems.append(_CLOSE_REASON)
 
     http_only = bool(forge) and not git and all(name in _HTTP_CLIS for name in forge)
     stdin_pattern = _stdin_re(flags) if forge else _GIT_STDIN
-    if stdin_pattern.search(stripped) and "<<" not in stripped and "|" not in stripped:
+    if stdin_pattern.search(stripped) and "<<" not in stripped and (forge or "|" not in stripped):
         problems.append(_STDIN)
     cats = []  # (path, offset) of each literal $(cat <path>) inside a double-quoted string
     scanned = []
@@ -365,14 +447,18 @@ def decide(command, cwd, terms):
             last = quoted.start() + sub.end()
     scanned.append(stripped[last:])
     without_cats = "".join(scanned)
-    if forge and _SUBST_BODY.search(without_cats):
+    segments = _forge_segments(without_cats, clis) if forge else []
+    if any(_SUBST_BODY.search(seg) or _has_variable(seg) for seg in segments):
         problems.append(_SUBSTITUTED)
 
-    texts = [m.group(2) for m in _HEREDOC.finditer(command)]
+    texts = [m.group(3) for m in _HEREDOC.finditer(command)]
     if http_only:
         texts += [m.group(1) for m in _DATA_FLAG.finditer(stripped)]
     else:
         texts += _QUOTED.findall(without_cats)
+    for seg in segments:
+        texts += [m.group(3) for m in _BODY_VALUE.finditer(seg)
+                  if m.group(3) and m.group(3)[0] not in "-@$"]
     for path, start in cats:
         text, problem = _read(path, _cd_base(stripped, start, cwd))
         if problem:
@@ -395,11 +481,69 @@ def decide(command, cwd, terms):
             problems.append(problem)
         else:
             texts.append(text)
+            if (cfg is not None and forge and not text.strip() and _BODY_FILE_FLAG.match(stripped, start)
+                    and any(a <= start < b for a, b in _body_write_spans(stripped))):
+                problems.append(_EMPTY_BODY)
 
     findings = scan.scan_text("\n".join(texts), terms, allow)
     kinds = sorted({finding.kind for finding in findings})
     problems.extend(f"privacy: {kind} in the text this command would publish" for kind in kinds)
     return list(dict.fromkeys(problems))
+
+
+Completion = collections.namedtuple("Completion", "command note problem")
+
+_PR_CREATE_RE = re.compile(_POS + r"(?:[\w.~+-]*/)*gh\s+(?:-\S+\s+)*pr\s+create\b")
+_HEAD_FLAG = re.compile(r"(?<![\w-])(?:--head(?=[\s=]|$)|-H)")
+_PR_CREATE_HEAD = re.compile(r"^\s*(?:[\w.~+-]*/)*gh[ \t]+pr[ \t]+create(?=[ \t]|$)")
+_PUNCT = "();<>|&\n`"
+
+
+def _command_tokens(command):
+    """The command's shell tokens, or None when it is not simple (unbalanced quotes, or any
+    token made only of separator, redirection, substitution or newline characters)."""
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=_PUNCT)
+        lexer.whitespace = " \t\r"
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    if any(token and all(ch in _PUNCT for ch in token) for token in tokens):
+        return None
+    return tokens
+
+
+def _complete(command, cwd, env, runner=run.run):
+    """Add --head to a `gh pr create` from a detached HEAD: a Completion, or None when not needed."""
+    stripped = _QUOTED.sub('""', _HEREDOC.sub("<<HD", command))
+    if not _PR_CREATE_RE.search(stripped) or _HEAD_FLAG.search(stripped):
+        return None
+    if not branches.detached(runner, cwd):
+        return None
+    names = branches.pushed_branches_at_head(runner, cwd)
+    if len(names) != 1 or not branches.BRANCH_NAME.fullmatch(names[0]):
+        return Completion(None, None, (
+            "`gh pr create` from a detached HEAD needs `--head <branch>`, and no single pushed "
+            "issue-<N>-* branch points at HEAD. Push it with `baton push HEAD:refs/heads/<branch>`, "
+            "then add `--head <branch>` after `gh pr create`."))
+    name = shlex.quote(names[0])
+    need = (f"`gh pr create` from a detached HEAD needs `--head <name>`. "
+            f"Add `--head {name}` after `gh pr create` and run it again.")
+    tokens = _command_tokens(command)
+    match = _PR_CREATE_HEAD.match(command)
+    if (tokens is None or len(tokens) < 3 or tokens[1:3] != ["pr", "create"]
+            or os.path.basename(tokens[0]) != "gh" or match is None):
+        return Completion(None, None, need)
+    version = _claude_version(env)
+    if version is None or version < REWRITE_FLOOR:
+        return Completion(None, None, need[:-len(" and run it again.")]
+                          + ": this Claude Code cannot have Baton add it.")
+    new = command[:match.end()] + f" --head {name}" + command[match.end():]
+    note = (f"Baton added `--head {name}` to `gh pr create` (HEAD is detached). "
+            f"The command that ran: {new}")
+    return Completion(new, note, None)
 
 
 TIME_LIMIT = 2.0  # seconds one command may take to check
@@ -472,6 +616,7 @@ def main(stdin_text):
     command = ""
     cwd = os.getcwd()
     rewritten = None
+    completion = None
     try:
         if not mcp:
             command = payload.get("tool_input", {}).get("command", "")
@@ -486,6 +631,11 @@ def main(stdin_text):
                 if not problems:
                     rewritten, problems = close_marker(
                         command, cwd, payload.get("agent_type"), os.environ)
+                if not problems:
+                    completion = _complete(
+                        rewritten if rewritten is not None else command, cwd, os.environ)
+                    if completion is not None and completion.problem:
+                        problems = [completion.problem]
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
@@ -500,12 +650,19 @@ def main(stdin_text):
         print(f"Baton publish gate could not check this command ({error!r}).", file=sys.stderr)
         return 2
     if not problems:
-        if rewritten is not None:
+        if rewritten is not None or (completion is not None and completion.command):
+            notes = []
+            final = rewritten
+            if rewritten is not None:
+                marker = re.search(r"<!-- baton:\S+ -->", rewritten)
+                notes.append(f"Baton added its {marker.group(0) if marker else 'marker'} marker to the "
+                             f"comment. The command that ran: {rewritten}")
+            if completion is not None and completion.command:
+                final = completion.command
+                notes.append(completion.note)
             updated = dict(payload.get("tool_input") or {})
-            updated["command"] = rewritten
-            marker = re.search(r"<!-- baton:\S+ -->", rewritten)
-            note = (f"Baton added its {marker.group(0) if marker else 'marker'} marker to the "
-                    f"comment. The command that ran: {rewritten}")
+            updated["command"] = final
+            note = " ".join(notes)
             print(json.dumps({"hookSpecificOutput": {
                 "hookEventName": "PreToolUse", "updatedInput": updated,
                 "additionalContext": note}}))

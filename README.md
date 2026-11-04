@@ -210,6 +210,8 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 
 ## Commands
 
+`baton <command> --help` prints a command's usage.
+
 | Command | Purpose |
 |---|---|
 | `baton config` | Print the resolved settings from `.baton/brief.md`, and the `identity` tier |
@@ -228,10 +230,10 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton triage apply <issue> <decision.json>` | Check a triager's decision, then act on it. Keys: `category` (spam, duplicate, support, unclear, feature, bug, maintenance, unsure), `duplicate_of`, `priority`, `severity` (bugs only), `comment`, `summary` (symptom, expected, actual, area, version, type). Refuses a label outside the known set, a missing, same or unknown `duplicate_of`, a severity on a non-bug, a comment that fails the privacy scan or links outside the repository and its docs, and a summary with code blocks, commands, links or over-long fields. Spam: `closed:spam` and lock. Duplicate: `closed:duplicate` with back-links. Support: comment, then `closed:support`. Unclear: comment, then `awaiting-feedback`. Feature, bug, maintenance: type label, `priority:`, `severity:` (bugs), `status:refinement`, and a `## Triage summary` section (with `Origin: outside (@author)` for a non-maintainer). Unsure: notifies the maintainers (`triage-unsure`). It never closes a maintainer's issue. |
 | `baton issue read <issue>` | Print an issue for an agent: title, labels, body and comments. Text by non-maintainers is replaced by `[untrusted text from @<author> withheld; see Triage summary]`; the `## Triage summary` and `## Developer Plan` of an outside issue are kept. Never use `gh issue view` for issue text |
 | `baton issue create\|edit ...` | Create an issue, or edit its title, description, labels or milestone; scans the text first |
-| `baton pr create\|edit\|ready ...` | Open a (draft) pull request, edit it, or mark it ready (`--undo` back to draft) |
+| `baton pr create\|edit\|ready ...` | Open a (draft) pull request (`--head <branch>`, or from a detached HEAD the pushed branch at HEAD), edit it, or mark it ready (`--undo` back to draft) |
 | `baton milestone create\|edit ...` | Create a milestone, or edit its title, description, due date or state |
-| `baton close <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:closed` marker comment with the reason, then close; a raw `gh issue|pr close|reopen` needs `--comment`; from Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or `reopened`) marker to the comment through a rewrite that keeps the permission prompt, otherwise, or for a compound command, it refuses and names the marker line to add |
-| `baton reopen <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:reopened` marker comment with the reason, then reopen; the raw `gh ... reopen` rule is the same as for close |
+| `baton close <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:closed` marker comment with the reason, then close; a raw `gh issue|pr close|reopen` needs `--comment`; from Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or `reopened`) marker to the comment through a rewrite that keeps the permission prompt, otherwise, or for a compound command, it refuses and names the marker line to add; a raw close that passes the gate still skips the empty-reason check of `baton close` and, at tier 1, runs under your own login instead of the `baton` App |
+| `baton reopen <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:reopened` marker comment with the reason, then reopen; the raw `gh ... reopen` rule, and what a raw reopen skips, is the same as for close |
 | `baton review state <pr>` | The pull request's review state at its head commit |
 | `baton review post <pr> <approve\|changes\|blocked\|replan> <sha> <file \| ->` | Post a review of that commit |
 | `baton answers <issue>` | The latest agent question and the maintainer's replies |
@@ -248,8 +250,10 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton plan set <issue> <file \| ->` | Write the `## Developer Plan` section into the issue body (the refiner); `plan commit`, `link` and `pin` are deprecated no-ops |
 | `baton plan migrate <issue>` | Convert an older plan into `## Developer Plan` |
 | `baton usage [--repo <owner/repo>] [--since <time>] [--json]` | Quota use per issue and role, from local transcripts; `Output>=` and `output_lower_bound` are lower bounds (transcripts record streaming-time output tokens) |
+| `baton orchestrator-agent [--dir <projects dir>]` | The agent ID of the `baton:baton-orchestrator` subagent of the current Claude Code session (from `CLAUDE_CODE_SESSION_ID` and the local transcripts); exit 1 for none |
 | `baton hook` | The PreToolUse hook Claude Code runs on every tool call: the publish gate for Bash and MCP calls and the spike token limit (`baton budget`), in one process; not run by hand |
 | `baton budget` | Checked through `baton hook`, not run by hand; keeps a per-agent offset file in the temp directory so each call reads only the new transcript lines: blocks a researcher's tools once the `Timebox:` token limit in its prompt is spent, except `baton comment`; the limit rests on input and cache tokens, as output is undercounted |
+| `baton compact-reminder` | A SessionStart hook, not run by hand: after any compaction it reminds the sprint orchestrator to run `baton sprint-status` before acting (the hook cannot tell which agent compacted, so the text is conditional) |
 | `baton sprint-capacity <days> [--retros <n>]` | Read the last retros' `## Metrics` (3 by default) and propose somewhat less than their average issues and plan tasks for `<days>`, as JSON |
 | `baton sprint-order <issue>...` | Put spikes first in the given order, apply `spike.max_per_sprint` and list the spikes it left out (`order`, `spikes`, `left_out`, `cap`), as JSON; exit 64 for no argument or a number that is not an open issue |
 | `baton sprint-status [milestone]` | The sprint's state and what may be dispatched now, as JSON; `waiting_links` gives each `waiting_on_maintainer` issue's question comment URL and `progress.<N>.next_task_url` links the next plan task; `progress.<N>.stale`, `branch_behind` and `merge_first` report plans naming missing paths (a ready issue with two or more is held for re-refinement) and branches far behind the default branch |
@@ -321,13 +325,17 @@ information only and is never enforced.
 
 - The gate is a text scanner over commands that talk to a forge (`FORGE_CLIS`: `gh`, `glab`,
   `tea`, `fj`, `curl`, `wget`, `http`, `https`, `xh`) and over git `commit`, `push` and `tag`. It
-  refuses only a privacy finding in their quoted text, heredocs or body files; text it cannot
-  read (stdin body, missing body file, command substitution or backticks in a double-quoted
-  body); a hook bypass (`--no-verify`, `core.hooksPath`, overriding `HOME` or `GIT_*`); and
+  refuses only a privacy finding in their quoted or unquoted title, body and field values,
+  heredocs or body files; text it cannot read (a stdin body without a heredoc, piped or not,
+  and `--description -`; a missing body file; a variable, command substitution or backticks in
+  a title, body or field value); a hook bypass (`--no-verify`, `core.hooksPath`, overriding `HOME` or `GIT_*`); and
   missing git hooks. In addition, a raw `gh issue|pr close|reopen` needs `--comment`: from
   Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or `reopened`) marker to the
   comment through a rewrite that keeps the permission prompt; otherwise, or for a compound
-  command, it refuses and names the marker line to add. Every other command is allowed.
+  command, it refuses and names the marker line to add. In a repository with a brief, a raw
+  `gh issue create`, `gh pr create`, `gh issue edit` or `gh pr edit` whose `--body` / `-b` value
+  or `--body-file` / `-F` file is empty or only whitespace is refused; write the full text first.
+  Every other command is allowed.
   A body file is read relative to the last literal `cd` before it in the same command (else the
   hook's working directory), and a double-quoted body whose only substitutions are
   `$(cat <literal path>)` is scanned by reading those files; any other substitution or backticks,
@@ -335,7 +343,7 @@ information only and is never enforced.
 - A pull request that touches a protected path needs a maintainer comment
   `/baton approve <commit sha>` (at least 7 characters of the sha), naming the head commit or an
   earlier one with the same changes to the protected paths.
-- The `baton` write commands scan their text and refuse empty bodies, so a failed edit cannot blank an issue description.
+- The `baton` write commands scan their text and refuse empty bodies, so a failed edit cannot blank an issue description. The gate applies the same rule to raw `gh` writes (see above).
 - The git hooks do not report `private-ip` in Python dependency files (matched by basename:
   `uv.lock`, `poetry.lock`, `pdm.lock`, `Pipfile.lock`, `requirements*.txt`, `requirements*.in`,
   `constraints*.txt`, `pylock*.toml`), where four-part package versions look like addresses. Email,

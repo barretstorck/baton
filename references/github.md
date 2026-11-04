@@ -1,7 +1,7 @@
 # GitHub reference for Baton skills
 
 How each step in the Baton skills is done on GitHub. Run everything from inside the repository.
-`baton` is on `PATH` when the plugin is enabled; otherwise use `${CLAUDE_PLUGIN_ROOT}/bin/baton`.
+`baton` is on `PATH` when the plugin is enabled; otherwise use `${CLAUDE_PLUGIN_ROOT}/bin/baton`. `baton <command> --help` prints a command's usage.
 
 Baton has no version number. To identify the installed build, read the commit SHA in
 `~/.claude/plugins/installed_plugins.json` (the `version` of the `baton@baton` entry).
@@ -31,7 +31,9 @@ Baton has no version number. To identify the installed build, read the commit SH
 | A review's tasks | `baton tasks pr <N>` (the latest review's `## Tasks`; none after an approval) |
 | Clean up leftovers (orchestrator) | `baton clean`: removes agent worktrees under `.claude/worktrees/` that are not on an open issue's branch, are not locked by a live process and have no unmerged commits (uncommitted files are removed with the worktree), and the log folders of closed or merged pull requests; prints `removed`/`kept` lines, exit 1 if one could not be removed; `baton merge-pr` hints at it when more than `clean.hint_worktrees` (default 10) agent worktrees exist |
 | Quota use | `baton usage --repo <owner/repo> [--since <UTC ISO time>] [--json]`: per issue and role, from local transcripts; transcripts record streaming-time output tokens, so `Output>=` and `output_lower_bound` are lower bounds |
+| Reconnect to the orchestrator (parent session) | `baton orchestrator-agent [--dir <projects dir>]`: prints the agent ID of this session's `baton:baton-orchestrator` subagent, exit 1 for none |
 | Spike token limit | `baton budget`, checked through `baton hook` (the combined PreToolUse hook), not run by hand; keeps a per-agent offset file in the temp directory; blocks a researcher's tools once its `Timebox:` token limit is spent, except `baton comment`; it rests on input and cache tokens, as output is undercounted |
+| Compaction reminder | `baton compact-reminder`: a SessionStart hook, not run by hand; after any compaction it reminds the sprint orchestrator to run `baton sprint-status` before acting (the hook cannot tell which agent compacted, so the text is conditional) |
 | Sprint metrics | `baton sprint-metrics <milestone> [--since <UTC ISO time>] [--dir <projects dir>]`: seven `key: value` lines for the retro's `## Metrics` section |
 | Sprint capacity | `baton sprint-capacity <days> [--retros <n>]`: reads the last retros' `## Metrics` and proposes somewhat less (a 0.8 buffer) than their average issues and plan tasks for `<days>`, as JSON |
 | Repository owner and default branch | `gh repo view --json owner,defaultBranchRef` |
@@ -40,7 +42,7 @@ Every skill reads issue text with `baton issue read <N>`, never with raw `gh iss
 
 ## Writing
 
-These commands are the rule, not only what the gate checks: every write to the forge goes through the `baton` command in this table. A raw `gh` write (`gh issue comment`, `gh pr create`, `gh pr merge`, `gh label ...`, `gh api -X POST ...`) is not allowed even where the gate lets it through, because it skips the Baton marker and the checks `baton` makes.
+These commands are the rule, not only what the gate checks: every write to the forge goes through the `baton` command in this table. A raw `gh` write (`gh issue comment`, `gh pr create`, `gh pr merge`, `gh label ...`, `gh api -X POST ...`) is not allowed even where the gate lets it through. The gate lets a clean raw `gh` write pass, but the `baton` command adds the Baton marker, refuses an empty body, and at tier 1 writes as the `baton` App (a raw `gh` write runs with the maintainer's own login).
 
 | Step | Command |
 |---|---|
@@ -58,7 +60,7 @@ These commands are the rule, not only what the gate checks: every write to the f
 | Edit an issue description | Write the full new description to a file, then `baton issue edit <N> --body-file <file>` (it scans the text and refuses an empty body). It keeps an existing `## Developer Plan` when the new text has none; plans change only through `baton plan` |
 | Edit a pull request | `baton pr edit <N>` takes the same options as `baton issue edit` (`--title`, `--body-file`, `--add-label`, `--remove-label`, `--milestone`) |
 | Create an issue | Write the description to a file, then `baton issue create --title "<title>" --label <label> <file>` (repeat `--label`; `-` reads the body from standard input) |
-| Open a draft pull request | `baton pr create --draft --title "<title>" <file>` with `Closes #<N>` on its own line in the body |
+| Open a draft pull request | `baton pr create --draft --title "<title>" [--head <branch>] <file>` (from a detached checkout it uses the pushed branch at HEAD as the head) with `Closes #<N>` on its own line in the body |
 | Mark a pull request ready | `baton pr ready <N>`, or `baton pr ready <N> --undo` to turn it back into a draft (the orchestrator, once the review is approved) |
 | Post a review | `baton review post <N> <approve\|changes\|blocked\|replan> <full head sha> -` with the body as an inline heredoc. It refuses if the head moved. `blocked` needs a `Cause: default-branch` or `Cause: environment` line and a `## Reason` section, takes no `## Tasks`, and does not count as a review round. `replan` needs a non-empty `## Feedback` section, takes no `## Tasks`, and counts as a round. Failures are listed under `## Failures` as `- <id>: <caused\|default-branch\|flaky\|environment>`. |
 | Answer a review | `baton comment pr <N> developer reply -`, one line per task (orchestrator, from the developers' results) |
@@ -86,17 +88,25 @@ The gate is a text scanner. It checks commands that talk to a forge (`gh`, `glab
 `curl`, `wget`, `http`, `https`, `xh`) and git commit, push and tag. It refuses:
 
 - a privacy finding in the quoted text, heredoc or body file of such a command;
-- text it cannot read: a body from stdin (`-F -`, `--body-file -`) without a heredoc or pipe, a
-  body file that does not exist yet (write the file in one step, post it in the next), or `$(...)`
-  or backticks in a double-quoted title, body or message. Inline text and inline heredocs
-  (`"$(cat <<'EOF' ... EOF)"`) are fine;
+- text it cannot read: a body from stdin (`-F -`, `--body-file -`, `--description -`) without a heredoc
+  (a pipe does not count), a body file that does not exist yet (write the file in one step, post
+  it in the next), or a variable (`$B`, `${B}`), `$(...)` or backticks in a title, body, message
+  or field value. Unquoted title, body and field values are scanned like quoted ones. Pass the
+  text literally, as an inline heredoc, or as a file. Inline text and inline heredocs
+  (`"$(cat <<'EOF' ... EOF)"`) are fine. A body file is read relative to the last literal `cd <dir>`
+  before it in the same command (else the working directory), and a double-quoted body whose only
+  substitutions are `$(cat <literal path>)` is scanned by reading those files; any other `$(...)`,
+  backticks or variable, or a `cd` to a non-literal target, is still refused as unreadable text;
 - a hook bypass on a git commit, push or tag: `--no-verify`, `core.hooksPath`, or overriding
   `HOME` or `GIT_*` settings;
 - missing git hooks;
 - in a Baton repository, a raw `gh issue|pr close|reopen` without `--comment`. From Claude Code
   2.1.290 the gate adds the `baton:<role>:closed` (or `reopened`) marker to the comment through a
   rewrite that keeps the permission prompt; otherwise, or for a compound command, it refuses and
-  names the marker line to add.
+  names the marker line to add;
+- in a repository with a brief, a raw `gh issue create`, `gh pr create`, `gh issue edit` or
+  `gh pr edit` whose `--body` / `-b` value or `--body-file` / `-F` file is empty or only
+  whitespace; write the full text first.
 
 It does not judge which command you use, labels, markers or directories. Other commands are allowed.
 

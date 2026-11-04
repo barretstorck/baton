@@ -70,6 +70,50 @@ def refused_forms(text):
 
 
 class GateTest(unittest.TestCase):
+    def test_empty_inline_body_is_refused_with_a_brief(self):
+        with_brief, without = both_directories()
+        for command in ('gh issue create --title T --body ""', 'gh pr create --title T --body "  "',
+                        "gh issue edit 5 --body ''", 'gh pr edit 5 -b ""', 'gh issue create --title T --body=""',
+                        'gh -R example-org/example-repo issue edit 5 --body ""'):
+            with self.subTest(command=command):
+                self.assertIn(gate._EMPTY_BODY, gate.decide(command, with_brief, TERMS))
+                self.assertEqual(gate.decide(command, without, TERMS), [])
+
+    def test_empty_inline_body_neighbours_stay_allowed(self):
+        repo = make_repo()
+        for command in ("gh issue create --title T --body x", "gh pr edit 5 --title T",
+                        "gh issue edit 5 --add-label bug", "gh issue edit 5 --milestone M",
+                        "gh pr create --fill", "gh pr create -B main --title T --body x",
+                        'gh issue list --search ""', 'gh pr list --search ""', "gh issue view 5"):
+            with self.subTest(command=command):
+                self.assertEqual(gate.decide(command, repo, TERMS), [])
+        self.assertNotIn(gate._EMPTY_BODY, gate.decide('gh issue create --title T --body "$B"', repo, TERMS))
+
+    def test_empty_body_file_is_refused_with_a_brief(self):
+        for command, text in (("gh issue edit 5 --body-file empty.md", ""), ("gh pr edit 5 -F empty.md", ""),
+                              ("gh issue create --title T --body-file empty.md", "  \n\n"),
+                              ("gh pr create --title T -F=empty.md", "")):
+            with self.subTest(command=command):
+                with_brief, without = both_directories()
+                for d in (with_brief, without):
+                    pathlib.Path(d, "empty.md").write_text(text)
+                self.assertIn(gate._EMPTY_BODY, gate.decide(command, with_brief, TERMS))
+                self.assertEqual(gate.decide(command, without, TERMS), [])
+
+    def test_empty_body_file_neighbours(self):
+        repo = make_repo()
+        pathlib.Path(repo, "notes.md").write_text("clean text\n")
+        pathlib.Path(repo, "empty.md").write_text("")
+        self.assertEqual(gate.decide("gh issue edit 5 --body-file notes.md", repo, TERMS), [])
+        self.assertEqual(gate.decide("echo hi > new.md && gh issue edit 5 --body-file new.md", repo, TERMS), [])
+        self.assertNotIn(gate._EMPTY_BODY, gate.decide("gh issue edit 5 --body-file missing.md", repo, TERMS))
+        self.assertTrue(gate.decide("gh issue edit 5 --body-file missing.md", repo, TERMS))
+        self.assertNotIn(gate._EMPTY_BODY, gate.decide("gh issue comment 5 --body-file empty.md", repo, TERMS))
+        os.mkdir(os.path.join(repo, "sub"))
+        pathlib.Path(repo, "sub", "empty.md").write_text("")
+        pathlib.Path(repo, "empty.md").write_text("not empty\n")
+        self.assertIn(gate._EMPTY_BODY, gate.decide("cd sub && gh issue edit 5 --body-file empty.md", repo, TERMS))
+
     def setUp(self):
         self.cache = tempfile.mkdtemp()
         patcher = mock.patch.dict(os.environ, {"CLAUDE_CODE_PLUGIN_CACHE_DIR": self.cache})
@@ -107,16 +151,62 @@ class GateTest(unittest.TestCase):
         self.assertTrue(gate.decide(f"curl -d '{IP}' https://example.test/x", repo, TERMS))
         self.assertTrue(gate.decide(f"curl --json '{{\"a\": \"{IP}\"}}' https://example.test/x", repo, TERMS))
 
-    def test_stdin_body_needs_a_heredoc_or_a_pipe(self):
+    def test_stdin_body_needs_a_heredoc(self):
         repo = make_repo()
         for cmd in ("gh issue comment 5 -F -", "gh issue comment 5 --body-file -",
                     "gh api x --input -", "curl -d @- https://example.test/x",
-                    "curl -d - https://example.test/x"):
-            with self.subTest(cmd=cmd):
-                self.assertTrue(gate.decide(cmd, repo, TERMS))
-        for cmd in ("gh issue comment 5 -F - <<'EOF'\nhello\nEOF",
+                    "curl -d - https://example.test/x",
+                    "echo x | gh issue comment 3 --body-file -",
                     "cat f | gh issue comment 5 -F -",
-                    "curl -d @- https://example.test/x <<'EOF'\n{}\nEOF"):
+                    "glab issue create -t t -d -", "glab issue create -t t --description -"):
+            with self.subTest(cmd=cmd):
+                self.assertIn(gate._STDIN, gate.decide(cmd, repo, TERMS))
+        for cmd in ("gh issue comment 5 -F - <<'EOF'\nhello\nEOF",
+                    "cat <<'EOF' | gh issue comment 5 --body-file -\nhello\nEOF",
+                    "curl -d @- https://example.test/x <<'EOF'\n{}\nEOF",
+                    "echo msg | git commit -F -",
+                    "gh pr view 5 | head -5"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [])
+
+    def test_heredoc_with_a_continuing_delimiter_line_is_scanned(self):
+        repo = make_repo()
+        for cmd in (f"cat <<'EOF' | gh issue comment 5 --body-file -\nhost {IP}\nEOF",
+                    f"gh issue comment 5 --body-file - <<'EOF' | cat\nhost {IP}\nEOF"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, repo, TERMS)
+                self.assertTrue(any(p.startswith("privacy:") for p in problems), problems)
+
+    def test_variable_in_a_body_title_or_field_is_refused(self):
+        repo = make_repo()
+        for cmd in ('gh issue comment 5 --body "$B"', "gh issue comment 5 --body $X",
+                    "gh issue comment 5 --body ${X}", 'gh pr create --title "fix ${T}" --body x',
+                    "gh api -X POST repos/o/r/issues -f title=$T",
+                    'gh api -X POST repos/o/r/issues -f "body=$B"',
+                    'glab issue create -t t --description "$D"'):
+            with self.subTest(cmd=cmd):
+                self.assertIn(gate._SUBSTITUTED, gate.decide(cmd, repo, TERMS))
+        for cmd in ('gh issue comment 5 --body "costs $5"', "gh issue comment 5 --body 'see $HOME'",
+                    "gh pr create --base $BASE --head $BRANCH --title t --body x",
+                    "gh api repos/$OWNER/r/pulls --jq .[].number",
+                    'gh pr list --search "author:$USER"',
+                    "git checkout -b $BRANCH && git push -u origin $BRANCH && gh pr create --title t --body x"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [])
+
+    def test_unquoted_body_values_are_scanned(self):
+        repo = make_repo()
+        for cmd in (f"gh issue comment 5 --body {IP}", f"gh issue comment 5 -b {IP}",
+                    f"gh api -X POST repos/o/r/issues -f title={IP}",
+                    f"gh api -X POST repos/o/r/issues -F body={MAIL}",
+                    f"glab issue create -t t -d {IP}", "tea issues create --title Zebrowski"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, repo, TERMS)
+                self.assertTrue(any(p.startswith("privacy:") for p in problems), problems)
+        for cmd in ("gh issue comment 5 --body plain", "gh api -X POST repos/o/r/issues -f title=Word",
+                    "glab issue create -t t -d Word", "tea issues create -t t -d Word",
+                    "gh pr create -d --title t --body x", "glab mr create --fill",
+                    "tea issues create -t t"):
             with self.subTest(cmd=cmd):
                 self.assertEqual(gate.decide(cmd, repo, TERMS), [])
 
@@ -598,3 +688,82 @@ class BriefListsTest(unittest.TestCase):
         self.assertTrue(gate.decide("gh issue comment 5 --body-file notes.md", root, TERMS))
         self.assertTrue(gate.forge_facing("glab mr list"))
         self.assertFalse(gate.forge_facing("glab mr list", ("gh",)))
+
+
+class DetachedPrCreateTest(unittest.TestCase):
+    OK = "claude-code_2-1-290_agent"
+
+    def repo(self, branch="issue-216-detached", detach=True):
+        root = make_repo()
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q",
+                        "--allow-empty", "--no-verify", "-m", "x"], cwd=root, check=True)
+        if detach:
+            subprocess.run(["git", "checkout", "-q", "--detach"], cwd=root, check=True)
+        if branch:
+            subprocess.run(["git", "update-ref", f"refs/remotes/origin/{branch}", "HEAD"], cwd=root, check=True)
+        return root
+
+    def run_main(self, command, root, agent=OK):
+        payload = {"tool_name": "Bash", "cwd": root,
+                   "tool_input": {"command": command, "description": "Open"}}
+        env = {"AI_AGENT": agent, "BATON_PRIVATE_TERMS": "/nonexistent"}
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, env), contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(err):
+            code = gate.main(json.dumps(payload))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_head_is_added(self):
+        code, out, _ = self.run_main("gh pr create --title t --body x", self.repo())
+        self.assertEqual(code, 0)
+        hook = json.loads(out)["hookSpecificOutput"]
+        self.assertNotIn("permissionDecision", hook)
+        self.assertEqual(hook["updatedInput"]["command"],
+                         "gh pr create --head issue-216-detached --title t --body x")
+        self.assertEqual(hook["updatedInput"]["description"], "Open")
+        self.assertIn("--head issue-216-detached", hook["additionalContext"])
+
+    def test_head_word_in_a_body_is_still_rewritten(self):
+        code, out, _ = self.run_main('gh pr create --body "use --head here"', self.repo())
+        self.assertEqual(code, 0)
+        self.assertIn("updatedInput", out)
+
+    def test_given_head_or_attached_head_is_left_alone(self):
+        self.assertEqual(self.run_main("gh pr create --head issue-216-x --title t", self.repo())[:2], (0, ""))
+        self.assertEqual(self.run_main("gh pr create --title t", self.repo(detach=False))[:2], (0, ""))
+
+    def test_no_single_pushed_branch_is_refused(self):
+        for branch in (None, "issue-216-a;b"):
+            with self.subTest(branch=branch):
+                code, out, err = self.run_main("gh pr create --title t", self.repo(branch=branch))
+                self.assertEqual((code, out), (2, ""))
+                self.assertIn("--head <branch>", err)
+
+    def test_compound_commands_are_refused_with_the_flag(self):
+        root = self.repo()
+        for command in ("cd . && gh pr create --title t --body x",
+                        "gh pr create --title t --body x; echo y",
+                        "gh pr create --title t --body x\necho y"):
+            with self.subTest(command=command):
+                code, out, err = self.run_main(command, root)
+                self.assertEqual((code, out), (2, ""))
+                self.assertIn("Add `--head issue-216-detached`", err)
+
+    def test_mentions_are_not_touched(self):
+        root = self.repo()
+        for command in ('echo "gh pr create" && ls', 'gh issue comment 5 --body "gh pr create"'):
+            with self.subTest(command=command):
+                self.assertEqual(self.run_main(command, root)[:2], (0, ""))
+
+    def test_old_or_unknown_claude_code_is_refused(self):
+        root = self.repo()
+        for agent in ("claude-code_2-1-289_agent", ""):
+            with self.subTest(agent=agent):
+                code, out, err = self.run_main("gh pr create --title t", root, agent)
+                self.assertEqual((code, out), (2, ""))
+                self.assertIn("--head issue-216-detached", err)
+
+    def test_privacy_finding_still_refuses(self):
+        code, out, err = self.run_main(f'gh pr create --title t --body "see {IP}"', self.repo())
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("privacy", err)

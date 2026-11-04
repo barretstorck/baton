@@ -6,6 +6,14 @@
           { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" hook" }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" compact-reminder" }
+        ]
+      }
     ]
   }
 }

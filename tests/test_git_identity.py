@@ -106,9 +106,18 @@ class Tier1Test(unittest.TestCase):
         runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}}'})
         with mock.patch.object(cli.run, "run", runner):
             call(cli.cmd_push, ["HEAD:refs/heads/b"])
-        self.assertIn("https://github.com/o/r.git", runner.calls[-1])
-        self.assertEqual(runner.envs[-1]["BATON_GIT_TOKEN"], "tok-baton")
-        self.assertFalse(any("tok-baton" in a for a in runner.calls[-1]))
+        i = [n for n, c in enumerate(runner.calls) if "push" in c][0]
+        self.assertIn("https://github.com/o/r.git", runner.calls[i])
+        self.assertEqual(runner.envs[i]["BATON_GIT_TOKEN"], "tok-baton")
+        self.assertFalse(any("tok-baton" in a for a in runner.calls[i]))
+
+    def test_push_moves_remote_tracking_ref(self):
+        runner = FakeRunner({"gh repo view": '{"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}}',
+                             "git rev-parse --verify": "abc123\n"})
+        with mock.patch.object(cli.run, "run", runner):
+            call(cli.cmd_push, ["HEAD:refs/heads/b"])
+        self.assertEqual(runner.calls[-1], ["git", "update-ref", "refs/remotes/origin/b", "abc123"])
+        self.assertIsNone(runner.envs[-1])
 
 
 REPO = '{"nameWithOwner": "o/r", "defaultBranchRef": {"name": "main"}}'
@@ -137,8 +146,8 @@ class PushRefusalTest(unittest.TestCase):
             code, _, _ = call(cli.cmd_push, ["HEAD:refs/heads/issue-258-x"])
         self.assertEqual(code, 0)
         self.assertFalse(any(c[:2] == ["git", "remote"] for c in runner.calls))
-        self.assertEqual(runner.calls[-1][-3:],
-                         ["--", "https://github.com/o/r.git", "HEAD:refs/heads/issue-258-x"])
+        push = [c for c in runner.calls if "push" in c][-1]
+        self.assertEqual(push[-3:], ["--", "https://github.com/o/r.git", "HEAD:refs/heads/issue-258-x"])
 
 
 class BypassTest(unittest.TestCase):

@@ -1,8 +1,13 @@
+import contextlib
 import copy
+import io
 import json
+import os
 import pathlib
+import tempfile
 import unittest
-from baton import config, publish
+from unittest import mock
+from baton import cli, config, publish
 from baton.comment import CommentError
 from tests.fakes import FakeRunner
 
@@ -102,6 +107,11 @@ class PrTest(unittest.TestCase):
         publish.create_pr(cfg(), r, "T", "b", True, [])
         self.assertTrue(r.lines()[0].endswith("--draft"))
         self.assertTrue(r.lines()[0].startswith("gh pr create --title T --body-file "))
+
+    def test_create_pr_head(self):
+        r = Capture()
+        publish.create_pr(cfg(), r, "T", "b", False, [], head="b")
+        self.assertIn(" --head b", r.lines()[0])
 
     def test_ready(self):
         r = Capture()
@@ -230,6 +240,9 @@ class ParseTest(unittest.TestCase):
     def test_pr_create_and_ready(self):
         o = publish.parse_pr(["create", "--title", "T", "--draft", "f"])
         self.assertTrue(o["draft"])
+        self.assertIsNone(o["head"])
+        o = publish.parse_pr(["create", "--title", "T", "--head", "b", "f"])
+        self.assertEqual(o["head"], "b")
         self.assertEqual(publish.parse_pr(["ready", "3", "--undo"]),
                          {"action": "ready", "number": 3, "undo": True})
         with self.assertRaises(publish.UsageError):
@@ -242,6 +255,53 @@ class ParseTest(unittest.TestCase):
         self.assertEqual((o["ref"], o["state"]), ("v1", "closed"))
         with self.assertRaises(publish.UsageError):
             publish.parse_milestone(["edit", "v1", "--state", "bad"])
+
+
+DETACHED = {"git rev-parse --abbrev-ref HEAD": "HEAD\n",
+            "git for-each-ref --points-at HEAD": "refs/remotes/origin/issue-216-detached\n",
+            "gh pr create": "https://x/pull/1\n"}
+
+
+class PrCreateDetachedTest(unittest.TestCase):
+    def run_cli(self, replies, *extra):
+        runner = FakeRunner(replies)
+        body = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False)
+        body.write("Closes #216\n")
+        body.close()
+        self.addCleanup(os.unlink, body.name)
+        err = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli.scan, "load_terms", return_value=[]), \
+                mock.patch.object(cli.run, "run", runner), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = cli.cmd_pr(["create", "--title", "T", "--draft", *extra, body.name])
+        gh = [call for call in runner.calls if call[0] == "gh"]
+        return code, gh, err.getvalue()
+
+    def test_detached_head_uses_the_pushed_issue_branch(self):
+        code, gh, _ = self.run_cli(DETACHED)
+        self.assertEqual(code, 0)
+        argv = gh[0]
+        self.assertEqual(argv[argv.index("--head") + 1], "issue-216-detached")
+
+    def test_explicit_head_is_passed_through(self):
+        replies = dict(DETACHED, **{"git for-each-ref --points-at HEAD": ""})
+        code, gh, _ = self.run_cli(replies, "--head", "issue-216-other")
+        self.assertEqual(code, 0)
+        argv = gh[0]
+        self.assertEqual(argv[argv.index("--head") + 1], "issue-216-other")
+
+    def test_no_pushed_branch_is_refused_naming_head(self):
+        replies = dict(DETACHED, **{"git for-each-ref --points-at HEAD": "refs/remotes/origin/main\n"})
+        code, gh, err = self.run_cli(replies)
+        self.assertEqual(code, 1)
+        self.assertEqual(gh, [])
+        self.assertIn("--head", err)
+
+    def test_attached_head_adds_no_head(self):
+        code, gh, _ = self.run_cli(dict(DETACHED, **{"git rev-parse --abbrev-ref HEAD": "issue-216-x\n"}))
+        self.assertEqual(code, 0)
+        self.assertNotIn("--head", gh[0])
 
 
 if __name__ == "__main__":
