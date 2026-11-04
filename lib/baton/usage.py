@@ -135,8 +135,8 @@ def tally(path, state=None):
         if request is not None and item is not None:
             total += item["weighted"] - recent.pop(request, 0.0)
             recent[request] = item["weighted"]
-    while len(recent) > RECENT:
-        del recent[next(iter(recent))]
+            if len(recent) > RECENT:
+                del recent[next(iter(recent))]
     new = {"path": path, "dev": info.st_dev, "ino": info.st_ino, "offset": offset + end,
            "prompt": prompt, "recent": recent, "total": total}
     return prompt, total, new
