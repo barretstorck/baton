@@ -4,6 +4,7 @@ The description is the single source of truth (design spec, section 4):
 headed sections, an `Expected files:` line and `Blocked by:` lines.
 """
 import re
+from datetime import datetime
 
 from . import checklist, gate, planfile
 from .config import has_login, logins
@@ -121,15 +122,54 @@ def is_outside(issue, maintainers, bots=()):
     return not known or bool(_ORIGIN_OUTSIDE.search(issue.get("body") or ""))
 
 
-def approved(issue, maintainers, bots=()):
-    """True when a maintainer (never a Baton login) wrote an unmarked comment that is exactly `/baton ready`."""
+def _when(text):
+    try:
+        return datetime.fromisoformat((text or "").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def approval_problem(issue, maintainers, bots=()):
+    """Why the issue has no standing approval, or None when it has one.
+
+    The approval is the latest comment by a maintainer (never a Baton login) that is unmarked and
+    exactly `/baton ready`. An edit of the body by anyone but a maintainer or a Baton login after
+    it drops it; an unreadable edit history fails closed.
+    """
+    latest = None
     for comment in issue.get("comments") or []:
         body = comment.get("body") or ""
         author = comment.get("author")
         if (has_login(author, maintainers) and not has_login(author, list(bots))
                 and gate.MARKER not in body and body.strip() == APPROVAL):
-            return True
-    return False
+            latest = comment
+    if latest is None:
+        return f"it needs a comment '{APPROVAL}' from a maintainer"
+    edits = issue.get("edits")
+    if edits is None:
+        return "the body's edit history could not be read"
+    created = latest.get("createdAt")
+    approved_at = _when(created)
+    newest = None
+    for edit in edits:
+        editor = edit.get("editor")
+        if has_login(editor, maintainers) or has_login(editor, list(bots)):
+            continue
+        edited = _when(edit.get("editedAt"))
+        if approved_at is not None and edited is not None and edited <= approved_at:
+            continue
+        if newest is None or (edited is not None and (_when(newest.get("editedAt")) or edited) <= edited):
+            newest = edit
+    if newest is None:
+        return None
+    who = "@" + ((newest.get("editor") or {}).get("login") or "ghost")
+    return (f"{who} edited the body at {newest.get('editedAt')}, after the '{APPROVAL}' comment "
+            f"of {created or 'unknown'}; a maintainer must post '{APPROVAL}' again")
+
+
+def approved(issue, maintainers, bots=()):
+    """True when `approval_problem` finds nothing."""
+    return approval_problem(issue, maintainers, bots) is None
 
 
 def ready_problems(issue, cfg, owner, runner=None, bots=()):
@@ -145,8 +185,9 @@ def ready_problems(issue, cfg, owner, runner=None, bots=()):
     spike = cfg.label("type:spike") in labels
     problems = []
     if is_outside(issue, owner, bots):
-        if not approved(issue, owner, bots):
-            problems.append(f"outside issue: it needs a comment '{APPROVAL}' from a maintainer")
+        problem = approval_problem(issue, owner, bots)
+        if problem:
+            problems.append(f"outside issue: {problem}")
     if not parts.get("context"):
         problems.append("Context section is missing or empty (say why the work matters)")
     if not _LIST_ITEM.search(parts.get("acceptance criteria", "")):

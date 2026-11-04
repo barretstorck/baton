@@ -154,6 +154,7 @@ class OutsideTest(unittest.TestCase):
     def check(self, comments, author="mallory", body=BODY):
         data = make(author=author, body=body)
         data["comments"] = comments
+        data["edits"] = []
         return data
 
     def test_outside_edit_after_approval_drops_it(self):
@@ -162,6 +163,53 @@ class OutsideTest(unittest.TestCase):
         data["edits"] = [{"editedAt": "2026-11-01T11:00:00Z",
                           "editor": {"login": "mallory", "__typename": "User"}}]
         self.assertFalse(issue.approved(data, OWNER))
+
+    READY = dict(comment(OWNER, "/baton ready"), createdAt="2026-11-01T10:00:00Z")
+
+    def edit(self, login, when, typename="User"):
+        editor = None if login is None else {"login": login, "__typename": typename}
+        return {"editedAt": when, "editor": editor}
+
+    def with_edits(self, comments, edits):
+        data = self.check(comments)
+        data["edits"] = edits
+        return data
+
+    def test_trusted_edits_after_approval_keep_it(self):
+        later = "2026-11-01T11:00:00Z"
+        data = self.with_edits([self.READY], [self.edit(OWNER, later), self.edit("baton", later, "Bot")])
+        self.assertTrue(issue.approved(data, [OWNER, "baton[bot]"], {"baton[bot]"}))
+
+    def test_outside_edit_before_approval_keeps_it(self):
+        data = self.with_edits([self.READY], [self.edit("mallory", "2026-11-01T09:00:00Z")])
+        self.assertTrue(issue.approved(data, OWNER))
+
+    def test_second_approval_restores_it(self):
+        again = dict(comment(OWNER, "/baton ready"), createdAt="2026-11-01T12:00:00Z")
+        data = self.with_edits([self.READY, again], [self.edit("mallory", "2026-11-01T11:00:00Z")])
+        self.assertTrue(issue.approved(data, OWNER))
+
+    def test_edit_without_editor_drops_it(self):
+        data = self.with_edits([self.READY], [self.edit(None, "2026-11-01T11:00:00Z")])
+        self.assertFalse(issue.approved(data, OWNER))
+        self.assertIn("@ghost edited", issue.approval_problem(data, OWNER))
+
+    def test_missing_edit_history_fails_closed(self):
+        text = "the body's edit history could not be read"
+        data = self.with_edits([self.READY], None)
+        self.assertEqual(issue.approval_problem(data, OWNER), text)
+        del data["edits"]
+        self.assertEqual(issue.approval_problem(data, OWNER), text)
+
+    def test_comment_without_time_counts_every_outside_edit(self):
+        data = self.with_edits([comment(OWNER, "/baton ready")], [self.edit("mallory", "2020-01-01T00:00:00Z")])
+        self.assertIn("comment of unknown;", issue.approval_problem(data, OWNER))
+
+    def test_edit_reason_in_ready_problems(self):
+        data = self.with_edits([self.READY], [self.edit("mallory", "2026-11-01T11:00:00Z")])
+        self.assertEqual(issue.ready_problems(data, cfg(), OWNER), [
+            "outside issue: @mallory edited the body at 2026-11-01T11:00:00Z, after the "
+            "'/baton ready' comment of 2026-11-01T10:00:00Z; a maintainer must post '/baton ready' again"])
 
     def test_outside_by_author_or_origin_line(self):
         self.assertTrue(issue.is_outside(make(author="mallory"), [OWNER]))
