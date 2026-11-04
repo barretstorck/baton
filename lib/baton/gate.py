@@ -10,6 +10,12 @@ substitution in a double-quoted body), a git hook bypass, and missing hooks.
 Diffs are scanned by the git hooks (githooks.py), which the gate requires to be
 installed and not bypassed.
 
+In a Baton repository a raw `gh issue|pr close|reopen` also needs `--comment`.
+From Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or
+`reopened`) marker to the comment through a rewrite (`updatedInput`) that keeps
+the permission prompt; otherwise, or for a compound command, it refuses and
+names the marker line to add.
+
 This guards against mistakes and nudged agents. It is not a sandbox: a script
 that talks to the forge without one of these programs is outside its view.
 """
