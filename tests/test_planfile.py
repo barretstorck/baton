@@ -459,11 +459,11 @@ class CliTest(unittest.TestCase):
 
         def fake(cfg, runner, number, text, terms):
             seen.append((number, text))
-            return [1, 2]
+            return {"tasks": [{"id": str(i)} for i in range(1, 6)]}
         with mock.patch.object(cli.checklist, "set_issue_plan", fake), \
                 mock.patch.object(cli.scan, "load_terms", return_value=[]):
             code, out, _ = self.call(CliRunner(), ["plan", "set", "5", "-"], stdin="STDIN")
-            self.assertEqual((code, out), (0, "set Developer Plan of #5: 2 task(s)\n"))
+            self.assertEqual((code, out), (0, "set Developer Plan of #5: 5 task(s)\n"))
             with tempfile.NamedTemporaryFile("w", suffix=".md") as handle:
                 handle.write("FILE")
                 handle.flush()
