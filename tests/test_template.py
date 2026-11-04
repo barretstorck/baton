@@ -425,3 +425,5 @@ class TemplateTest(unittest.TestCase):
         for phrase in ("baton-orchestrator", "CLAUDE_CODE_FORK_SUBAGENT",
                        "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0"):
             self.assertIn(phrase, text)
+        self.assertIn("in the background", text)
+        self.assertNotIn("in the foreground", text)
