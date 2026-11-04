@@ -248,6 +248,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton plan set <issue> <file \| ->` | Write the `## Developer Plan` section into the issue body (the refiner); `plan commit`, `link` and `pin` are deprecated no-ops |
 | `baton plan migrate <issue>` | Convert an older plan into `## Developer Plan` |
 | `baton usage [--repo <owner/repo>] [--since <time>] [--json]` | Quota use per issue and role, from local transcripts; `Output>=` and `output_lower_bound` are lower bounds (transcripts record streaming-time output tokens) |
+| `baton orchestrator-agent [--dir <projects dir>]` | The agent ID of the `baton:baton-orchestrator` subagent of the current Claude Code session (from `CLAUDE_CODE_SESSION_ID` and the local transcripts); exit 1 for none |
 | `baton budget` | A PreToolUse hook, not run by hand: blocks a researcher's tools once the `Timebox:` token limit in its prompt is spent, except `baton comment`; the limit rests on input and cache tokens, as output is undercounted |
 | `baton sprint-capacity <days> [--retros <n>]` | Read the last retros' `## Metrics` (3 by default) and propose somewhat less than their average issues and plan tasks for `<days>`, as JSON |
 | `baton sprint-order <issue>...` | Put spikes first in the given order, apply `spike.max_per_sprint` and list the spikes it left out (`order`, `spikes`, `left_out`, `cap`), as JSON; exit 64 for no argument or a number that is not an open issue |

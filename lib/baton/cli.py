@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import budget, checklist, clean, comment, config, doctor, gate, githooks, identity, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
+from . import budget, checklist, clean, comment, config, doctor, gate, githooks, identity, issue, labels, merge, orchestrator, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
 
 
 def cmd_config(args):
@@ -509,6 +509,22 @@ def cmd_plan(args):
     return 64
 
 
+def cmd_orchestrator_agent(args):
+    root, rest = "~/.claude/projects", list(args)
+    while rest:
+        flag = rest.pop(0)
+        if flag == "--dir" and rest:
+            root = rest.pop(0)
+        else:
+            print("usage: baton orchestrator-agent [--dir <projects dir>]", file=sys.stderr)
+            return 64
+    found = orchestrator.find_agent(root, os.environ.get("CLAUDE_CODE_SESSION_ID", ""))
+    if not found:
+        return 1
+    print(found)
+    return 0
+
+
 def cmd_usage(args):
     since, as_json, root, repo = None, False, "~/.claude/projects", None
     rest = list(args)
@@ -890,6 +906,7 @@ COMMANDS = {
     "tasks": cmd_tasks,
     "triage": cmd_triage,
     "usage": cmd_usage,
+    "orchestrator-agent": cmd_orchestrator_agent,
     "verify": cmd_verify,
 }
 
