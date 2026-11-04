@@ -25,6 +25,10 @@ class ClassifyTest(unittest.TestCase):
                          ("fix", "issue 12"))
         self.assertEqual(usage.classify("Do review task 1.2 of pull request 40."),
                          ("fix", "pr 40"))
+        self.assertEqual(usage.classify("Run the sprint.\nRepository: o/r.\nRequest: none"),
+                         ("orchestrator", "sprint"))
+        self.assertEqual(usage.classify("hello", "baton:baton-orchestrator"),
+                         ("orchestrator", "unknown"))
         self.assertEqual(usage.classify("Do spike issue 9."), ("spike", "issue 9"))
         self.assertEqual(usage.classify("Fix CI on pull request 40 (issue 12)."), ("fix", "issue 12"))
         self.assertEqual(usage.classify("Update pull request 40 (issue 12)."), ("fix", "issue 12"))
@@ -81,6 +85,23 @@ class ReportTest(unittest.TestCase):
         self.assertIn(("session s1", "orchestrator"), rows)
         self.assertIn(("other sessions", "other"), rows)
         self.assertEqual(found["skipped"], 1)
+
+    def test_orchestrator_agent_makes_session_parent(self):
+        session = self.root / "-repo2" / "s3.jsonl"
+        write(session, [prompt("/baton:sprint"), call("p1", "2026-10-09T10:00:00Z", read=100)])
+        sub = self.root / "-repo2" / "s3" / "subagents"
+        write(sub / "agent-o.jsonl", [
+            prompt("Run the sprint.\nRepository: o/r.\nRequest: none"),
+            call("p2", "2026-10-09T10:01:00Z", read=200)])
+        write(sub / "agent-t.jsonl", [
+            prompt("Do task 1 of issue 12.\nRepository: o/r."),
+            call("p3", "2026-10-09T10:02:00Z", read=300)])
+        _, rows = self.rows()
+        self.assertIn(("sprint", "orchestrator"), rows)
+        self.assertIn(("issue 12", "task"), rows)
+        self.assertIn(("session s3", "parent"), rows)
+        self.assertNotIn(("session s3", "orchestrator"), rows)
+        self.assertIn(("session s1", "orchestrator"), rows)
 
     def test_windows_and_since(self):
         found, _ = self.rows()
