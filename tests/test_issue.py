@@ -154,7 +154,62 @@ class OutsideTest(unittest.TestCase):
     def check(self, comments, author="mallory", body=BODY):
         data = make(author=author, body=body)
         data["comments"] = comments
+        data["edits"] = []
         return data
+
+    def test_outside_edit_after_approval_drops_it(self):
+        ready = dict(comment(OWNER, "/baton ready"), createdAt="2026-11-01T10:00:00Z")
+        data = self.check([ready])
+        data["edits"] = [{"editedAt": "2026-11-01T11:00:00Z",
+                          "editor": {"login": "mallory", "__typename": "User"}}]
+        self.assertFalse(issue.approved(data, OWNER))
+
+    READY = dict(comment(OWNER, "/baton ready"), createdAt="2026-11-01T10:00:00Z")
+
+    def edit(self, login, when, typename="User"):
+        editor = None if login is None else {"login": login, "__typename": typename}
+        return {"editedAt": when, "editor": editor}
+
+    def with_edits(self, comments, edits):
+        data = self.check(comments)
+        data["edits"] = edits
+        return data
+
+    def test_trusted_edits_after_approval_keep_it(self):
+        later = "2026-11-01T11:00:00Z"
+        data = self.with_edits([self.READY], [self.edit(OWNER, later), self.edit("baton", later, "Bot")])
+        self.assertTrue(issue.approved(data, [OWNER, "baton[bot]"], {"baton[bot]"}))
+
+    def test_outside_edit_before_approval_keeps_it(self):
+        data = self.with_edits([self.READY], [self.edit("mallory", "2026-11-01T09:00:00Z")])
+        self.assertTrue(issue.approved(data, OWNER))
+
+    def test_second_approval_restores_it(self):
+        again = dict(comment(OWNER, "/baton ready"), createdAt="2026-11-01T12:00:00Z")
+        data = self.with_edits([self.READY, again], [self.edit("mallory", "2026-11-01T11:00:00Z")])
+        self.assertTrue(issue.approved(data, OWNER))
+
+    def test_edit_without_editor_drops_it(self):
+        data = self.with_edits([self.READY], [self.edit(None, "2026-11-01T11:00:00Z")])
+        self.assertFalse(issue.approved(data, OWNER))
+        self.assertIn("@ghost edited", issue.approval_problem(data, OWNER))
+
+    def test_missing_edit_history_fails_closed(self):
+        text = "the body's edit history could not be read"
+        data = self.with_edits([self.READY], None)
+        self.assertEqual(issue.approval_problem(data, OWNER), text)
+        del data["edits"]
+        self.assertEqual(issue.approval_problem(data, OWNER), text)
+
+    def test_comment_without_time_counts_every_outside_edit(self):
+        data = self.with_edits([comment(OWNER, "/baton ready")], [self.edit("mallory", "2020-01-01T00:00:00Z")])
+        self.assertIn("comment of unknown;", issue.approval_problem(data, OWNER))
+
+    def test_edit_reason_in_ready_problems(self):
+        data = self.with_edits([self.READY], [self.edit("mallory", "2026-11-01T11:00:00Z")])
+        self.assertEqual(issue.ready_problems(data, cfg(), OWNER), [
+            "outside issue: @mallory edited the body at 2026-11-01T11:00:00Z, after the "
+            "'/baton ready' comment of 2026-11-01T10:00:00Z; a maintainer must post '/baton ready' again"])
 
     def test_outside_by_author_or_origin_line(self):
         self.assertTrue(issue.is_outside(make(author="mallory"), [OWNER]))
@@ -289,6 +344,42 @@ class DeveloperPlanReadyTest(unittest.TestCase):
         self.assertTrue(any("- [ ] Task 1: <title>" in p and "<details>" in p for p in found))
 
 
+class BodyEditsTest(unittest.TestCase):
+    def edits(self, reply):
+        return issue.body_edits(FakeRunner({"gh api graphql": reply}), 7)
+
+    def test_two_lines_in_order(self):
+        got = self.edits("2026-11-01T11:00:00Z\tmallory\tUser\n2026-11-01T09:00:00Z\tbaton\tBot\n")
+        self.assertEqual(got, [
+            {"editedAt": "2026-11-01T11:00:00Z", "editor": {"login": "mallory", "__typename": "User"}},
+            {"editedAt": "2026-11-01T09:00:00Z", "editor": {"login": "baton", "__typename": "Bot"}}])
+
+    def test_empty_login_is_no_editor(self):
+        self.assertEqual(self.edits("2026-11-01T11:00:00Z\t\t\n"),
+                         [{"editedAt": "2026-11-01T11:00:00Z", "editor": None}])
+
+    def test_malformed_and_blank_lines_skipped(self):
+        self.assertEqual(self.edits("\nnonsense\n2026-11-01T11:00:00Z\tx\tUser\n"),
+                         [{"editedAt": "2026-11-01T11:00:00Z",
+                           "editor": {"login": "x", "__typename": "User"}}])
+
+    def test_empty_reply_is_empty_list(self):
+        self.assertEqual(self.edits(""), [])
+
+    def test_run_error_is_none(self):
+        def boom(argv, cwd=None):
+            raise RunError("x")
+        self.assertIsNone(issue.body_edits(boom, 7))
+
+    def test_argv(self):
+        runner = FakeRunner()
+        issue.body_edits(runner, 7)
+        argv = runner.calls[0]
+        self.assertIn("--paginate", argv)
+        self.assertIn("number=7", argv)
+        self.assertIn("owner={owner}", argv)
+
+
 class RaisingRunner:
     def __call__(self, argv, cwd=None):
         raise RunError("missing")
@@ -402,6 +493,42 @@ class ReadyCheckNoteTest(unittest.TestCase):
 
     def test_maintainer_issue_is_plain_ready(self):
         self.assertEqual(self.check(make()), (0, "ready"))
+
+
+class ReadyCheckEditsTest(unittest.TestCase):
+    def check(self, data, runner):
+        import contextlib
+        import io
+        from unittest import mock
+        from baton import cli
+        out = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli, "_maintainers", return_value=[OWNER]), \
+                mock.patch.object(cli, "_bots", return_value=frozenset()), \
+                mock.patch.object(cli.run, "run", runner), \
+                contextlib.redirect_stdout(out):
+            code = cli.cmd_ready_check(["5"])
+        return code, out.getvalue()
+
+    def runner(self, data):
+        return FakeRunner({
+            "gh issue view": __import__("json").dumps(data),
+            "gh api graphql": "2026-11-01T11:00:00Z\tmallory\tUser\n",
+        })
+
+    def test_outside_edit_after_approval_is_reported(self):
+        ready = dict(comment(OWNER, "/baton ready"), createdAt="2026-11-01T10:00:00Z")
+        data = make(author="stranger")
+        data["comments"] = [ready]
+        code, text = self.check(data, self.runner(data))
+        self.assertEqual(code, 1)
+        self.assertIn("- outside issue: @mallory edited the body at 2026-11-01T11:00:00Z", text)
+
+    def test_maintainer_issue_makes_no_graphql_call(self):
+        data = make()
+        runner = self.runner(data)
+        self.check(data, runner)
+        self.assertFalse([c for c in runner.calls if "graphql" in c])
 
 
 def _person(login):

@@ -47,7 +47,7 @@ published text, state changes without a marker comment), but they are not a sand
 [SECURITY.md](SECURITY.md). Only issues written by a maintainer enter a sprint, and only the
 maintainer's comments count as answers. An issue is *outside* when its author is not a maintainer
 or its body has a line `Origin: outside (@<author>)`; it enters a sprint only with a comment that
-is exactly `/baton ready`, unmarked, from a maintainer. Agents can only post marker comments
+is exactly `/baton ready`, unmarked, from a maintainer. The approval stops counting when someone other than a maintainer or Baton edits the body after it; a maintainer then posts `/baton ready` again. Agents can only post marker comments
 through `baton comment`, but a raw comment an agent writes with `gh` looks like yours, so until
 agents have their own login (#150) this rule is only as strong as that interim. Try it on a
 repository you can afford to experiment on first. The triager is the only agent that reads outside
@@ -178,7 +178,7 @@ a `Prototype:` link to the commit.
 | `/baton:triage <issue>` | Classify one new issue: spam, duplicate, support, unclear or a real bug, feature or maintenance item; used by the `baton-triager` subagent |
 | `/baton:refine <issue>` | Bring an issue up to the definition of ready, including its plan |
 | `/baton:sprint-plan` | Plan a sprint with the maintainer and create its milestone |
-| `/baton:sprint` | Work a sprint: dispatch developers and reviewers, collect answers, merge, retrospective |
+| `/baton:sprint` | Work a sprint: dispatches the orchestrator agent, which dispatches developers and reviewers, merges and writes the retrospective |
 | `/baton:develop` | Do one task: a plan task or a review task (used by the `baton-developer` subagent) |
 | `/baton:research <issue>` | Do one spike and post its findings (used by the `baton-researcher` subagent) |
 | `/baton:review <pr>` | Review one pull request and post a verdict (used by the `baton-reviewer` subagent) |
@@ -236,7 +236,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton review post <pr> <approve\|changes\|blocked\|replan> <sha> <file \| ->` | Post a review of that commit |
 | `baton answers <issue>` | The latest agent question and the maintainer's replies |
 | `baton triage queue` | List what a scheduled triage run should do. Prints JSON: `first_run`, `since`, `batch` (up to `triage.max_per_run` oldest pending issue numbers), `waiting`, `overdue` (the oldest waiting issue once it has waited 24 hours, else null) and `stale` (`awaiting-feedback` issues quiet for `triage.stale_days`). The first run records the start time in the Baton home folder and triages nothing. Writes nothing else. |
-| `baton notify <issue> <cause> <file \| ->` | Add `needs-maintainer` and post one `status` comment mentioning the maintainers, once per issue per cause (`stuck`, `approval`, `triage-unsure`, `spike-infeasible`, `repro-skipped`, `rule`); prints the URL or `already notified`. `/baton:open-questions` is unchanged |
+| `baton notify <issue> <cause> <file \| ->` | Add `needs-maintainer` and post one `status` comment mentioning the maintainers, once per issue per cause (only an earlier notify `status` comment by a maintainer or a Baton login counts; an outside comment carrying the marker does not suppress it) (`stuck`, `approval`, `triage-unsure`, `spike-infeasible`, `repro-skipped`, `rule`); prints the URL or `already notified`. `/baton:open-questions` is unchanged |
 | `baton notify --rules` | Run `notify` with cause `rule` for each open issue matching the brief's `notify:` severities or labels; one line per issue |
 | `baton open-questions` | List open issues waiting on the maintainer (unanswered question, `status:blocked` or `needs-maintainer`) as JSON, most pressing first |
 | `baton ready-check <issue>` | The mechanical half of the definition of ready |

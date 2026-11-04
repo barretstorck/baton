@@ -1,6 +1,6 @@
 ---
 name: sprint
-description: Use when asked to run, start, continue or resume a Baton sprint, with /baton:sprint, or to orchestrate parallel developer agents over the issues in a sprint milestone. The orchestrator dispatches developers and reviewers, collects the maintainer's answers from issue comments, merges reviewed pull requests, files follow-ups and writes the retrospective. It never writes product code.
+description: Use when asked to run, start, continue or resume a Baton sprint, with /baton:sprint, or to orchestrate parallel developer agents over the issues in a sprint milestone. The orchestrator dispatches developers and reviewers, collects the maintainer's answers from issue comments, merges reviewed pull requests, files follow-ups and writes the retrospective. It never writes product code. In the maintainer's session it dispatches the baton:baton-orchestrator agent, which runs the passes.
 ---
 
 # Baton sprint
@@ -16,12 +16,39 @@ The workflow follows the GitLab handbook's
 track of its [Product Development Flow](https://handbook.gitlab.com/handbook/product-development/how-we-work/product-development-flow/#build-track).
 Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
 
+## Who runs the sprint
+
+If you are the `baton-orchestrator` agent, skip this section. Otherwise you are the parent in
+the maintainer's session, and you never run passes, dispatch developers or reviewers, merge or
+post on the forge yourself. The parent, in order:
+
+1. Run `baton config` and `baton sprint-status` (with the milestone title if the request names one).
+2. No `.baton/brief.md`: suggest `/baton:init` and stop.
+3. `sprint` is null and the run is not scheduled: plan one with the maintainer through the
+   `baton:sprint-plan` skill, then go on. A scheduled run goes straight on; the orchestrator
+   follows "Scheduled runs".
+4. Check that `baton:baton-orchestrator` is in your list of available agent types. If not, tell
+   the maintainer in one line to restart the session, and stop.
+5. Get `<owner>/<repo>` with `gh repo view --json nameWithOwner` and dispatch
+   `baton:baton-orchestrator` in the foreground (not in the background) with this prompt, the
+   `Request:` line carrying the maintainer's arguments verbatim, `--scheduled` included, or
+   `none`:
+
+       Run the sprint.
+       Repository: <owner>/<repo>.
+       Request: <arguments>
+
+6. When it returns, show its final message unchanged and nothing else. If it ended early,
+   failed or hit a limit, say so in one line; running `/baton:sprint` again dispatches a fresh
+   orchestrator, which carries on from the forge.
+
 ## The one rule that makes this work
 
 **Everything you know about the sprint comes from the forge.** Keep no private list of what is
 running or decided. Any session, including a brand-new one with no memory of this one, must be
-able to run `baton sprint-status` and carry on. When your context grows large, say so and
-suggest starting a fresh session with `/baton:sprint`; nothing is lost.
+able to run `baton sprint-status` and carry on. You run as the `baton-orchestrator` agent, which
+Claude Code compacts automatically at its `autoCompactWindow`; after a compaction (your context
+starts with a summary) run `baton sprint-status` before acting.
 
 So: every decision goes into an issue description, every question and answer is an issue comment,
 every state is a label.
@@ -29,9 +56,11 @@ every state is a label.
 ## Start
 
 1. Run `baton config` and `baton sprint-status` (pass a milestone title if the request names one).
-2. No `.baton/brief.md`: stop and suggest `/baton:init`.
-3. `sprint` is null: use the `baton:sprint-plan` skill to plan one with the maintainer, then
-   continue here.
+2. No `.baton/brief.md`: the parent already handled this; if you still find it, stop with a
+   one-line update.
+3. `sprint` is null: the parent already planned an interactive sprint; if you still find none and
+   the run is not scheduled, stop with a one-line update. A scheduled run goes on ("Scheduled
+   runs" step 2 handles it).
 4. Take the parallel limit from the request if it gives one ("use up to 4 subagents"), otherwise
    from the `Parallel:` line of the milestone description, otherwise from the brief. If the
    request's limit differs from the milestone's, update the milestone description (`baton milestone edit <title> --description <text>`).
@@ -213,6 +242,8 @@ recommendations or play-by-play. The details are on the issues.
 - `Needs you` lists every issue in `waiting_on_maintainer`, each linked through `waiting_links`
   from `baton sprint-status` to the pending question comment; with none, link the latest
   orchestrator comment, then the issue.
+- As the orchestrator agent your updates reach the maintainer through your final message, which
+  the parent shows unchanged, so end with the latest update.
 - At most one update per pass, and only when something changed since the last one.
 - The one exception to "no other prose" is a single short line after the sections for a thing the
   maintainer must act on in the session that is on no issue: a missing agent type that needs a

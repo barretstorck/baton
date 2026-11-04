@@ -11,6 +11,10 @@ finishing) and moves the sprint forward. It never starts a sprint on its own; pl
    session: anything that needs the maintainer is left on the issue with `needs-maintainer`.
 3. Waits for the developers it started, then releases the lock and exits.
 
+The scheduled session dispatches the `baton-orchestrator` agent in the foreground, and the
+orchestrator takes the lock, works the sprint and releases the lock as before; the developers it
+starts are its own subagents.
+
 ## With cron
 
 Run from a checkout of the target repository that has the Baton git hooks installed.
@@ -25,6 +29,14 @@ Notes:
 - `claude -p` stays open while background developers are running. By default it stops waiting
   after ten idle minutes, which is shorter than most issues take;
   `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` removes that limit.
+- `claude -p` waits for the orchestrator, and the orchestrator waits for its developers, so
+  `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` is still needed.
+- Do not set `CLAUDE_CODE_FORK_SUBAGENT=0`: with fork mode off, nested subagents in `claude -p`
+  stop being waited for and report to the main session after the orchestrator has ended. Keep
+  `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` at its default of 3 or more (main session,
+  orchestrator, developer).
+- The permission rules the developers need now also cover the orchestrator's own commands
+  (`baton`, `gh`, `git`), since `--permission-prompts none` refuses anything else.
 - `--permission-prompts none` denies anything that would have asked a person. Allow the commands
   the developers need (`git`, `gh`, `baton`, the project's test command) in the repository's
   `.claude/settings.json` permission rules, or they will be refused.
@@ -80,7 +92,7 @@ After triage, the run hands triaged bugs to the refiner: it posts a `<!-- baton:
 comment on each and starts a refiner, up to `triage.max_reproductions_per_day`. The refiner
 reproduces only in the sandbox (`baton sandbox`). Without a sandbox configured it posts the
 `repro-skipped` notice instead and does not reproduce. An issue from outside still needs a
-maintainer's `/baton ready` comment.
+maintainer's `/baton ready` comment, and an edit to the body by anyone other than a maintainer or Baton after that comment drops the approval until a maintainer posts `/baton ready` again.
 
 ## Stopping
 
