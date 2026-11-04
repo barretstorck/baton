@@ -283,6 +283,29 @@ class GateTest(unittest.TestCase):
             for repo in (with_brief, without):
                 self.assertEqual(gate.decide(cmd, repo, TERMS), [], cmd)
 
+    def test_rewrite_helpers(self):
+        from baton import comment
+        self.assertEqual(gate._claude_version({"AI_AGENT": "claude-code_2-1-296_agent"}), (2, 1, 296))
+        self.assertIsNone(gate._claude_version({}))
+        self.assertIsNone(gate._claude_version({"AI_AGENT": "other_1-2-3"}))
+        for agent, role in [("baton:baton-developer", "developer"), ("baton-refiner", "refine"),
+                            ("baton-reviewer", "reviewer"), ("baton-researcher", "researcher"),
+                            (None, "orchestrator"), ("general-purpose", "orchestrator"),
+                            ("baton-triager", "orchestrator")]:
+            self.assertEqual(gate._role(agent), role, agent)
+        for role in comment.ROLES:
+            for kind in ("closed", "reopened"):
+                self.assertEqual(gate._stamp(role, kind, "Done in #6"),
+                                 comment.compose(role, kind, "Done in #6"))
+        self.assertEqual(gate._simple_argv('gh issue close 5 --comment "done"'),
+                         ["gh", "issue", "close", "5", "--comment", "done"])
+        self.assertEqual(gate._simple_argv("GH_REPO=o/r gh pr close 5 -c 'x y'"),
+                         ["GH_REPO=o/r", "gh", "pr", "close", "5", "-c", "x y"])
+        for cmd in ["a && b", "a; b", "a | b", "gh issue close 5 -c $B", "gh issue close 5 -c $(date)",
+                    "gh issue close 5 -c `date`", "gh issue close 5 -c <<EOF", "a\nb",
+                    'gh issue close 5 -c "x']:
+            self.assertIsNone(gate._simple_argv(cmd), cmd)
+
     def test_merge_hint_once_per_session(self):
         def run(command, session="s1"):
             payload = {"tool_name": "Bash", "cwd": "/", "tool_input": {"command": command}}

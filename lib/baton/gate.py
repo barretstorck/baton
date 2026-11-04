@@ -17,6 +17,7 @@ import functools
 import json
 import os
 import re
+import shlex
 import signal
 import sys
 import tempfile
@@ -88,6 +89,42 @@ _CLOSE_REASON = ("`gh issue|pr close|reopen` needs a reason in a Baton repositor
                  "Baton adds its marker to the comment")
 _HAS_REASON = re.compile(r"(?<![\w-])(?:-c|--comment)(?=[\s=]|$)|(?<![\w-])-c\S")
 _HELP = re.compile(r"(?<![\w-])(?:--help|-h)(?![\w-])")
+
+REWRITE_FLOOR = (2, 1, 290)
+_VERSION_RE = re.compile(r"claude-code_(\d+)-(\d+)-(\d+)")
+_ROLE_RE = re.compile(r"baton-(developer|refiner|reviewer|researcher)")
+_ROLE_NAMES = {"developer": "developer", "refiner": "refine", "reviewer": "reviewer", "researcher": "researcher"}
+
+
+def _claude_version(env):
+    """The Claude Code version from AI_AGENT, or None when it is missing or not Claude Code's."""
+    match = _VERSION_RE.search(env.get("AI_AGENT") or "")
+    return tuple(int(part) for part in match.groups()) if match else None
+
+
+def _role(agent_type):
+    """The comment role for a hook payload's agent_type; everything else is the orchestrator."""
+    match = _ROLE_RE.search(agent_type or "")
+    return _ROLE_NAMES[match.group(1)] if match else "orchestrator"
+
+
+def _stamp(role, kind, reason):
+    """What comment.compose(role, kind, reason) returns (comment imports gate, so it is rebuilt here)."""
+    return f"{MARKER}{role}:{kind} -->\n**Baton {role}: {kind}**\n\n{reason.strip()}\n"
+
+
+def _simple_argv(command):
+    """The argv of a single plain command, or None for anything shlex cannot take apart safely."""
+    if re.search(r"[$`\n]", command):
+        return None
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        if any(token and set(token) <= set("();<>|&") for token in lexer):
+            return None
+        return shlex.split(command)
+    except ValueError:
+        return None
 
 
 def _close_command(stripped):
