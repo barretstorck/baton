@@ -70,6 +70,25 @@ def refused_forms(text):
 
 
 class GateTest(unittest.TestCase):
+    def test_empty_inline_body_is_refused_with_a_brief(self):
+        with_brief, without = both_directories()
+        for command in ('gh issue create --title T --body ""', 'gh pr create --title T --body "  "',
+                        "gh issue edit 5 --body ''", 'gh pr edit 5 -b ""', 'gh issue create --title T --body=""',
+                        'gh -R example-org/example-repo issue edit 5 --body ""'):
+            with self.subTest(command=command):
+                self.assertIn(gate._EMPTY_BODY, gate.decide(command, with_brief, TERMS))
+                self.assertEqual(gate.decide(command, without, TERMS), [])
+
+    def test_empty_inline_body_neighbours_stay_allowed(self):
+        repo = make_repo()
+        for command in ("gh issue create --title T --body x", "gh pr edit 5 --title T",
+                        "gh issue edit 5 --add-label bug", "gh issue edit 5 --milestone M",
+                        "gh pr create --fill", "gh pr create -B main --title T --body x",
+                        'gh issue list --search ""', 'gh pr list --search ""', "gh issue view 5"):
+            with self.subTest(command=command):
+                self.assertEqual(gate.decide(command, repo, TERMS), [])
+        self.assertNotIn(gate._EMPTY_BODY, gate.decide('gh issue create --title T --body "$B"', repo, TERMS))
+
     def setUp(self):
         self.cache = tempfile.mkdtemp()
         patcher = mock.patch.dict(os.environ, {"CLAUDE_CODE_PLUGIN_CACHE_DIR": self.cache})
