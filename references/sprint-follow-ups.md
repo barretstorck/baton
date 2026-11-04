@@ -1,6 +1,6 @@
 # Follow-up checking and placement
 
-Read this before filing a follow-up issue (step 6): it says how to check its claim and where to place it by severity.
+Read this before filing a follow-up issue (`skills/sprint/SKILL.md`, step 6): it says how to check its claim and where to place it by severity.
 
 Before filing, check the follow-up's central claim ("X currently does Y", "Z was not measured")
 against the code on the default branch (`rg`, or `git show origin/<default>:<path>`) or against

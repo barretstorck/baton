@@ -12,7 +12,7 @@ Read this before the first pass of a scheduled run.
 4. **Take the stricter path whenever something is flagged.** A developer reporting untrusted
    instructions, a pull request touching protected paths, an escalated review, a fix that failed
    once already, a budget over its limit: run `baton notify <N> stuck <file | ->` and leave it.
-5. **Follow-ups use `follow_ups.scheduled`.** Place each by that mapping (step 6). One that
+5. **Follow-ups use `follow_ups.scheduled`.** Place each by that mapping (`skills/sprint/SKILL.md`, step 6, Follow-ups; `references/sprint-follow-ups.md`). One that
    joins the sprint in a scheduled run still gets `baton notify <N> stuck <file | ->` saying why
    (it adds the `needs-maintainer` label). The others follow their placement (`backlog` goes to
    `status:refinement`).
@@ -20,7 +20,7 @@ Read this before the first pass of a scheduled run.
    you start must finish inside this run.
 7. **End:** when nothing is running and nothing can be dispatched, run `baton lock release` and
    print the same three-section update when the sprint is still open (if it closed, step 6 of
-   "Close the sprint" applies). Release the lock even
+   "Close the sprint" in `skills/sprint/SKILL.md` applies). Release the lock even
    if the run is ending because of an error.
 
 How to set up the schedule is in `${CLAUDE_PLUGIN_ROOT}/docs/scheduling.md`.

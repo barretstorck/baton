@@ -1,6 +1,6 @@
 # Sprint review and merge handling
 
-The sprint orchestrator reads this before acting on any `in_review` entry (step 4 of `skills/sprint/SKILL.md`).
+The sprint orchestrator reads this before acting on any `in_review` entry (`skills/sprint/SKILL.md`, step 4, Review and merge).
 
 For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-status`: `plan`
 (the issue's tasks) and `review` (the latest review's tasks).
@@ -19,7 +19,7 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
          Repository: <owner>/<repo>.
 
      It takes no developer slot. Then close the spike.
-  3. `multiple`: file the follow-ups the findings propose that are worth having (step 6), each
+  3. `multiple`: file the follow-ups the findings propose that are worth having (`skills/sprint/SKILL.md`, step 6, Follow-ups), each
      with the spike's `Spike for:` and `Origin: outside` lines under its Pointers and "see #<S>" in
      its Context. Post a `status` comment on `<O>` linking them, then close the spike.
   4. `partial`: file a follow-up spike for the open questions (title `[SPIKE] ...`, label
@@ -29,7 +29,7 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
      amount to and apply it to them. Then close the spike.
 
   A findings comment with no `Outcome:` line: dispatch the researcher again once, for it to add
-  the line; if it is still missing, `needs-maintainer` (as in step 8's "anything else" rule).
+  the line; if it is still missing, `needs-maintainer` (as in `references/sprint-returns.md`, the "anything else" rule).
   When the report's `Prototype:` is not `none`, run `git ls-remote origin refs/spikes/<N>` and
   `git ls-remote --heads origin 'issue-<N>-*'`: delete the branch with
   `git push origin --delete <branch>` if it still exists; if the ref is missing, report that to
@@ -37,7 +37,7 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   `baton close issue <N> orchestrator <reason-file | ->` (the reason is the findings summary).
   Spikes are not code-reviewed.
 - **Not a spike and no pull request, or `progress.<N>.plan.next` is set:** the plan is not
-  finished (an interrupted task, or a replaced plan). `baton set-status <N> status:in-dev`; step 7
+  finished (an interrupted task, or a replaced plan). `baton set-status <N> status:in-dev`; `skills/sprint/SKILL.md` step 7 (Dispatch)
   dispatches the next task, which opens the draft pull request if it is missing.
 - **`review` is `changes` but `progress.<N>.review_without_tasks` is true:** a review from before
   Baton 0.3 with no task list. Dispatch a reviewer with the extra line "The last review has no
@@ -62,7 +62,7 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   verification and waits for CI itself. `stale` means the pull request's change moved after it
   was approved.
 - **`blocked`:** read the review's `Cause:` line. Blocked reviews are not rounds.
-  - `default-branch`: follow step 1 (red default branch); the pull request waits. When the
+  - `default-branch`: follow `references/sprint-default-branch.md`; the pull request waits. When the
     default branch is green again, dispatch a reviewer.
   - `environment`: dispatch one reviewer again on the next pass. If that review is `blocked` with
     cause `environment` a second time in a row, run `baton notify <N> stuck <file | ->` with a text linking both reviews (it adds `needs-maintainer` and posts the
@@ -70,11 +70,11 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
 - **`repeated`:** the same tests failed in two reviews in a row. Run `baton notify <N> stuck <file | ->` with a text linking the two reviews and naming the shared failing ids (it adds `needs-maintainer` and posts the
   orchestrator `status` comment), and
   put the issue under `Needs you`. Do not re-draft the pull request or dispatch a fix round. Record the
-  answer as a decision (step 3) and then handle it like an answered `escalate`.
+  answer as a decision (`skills/sprint/SKILL.md`, step 3, Answers; `references/sprint-answers.md`) and then handle it like an answered `escalate`.
 - **`changes`:** if `draft` is false, turn the pull request back into a draft: `baton pr ready <PR>
   --undo`, so that CI runs once per "developer done" and not once per pushed fix task. Then
   `baton set-status <N> status:in-dev`. Step 7 then works the review's tasks one
-  at a time, and step 8 posts the reply when the last one is ticked. This takes a developer slot.
+  at a time, and `references/sprint-returns.md` posts the reply when the last one is ticked. This takes a developer slot.
 - **`replan`:** the reviewer says the plan, not the code, is the problem, and the pull request
   has no refiner's reply yet. Run each as a command on its own:
   1. `baton set-status <N> status:refinement` (the issue keeps its milestone).
@@ -87,7 +87,7 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
          Repository: <owner>/<repo>.
 
   It takes no developer slot. When it has rewritten the open tasks it marks the issue ready and
-  posts a `refine` `reply` on the pull request; step 7 then dispatches the next task as for a
+  posts a `refine` `reply` on the pull request; `skills/sprint/SKILL.md`, step 7 (Dispatch), then dispatches the next task as for a
   resumed issue, and the reviewer comes back after the last one, as after any reply.
 - **Each entry in `re_refine`** (an issue in `status:refinement` with an open pull request and no
   `needs-maintainer`; a session died after step 3 of `replan`): `baton pr ready <PR> --undo` if
@@ -97,9 +97,9 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   changes, or two `replan` reviews came in a row (the maintainer decides what the plan should
   be). Run `baton notify <N> stuck <file | ->` with a text linking the
   last review and the last reply, saying what the two disagree about (it adds `needs-maintainer` and posts the orchestrator `status` comment); the issue goes under
-  `Needs you`. When the maintainer answers, record it as a decision (step 3); if the answer sends the
+  `Needs you`. When the maintainer answers, record it as a decision (`skills/sprint/SKILL.md`, step 3, Answers; `references/sprint-answers.md`); if the answer sends the
   review's tasks to a developer, re-draft the pull request as for `changes` (`baton pr ready <PR>
-  --undo` when `draft` is false) and work the tasks (step 7).
+  --undo` when `draft` is false) and work the tasks (`skills/sprint/SKILL.md`, step 7, Dispatch).
 - **`approved`**, or `not-required`:
   0. `approved` with `verify` `missing` (the brief sets `verify.command`; the head moved after the
      approval, typically by merging the default branch in): dispatch a reviewer for a short
@@ -109,11 +109,11 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
      again next pass.
   2. `ci` is `pending`: wait.
   2a. `ci` is `cancelled`: handle it as the ready-pull-request `cancelled` case above (re-run or
-     empty update commit); not step 3, and no merge until `ci` is `green`.
+     empty update commit); not the Answers step (`skills/sprint/SKILL.md`, step 3), and no merge until `ci` is `green`.
   3. `mergeable` is `CONFLICTING`: post an orchestrator `status` comment on the pull request,
      `baton set-status <N> status:in-dev`, and dispatch a developer with
      `Update pull request <P> (issue <N>).` Merging the default branch in does not void the
-     review, but a new head needs a new verification record (step 0).
+     review, but a new head needs a new verification record (`skills/sprint/SKILL.md`, step 5, Verification).
      `ci` is `red` on an approved head (a new head after an update): dispatch a reviewer, who
      turns the failure into fix tasks; no developer fixes CI directly.
   4. Green and mergeable: if `review` is `not-required`, check briefly that every acceptance

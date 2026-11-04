@@ -1,6 +1,6 @@
 # Retrospective detail
 
-Read this when closing the sprint (step 9, item 1) to run the metrics and write the retrospective.
+Read this when closing the sprint (`skills/sprint/SKILL.md`, step 9, item 1) to run the metrics and write the retrospective.
 
 1. Run `baton sprint-metrics "<sprint title>" --since <the sprint's first dispatch, as UTC ISO time>` and paste its
    output unchanged into the retrospective's `## Metrics` section.

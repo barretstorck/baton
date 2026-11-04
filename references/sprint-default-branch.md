@@ -1,6 +1,6 @@
 # Default branch red, pending or none
 
-Read this when `default_branch.state` is `red`, `pending` or `none` (step 1 of a pass).
+Read this when `default_branch.state` is `red`, `pending` or `none` (`skills/sprint/SKILL.md`, step 1 of a pass).
 
 If `default_branch.state` is `red`, the repair comes before everything else
 ([GitLab: broken master](https://handbook.gitlab.com/handbook/engineering/workflow/#broken-master)).

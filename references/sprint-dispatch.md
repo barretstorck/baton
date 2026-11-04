@@ -11,10 +11,10 @@ Read this when `sprint-status` reports a `stale` plan, a `held` issue, `path_che
 **Every task ticked.**
    - **every task ticked** (no `review.next`, no `plan.next`): the developer finished but the
      session ended before the next step. If the latest review asks for changes and no reply
-     follows it, post the reply (step 8), building each line from the branch's `Review <r.n>:`
+     follows it, post the reply (`skills/sprint/SKILL.md`, step 8, When a developer or reviewer returns), building each line from the branch's `Review <r.n>:`
      commits; ask on the issue about a task with no commit: post an orchestrator `question` comment and run `baton notify <N> stuck <file | ->` (it goes under `Needs you`). Then
      `baton set-status <N> status:in-review`. The pull request stays a draft until the next pass
-     marks it ready (step 4); CI runs once, and the reviewer comes only when `ci` is `green` or
+     marks it ready (`skills/sprint/SKILL.md`, step 4, Review and merge); CI runs once, and the reviewer comes only when `ci` is `green` or
      `none`.
 
 **Stale plans and far-behind branches.** `progress.<N>.stale` is
