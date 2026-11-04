@@ -78,8 +78,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/references/sprint-answers.md` to record the decision
 ### 4. Review and merge
 
 **Closing and reopening.** Every close or reopen of an issue or pull request goes through
-`baton close|reopen <issue|pr> <N> orchestrator <reason-file | ->`; use `baton close|reopen`, not `gh ... close`. The command posts a `baton:<role>:closed` (or `reopened`) marker comment
-with the reason, then closes or reopens. **Reading state:** an issue or pull request that is
+`gh issue|pr close|reopen <N> --comment "<reason>"` (the comment is one literal line in double quotes: no heredoc, `$(...)`, variable or newline, so the gate adds the `baton:<role>:closed` or `reopened` marker comment; below Claude Code 2.1.290 the gate refuses and names the marker line to put at the start of the comment). A close with `--reason`, `--duplicate-of` or `--lock` stays on `baton close issue <N> orchestrator <reason-file | ->`. **Reading state:** an issue or pull request that is
 closed with no `baton:<role>:closed` marker comment was closed by the maintainer. Do not reopen
 it without asking.
 
@@ -243,8 +242,7 @@ recommendations or play-by-play. The details are on the issues.
 - Tick a box or change a plan or a review other than with `baton task done` and
   `baton plan replace` (and never tick a plan task a developer should have ticked), or give a developer more than one task.
 - Merge with anything other than `baton merge-pr`, or merge while the default branch is red.
-- Write to the forge with raw `gh` (comments, issue or pull request edits, labels, reviews, closing,
-  merging) instead of the `baton` command in `references/github.md`, `references/github-shared.md` or `references/github-orchestrator.md`; the gate does not stop you,
+- Write to the forge with raw `gh` for comments, reviews, labels beyond the rows in `references/github-shared.md`, merging or `gh api -X POST`, instead of the `baton` command in `references/github.md`, `references/github-shared.md` or `references/github-orchestrator.md`; the gate does not stop you,
   the rule stands.
 - Post `/baton approve`, or mark an issue written by someone else as ready.
 - Start a sprint, change its goal, or add unrelated issues without the maintainer.

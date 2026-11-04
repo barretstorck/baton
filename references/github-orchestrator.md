@@ -22,8 +22,8 @@ Read by the sprint orchestrator (the sprint, sprint-plan, open-questions and ini
 | Set a bug's severity | `baton set-severity <N> <1-4>` (replaces any other `severity:` label; refused unless the issue is a bug). Severity is ranking information only: no due dates, it never pulls a bug into a sprint or interrupts one. |
 | Create the Baton labels | `baton labels --create` creates every missing label, including `priority:1`-`4` and `severity:1`-`4` |
 | Mark an issue as missing its sprint | `baton issue missed <N> "<milestone title or number>"` (adds a `Missed sprint:` line under Pointers, the `missed-sprint` label, and removes the milestone) |
-| Edit a pull request | `baton pr edit <N>` takes the same options as `baton issue edit` (`--title`, `--body-file`, `--add-label`, `--remove-label`, `--milestone`) |
-| Mark a pull request ready | `baton pr ready <N>`, or `baton pr ready <N> --undo` to turn it back into a draft (the orchestrator, once the review is approved) |
+| Edit a pull request | `gh pr edit <N>` takes the same options as `gh issue edit` (`--title`, `--body-file`, `--add-label`, `--remove-label`, `--milestone`) |
+| Mark a pull request ready | `gh pr ready <N>`, or `gh pr ready <N> --undo` to turn it back into a draft (the orchestrator, once the review is approved) |
 | Deprecated plan commands | `baton plan commit`, `baton plan link` and `baton plan pin` do nothing; do not use them |
 | Create or edit a milestone | `baton milestone create --title <t> [--description <d>] [--due-on <ISO date>]`; `baton milestone edit <number or title> [--title <t>] [--description <d>] [--due-on <date>] [--state open\|closed]` |
 | Merge | `baton merge-pr <N>` only. Do not run `gh pr merge`. |

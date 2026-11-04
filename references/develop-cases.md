@@ -27,7 +27,7 @@ without it, return `QUESTION`.
 ## Opening the draft pull request
 
 After the push in step 6, open a **draft** pull request from the detached checkout with
-`baton pr create --draft --title "<title>" <file>`; it uses the pushed `issue-<N>-*` branch as
+`gh pr create --draft --title "<title>" --body-file <file>`; the gate uses the pushed `issue-<N>-*` branch as
 the head (or takes `--head <branch>`), so do not create a local branch. The body has
 `Closes #<N>` on its own line and a short summary of the plan. Drafts may not run CI, which
 saves minutes.

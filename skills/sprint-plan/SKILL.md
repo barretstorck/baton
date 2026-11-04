@@ -94,7 +94,7 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_R
    - Create the milestone with its due date
      (`baton milestone create --title "<title>" --description "<text>" --due-on <ISO date>`).
    - Add each issue to it and set its `deliverable` or `stretch` label
-     (`baton issue edit <N> --milestone "<title>" --add-label deliverable`).
+     (`gh issue edit <N> --milestone "<title>" --add-label deliverable`).
    - Post one `plan` comment on the first issue listing the sprint, so there is a record:
      `baton comment issue <N> orchestrator plan <file>`.
 

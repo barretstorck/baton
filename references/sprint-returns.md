@@ -25,7 +25,7 @@ Read this when a developer, refiner, researcher or reviewer returns, and act on 
       EOF
 
   then `baton set-status <N> status:in-review`. The pull request is still a draft: make no
-  `baton pr ready` call here. The next pass marks it ready (`skills/sprint/SKILL.md`, step 4, Review and merge), CI runs once, and the reviewer is
+  `gh pr ready` call here. The next pass marks it ready (`skills/sprint/SKILL.md`, step 4, Review and merge), CI runs once, and the reviewer is
   dispatched at once, not when `ci` is green. If this
   session no longer has the developers' results, read them from the branch: `Review <r.n>:`
   commits are fixes; ask on the issue about a task with no commit: post an orchestrator `question` comment and run `baton notify <N> stuck <file | ->` (it goes under `Needs you`) and no recorded reason.
