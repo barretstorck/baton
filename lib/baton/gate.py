@@ -56,7 +56,9 @@ _HTTP_CLIS = ("curl", "wget", "http", "https", "xh")
 
 # Command position: start of text, after a separator, quote or newline, or after a launcher.
 _POS = (r"""(?:^|[;&|(`'"\n{]|\bsudo\b|\benv\b|\bxargs\b|\bexec\b|\bcommand\b|\btime\b|\bnohup\b)"""
-        r"""\s*(?:[A-Za-z_]\w*=\S*\s+)*""")
+        r"""\s*(?:[A-Za-z_]\w*=\S*\s+)*"""
+        # `baton exec [--role <r>]` is a transparent prefix: the forge command after it is scanned.
+        r"""(?:--role(?:\s+|=)[\w.-]+\s+)?""")
 
 
 @functools.lru_cache(maxsize=16)
@@ -575,10 +577,49 @@ def _gh_write_offset(command):
         return None
     if rest[0].rsplit("/", 1)[-1] != "gh" or not re.match(r"(?:[\w.~+-]*/)*gh(?=[ \t]|$)", command[m.end():]):
         return None
+    return m.end() if _is_write_words(rest) else None
+
+
+def exec_role_problem(command, agent_type):
+    """A refusal when an agent-typed `baton exec` names a role other than the caller's, else None."""
+    tokens = _gh_tokens(command)
+    if not tokens:
+        return None
+    i = 0
+    while i + 2 < len(tokens) and tokens[i] == "cd" and tokens[i + 2] == "&&" and not _is_punct(tokens[i + 1]):
+        i += 3
+    rest = tokens[i:]
+    if len(rest) < 2 or rest[0].rsplit("/", 1)[-1] != "baton" or rest[1] != "exec":
+        return None
+    role = "orchestrator"
+    j = 2
+    while j < len(rest) and rest[j] not in ("gh", "--"):
+        if rest[j] == "--role" and j + 1 < len(rest):
+            role = rest[j + 1]
+            j += 1
+        elif rest[j].startswith("--role="):
+            role = rest[j][len("--role="):]
+        j += 1
+    mine = _role(agent_type)
+    if role == mine:
+        return None
+    return (f"`baton exec` may only write as your own role: use `--role {mine}` "
+            f"(this command names `{role}`; the default is `orchestrator`).")
+
+
+def _is_write_words(rest):
+    """True when `rest` (gh, group, sub, ...) is a write the gate recognises."""
+    if len(rest) < 3:
+        return False
     group, sub = rest[1], rest[2]
     if group == "api":
-        return m.end() if _api_is_write(rest[2:]) else None
-    return m.end() if sub in _GH_WRITES.get(group, ()) else None
+        return _api_is_write(rest[2:])
+    return sub in _GH_WRITES.get(group, ())
+
+
+def is_recognised_write(words):
+    """True when the argv `words` is a plain `gh` write the gate recognises (no `cd &&` prefix)."""
+    return bool(words) and words[0] == "gh" and not any(_is_punct(t) for t in words) and _is_write_words(words)
 
 
 def _count_cd(prefix):
@@ -724,6 +765,10 @@ def main(stdin_text):
                 problems = decide_mcp(payload.get("tool_input"), cwd, scan.load_terms(warn=False))
             else:
                 problems = decide(command, cwd, scan.load_terms(warn=False))
+                if not problems:
+                    agent = payload.get("agent_type")
+                    refusal = exec_role_problem(command, agent if isinstance(agent, str) else None)
+                    problems = [refusal] if refusal else []
                 if not problems:
                     rewritten, problems = close_marker(
                         command, cwd, payload.get("agent_type"), os.environ)

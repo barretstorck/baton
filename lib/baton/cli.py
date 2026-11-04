@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -169,13 +170,51 @@ def cmd_comment(opts):
     return 0
 
 
+_EXEC_REFUSED_GROUPS = ("auth", "extension", "alias")
+
+
+_EXEC_DROPPED_ENV = ("GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN")
+
+
+def _exec_forbidden(words):
+    """Explicit refusals that hold even if the write allowlist changes: token-printing or
+    code-running groups, a leading global flag, and --hostname (would send the token elsewhere)."""
+    if words[1].startswith("-") or words[1] in _EXEC_REFUSED_GROUPS:
+        return True
+    if any(w == "--hostname" or w.startswith("--hostname=") for w in words):
+        return True
+    if words[1] == "api" and any("://" in w for w in words[2:]):
+        return True
+    return any(not _OWNER_REPO.fullmatch(v) for v in _repo_values(words))
+
+
+_OWNER_REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+
+
+def _repo_values(words):
+    """The value of every -R/--repo option (separate, `=` or attached form); "" when it has none."""
+    out = []
+    for i, w in enumerate(words[2:], 2):
+        if w in ("-R", "--repo"):
+            out.append(words[i + 1] if i + 1 < len(words) else "")
+        elif w.startswith("--repo="):
+            out.append(w[len("--repo="):])
+        elif w.startswith("-R"):
+            out.append(w[2:])
+    return out
+
+
 @cliargs.command("exec")
 def cmd_exec(opts):
     words = opts.words
-    if not words or words[0] != "gh" or len(words) < 2 or opts.role not in set(comment.ROLES) | set(config.ROLES):
+    if not words or words[0] != "gh" or len(words) < 2 or opts.role not in set(comment.ROLES) | set(config.ROLES) \
+            or not gate.is_recognised_write(words) or _exec_forbidden(words):
         return cliargs.fail("exec")
     extra = identity.child_env(opts.role)
-    env = {**os.environ, **extra} if extra else None
+    env = None
+    if extra:
+        env = {k: v for k, v in os.environ.items() if k not in _EXEC_DROPPED_ENV}
+        env.update(extra, GH_HOST="github.com")
     return subprocess.run(words, env=env).returncode
 
 
