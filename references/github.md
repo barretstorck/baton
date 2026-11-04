@@ -83,7 +83,7 @@ Where a row says "write ... to a file", an inline heredoc works too and needs no
 ## Rules the publish gate enforces
 
 The gate is a text scanner. It checks commands that talk to a forge (`gh`, `glab`, `tea`, `fj`,
-`curl`, `wget`, `http`, `https`, `xh`) and git commit, push and tag. It refuses only:
+`curl`, `wget`, `http`, `https`, `xh`) and git commit, push and tag. It refuses:
 
 - a privacy finding in the quoted text, heredoc or body file of such a command;
 - text it cannot read: a body from stdin (`-F -`, `--body-file -`) without a heredoc or pipe, a
@@ -92,7 +92,11 @@ The gate is a text scanner. It checks commands that talk to a forge (`gh`, `glab
   (`"$(cat <<'EOF' ... EOF)"`) are fine;
 - a hook bypass on a git commit, push or tag: `--no-verify`, `core.hooksPath`, or overriding
   `HOME` or `GIT_*` settings;
-- missing git hooks.
+- missing git hooks;
+- in a Baton repository, a raw `gh issue|pr close|reopen` without `--comment`. From Claude Code
+  2.1.290 the gate adds the `baton:<role>:closed` (or `reopened`) marker to the comment through a
+  rewrite that keeps the permission prompt; otherwise, or for a compound command, it refuses and
+  names the marker line to add.
 
 It does not judge which command you use, labels, markers or directories. Other commands are allowed.
 

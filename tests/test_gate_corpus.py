@@ -1,7 +1,8 @@
 """Corpus of command shapes for gate.decide.
 
 ALLOWED holds harmless shapes, grouped by what a new rule might hurt; a failing subTest names
-the group. REFUSED holds publishes whose text carries one private finding each, and hook bypasses. Every private
+the group. REFUSED holds publishes whose text carries one private finding each, hook bypasses, and close
+and reopen commands without a reason, refused only where there is a brief. Every private
 value is assembled from pieces so the commit scan sees no literal private detail.
 """
 import pathlib
@@ -78,6 +79,17 @@ ALLOWED = {
         'git commit -m "--no-verify"',
         "git config get core.hooksPath && git push",
     ),
+    # (j) close and reopen with a reason
+    "j close and reopen with a reason": (
+        'gh issue close 5 --comment "Done in #6"',
+        "gh pr close 5 -c superseded --delete-branch",
+        "gh issue reopen 5 --comment=again",
+        'gh -R example-org/example-repo issue close 5 --comment "duplicate of #4"',
+        "gh issue close --help",
+        "gh issue view 5 --comments",
+        "gh issue list --state closed",
+        'gh issue comment 5 --body "close this"',
+    ),
 }
 
 # (command shape, expected finding kind); kind "bypass" is a hook bypass, not a privacy finding
@@ -102,6 +114,13 @@ REFUSED = (
     ('git commit "--no-verify";echo x', "bypass"),
     ("git push '-n' origin x", "bypass"),
     ("git config set core.hooksPath /dev/null && git push", "bypass"),
+    ("gh issue close 5", "close-reason"),
+    ("gh pr close 5 --delete-branch", "close-reason"),
+    ("gh issue reopen 5", "close-reason"),
+    ("gh pr reopen 5", "close-reason"),
+    ("gh issue close --help; gh issue close 6", "close-reason"),
+    ("gh issue close 5 --comment x; gh issue close 6", "close-reason"),
+    ("gh issue close 5 --comment '<!-- baton:developer:closed -->x'; gh issue close 6", "close-reason"),
 )
 
 
@@ -125,6 +144,12 @@ class CorpusTest(unittest.TestCase):
             for cmd, kind in REFUSED:
                 with self.subTest(cmd=cmd, brief=has_brief):
                     problems = gate.decide(cmd, cwd, TERMS)
+                    if kind == "close-reason":
+                        if has_brief:
+                            self.assertIn(gate._CLOSE_REASON, problems)
+                        else:
+                            self.assertEqual(problems, [])
+                        continue
                     self.assertTrue(problems)
                     if kind == "bypass":
                         self.assertTrue(any("bypass" in p for p in problems), problems)

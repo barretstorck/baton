@@ -293,6 +293,86 @@ class GateTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             return gate.main(json.dumps(payload))
 
+    def test_close_without_a_reason_is_refused_in_a_baton_repo(self):
+        with_brief, without = make_repo(), make_repo(brief=None)
+        for cmd in ["gh issue close 5", "gh pr close 5 --delete-branch", "gh issue reopen 5",
+                    "gh -R o/r pr reopen 5", "cd sub && gh issue close 5",
+                    "gh issue close --help; gh issue close 6",
+                    "gh issue close 5 --comment x; gh issue close 6",
+                    "gh issue close 5 --comment '<!-- baton:developer:closed -->x'; gh issue close 6"]:
+            self.assertIn(gate._CLOSE_REASON, gate.decide(cmd, with_brief, TERMS), cmd)
+            self.assertEqual(gate.decide(cmd, without, TERMS), [], cmd)
+        for cmd in ['gh issue close 5 --comment "done"', "gh pr close 5 -c done",
+                    "gh issue reopen 5 --comment=again", "gh issue close --help",
+                    "gh issue view 5 --comments", "gh issue list --state closed",
+                    'gh issue comment 5 --body "close this"']:
+            for repo in (with_brief, without):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [], cmd)
+
+    def test_close_marker_refuses_several_closes(self):
+        repo = make_repo()
+        env = {"AI_AGENT": "claude-code_2-1-300"}
+        one = "gh issue close 5 --comment '<!-- baton:developer:closed -->x'"
+        for cmd in ["gh issue close 5 --comment x; gh issue close 6 --comment y",
+                    one + "; gh issue close 6 --comment y"]:
+            new, problems = gate.close_marker(cmd, repo, None, env)
+            self.assertIsNone(new, cmd)
+            self.assertEqual(len(problems), 1, cmd)
+        both = one + "; " + one.replace("5", "6")
+        self.assertEqual(gate.close_marker(both, repo, None, env), (None, []))
+
+    def test_close_marker_rewrites_the_comment(self):
+        import shlex
+        env = {"AI_AGENT": "claude-code_2-1-296_agent"}
+        repo = make_repo()
+        cases = [
+            ("gh issue close 5 --comment \"Done in #6\"", None, "orchestrator", "closed", "Done in #6"),
+            ("gh pr reopen 5 -c again", "baton:baton-developer", "developer", "reopened", "again"),
+            ("gh pr reopen 5 --comment=again", None, "orchestrator", "reopened", "again"),
+            ("gh pr reopen 5 -cagain", None, "orchestrator", "reopened", "again"),
+        ]
+        for cmd, agent, role, kind, reason in cases:
+            new, problems = gate.close_marker(cmd, repo, agent, env)
+            self.assertEqual(problems, [], cmd)
+            stamp = gate._stamp(role, kind, reason)
+            want = [a.replace(reason, stamp) if a.endswith(reason) else a for a in shlex.split(cmd)]
+            self.assertEqual(shlex.split(new), want, cmd)
+        marked = "gh issue close 5 --comment '<!-- baton:developer:closed -->\nx'"
+        self.assertEqual(gate.close_marker(marked, repo, None, env), (None, []))
+        for bad in ({}, {"AI_AGENT": "claude-code_2-1-289_agent"}):
+            new, problems = gate.close_marker("gh issue close 5 --comment x", repo, None, bad)
+            self.assertIsNone(new)
+            self.assertIn("<!-- baton:orchestrator:closed -->", problems[0])
+        for cmd in ('gh issue close 5 --comment "$R"', "cd sub && gh issue close 5 -c x",
+                    "gh issue close 5 -c \"$(cat <<'EOF'\nx\nEOF\n)\"", "gh issue close 5 -c x <<EOF\ny\nEOF"):
+            new, problems = gate.close_marker(cmd, repo, "baton:baton-developer", env)
+            self.assertIsNone(new, cmd)
+            self.assertIn("<!-- baton:developer:closed -->", problems[0], cmd)
+        self.assertEqual(gate.close_marker("gh issue close 5 -c x", make_repo(brief=None), None, env), (None, []))
+
+    def test_rewrite_helpers(self):
+        from baton import comment
+        self.assertEqual(gate._claude_version({"AI_AGENT": "claude-code_2-1-296_agent"}), (2, 1, 296))
+        self.assertIsNone(gate._claude_version({}))
+        self.assertIsNone(gate._claude_version({"AI_AGENT": "other_1-2-3"}))
+        for agent, role in [("baton:baton-developer", "developer"), ("baton-refiner", "refine"),
+                            ("baton-reviewer", "reviewer"), ("baton-researcher", "researcher"),
+                            (None, "orchestrator"), ("general-purpose", "orchestrator"),
+                            ("baton-triager", "orchestrator")]:
+            self.assertEqual(gate._role(agent), role, agent)
+        for role in comment.ROLES:
+            for kind in ("closed", "reopened"):
+                self.assertEqual(gate._stamp(role, kind, "Done in #6"),
+                                 comment.compose(role, kind, "Done in #6"))
+        self.assertEqual(gate._simple_argv('gh issue close 5 --comment "done"'),
+                         ["gh", "issue", "close", "5", "--comment", "done"])
+        self.assertEqual(gate._simple_argv("GH_REPO=o/r gh pr close 5 -c 'x y'"),
+                         ["GH_REPO=o/r", "gh", "pr", "close", "5", "-c", "x y"])
+        for cmd in ["a && b", "a; b", "a | b", "gh issue close 5 -c $B", "gh issue close 5 -c $(date)",
+                    "gh issue close 5 -c `date`", "gh issue close 5 -c <<EOF", "a\nb",
+                    'gh issue close 5 -c "x']:
+            self.assertIsNone(gate._simple_argv(cmd), cmd)
+
     def test_merge_hint_once_per_session(self):
         def run(command, session="s1"):
             payload = {"tool_name": "Bash", "cwd": "/", "tool_input": {"command": command}}
@@ -323,6 +403,34 @@ class GateTest(unittest.TestCase):
         finally:
             tempfile.gettempdir = original
             gate.decide = decide
+
+    def test_main_rewrites_a_close_with_a_reason(self):
+        repo = make_repo()
+
+        def run(command, env):
+            payload = {"tool_name": "Bash", "cwd": repo, "agent_type": "baton:baton-reviewer",
+                       "tool_input": {"command": command, "description": "Close", "timeout": 5000}}
+            out, err = io.StringIO(), io.StringIO()
+            with mock.patch.dict(os.environ, env), contextlib.redirect_stdout(out), \
+                    contextlib.redirect_stderr(err):
+                code = gate.main(json.dumps(payload))
+            return code, out.getvalue(), err.getvalue()
+
+        ok = {"AI_AGENT": "claude-code_2-1-296_agent"}
+        code, out, _ = run("gh pr close 5 --comment done", ok)
+        self.assertEqual(code, 0)
+        hook = json.loads(out)["hookSpecificOutput"]
+        self.assertNotIn("permissionDecision", hook)
+        updated = hook["updatedInput"]
+        self.assertEqual((updated["description"], updated["timeout"]), ("Close", 5000))
+        self.assertIn("<!-- baton:reviewer:closed -->", updated["command"])
+        self.assertIn(updated["command"], hook["additionalContext"])
+        code, out, err = run("gh pr close 5 --comment done", {"AI_AGENT": ""})
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("<!-- baton:reviewer:closed -->", err)
+        code, _, err = run("gh issue close 5", ok)
+        self.assertEqual(code, 2)
+        self.assertIn("--comment", err)
 
     def test_main_fails_closed_only_on_a_trigger(self):
         original = gate.decide
