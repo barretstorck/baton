@@ -70,7 +70,7 @@ _SHORT_N = re.compile(_POS + r"git\b[^;&|\n]*?\b(?:commit|push)\b[^;&|\n]*?\s-[a
 @functools.lru_cache(maxsize=16)
 def _stdin_re(flags):
     names = "|".join([re.escape(f) for f in sorted(flags, key=len, reverse=True)]
-                     + [r"--data(?:-binary|-raw)?", "-d"])
+                     + [r"--data(?:-binary|-raw)?", "-d", "--description"])
     return re.compile(r"(?:" + names + r")(?:\s+|=)(?:-|@-)(?:\s|$)")
 
 
@@ -94,7 +94,7 @@ _UNRESOLVABLE = re.compile(r"[$`*?]")
 _SUBST_BODY = re.compile(r"(?:--body|-b|--title|-t|--message|-m|--raw-field|-f|--field|-d|--data(?:-raw)?)"
                          r"(?:\s+|=)\"[^\"]*(?:\$\((?!cat <<)|`)")
 _CAT_SUBST = re.compile(r"""\$\(cat\s+(?:'([^\s'$`]+)'|([^\s'"$`()<>|;&*?\\-][^\s'"$`()<>|;&*?\\]*))\s*\)""")
-_HEREDOC = re.compile(r"<<-?[ \t]*['\"]?(\w+)['\"]?\n(.*?)\n[ \t]*\1\b", re.S)
+_HEREDOC = re.compile(r"<<-?[ \t]*['\"]?(\w+)['\"]?([^\n]*)\n(.*?)\n[ \t]*\1\b", re.S)
 _QUOTED = re.compile(r"""'[^']*'|"[^"]*\"""")
 _DATA_FLAG = re.compile(r"""(?:--data(?:-raw|-binary|-urlencode)?|--json|--form|-[dF])(?:\s+|=)('[^']*'|"[^"]*"|\S+)""")
 
@@ -161,7 +161,8 @@ def _close_command(stripped):
 
 _BYPASS = ("git hook bypass (--no-verify, -n, core.hooksPath or an overridden environment) is not allowed here; "
            "commit or push without it so the Baton hooks scan the change")
-_STDIN = "a body read from stdin cannot be scanned; pass --body or a file path"
+_STDIN = ("a body read from stdin cannot be scanned unless a heredoc in the same command supplies it; "
+          "pass the text literally, as an inline heredoc, or as a file")
 _SUBSTITUTED = ("text built from a command substitution or backticks in a double-quoted body cannot be "
                 "scanned; pass it literally, as an inline heredoc, or as a file")
 _HOOKS_MISSING = ("Baton git hooks are missing or point at a baton that no longer exists; "
@@ -276,7 +277,7 @@ def close_marker(command, cwd, agent_type, env):
     (None, []) when there is nothing to do; (new_command, []) when the comment gets Baton's marker;
     (None, [refusal]) when the marker cannot be added and the agent has to write it.
     """
-    stripped = _HEREDOC.sub("<<HD", command)
+    stripped = _HEREDOC.sub(r"<<HD\2", command)
     found = _close_command(stripped)
     if not found or not found[2]:
         return None, []
@@ -323,7 +324,7 @@ def close_marker(command, cwd, agent_type, env):
 
 
 def decide(command, cwd, terms):
-    stripped = _HEREDOC.sub("<<HD", command)
+    stripped = _HEREDOC.sub(r"<<HD\2", command)
     clis, flags = _brief_lists(cwd)
     forge = [m.group(1) for m in _forge_re(clis).finditer(stripped)]
     git = _GITPUB.search(stripped)
@@ -351,7 +352,7 @@ def decide(command, cwd, terms):
 
     http_only = bool(forge) and not git and all(name in _HTTP_CLIS for name in forge)
     stdin_pattern = _stdin_re(flags) if forge else _GIT_STDIN
-    if stdin_pattern.search(stripped) and "<<" not in stripped and "|" not in stripped:
+    if stdin_pattern.search(stripped) and "<<" not in stripped and (forge or "|" not in stripped):
         problems.append(_STDIN)
     cats = []  # (path, offset) of each literal $(cat <path>) inside a double-quoted string
     scanned = []
@@ -368,7 +369,7 @@ def decide(command, cwd, terms):
     if forge and _SUBST_BODY.search(without_cats):
         problems.append(_SUBSTITUTED)
 
-    texts = [m.group(2) for m in _HEREDOC.finditer(command)]
+    texts = [m.group(3) for m in _HEREDOC.finditer(command)]
     if http_only:
         texts += [m.group(1) for m in _DATA_FLAG.finditer(stripped)]
     else:
