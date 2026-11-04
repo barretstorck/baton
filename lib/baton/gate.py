@@ -578,6 +578,33 @@ def _gh_write_offset(command):
     return m.end() if _is_write_words(rest) else None
 
 
+def exec_role_problem(command, agent_type):
+    """A refusal when an agent-typed `baton exec` names a role other than the caller's, else None."""
+    tokens = _gh_tokens(command)
+    if not tokens:
+        return None
+    i = 0
+    while i + 2 < len(tokens) and tokens[i] == "cd" and tokens[i + 2] == "&&" and not _is_punct(tokens[i + 1]):
+        i += 3
+    rest = tokens[i:]
+    if len(rest) < 2 or rest[0].rsplit("/", 1)[-1] != "baton" or rest[1] != "exec":
+        return None
+    role = "orchestrator"
+    j = 2
+    while j < len(rest) and rest[j] not in ("gh", "--"):
+        if rest[j] == "--role" and j + 1 < len(rest):
+            role = rest[j + 1]
+            j += 1
+        elif rest[j].startswith("--role="):
+            role = rest[j][len("--role="):]
+        j += 1
+    mine = _role(agent_type)
+    if role == mine:
+        return None
+    return (f"`baton exec` may only write as your own role: use `--role {mine}` "
+            f"(this command names `{role}`; the default is `orchestrator`).")
+
+
 def _is_write_words(rest):
     """True when `rest` (gh, group, sub, ...) is a write the gate recognises."""
     if len(rest) < 3:
@@ -736,6 +763,10 @@ def main(stdin_text):
                 problems = decide_mcp(payload.get("tool_input"), cwd, scan.load_terms(warn=False))
             else:
                 problems = decide(command, cwd, scan.load_terms(warn=False))
+                if not problems:
+                    agent = payload.get("agent_type")
+                    refusal = exec_role_problem(command, agent if isinstance(agent, str) else None)
+                    problems = [refusal] if refusal else []
                 if not problems:
                     rewritten, problems = close_marker(
                         command, cwd, payload.get("agent_type"), os.environ)
