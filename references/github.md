@@ -26,13 +26,13 @@ Every skill reads issue text with `baton issue read <N>`, never with raw `gh iss
 
 ## Writing
 
-These commands are the rule, not only what the gate checks: every write to the forge goes through the `baton` command in this table. A raw `gh` write (`gh issue comment`, `gh pr create`, `gh pr merge`, `gh label ...`, `gh api -X POST ...`) is not allowed even where the gate lets it through. The gate lets a clean raw `gh` write pass, but the `baton` command adds the Baton marker, refuses an empty body, and at tier 1 writes as the `baton` App (a raw `gh` write runs with the maintainer's own login).
+These commands are the rule, not only what the gate checks. Write with `gh` for `issue create`, `issue edit`, `pr create`, `pr edit`, `pr ready` and a plain close or reopen; the gate scans the text, adds the Baton marker to close and reopen comments, refuses an empty body, and at tier 1 the write carries the `baton` App identity. Everything else goes through the `baton` command in this table. Other raw `gh` writes (`gh issue comment`, `gh pr merge`, `gh label ...`, `gh pr review`, `gh api -X POST ...`) are not allowed even where the gate lets them through.
 
 | Step | Command |
 |---|---|
 | Set an issue's status | `baton set-status <N> status:<name>` (removes the previous status) |
 | Post a comment | `baton comment <issue\|pr> <N> <role> <kind> -` with the body as an inline heredoc on standard input, or a file path in place of `-`. It scans the text, adds the Baton marker and prints the comment URL. |
-| Open a draft pull request | `baton pr create --draft --title "<title>" [--head <branch>] <file>` (from a detached checkout it uses the pushed branch at HEAD as the head) with `Closes #<N>` on its own line in the body |
+| Open a draft pull request | `gh pr create --draft --title "<title>" --body-file <file>` (from a detached checkout the gate adds the pushed branch at HEAD as `--head`) with `Closes #<N>` on its own line in the body |
 | Tick a task | `baton task done issue <N> <task> [--as-built <text>]` (developer: ticks the task in the issue body, re-reading the body just before writing; `--as-built` adds the `Provides (as built):` line); `baton task done pr <P> <r.n>` (orchestrator only, review tasks; from a linked worktree set `BATON_ROLE=orchestrator` or it warns) |
 
 Roles: `orchestrator`, `developer`, `refine`, `reviewer`. Kinds: `question`, `status`,
@@ -40,7 +40,7 @@ Roles: `orchestrator`, `developer`, `refine`, `reviewer`. Kinds: `question`, `st
 `baton review post`, which adds the verdict and the commit to the marker. Task boxes are ticked
 only with `baton task done`. `baton merge-pr` merges in one pass; the plan lives in the issue body, so the branch holds no plan file.
 
-Where a row says "write ... to a file", an inline heredoc works too and needs no file:
+Where a row says "write ... to a file", an inline heredoc works too and needs no file; with `gh` pass it as `--body`:
 `--body "$(cat <<'EOF'` on one line, the text, then `EOF` and `)"` on the last two lines.
 
 ## Rules the publish gate enforces
