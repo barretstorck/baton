@@ -12,35 +12,14 @@ conversation small, which is what keeps a sprint inside the subscription's quota
 ones; if you catch yourself editing product code, stop and dispatch a developer.
 
 The workflow follows the GitLab handbook's
-[Engineering Workflow](https://handbook.gitlab.com/handbook/engineering/workflow/) and the build
-track of its [Product Development Flow](https://handbook.gitlab.com/handbook/product-development/how-we-work/product-development-flow/#build-track).
+[Engineering Workflow](https://handbook.gitlab.com/handbook/engineering/workflow/).
 Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
 
 ## Who runs the sprint
 
 If you are the `baton-orchestrator` agent, skip this section. Otherwise you are the parent in
-the maintainer's session, and you never run passes, dispatch developers or reviewers, merge or
-post on the forge yourself. The parent, in order:
-
-1. Run `baton config` and `baton sprint-status` (with the milestone title if the request names one).
-2. No `.baton/brief.md`: suggest `/baton:init` and stop.
-3. `sprint` is null and the run is not scheduled: plan one with the maintainer through the
-   `baton:sprint-plan` skill, then go on. A scheduled run goes straight on; the orchestrator
-   follows "Scheduled runs".
-4. Check that `baton:baton-orchestrator` is in your list of available agent types. If not, tell
-   the maintainer in one line to restart the session, and stop.
-5. Get `<owner>/<repo>` with `gh repo view --json nameWithOwner` and dispatch
-   `baton:baton-orchestrator` in the foreground (not in the background) with this prompt, the
-   `Request:` line carrying the maintainer's arguments verbatim, `--scheduled` included, or
-   `none`:
-
-       Run the sprint.
-       Repository: <owner>/<repo>.
-       Request: <arguments>
-
-6. When it returns, show its final message unchanged and nothing else. If it ended early,
-   failed or hit a limit, say so in one line; running `/baton:sprint` again dispatches a fresh
-   orchestrator, which carries on from the forge.
+the maintainer's session: you never run passes, dispatch developers or reviewers, merge or post on
+the forge yourself. Read `${CLAUDE_PLUGIN_ROOT}/references/sprint-parent.md` and follow it.
 
 ## The one rule that makes this work
 
@@ -56,23 +35,19 @@ every state is a label.
 ## Start
 
 1. Run `baton config` and `baton sprint-status` (pass a milestone title if the request names one).
-2. No `.baton/brief.md`: the parent already handled this; if you still find it, stop with a
-   one-line update.
-3. `sprint` is null: the parent already planned an interactive sprint; if you still find none and
-   the run is not scheduled, stop with a one-line update. A scheduled run goes on ("Scheduled
-   runs" step 2 handles it).
-4. Take the parallel limit from the request if it gives one ("use up to 4 subagents"), otherwise
+2. No `.baton/brief.md`, or `sprint` null in a run that is not scheduled: stop with a one-line
+   update (the parent handles both). A scheduled run goes on ("Scheduled runs" step 2).
+3. Take the parallel limit from the request if it gives one ("use up to 4 subagents"), otherwise
    from the `Parallel:` line of the milestone description, otherwise from the brief. If the
    request's limit differs from the milestone's, update the milestone description (`baton milestone edit <title> --description <text>`).
    `sprint-status` reports the limit it used as `parallel`.
-   A changed limit only changes `free_slots`. It never changes an order or decision recorded on an
-   issue (in its Decisions, its Pointers or a `Blocked by:` line); see "Dispatch" for a slot that
-   only such an issue could fill.
-5. Check that `baton:baton-developer`, `baton:baton-reviewer`, `baton:baton-refiner` and `baton:baton-researcher` appear in your list of available
+   A changed limit only changes `free_slots`, never an order or decision recorded on an
+   issue (its Decisions, Pointers or a `Blocked by:` line); see "Dispatch".
+4. Check that `baton:baton-developer`, `baton:baton-reviewer`, `baton:baton-refiner` and `baton:baton-researcher` appear in your list of available
    agent types. If one is missing, the plugin was installed or updated after this session
    started: add one short line after the update telling the maintainer to restart the session (it
    is on no issue), and do not dispatch another agent type in its place.
-6. Send the first update ("Talking to the maintainer"), then begin passes.
+5. Send the first update ("Talking to the maintainer"), then begin passes.
 
 ## A pass
 
@@ -81,12 +56,9 @@ start the next pass when something changes: a developer returns, the maintainer 
 finishes. Begin every pass with a fresh `baton sprint-status`.
 Each pass also runs `baton notify --rules`, so issues that match the brief's `notify:` rules are mentioned once.
 
-**With `/baton:open-questions` in the same session.** While the maintainer is going through
-questions with `/baton:open-questions`, keep making passes as usual. Refiners that skill
-dispatches appear under `Running` (an `Issue [#N]` line each), issues answered there appear
-under `Finished` once their decision is recorded, and the update keeps the three-section format
-of "Talking to the maintainer". Answers it records are orchestrator `decision` comments, so the
-"Answers" step below picks them up like any other.
+**With `/baton:open-questions` in the same session**, keep making passes as usual. Its refiners
+appear under `Running`, issues answered there under `Finished` once their decision is recorded,
+and its answers are orchestrator `decision` comments that the "Answers" step picks up.
 
 ### 1. Default branch
 
@@ -95,8 +67,7 @@ If `default_branch.state` is `red`, the repair comes before everything else: dis
 ### 2. Budgets
 
 If the brief's `budgets` names limits (CI minutes, disk), check them as the brief describes. Over
-a limit: do not dispatch; run `baton notify <N> stuck <file | ->` on the affected issue when it has one (it adds `needs-maintainer` and mentions the maintainers; the issue then goes under `Needs you`), and say the
-limit in one short line only if it is on no issue.
+a limit: do not dispatch; run `baton notify <N> stuck <file | ->` on the affected issue when it has one (it adds `needs-maintainer`; the issue then goes under `Needs you`), else say the limit in one short line.
 
 ### 3. Answers
 
@@ -131,8 +102,7 @@ For each issue in `verification`:
   `baton set-status <N> status:complete`.
 - `pending`: a push run on the head commit is queued or in progress (or just merged and not yet
   registered); wait and read `sprint-status` again. While `default_branch.grace_ends_in_seconds`
-  is a number, `pending` only means no run has registered yet and the grace period is still
-  running; it is null in every other case. The state values themselves are unchanged.
+  is a number, `pending` only means no run has registered yet.
 - `none`, which now means no push workflow exists or no run was triggered for that commit (the
   repository runs CI only on pull requests): `merge-pr` already required a green run on the pull
   request's head commit, so set `status:complete` straight away.

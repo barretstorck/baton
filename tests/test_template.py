@@ -298,7 +298,7 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("baton pr ready <PR> --undo", text)
 
     def test_sprint_skill_dispatches_orchestrator(self):
-        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        text = " ".join(sprint_text().split())
         self.assertIn("## Who runs the sprint", text)
         self.assertIn("baton:baton-orchestrator", text)
         self.assertIn("Run the sprint.", text)
