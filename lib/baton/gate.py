@@ -514,6 +514,76 @@ def _command_tokens(command):
         return None
     return tokens
 
+_GH_WRITES = {
+    "issue": frozenset("create edit comment close reopen delete lock unlock pin unpin transfer develop".split()),
+    "pr": frozenset("create edit comment close reopen ready review lock unlock".split()),
+    "label": frozenset("create edit delete clone".split()),
+    "release": frozenset("create edit delete upload".split()),
+}
+_CD_STEPS = re.compile(r"^\s*(?:cd[ \t]+(?:'[^']*'|\"[^\"$`\\]*\"|[^\s'\"$`*?;&|()<>]+)[ \t]*&&[ \t]*)*")
+_API_FIELD_FLAGS = frozenset(("-f", "-F", "--field", "--raw-field", "--input"))
+
+
+def _gh_tokens(command):
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=_PUNCT)
+        lexer.whitespace = " \t\r"
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        return list(lexer)
+    except ValueError:
+        return None
+
+
+def _is_punct(token):
+    return bool(token) and all(ch in _PUNCT for ch in token)
+
+
+def _api_is_write(args):
+    method = None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-X", "--method"):
+            method = args[i + 1] if i + 1 < len(args) else ""
+            i += 1
+        elif a.startswith("--method="):
+            method = a[len("--method="):]
+        elif a.startswith("-X") and len(a) > 2:
+            method = a[2:]
+        i += 1
+    if method is not None:
+        return method.upper() not in ("GET", "HEAD")
+    return any(a in _API_FIELD_FLAGS or a.startswith(("--field=", "--raw-field=", "--input=")) for a in args)
+
+
+def _gh_write_offset(command):
+    """Offset of the `gh` starting a recognised write (after only `cd <dir> &&` steps), else None."""
+    tokens = _gh_tokens(command)
+    if not tokens:
+        return None
+    m = _CD_STEPS.match(command)
+    steps = 0
+    i = 0
+    while i + 2 < len(tokens) and tokens[i] == "cd" and tokens[i + 2] == "&&" and not _is_punct(tokens[i + 1]):
+        steps += 1
+        i += 3
+    if _count_cd(command[:m.end()]) != steps:
+        return None
+    rest = tokens[i:]
+    if len(rest) < 3 or any(_is_punct(t) for t in rest):
+        return None
+    if rest[0].rsplit("/", 1)[-1] != "gh" or not re.match(r"(?:[\w.~+-]*/)*gh(?=[ \t]|$)", command[m.end():]):
+        return None
+    group, sub = rest[1], rest[2]
+    if group == "api":
+        return m.end() if _api_is_write(rest[2:]) else None
+    return m.end() if sub in _GH_WRITES.get(group, ()) else None
+
+
+def _count_cd(prefix):
+    return len(re.findall(r"(?:^|&&)\s*cd[ \t]", prefix))
+
 
 def _complete(command, cwd, env, runner=run.run):
     """Add --head to a `gh pr create` from a detached HEAD: a Completion, or None when not needed."""

@@ -767,3 +767,29 @@ class DetachedPrCreateTest(unittest.TestCase):
         code, out, err = self.run_main(f'gh pr create --title t --body "see {IP}"', self.repo())
         self.assertEqual((code, out), (2, ""))
         self.assertIn("privacy", err)
+
+
+class GhWriteOffsetTest(unittest.TestCase):
+    def test_offsets(self):
+        for command, offset in [
+            ("gh issue comment 5 --body x", 0),
+            ("gh pr create --title t --body x", 0),
+            ("gh api -X POST repos/o/r/labels -f name=x", 0),
+            ("gh api repos/o/r/issues -f title=x", 0),
+            ("gh label create bug", 0),
+            ("cd wt && gh issue comment 5 -F notes.md", 9),
+            ("cd 'a b' && cd c && gh pr edit 3 --body \"$(cat notes.md)\"", 20),
+        ]:
+            with self.subTest(command):
+                self.assertEqual(gate._gh_write_offset(command), offset)
+
+    def test_none(self):
+        for command in [
+            "gh issue view 5", "gh api repos/o/r", "gh api -X GET repos/o/r -f q=x",
+            "gh pr merge 5 --squash", "glab mr create", "cd $D && gh issue comment 5 --body x",
+            "gh issue comment 5 --body x; ls", "ls && gh issue comment 5 --body x",
+            'echo "gh issue comment 5" ', "gh issue comment 5 --body x | tee y",
+            "gh issue comment 5 --body x\nls", "baton exec gh issue comment 5 --body x",
+        ]:
+            with self.subTest(command):
+                self.assertIsNone(gate._gh_write_offset(command))
