@@ -80,7 +80,7 @@ After triage, the run hands triaged bugs to the refiner: it posts a `<!-- baton:
 comment on each and starts a refiner, up to `triage.max_reproductions_per_day`. The refiner
 reproduces only in the sandbox (`baton sandbox`). Without a sandbox configured it posts the
 `repro-skipped` notice instead and does not reproduce. An issue from outside still needs a
-maintainer's `/baton ready` comment.
+maintainer's `/baton ready` comment, and an edit to the body by anyone other than a maintainer or Baton after that comment drops the approval until a maintainer posts `/baton ready` again.
 
 ## Stopping
 
