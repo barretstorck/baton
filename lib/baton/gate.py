@@ -4,7 +4,7 @@ Runs as a Claude Code PreToolUse hook. The gate is a text scanner: it does not
 parse shell and does not know which `gh` subcommand writes. For a command that
 names a forge-facing program (`FORGE_CLIS`) or publishes with git (`commit`,
 `push`, `tag`), it scans every quoted string, heredoc body and body file the
-command would send. It refuses only for four safety reasons (and one more in a Baton repository): a privacy finding
+command would send. It refuses only for four safety reasons: a privacy finding
 in that text, text it cannot read (stdin, a missing body file, command
 substitution in a double-quoted body), a git hook bypass, and missing hooks.
 A body file is read relative to the last literal `cd` before it in the same

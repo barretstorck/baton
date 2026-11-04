@@ -335,10 +335,10 @@ information only and is never enforced.
   hook's working directory), and a double-quoted body whose only substitutions are
   `$(cat <literal path>)` is scanned by reading those files; any other substitution or backticks,
   or a `cd` to a non-literal target, is still refused as unreadable text.
-- A pull request that touches a protected path needs a maintainer comment The gate applies the same rule to raw `gh` writes (see above).
+- A pull request that touches a protected path needs a maintainer comment
   `/baton approve <commit sha>` (at least 7 characters of the sha), naming the head commit or an
   earlier one with the same changes to the protected paths.
-- The `baton` write commands scan their text and refuse empty bodies, so a failed edit cannot blank an issue description.
+- The `baton` write commands scan their text and refuse empty bodies, so a failed edit cannot blank an issue description. The gate applies the same rule to raw `gh` writes (see above).
 - The git hooks do not report `private-ip` in Python dependency files (matched by basename:
   `uv.lock`, `poetry.lock`, `pdm.lock`, `Pipfile.lock`, `requirements*.txt`, `requirements*.in`,
   `constraints*.txt`, `pylock*.toml`), where four-part package versions look like addresses. Email,
