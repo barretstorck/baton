@@ -410,3 +410,9 @@ class TemplateTest(unittest.TestCase):
             for line in text.splitlines():
                 if "gh issue view" in line:
                     self.assertIn("baton issue read", line, name)
+
+    def test_scheduling_doc_names_orchestrator_subagent(self):
+        text = (ROOT / "docs" / "scheduling.md").read_text()
+        for phrase in ("baton-orchestrator", "CLAUDE_CODE_FORK_SUBAGENT",
+                       "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0"):
+            self.assertIn(phrase, text)
