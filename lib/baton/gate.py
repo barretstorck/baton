@@ -7,6 +7,11 @@ names a forge-facing program (`FORGE_CLIS`) or publishes with git (`commit`,
 command would send. It refuses only for four safety reasons: a privacy finding
 in that text, text it cannot read (stdin, a missing body file, command
 substitution in a double-quoted body), a git hook bypass, and missing hooks.
+A body file is read relative to the last literal `cd` before it in the same
+command (else the hook's working directory). A double-quoted body whose only
+substitutions are `$(cat <literal path>)` is scanned by reading those files;
+any other substitution or backticks, or a `cd` to a non-literal target, is
+still refused as unreadable text.
 Diffs are scanned by the git hooks (githooks.py), which the gate requires to be
 installed and not bypassed.
 
