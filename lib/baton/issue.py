@@ -7,6 +7,7 @@ import re
 
 from . import checklist, gate, planfile
 from .config import has_login, logins
+from .run import RunError
 
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.M)
 _BLOCKED = re.compile(r"^\s*Blocked by:(.*)$", re.M | re.I)
@@ -17,6 +18,33 @@ _TIMEBOX_PART = re.compile(r"^(\d+)\s*(tokens|min)$", re.I)
 _ORIGIN_OUTSIDE = re.compile(r"^\s*Origin:\s*outside\s*\(@[\w-]+\)\s*$", re.M | re.I)
 APPROVAL = "/baton ready"
 _LIST_ITEM = re.compile(r"^\s*(?:[-*]|\d+\.)\s+\S", re.M)
+
+
+EDITS_QUERY = (
+    "query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){"
+    "repository(owner:$owner,name:$repo){issue(number:$number){"
+    "userContentEdits(first:100,after:$endCursor){pageInfo{hasNextPage endCursor} "
+    "nodes{editedAt editor{login __typename}}}}}}")
+_EDITS_JQ = (".data.repository.issue.userContentEdits.nodes[] | "
+             "[.editedAt, (.editor.login // \"\"), (.editor.__typename // \"\")] | @tsv")
+
+
+def body_edits(runner, number):
+    """The issue body's edit history, newest first; None when it cannot be read."""
+    try:
+        text = runner(["gh", "api", "graphql", "--paginate",
+                       "-F", "owner={owner}", "-F", "repo={repo}", "-F", f"number={number}",
+                       "-f", f"query={EDITS_QUERY}", "--jq", _EDITS_JQ])
+    except RunError:
+        return None
+    edits = []
+    for line in (text or "").splitlines():
+        parts = line.rstrip("\r\n").split("\t")
+        if len(parts) != 3 or not parts[0].strip():
+            continue
+        editor = {"login": parts[1], "__typename": parts[2]} if parts[1] else None
+        edits.append({"editedAt": parts[0].strip(), "editor": editor})
+    return edits
 
 
 def sections(body):

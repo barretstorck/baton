@@ -296,6 +296,42 @@ class DeveloperPlanReadyTest(unittest.TestCase):
         self.assertTrue(any("- [ ] Task 1: <title>" in p and "<details>" in p for p in found))
 
 
+class BodyEditsTest(unittest.TestCase):
+    def edits(self, reply):
+        return issue.body_edits(FakeRunner({"gh api graphql": reply}), 7)
+
+    def test_two_lines_in_order(self):
+        got = self.edits("2026-11-01T11:00:00Z\tmallory\tUser\n2026-11-01T09:00:00Z\tbaton\tBot\n")
+        self.assertEqual(got, [
+            {"editedAt": "2026-11-01T11:00:00Z", "editor": {"login": "mallory", "__typename": "User"}},
+            {"editedAt": "2026-11-01T09:00:00Z", "editor": {"login": "baton", "__typename": "Bot"}}])
+
+    def test_empty_login_is_no_editor(self):
+        self.assertEqual(self.edits("2026-11-01T11:00:00Z\t\t\n"),
+                         [{"editedAt": "2026-11-01T11:00:00Z", "editor": None}])
+
+    def test_malformed_and_blank_lines_skipped(self):
+        self.assertEqual(self.edits("\nnonsense\n2026-11-01T11:00:00Z\tx\tUser\n"),
+                         [{"editedAt": "2026-11-01T11:00:00Z",
+                           "editor": {"login": "x", "__typename": "User"}}])
+
+    def test_empty_reply_is_empty_list(self):
+        self.assertEqual(self.edits(""), [])
+
+    def test_run_error_is_none(self):
+        def boom(argv, cwd=None):
+            raise RunError("x")
+        self.assertIsNone(issue.body_edits(boom, 7))
+
+    def test_argv(self):
+        runner = FakeRunner()
+        issue.body_edits(runner, 7)
+        argv = runner.calls[0]
+        self.assertIn("--paginate", argv)
+        self.assertIn("number=7", argv)
+        self.assertIn("owner={owner}", argv)
+
+
 class RaisingRunner:
     def __call__(self, argv, cwd=None):
         raise RunError("missing")
