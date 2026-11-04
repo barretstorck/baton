@@ -6,6 +6,14 @@ from baton import config, frontmatter, sprint
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
+def sprint_text():
+    """The sprint skill followed by its references/sprint-*.md files."""
+    parts = [(ROOT / "skills/sprint/SKILL.md").read_text()]
+    for path in sorted((ROOT / "references").glob("sprint-*.md")):
+        parts.append(path.read_text())
+    return "\n".join(parts)
+
+
 class TemplateTest(unittest.TestCase):
     def test_template_front_matter_equals_defaults(self):
         meta, body = frontmatter.split((ROOT / "templates" / "brief.md").read_text())
@@ -283,16 +291,16 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("Origin: outside", tmpl)
 
     def test_sprint_skill_names_orchestrator_role_variable(self):
-        text = (ROOT / "skills/sprint/SKILL.md").read_text()
+        text = sprint_text()
         self.assertIn("BATON_ROLE", text)
 
     def test_sprint_skill_redrafts_on_changes(self):
         # The skill wraps lines, so compare with whitespace collapsed.
-        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        text = " ".join(sprint_text().split())
         self.assertIn("baton pr ready <PR> --undo", text)
 
     def test_sprint_skill_dispatches_orchestrator(self):
-        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        text = " ".join(sprint_text().split())
         self.assertIn("## Who runs the sprint", text)
         self.assertIn("baton:baton-orchestrator", text)
         self.assertIn("Run the sprint.", text)
@@ -307,7 +315,7 @@ class TemplateTest(unittest.TestCase):
         self.assertNotIn("suggest starting a fresh session", text)
 
     def test_sprint_skill_files_follow_ups_by_severity(self):
-        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        text = " ".join(sprint_text().split())
         self.assertIn("Place each by its severity", text)
         self.assertIn("`follow_ups` from `baton config`", text)
         self.assertIn("`follow_ups.scheduled` in a scheduled run", text)
@@ -316,7 +324,7 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("`needs-maintainer` label", text)
 
     def test_sprint_skill_runs_clean_at_close(self):
-        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        text = " ".join(sprint_text().split())
         start = text.index("### 9. Close the sprint")
         end = text.index(" ## Scheduled runs", start)
         close = text[start:end]
@@ -348,7 +356,7 @@ class TemplateTest(unittest.TestCase):
         retro = (ROOT / "templates/retro.md").read_text()
         self.assertIn("Follow-up issues filed (critical / important)", retro)
         self.assertIn("Problems fixed in review instead of filed", retro)
-        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        text = " ".join(sprint_text().split())
         self.assertIn("Fill the two follow-up rows from the sprint's review comments", text)
 
     def test_retro_lists_spike_outcomes(self):
@@ -356,7 +364,7 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("## Spike outcomes", retro)
         self.assertIn("| Outcome |", retro)
         self.assertLess(retro.index("## Spike outcomes"), retro.index("## Spike prototypes"))
-        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        text = " ".join(sprint_text().split())
         self.assertIn("List each spike with its outcome", text)
 
     def test_develop_skill_uses_body_plan(self):
@@ -369,7 +377,7 @@ class TemplateTest(unittest.TestCase):
         self.assertNotIn("refs/plans", (ROOT / "agents/baton-developer.md").read_text())
 
     def test_review_and_sprint_skills_use_body_plan(self):
-        sprint = (ROOT / "skills/sprint/SKILL.md").read_text()
+        sprint = sprint_text()
         review = (ROOT / "skills/review/SKILL.md").read_text()
         self.assertIn("baton plan migrate", sprint)
         self.assertIn("## Developer Plan", sprint)
@@ -378,7 +386,7 @@ class TemplateTest(unittest.TestCase):
                 self.assertNotIn(gone, text)
 
     def test_sprint_dispatches_spikes_to_researcher(self):
-        sprint = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        sprint = " ".join(sprint_text().split())
         self.assertIn("baton:baton-researcher", sprint)
         self.assertIn("researcher.model", sprint)
         section = sprint[sprint.index("#### Dispatching a researcher"):sprint.index("#### Dispatching a reviewer")]
@@ -386,7 +394,7 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("/baton:research", (ROOT / "README.md").read_text())
 
     def test_sprint_follows_spike_outcome(self):
-        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        text = " ".join(sprint_text().split())
         for want in ("Outcome:", "infeasible", "single", "multiple", "partial",
                      "Re-refine issue <O> after spike #<S>.", "Spike for:", "Origin: outside"):
             self.assertIn(want, text)
@@ -395,7 +403,7 @@ class TemplateTest(unittest.TestCase):
         plan = " ".join((ROOT / "skills/sprint-plan/SKILL.md").read_text().split())
         self.assertIn("baton sprint-order", plan)
         self.assertIn("spike.max_per_sprint", plan)
-        sprint = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        sprint = " ".join(sprint_text().split())
         self.assertIn("spikes before", sprint)
 
     def test_review_skill_requires_security_note_dispositions(self):
@@ -411,7 +419,10 @@ class TemplateTest(unittest.TestCase):
 
     def test_skills_read_issues_through_baton_issue_read(self):
         for name in ("refine", "research", "develop", "review", "sprint", "open-questions"):
-            text = (ROOT / "skills" / name / "SKILL.md").read_text()
+            if name == "sprint":
+                text = sprint_text()
+            else:
+                text = (ROOT / "skills" / name / "SKILL.md").read_text()
             flat = " ".join(text.split())
             self.assertIn("baton issue read", flat, name)
             self.assertIn("withheld; see Triage summary", flat, name)
