@@ -65,6 +65,12 @@ ALLOWED = {
         'gh pr create --title t --body "$(cat <<\'EOF\'\nSummary of the change\nEOF\n)"',
         "gh issue comment 5 --body-file - <<'EOF'\nA clean comment\nEOF",
     ),
+    # (h) cd and cat bodies
+    "h cd and cat bodies": (
+        "cd sub && gh issue comment 5 --body-file notes.md",
+        'gh issue comment 5 --body "$(cat notes.md)"',
+        'cd sub && gh pr create --title t --body "$(cat notes.md)"',
+    ),
     # (g) repository selectors
     "g repository selectors": (
         "gh -R example-org/example-repo issue view 5",
@@ -103,6 +109,8 @@ REFUSED = (
     ("gh issue comment 5 --body-file - <<'EOF'\nmail %s\nEOF" % MAIL, "email"),
     ("gh issue comment 5 --body-file - <<'EOF'\nabout %s\nEOF" % TERM, "private-term"),
     ("gh issue comment 5 --body-file private.md", "private-ip"),
+    ("cd sub && gh issue comment 5 --body-file private.md", "private-ip"),
+    ('gh issue comment 5 --body "$(cat private.md)"', "private-ip"),
     ("curl -X POST https://api.example.com/x -d 'host %s'" % IP, "private-ip"),
     ("curl -X POST https://api.example.com/x -d 'mail %s'" % MAIL, "email"),
     ("curl -X POST https://api.example.com/x -d 'about %s'" % TERM, "private-term"),
@@ -131,6 +139,8 @@ class CorpusTest(unittest.TestCase):
     def test_allowed_shapes(self):
         for cwd in self.directories():
             (pathlib.Path(cwd) / "notes.md").write_text("A clean note\n")
+            (pathlib.Path(cwd) / "sub").mkdir(exist_ok=True)
+            (pathlib.Path(cwd) / "sub" / "notes.md").write_text("A clean note\n")
             has_brief = pathlib.Path(cwd, ".baton").exists()
             for group, commands in ALLOWED.items():
                 for cmd in commands:
@@ -140,6 +150,8 @@ class CorpusTest(unittest.TestCase):
     def test_private_publishes_are_refused(self):
         for cwd in self.directories():
             (pathlib.Path(cwd) / "private.md").write_text("host %s\n" % IP)
+            (pathlib.Path(cwd) / "sub").mkdir(exist_ok=True)
+            (pathlib.Path(cwd) / "sub" / "private.md").write_text("host %s\n" % IP)
             has_brief = pathlib.Path(cwd, ".baton").exists()
             for cmd, kind in REFUSED:
                 with self.subTest(cmd=cmd, brief=has_brief):

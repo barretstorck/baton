@@ -327,6 +327,10 @@ information only and is never enforced.
   Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or `reopened`) marker to the
   comment through a rewrite that keeps the permission prompt; otherwise, or for a compound
   command, it refuses and names the marker line to add. Every other command is allowed.
+  A body file is read relative to the last literal `cd` before it in the same command (else the
+  hook's working directory), and a double-quoted body whose only substitutions are
+  `$(cat <literal path>)` is scanned by reading those files; any other substitution or backticks,
+  or a `cd` to a non-literal target, is still refused as unreadable text.
 - A pull request that touches a protected path needs a maintainer comment
   `/baton approve <commit sha>` (at least 7 characters of the sha), naming the head commit or an
   earlier one with the same changes to the protected paths.

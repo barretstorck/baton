@@ -7,6 +7,11 @@ names a forge-facing program (`FORGE_CLIS`) or publishes with git (`commit`,
 command would send. It refuses only for four safety reasons: a privacy finding
 in that text, text it cannot read (stdin, a missing body file, command
 substitution in a double-quoted body), a git hook bypass, and missing hooks.
+A body file is read relative to the last literal `cd` before it in the same
+command (else the hook's working directory). A double-quoted body whose only
+substitutions are `$(cat <literal path>)` is scanned by reading those files;
+any other substitution or backticks, or a `cd` to a non-literal target, is
+still refused as unreadable text.
 Diffs are scanned by the git hooks (githooks.py), which the gate requires to be
 installed and not bypassed.
 
@@ -88,6 +93,7 @@ def _file_arg_re(flags):
 _UNRESOLVABLE = re.compile(r"[$`*?]")
 _SUBST_BODY = re.compile(r"(?:--body|-b|--title|-t|--message|-m|--raw-field|-f|--field|-d|--data(?:-raw)?)"
                          r"(?:\s+|=)\"[^\"]*(?:\$\((?!cat <<)|`)")
+_CAT_SUBST = re.compile(r"""\$\(cat\s+(?:'([^\s'$`]+)'|([^\s'"$`()<>|;&*?\\-][^\s'"$`()<>|;&*?\\]*))\s*\)""")
 _HEREDOC = re.compile(r"<<-?[ \t]*['\"]?(\w+)['\"]?\n(.*?)\n[ \t]*\1\b", re.S)
 _QUOTED = re.compile(r"""'[^']*'|"[^"]*\"""")
 _DATA_FLAG = re.compile(r"""(?:--data(?:-raw|-binary|-urlencode)?|--json|--form|-[dF])(?:\s+|=)('[^']*'|"[^"]*"|\S+)""")
@@ -182,8 +188,8 @@ def _read(path, base):
     """Return (text, problem) for a message file a command publishes, read relative to `base`."""
     if path == "-":
         return None, _STDIN
-    full = os.path.join(base, os.path.expanduser(path))
-    if not os.path.isfile(full):
+    full = os.path.join(base, os.path.expanduser(path)) if base is not None else None
+    if full is None or not os.path.isfile(full):
         return None, (f"body file {path} not found, so it cannot be scanned; "
                       "write it in an earlier step")
     if os.path.getsize(full) > _MAX_FILE:
@@ -192,8 +198,53 @@ def _read(path, base):
         return handle.read(), None
 
 
+_CD = re.compile(r"""(?:^|(?<=[;&|(\n]))[ \t]*cd(?:[ \t]+(?:"([^"`]*)"|'([^']*)'|([^\s'"`;&|()<>]*)))?[ \t]*(?=$|[;&|)\n])""")
+
+
+_OPAQUE = re.compile(r"""'[^']*'|"[^"]*"|\$\{[^}]*\}|\$\([^()]*\)|`[^`]*`|(?:(?<=\s)|^)#[^\n]*""")
+
+
+def _cd_base(command, end, cwd):
+    """Directory a file named at offset `end` is read from, following literal `cd`s before it.
+
+    A `cd` counts only when it is a plain command the shell ran in the publishing command's
+    shell: outside quotes, comments and substitutions, not in a closed `( )` or `{ }` group,
+    not in a pipeline, not before `||` or `&`, and joined onward by `;`, `&&` or a newline.
+    None when a `cd` has no target or a non-literal one, or when it may not have applied."""
+    masked = _OPAQUE.sub(lambda m: " " * len(m.group(0)), command)
+    stack, owner = [], {}  # innermost open bracket (its offset) at each offset
+    for i, ch in enumerate(masked[:end]):
+        owner[i] = stack[-1] if stack else -1
+        if ch in "({":
+            stack.append(i)
+        elif ch in ")}" and stack:
+            stack.pop()
+    base = cwd
+    for match in _CD.finditer(command[:end]):
+        pos = match.start() + len(match.group(0)) - len(match.group(0).lstrip())
+        if masked[pos:pos + 2] != "cd":
+            continue  # inside quotes, a comment or a substitution: the shell never runs it
+        before = masked[:pos].rstrip(" \t")
+        after = masked[match.end():end].lstrip(" \t")
+        joined = after[:1] in (";", "\n") or after.startswith("&&")
+        ran = not before.endswith(("|", "&")) or before.endswith("&&")
+        if owner.get(pos, -1) not in [-1] + stack or not joined or not ran:
+            base = None
+            continue
+        target = next((g for g in match.groups() if g is not None), None)
+        if not target or target == "-" or re.search(r"[$`*?]", target):
+            base = None
+            continue
+        target = os.path.expanduser(target)
+        if os.path.isabs(target):
+            base = target
+        elif base is not None:
+            base = os.path.join(base, target)
+    return base
+
+
 def _body_files(command, git_only, flags=BODY_FILE_FLAGS):
-    """Paths of body files the command names."""
+    """(path, offset of the flag) of the body files the command names."""
     paths = []
     flags = tuple(flags)
     for match in _file_arg_re(flags).finditer(command):
@@ -203,17 +254,17 @@ def _body_files(command, git_only, flags=BODY_FILE_FLAGS):
             continue
         if git_only:
             if flag in ("-F", "--file") and not value.startswith("@"):
-                paths.append(value)
+                paths.append((value, match.start()))
         elif flag in flags and flag.startswith("--"):
-            paths.append(value.lstrip("@"))
+            paths.append((value.lstrip("@"), match.start()))
         elif value.startswith("@") and (flag in flags or flag == "-d" or flag.startswith("--data")):
-            paths.append(value[1:])
+            paths.append((value[1:], match.start()))
         elif flag in flags:
             if "=@" in value:
-                paths.append(value.split("=@", 1)[1])
+                paths.append((value.split("=@", 1)[1], match.start()))
             elif "=" not in value:
-                paths.append(value)
-    return [p for p in paths if p != "-"]
+                paths.append((value, match.start()))
+    return [pair for pair in paths if pair[0] != "-"]
 
 
 _MARKED = re.compile(re.escape(MARKER) + r"(?:developer|refine|reviewer|researcher|orchestrator):(?:closed|reopened) -->")
@@ -302,23 +353,44 @@ def decide(command, cwd, terms):
     stdin_pattern = _stdin_re(flags) if forge else _GIT_STDIN
     if stdin_pattern.search(stripped) and "<<" not in stripped and "|" not in stripped:
         problems.append(_STDIN)
-    if forge and _SUBST_BODY.search(stripped):
+    cats = []  # (path, offset) of each literal $(cat <path>) inside a double-quoted string
+    scanned = []
+    last = 0
+    for quoted in _QUOTED.finditer(stripped):
+        if not quoted.group().startswith('"'):
+            continue
+        for sub in _CAT_SUBST.finditer(quoted.group()):
+            cats.append((sub.group(1) or sub.group(2), quoted.start() + sub.start()))
+            scanned.append(stripped[last:quoted.start() + sub.start()])
+            last = quoted.start() + sub.end()
+    scanned.append(stripped[last:])
+    without_cats = "".join(scanned)
+    if forge and _SUBST_BODY.search(without_cats):
         problems.append(_SUBSTITUTED)
 
     texts = [m.group(2) for m in _HEREDOC.finditer(command)]
     if http_only:
         texts += [m.group(1) for m in _DATA_FLAG.finditer(stripped)]
     else:
-        texts += _QUOTED.findall(stripped)
-    for path in _body_files(stripped, git_only=not forge, flags=flags):
+        texts += _QUOTED.findall(without_cats)
+    for path, start in cats:
+        text, problem = _read(path, _cd_base(stripped, start, cwd))
+        if problem:
+            problems.append(problem)
+        else:
+            texts.append(text)
+    for path, start in _body_files(stripped, git_only=not forge, flags=flags):
         if _UNRESOLVABLE.search(path):
             problems.append(f"body file {path} is named by a variable or pattern, so it cannot be scanned; "
                             "pass a literal path")
             continue
-        full = os.path.join(cwd, os.path.expanduser(path))
-        if not os.path.isfile(full) and re.search(r">\s*" + re.escape(path), stripped):
-            continue  # the same command writes it
-        text, problem = _read(path, cwd)
+        base = _cd_base(stripped, start, cwd)
+        full = os.path.join(base, os.path.expanduser(path)) if base is not None else None
+        if base is not None and not os.path.isfile(full):
+            masked = _OPAQUE.sub(lambda m: " " * len(m.group(0)), stripped)
+            if re.search(r"(?<![<>&\d])>>?[ \t]*['\"]?" + re.escape(path) + r"(?=[\s;&|)'\"]|$)", masked[:start]):
+                continue  # an earlier step of the same command writes it
+        text, problem = _read(path, base)
         if problem:
             problems.append(problem)
         else:
