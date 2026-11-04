@@ -84,9 +84,11 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("name: baton-orchestrator", lines)
         self.assertIn("autoCompactWindow: 250000", lines)
         self.assertIn("  - baton:sprint", lines)
-        for key in ("isolation:", "model:", "effort:", "tools:"):
+        self.assertIn("tools: Agent, SendMessage, Skill, Bash, Read, Grep, Glob, Write", lines)
+        for key in ("isolation:", "model:", "effort:"):
             self.assertFalse(any(l.startswith(key) for l in lines), key)
-        for phrase in ("baton sprint-status", "compaction", "Talking to the maintainer"):
+        for phrase in ("baton sprint-status", "compaction", "Talking to the maintainer",
+                       'to: "main"', "The coordinator sent a message"):
             self.assertIn(phrase, body)
 
     def test_researcher_agent_and_skill(self):
@@ -295,6 +297,13 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("baton:baton-orchestrator", text)
         self.assertIn("Run the sprint.", text)
         self.assertIn("autoCompactWindow", text)
+        for needle in (
+            "SendMessage",
+            'to: "main"',
+            "The coordinator sent a message",
+            "run_in_background",
+        ):
+            self.assertIn(needle, text)
         self.assertNotIn("suggest starting a fresh session", text)
 
     def test_sprint_skill_files_follow_ups_by_severity(self):
@@ -416,3 +425,5 @@ class TemplateTest(unittest.TestCase):
         for phrase in ("baton-orchestrator", "CLAUDE_CODE_FORK_SUBAGENT",
                        "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0"):
             self.assertIn(phrase, text)
+        self.assertIn("in the background", text)
+        self.assertNotIn("in the foreground", text)

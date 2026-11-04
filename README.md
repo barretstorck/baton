@@ -178,7 +178,7 @@ a `Prototype:` link to the commit.
 | `/baton:triage <issue>` | Classify one new issue: spam, duplicate, support, unclear or a real bug, feature or maintenance item; used by the `baton-triager` subagent |
 | `/baton:refine <issue>` | Bring an issue up to the definition of ready, including its plan |
 | `/baton:sprint-plan` | Plan a sprint with the maintainer and create its milestone |
-| `/baton:sprint` | Work a sprint: dispatches the orchestrator agent, which dispatches developers and reviewers, merges and writes the retrospective |
+| `/baton:sprint` | Work a sprint: dispatches the orchestrator agent in the background, which reports progress in the session, dispatches developers and reviewers, merges and writes the retrospective |
 | `/baton:develop` | Do one task: a plan task or a review task (used by the `baton-developer` subagent) |
 | `/baton:research <issue>` | Do one spike and post its findings (used by the `baton-researcher` subagent) |
 | `/baton:review <pr>` | Review one pull request and post a verdict (used by the `baton-reviewer` subagent) |
