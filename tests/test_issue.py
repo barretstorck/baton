@@ -156,6 +156,13 @@ class OutsideTest(unittest.TestCase):
         data["comments"] = comments
         return data
 
+    def test_outside_edit_after_approval_drops_it(self):
+        ready = dict(comment(OWNER, "/baton ready"), createdAt="2026-11-01T10:00:00Z")
+        data = self.check([ready])
+        data["edits"] = [{"editedAt": "2026-11-01T11:00:00Z",
+                          "editor": {"login": "mallory", "__typename": "User"}}]
+        self.assertFalse(issue.approved(data, OWNER))
+
     def test_outside_by_author_or_origin_line(self):
         self.assertTrue(issue.is_outside(make(author="mallory"), [OWNER]))
         marked = BODY + "\nOrigin: outside (@someone)\n"
