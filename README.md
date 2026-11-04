@@ -341,6 +341,12 @@ information only and is never enforced.
   hook's working directory), and a double-quoted body whose only substitutions are
   `$(cat <literal path>)` is scanned by reading those files; any other substitution or backticks,
   or a `cd` to a non-literal target, is still refused as unreadable text.
+- What the agent sees after a rewrite (Claude Code 2.1.290 or later): its own command stays in
+  its context and transcript, the tool result is the output of the rewritten command, and the
+  gate's `additionalContext` note names the command that ran. Permission rules judge the
+  rewritten command, not the original. Matching PreToolUse hooks run in parallel on the
+  original input and the last `updatedInput` processed wins, so another hook that rewrites Bash
+  can drop Baton's rewrite without notice.
 - A pull request that touches a protected path needs a maintainer comment
   `/baton approve <commit sha>` (at least 7 characters of the sha), naming the head commit or an
   earlier one with the same changes to the protected paths.
