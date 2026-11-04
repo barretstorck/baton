@@ -14,6 +14,7 @@ WEIGHTS = {"input_tokens": 1.0, "cache_read_input_tokens": 0.1,
 LARGE = 250_000
 WINDOW = datetime.timedelta(hours=5)
 _PROMPTS = [
+    ("orchestrator", re.compile(r"\A\s*Run the sprint\.")),
     ("fix", re.compile(r"Do review task \d+\.\d+ of pull request #?(\d+)(?: \(issue #?(\d+)\))?")),
     ("task", re.compile(r"Do task \d+ of issue #?(\d+)")),
     ("spike", re.compile(r"Do spike issue #?(\d+)")),
@@ -22,8 +23,8 @@ _PROMPTS = [
     ("fix", re.compile(r"(?:Fix CI on|Update) pull request #?(\d+)(?: \(issue #?(\d+)\))?")),
     ("developer", re.compile(r"Implement issue #?(\d+)")),   # before task plans (0.2.0)
 ]
-_TYPES = re.compile(r"baton-(developer|reviewer|refiner)")
-_TYPE_ROLES = {"developer": "developer", "reviewer": "review", "refiner": "refine"}
+_TYPES = re.compile(r"baton-(developer|reviewer|refiner|orchestrator)")
+_TYPE_ROLES = {"developer": "developer", "reviewer": "review", "refiner": "refine", "orchestrator": "orchestrator"}
 
 
 def classify(prompt, agent_type=None):
@@ -31,6 +32,8 @@ def classify(prompt, agent_type=None):
         match = pattern.search(prompt or "")
         if not match:
             continue
+        if role == "orchestrator":
+            return role, "sprint"
         if role in ("task", "spike", "developer"):
             return role, f"issue {match.group(1)}"
         if role in ("fix", "review"):
@@ -122,10 +125,12 @@ def report(root, since=None, repo=None):
         else:
             sessions.append((path, calls))
     baton_dirs = {path.parent.parent for path, (role, _), _ in agents if role != "other"}
+    orchestrated = {path.parent.parent for path, (role, _), _ in agents if role == "orchestrator"}
     entries = [(role_key, calls) for _, role_key, calls in agents]
     for path, calls in sessions:
         if path.with_suffix("") in baton_dirs:
-            entries.append((("orchestrator", f"session {path.stem[:8]}"), calls))
+            role = "parent" if path.with_suffix("") in orchestrated else "orchestrator"
+            entries.append(((role, f"session {path.stem[:8]}"), calls))
         elif repo is None:
             entries.append((("other", "other sessions"), calls))
 
