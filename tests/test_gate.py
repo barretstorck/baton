@@ -114,6 +114,22 @@ class GateTest(unittest.TestCase):
         pathlib.Path(repo, "empty.md").write_text("not empty\n")
         self.assertIn(gate._EMPTY_BODY, gate.decide("cd sub && gh issue edit 5 --body-file empty.md", repo, TERMS))
 
+    def test_baton_exec_role_prefix_is_scanned(self):
+        repo = make_repo()
+        pathlib.Path(repo, "n.md").write_text(f"see {HOME}/x\n")
+        pathlib.Path(repo, "ok.md").write_text("clean text\n")
+        for command in (
+                "baton exec --role developer gh issue comment 5 --body-file n.md",
+                f"baton exec --role=developer gh issue comment 5 --body 'see {HOME}/x'",
+                "baton exec --role developer gh api -X POST repos/o/r/issues -F body=@n.md",
+                "baton exec gh issue comment 5 --body-file n.md"):
+            with self.subTest(command=command):
+                self.assertTrue(gate.decide(command, repo, TERMS))
+        for command in ("baton exec --role developer gh issue comment 5 --body-file ok.md",
+                        "baton exec --role developer gh issue comment 5 --body 'clean'"):
+            with self.subTest(command=command):
+                self.assertEqual(gate.decide(command, repo, TERMS), [])
+
     def setUp(self):
         self.cache = tempfile.mkdtemp()
         patcher = mock.patch.dict(os.environ, {"CLAUDE_CODE_PLUGIN_CACHE_DIR": self.cache})

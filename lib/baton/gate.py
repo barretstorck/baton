@@ -56,7 +56,9 @@ _HTTP_CLIS = ("curl", "wget", "http", "https", "xh")
 
 # Command position: start of text, after a separator, quote or newline, or after a launcher.
 _POS = (r"""(?:^|[;&|(`'"\n{]|\bsudo\b|\benv\b|\bxargs\b|\bexec\b|\bcommand\b|\btime\b|\bnohup\b)"""
-        r"""\s*(?:[A-Za-z_]\w*=\S*\s+)*""")
+        r"""\s*(?:[A-Za-z_]\w*=\S*\s+)*"""
+        # `baton exec [--role <r>]` is a transparent prefix: the forge command after it is scanned.
+        r"""(?:--role(?:\s+|=)[\w.-]+\s+)?""")
 
 
 @functools.lru_cache(maxsize=16)
