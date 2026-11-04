@@ -51,6 +51,23 @@ class TallyTest(unittest.TestCase):
         self.append([call("c", "2026-10-09T10:00:03Z")])
         self.assertEqual(usage.tally(self.path, state)[:2], full(self.path))
 
+    def test_request_straddling_call_boundary(self):
+        write(self.path, [prompt("p"), call("a", "2026-10-09T10:00:00Z", out=10)])
+        _, _, state = usage.tally(self.path)
+        for i in range(3):
+            self.append([call("a", f"2026-10-09T10:00:0{i + 1}Z", out=50 + i, read=7)])
+            got, total, state = usage.tally(self.path, state)
+            self.assertEqual((got, total), full(self.path))
+
+    def test_state_stays_small(self):
+        write(self.path, [prompt("p")] + [call(f"r{i}", "2026-10-09T10:00:00Z", read=i)
+                                          for i in range(1000)])
+        got, total, state = usage.tally(self.path)
+        self.assertEqual((got, total), full(self.path))
+        self.assertLess(len(json.dumps(state)), 8000)
+        self.append([call("r999", "2026-10-09T10:00:01Z", out=9), call("n", "2026-10-09T10:00:02Z")])
+        self.assertEqual(usage.tally(self.path, state)[:2], full(self.path))
+
     def test_partial_last_line_waits(self):
         write(self.path, [prompt("p"), call("a", "2026-10-09T10:00:00Z")])
         line = json.dumps(call("b", "2026-10-09T10:00:01Z", read=1000))

@@ -13,6 +13,7 @@ import re
 WEIGHTS = {"input_tokens": 1.0, "cache_read_input_tokens": 0.1,
            "cache_creation_input_tokens": 1.25, "output_tokens": 5.0}
 LARGE = 250_000
+RECENT = 64   # request ids kept in the incremental state; a request's records are adjacent
 WINDOW = datetime.timedelta(hours=5)
 _PROMPTS = [
     ("fix", re.compile(r"Do review task \d+\.\d+ of pull request #?(\d+)(?: \(issue #?(\d+)\))?")),
@@ -110,6 +111,7 @@ def tally(path, state=None):
     `state` is what the last call returned. Complete lines after `state["offset"]` are
     consumed; the state is dropped and the file re-read from the start when it is for
     another path, the file was replaced or the file is shorter than the offset.
+    The state holds a running total and only the newest `RECENT` request weights.
     Writes nothing.
     """
     path = str(path)
@@ -117,9 +119,11 @@ def tally(path, state=None):
     if (not isinstance(state, dict) or state.get("path") != path
             or state.get("dev") != info.st_dev or state.get("ino") != info.st_ino
             or not isinstance(state.get("offset"), int) or info.st_size < state["offset"]
-            or not isinstance(state.get("requests"), dict)):
-        state = {"offset": 0, "prompt": None, "requests": {}}
-    offset, prompt, requests = state["offset"], state.get("prompt"), dict(state["requests"])
+            or not isinstance(state.get("recent"), dict)
+            or not isinstance(state.get("total"), (int, float))):
+        state = {"offset": 0, "prompt": None, "recent": {}, "total": 0.0}
+    offset, prompt = state["offset"], state.get("prompt")
+    recent, total = dict(state["recent"]), state["total"]
     with open(path, "rb") as handle:
         handle.seek(offset)
         data = handle.read()
@@ -129,10 +133,13 @@ def tally(path, state=None):
         if text is not None and prompt is None:
             prompt = text
         if request is not None and item is not None:
-            requests[request] = item["weighted"]
+            total += item["weighted"] - recent.pop(request, 0.0)
+            recent[request] = item["weighted"]
+    while len(recent) > RECENT:
+        del recent[next(iter(recent))]
     new = {"path": path, "dev": info.st_dev, "ino": info.st_ino, "offset": offset + end,
-           "prompt": prompt, "requests": requests}
-    return prompt, sum(requests.values()), new
+           "prompt": prompt, "recent": recent, "total": total}
+    return prompt, total, new
 
 
 def _agent_type(path):
