@@ -1,7 +1,8 @@
 """Corpus of command shapes for gate.decide.
 
 ALLOWED holds harmless shapes, grouped by what a new rule might hurt; a failing subTest names
-the group. REFUSED holds publishes whose text carries one private finding each, and hook bypasses. Every private
+the group. REFUSED holds publishes whose text carries one private finding each, hook bypasses, and close
+and reopen commands without a reason, refused only where there is a brief. Every private
 value is assembled from pieces so the commit scan sees no literal private detail.
 """
 import pathlib
@@ -64,6 +65,12 @@ ALLOWED = {
         'gh pr create --title t --body "$(cat <<\'EOF\'\nSummary of the change\nEOF\n)"',
         "gh issue comment 5 --body-file - <<'EOF'\nA clean comment\nEOF",
     ),
+    # (h) cd and cat bodies
+    "h cd and cat bodies": (
+        "cd sub && gh issue comment 5 --body-file notes.md",
+        'gh issue comment 5 --body "$(cat notes.md)"',
+        'cd sub && gh pr create --title t --body "$(cat notes.md)"',
+    ),
     # (g) repository selectors
     "g repository selectors": (
         "gh -R example-org/example-repo issue view 5",
@@ -78,6 +85,17 @@ ALLOWED = {
         'git commit -m "--no-verify"',
         "git config get core.hooksPath && git push",
     ),
+    # (j) close and reopen with a reason
+    "j close and reopen with a reason": (
+        'gh issue close 5 --comment "Done in #6"',
+        "gh pr close 5 -c superseded --delete-branch",
+        "gh issue reopen 5 --comment=again",
+        'gh -R example-org/example-repo issue close 5 --comment "duplicate of #4"',
+        "gh issue close --help",
+        "gh issue view 5 --comments",
+        "gh issue list --state closed",
+        'gh issue comment 5 --body "close this"',
+    ),
 }
 
 # (command shape, expected finding kind); kind "bypass" is a hook bypass, not a privacy finding
@@ -91,6 +109,8 @@ REFUSED = (
     ("gh issue comment 5 --body-file - <<'EOF'\nmail %s\nEOF" % MAIL, "email"),
     ("gh issue comment 5 --body-file - <<'EOF'\nabout %s\nEOF" % TERM, "private-term"),
     ("gh issue comment 5 --body-file private.md", "private-ip"),
+    ("cd sub && gh issue comment 5 --body-file private.md", "private-ip"),
+    ('gh issue comment 5 --body "$(cat private.md)"', "private-ip"),
     ("curl -X POST https://api.example.com/x -d 'host %s'" % IP, "private-ip"),
     ("curl -X POST https://api.example.com/x -d 'mail %s'" % MAIL, "email"),
     ("curl -X POST https://api.example.com/x -d 'about %s'" % TERM, "private-term"),
@@ -102,6 +122,13 @@ REFUSED = (
     ('git commit "--no-verify";echo x', "bypass"),
     ("git push '-n' origin x", "bypass"),
     ("git config set core.hooksPath /dev/null && git push", "bypass"),
+    ("gh issue close 5", "close-reason"),
+    ("gh pr close 5 --delete-branch", "close-reason"),
+    ("gh issue reopen 5", "close-reason"),
+    ("gh pr reopen 5", "close-reason"),
+    ("gh issue close --help; gh issue close 6", "close-reason"),
+    ("gh issue close 5 --comment x; gh issue close 6", "close-reason"),
+    ("gh issue close 5 --comment '<!-- baton:developer:closed -->x'; gh issue close 6", "close-reason"),
 )
 
 
@@ -112,6 +139,8 @@ class CorpusTest(unittest.TestCase):
     def test_allowed_shapes(self):
         for cwd in self.directories():
             (pathlib.Path(cwd) / "notes.md").write_text("A clean note\n")
+            (pathlib.Path(cwd) / "sub").mkdir(exist_ok=True)
+            (pathlib.Path(cwd) / "sub" / "notes.md").write_text("A clean note\n")
             has_brief = pathlib.Path(cwd, ".baton").exists()
             for group, commands in ALLOWED.items():
                 for cmd in commands:
@@ -121,10 +150,18 @@ class CorpusTest(unittest.TestCase):
     def test_private_publishes_are_refused(self):
         for cwd in self.directories():
             (pathlib.Path(cwd) / "private.md").write_text("host %s\n" % IP)
+            (pathlib.Path(cwd) / "sub").mkdir(exist_ok=True)
+            (pathlib.Path(cwd) / "sub" / "private.md").write_text("host %s\n" % IP)
             has_brief = pathlib.Path(cwd, ".baton").exists()
             for cmd, kind in REFUSED:
                 with self.subTest(cmd=cmd, brief=has_brief):
                     problems = gate.decide(cmd, cwd, TERMS)
+                    if kind == "close-reason":
+                        if has_brief:
+                            self.assertIn(gate._CLOSE_REASON, problems)
+                        else:
+                            self.assertEqual(problems, [])
+                        continue
                     self.assertTrue(problems)
                     if kind == "bypass":
                         self.assertTrue(any("bypass" in p for p in problems), problems)

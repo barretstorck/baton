@@ -160,6 +160,78 @@ class GateTest(unittest.TestCase):
             gate.decide("gh issue comment 5 --body \"$(cat <<'EOF'\nhello\nEOF\n)\"", repo, TERMS), [])
         self.assertEqual(gate.decide("gh issue comment 5 --body 'costs $(5)'", repo, TERMS), [])
 
+    def test_body_file_follows_a_literal_cd_in_the_same_command(self):
+        repo = make_repo()
+        sub = pathlib.Path(repo, "sub")
+        sub.mkdir()
+        (sub / "clean.md").write_text("fine\n")
+        (sub / "n.md").write_text(f"server at {IP}\n")
+        pathlib.Path(repo, "top.md").write_text("fine\n")
+        for cmd in ("cd sub && gh issue comment 5 --body-file clean.md",
+                    f"cd {sub} && gh issue comment 5 -F clean.md",
+                    f"cd {repo} && cd sub && gh issue comment 5 --body-file clean.md",
+                    "cd 'sub' && gh pr create --title t --body-file clean.md",
+                    "cd sub && git commit -F clean.md",
+                    "gh issue comment 5 --body-file top.md; cd sub"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [])
+        problems = gate.decide("cd sub && gh issue comment 5 --body-file n.md", repo, TERMS)
+        self.assertTrue(any(p.startswith("privacy:") for p in problems), problems)
+        pathlib.Path(repo, "n.md").write_text(f"server at {IP}\n")
+        for cmd in ("(cd sub); gh issue comment 5 -F n.md",
+                    'echo "; cd sub;" ; gh issue comment 5 -F n.md',
+                    "cd sub | true; gh issue comment 5 -F n.md",
+                    "cd sub || true; gh issue comment 5 -F n.md",
+                    "cd sub & gh issue comment 5 -F n.md",
+                    "# cd sub\ngh issue comment 5 -F n.md"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, repo, TERMS)
+                self.assertTrue(any("n.md not found" in p or p.startswith("privacy:") for p in problems), problems)
+        for cmd in ("cd $X && gh issue comment 5 -F n.md; echo hi > n.md",
+                    "cd $X && gh issue comment 5 -F n.md # > n.md",
+                    "cd $X && echo hi > n.md && gh issue comment 5 -F n.md"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, repo, TERMS)
+                self.assertTrue(any("n.md not found" in p for p in problems), problems)
+        for cmd in ("cd sub\ngh issue comment 5 -F clean.md",
+                    "(cd sub && gh issue comment 5 -F clean.md )",
+                    "cd sub; echo hi; gh issue comment 5 -F clean.md"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [])
+        for cmd in ("cd $DIR && gh issue comment 5 --body-file top.md",
+                    "cd sub && gh issue comment 5 --body-file top.md"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, repo, TERMS)
+                self.assertTrue(any("top.md not found" in p for p in problems), problems)
+
+    def test_cat_substitution_of_a_literal_path_is_read(self):
+        repo = make_repo()
+        clean = pathlib.Path(repo, "clean.md")
+        clean.write_text("fine\n")
+        pathlib.Path(repo, "n.md").write_text(f"server at {IP}\n")
+        pathlib.Path(repo, "Zebrowski.md").write_text("fine\n")
+        sub = pathlib.Path(repo, "sub")
+        sub.mkdir()
+        (sub / "s.md").write_text("fine\n")
+        for cmd in ('gh issue comment 5 --body "$(cat clean.md)"',
+                    f'gh issue comment 5 --body "$(cat {clean})"',
+                    "gh issue comment 5 --body \"$(cat 'clean.md')\"",
+                    'gh pr create --title t --body "Summary: $(cat clean.md)"',
+                    'gh issue comment 5 --body "$(cat Zebrowski.md)"',
+                    'cd sub && gh issue comment 5 --body "$(cat s.md)"'):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [])
+        problems = gate.decide('gh issue comment 5 --body "$(cat n.md)"', repo, TERMS)
+        self.assertTrue(any(p.startswith("privacy:") for p in problems), problems)
+        problems = gate.decide('gh issue comment 5 --body "$(cat missing.md)"', repo, TERMS)
+        self.assertTrue(any("missing.md not found" in p for p in problems), problems)
+        for cmd in ('gh issue comment 5 --body "$(cat $F)"',
+                    'gh issue comment 5 --body "$(cat clean.md) $(date)"',
+                    'gh issue comment 5 --body "$(cat -n clean.md)"',
+                    'gh issue comment 5 --body "$(cat *.md)"'):
+            with self.subTest(cmd=cmd):
+                self.assertIn(gate._SUBSTITUTED, gate.decide(cmd, repo, TERMS))
+
     def test_hook_bypass_is_refused(self):
         repo = make_repo()
         for cmd in ("git commit --no-verify -m x", "git push --no-verify", "git commit -n -m x",
@@ -293,6 +365,86 @@ class GateTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             return gate.main(json.dumps(payload))
 
+    def test_close_without_a_reason_is_refused_in_a_baton_repo(self):
+        with_brief, without = make_repo(), make_repo(brief=None)
+        for cmd in ["gh issue close 5", "gh pr close 5 --delete-branch", "gh issue reopen 5",
+                    "gh -R o/r pr reopen 5", "cd sub && gh issue close 5",
+                    "gh issue close --help; gh issue close 6",
+                    "gh issue close 5 --comment x; gh issue close 6",
+                    "gh issue close 5 --comment '<!-- baton:developer:closed -->x'; gh issue close 6"]:
+            self.assertIn(gate._CLOSE_REASON, gate.decide(cmd, with_brief, TERMS), cmd)
+            self.assertEqual(gate.decide(cmd, without, TERMS), [], cmd)
+        for cmd in ['gh issue close 5 --comment "done"', "gh pr close 5 -c done",
+                    "gh issue reopen 5 --comment=again", "gh issue close --help",
+                    "gh issue view 5 --comments", "gh issue list --state closed",
+                    'gh issue comment 5 --body "close this"']:
+            for repo in (with_brief, without):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [], cmd)
+
+    def test_close_marker_refuses_several_closes(self):
+        repo = make_repo()
+        env = {"AI_AGENT": "claude-code_2-1-300"}
+        one = "gh issue close 5 --comment '<!-- baton:developer:closed -->x'"
+        for cmd in ["gh issue close 5 --comment x; gh issue close 6 --comment y",
+                    one + "; gh issue close 6 --comment y"]:
+            new, problems = gate.close_marker(cmd, repo, None, env)
+            self.assertIsNone(new, cmd)
+            self.assertEqual(len(problems), 1, cmd)
+        both = one + "; " + one.replace("5", "6")
+        self.assertEqual(gate.close_marker(both, repo, None, env), (None, []))
+
+    def test_close_marker_rewrites_the_comment(self):
+        import shlex
+        env = {"AI_AGENT": "claude-code_2-1-296_agent"}
+        repo = make_repo()
+        cases = [
+            ("gh issue close 5 --comment \"Done in #6\"", None, "orchestrator", "closed", "Done in #6"),
+            ("gh pr reopen 5 -c again", "baton:baton-developer", "developer", "reopened", "again"),
+            ("gh pr reopen 5 --comment=again", None, "orchestrator", "reopened", "again"),
+            ("gh pr reopen 5 -cagain", None, "orchestrator", "reopened", "again"),
+        ]
+        for cmd, agent, role, kind, reason in cases:
+            new, problems = gate.close_marker(cmd, repo, agent, env)
+            self.assertEqual(problems, [], cmd)
+            stamp = gate._stamp(role, kind, reason)
+            want = [a.replace(reason, stamp) if a.endswith(reason) else a for a in shlex.split(cmd)]
+            self.assertEqual(shlex.split(new), want, cmd)
+        marked = "gh issue close 5 --comment '<!-- baton:developer:closed -->\nx'"
+        self.assertEqual(gate.close_marker(marked, repo, None, env), (None, []))
+        for bad in ({}, {"AI_AGENT": "claude-code_2-1-289_agent"}):
+            new, problems = gate.close_marker("gh issue close 5 --comment x", repo, None, bad)
+            self.assertIsNone(new)
+            self.assertIn("<!-- baton:orchestrator:closed -->", problems[0])
+        for cmd in ('gh issue close 5 --comment "$R"', "cd sub && gh issue close 5 -c x",
+                    "gh issue close 5 -c \"$(cat <<'EOF'\nx\nEOF\n)\"", "gh issue close 5 -c x <<EOF\ny\nEOF"):
+            new, problems = gate.close_marker(cmd, repo, "baton:baton-developer", env)
+            self.assertIsNone(new, cmd)
+            self.assertIn("<!-- baton:developer:closed -->", problems[0], cmd)
+        self.assertEqual(gate.close_marker("gh issue close 5 -c x", make_repo(brief=None), None, env), (None, []))
+
+    def test_rewrite_helpers(self):
+        from baton import comment
+        self.assertEqual(gate._claude_version({"AI_AGENT": "claude-code_2-1-296_agent"}), (2, 1, 296))
+        self.assertIsNone(gate._claude_version({}))
+        self.assertIsNone(gate._claude_version({"AI_AGENT": "other_1-2-3"}))
+        for agent, role in [("baton:baton-developer", "developer"), ("baton-refiner", "refine"),
+                            ("baton-reviewer", "reviewer"), ("baton-researcher", "researcher"),
+                            (None, "orchestrator"), ("general-purpose", "orchestrator"),
+                            ("baton-triager", "orchestrator")]:
+            self.assertEqual(gate._role(agent), role, agent)
+        for role in comment.ROLES:
+            for kind in ("closed", "reopened"):
+                self.assertEqual(gate._stamp(role, kind, "Done in #6"),
+                                 comment.compose(role, kind, "Done in #6"))
+        self.assertEqual(gate._simple_argv('gh issue close 5 --comment "done"'),
+                         ["gh", "issue", "close", "5", "--comment", "done"])
+        self.assertEqual(gate._simple_argv("GH_REPO=o/r gh pr close 5 -c 'x y'"),
+                         ["GH_REPO=o/r", "gh", "pr", "close", "5", "-c", "x y"])
+        for cmd in ["a && b", "a; b", "a | b", "gh issue close 5 -c $B", "gh issue close 5 -c $(date)",
+                    "gh issue close 5 -c `date`", "gh issue close 5 -c <<EOF", "a\nb",
+                    'gh issue close 5 -c "x']:
+            self.assertIsNone(gate._simple_argv(cmd), cmd)
+
     def test_merge_hint_once_per_session(self):
         def run(command, session="s1"):
             payload = {"tool_name": "Bash", "cwd": "/", "tool_input": {"command": command}}
@@ -324,6 +476,34 @@ class GateTest(unittest.TestCase):
             tempfile.gettempdir = original
             gate.decide = decide
 
+    def test_main_rewrites_a_close_with_a_reason(self):
+        repo = make_repo()
+
+        def run(command, env):
+            payload = {"tool_name": "Bash", "cwd": repo, "agent_type": "baton:baton-reviewer",
+                       "tool_input": {"command": command, "description": "Close", "timeout": 5000}}
+            out, err = io.StringIO(), io.StringIO()
+            with mock.patch.dict(os.environ, env), contextlib.redirect_stdout(out), \
+                    contextlib.redirect_stderr(err):
+                code = gate.main(json.dumps(payload))
+            return code, out.getvalue(), err.getvalue()
+
+        ok = {"AI_AGENT": "claude-code_2-1-296_agent"}
+        code, out, _ = run("gh pr close 5 --comment done", ok)
+        self.assertEqual(code, 0)
+        hook = json.loads(out)["hookSpecificOutput"]
+        self.assertNotIn("permissionDecision", hook)
+        updated = hook["updatedInput"]
+        self.assertEqual((updated["description"], updated["timeout"]), ("Close", 5000))
+        self.assertIn("<!-- baton:reviewer:closed -->", updated["command"])
+        self.assertIn(updated["command"], hook["additionalContext"])
+        code, out, err = run("gh pr close 5 --comment done", {"AI_AGENT": ""})
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("<!-- baton:reviewer:closed -->", err)
+        code, _, err = run("gh issue close 5", ok)
+        self.assertEqual(code, 2)
+        self.assertIn("--comment", err)
+
     def test_main_fails_closed_only_on_a_trigger(self):
         original = gate.decide
         gate.decide = lambda *args: 1 / 0
@@ -353,13 +533,12 @@ class GateTest(unittest.TestCase):
             gate.decide(command, "/", TERMS)
             self.assertLess(time.monotonic() - start, 2.0)
 
-    def test_hooks_json_registers_mcp_matcher(self):
+    def test_hooks_json_registers_single_hook(self):
         path = pathlib.Path(__file__).resolve().parent.parent / "hooks" / "hooks.json"
         entries = json.loads(path.read_text())["hooks"]["PreToolUse"]
-        cmd = "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" gate"
-        self.assertTrue(any(e["matcher"] == "mcp__.*"
-                            and any(h.get("command") == cmd for h in e["hooks"])
-                            for e in entries), entries)
+        self.assertEqual(len(entries), 1, entries)
+        self.assertNotIn("matcher", entries[0])
+        self.assertTrue(entries[0]["hooks"][0]["command"].endswith('baton" hook'), entries)
 
     def test_main_ignores_other_tools(self):
         self.assertEqual(self._main("gh issue comment 5 --body x", tool="Read"), 0)

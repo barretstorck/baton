@@ -31,7 +31,7 @@ Baton has no version number. To identify the installed build, read the commit SH
 | A review's tasks | `baton tasks pr <N>` (the latest review's `## Tasks`; none after an approval) |
 | Clean up leftovers (orchestrator) | `baton clean`: removes agent worktrees under `.claude/worktrees/` that are not on an open issue's branch, are not locked by a live process and have no unmerged commits (uncommitted files are removed with the worktree), and the log folders of closed or merged pull requests; prints `removed`/`kept` lines, exit 1 if one could not be removed; `baton merge-pr` hints at it when more than `clean.hint_worktrees` (default 10) agent worktrees exist |
 | Quota use | `baton usage --repo <owner/repo> [--since <UTC ISO time>] [--json]`: per issue and role, from local transcripts; transcripts record streaming-time output tokens, so `Output>=` and `output_lower_bound` are lower bounds |
-| Spike token limit | `baton budget`: a PreToolUse hook, not run by hand; blocks a researcher's tools once its `Timebox:` token limit is spent, except `baton comment`; it rests on input and cache tokens, as output is undercounted |
+| Spike token limit | `baton budget`, checked through `baton hook` (the combined PreToolUse hook), not run by hand; keeps a per-agent offset file in the temp directory; blocks a researcher's tools once its `Timebox:` token limit is spent, except `baton comment`; it rests on input and cache tokens, as output is undercounted |
 | Sprint metrics | `baton sprint-metrics <milestone> [--since <UTC ISO time>] [--dir <projects dir>]`: seven `key: value` lines for the retro's `## Metrics` section |
 | Sprint capacity | `baton sprint-capacity <days> [--retros <n>]`: reads the last retros' `## Metrics` and proposes somewhat less (a 0.8 buffer) than their average issues and plan tasks for `<days>`, as JSON |
 | Repository owner and default branch | `gh repo view --json owner,defaultBranchRef` |
@@ -83,7 +83,7 @@ Where a row says "write ... to a file", an inline heredoc works too and needs no
 ## Rules the publish gate enforces
 
 The gate is a text scanner. It checks commands that talk to a forge (`gh`, `glab`, `tea`, `fj`,
-`curl`, `wget`, `http`, `https`, `xh`) and git commit, push and tag. It refuses only:
+`curl`, `wget`, `http`, `https`, `xh`) and git commit, push and tag. It refuses:
 
 - a privacy finding in the quoted text, heredoc or body file of such a command;
 - text it cannot read: a body from stdin (`-F -`, `--body-file -`) without a heredoc or pipe, a
@@ -92,7 +92,11 @@ The gate is a text scanner. It checks commands that talk to a forge (`gh`, `glab
   (`"$(cat <<'EOF' ... EOF)"`) are fine;
 - a hook bypass on a git commit, push or tag: `--no-verify`, `core.hooksPath`, or overriding
   `HOME` or `GIT_*` settings;
-- missing git hooks.
+- missing git hooks;
+- in a Baton repository, a raw `gh issue|pr close|reopen` without `--comment`. From Claude Code
+  2.1.290 the gate adds the `baton:<role>:closed` (or `reopened`) marker to the comment through a
+  rewrite that keeps the permission prompt; otherwise, or for a compound command, it refuses and
+  names the marker line to add.
 
 It does not judge which command you use, labels, markers or directories. Other commands are allowed.
 

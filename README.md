@@ -230,8 +230,8 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton issue create\|edit ...` | Create an issue, or edit its title, description, labels or milestone; scans the text first |
 | `baton pr create\|edit\|ready ...` | Open a (draft) pull request, edit it, or mark it ready (`--undo` back to draft) |
 | `baton milestone create\|edit ...` | Create a milestone, or edit its title, description, due date or state |
-| `baton close <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:closed` marker comment with the reason, then close; raw `gh ... close` is refused |
-| `baton reopen <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:reopened` marker comment with the reason, then reopen; raw `gh ... reopen` is refused |
+| `baton close <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:closed` marker comment with the reason, then close; a raw `gh issue|pr close|reopen` needs `--comment`; from Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or `reopened`) marker to the comment through a rewrite that keeps the permission prompt, otherwise, or for a compound command, it refuses and names the marker line to add |
+| `baton reopen <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:reopened` marker comment with the reason, then reopen; the raw `gh ... reopen` rule is the same as for close |
 | `baton review state <pr>` | The pull request's review state at its head commit |
 | `baton review post <pr> <approve\|changes\|blocked\|replan> <sha> <file \| ->` | Post a review of that commit |
 | `baton answers <issue>` | The latest agent question and the maintainer's replies |
@@ -248,7 +248,8 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton plan set <issue> <file \| ->` | Write the `## Developer Plan` section into the issue body (the refiner); `plan commit`, `link` and `pin` are deprecated no-ops |
 | `baton plan migrate <issue>` | Convert an older plan into `## Developer Plan` |
 | `baton usage [--repo <owner/repo>] [--since <time>] [--json]` | Quota use per issue and role, from local transcripts; `Output>=` and `output_lower_bound` are lower bounds (transcripts record streaming-time output tokens) |
-| `baton budget` | A PreToolUse hook, not run by hand: blocks a researcher's tools once the `Timebox:` token limit in its prompt is spent, except `baton comment`; the limit rests on input and cache tokens, as output is undercounted |
+| `baton hook` | The PreToolUse hook Claude Code runs on every tool call: the publish gate for Bash and MCP calls and the spike token limit (`baton budget`), in one process; not run by hand |
+| `baton budget` | Checked through `baton hook`, not run by hand; keeps a per-agent offset file in the temp directory so each call reads only the new transcript lines: blocks a researcher's tools once the `Timebox:` token limit in its prompt is spent, except `baton comment`; the limit rests on input and cache tokens, as output is undercounted |
 | `baton sprint-capacity <days> [--retros <n>]` | Read the last retros' `## Metrics` (3 by default) and propose somewhat less than their average issues and plan tasks for `<days>`, as JSON |
 | `baton sprint-order <issue>...` | Put spikes first in the given order, apply `spike.max_per_sprint` and list the spikes it left out (`order`, `spikes`, `left_out`, `cap`), as JSON; exit 64 for no argument or a number that is not an open issue |
 | `baton sprint-status [milestone]` | The sprint's state and what may be dispatched now, as JSON; `waiting_links` gives each `waiting_on_maintainer` issue's question comment URL and `progress.<N>.next_task_url` links the next plan task; `progress.<N>.stale`, `branch_behind` and `merge_first` report plans naming missing paths (a ready issue with two or more is held for re-refinement) and branches far behind the default branch |
@@ -323,7 +324,14 @@ information only and is never enforced.
   refuses only a privacy finding in their quoted text, heredocs or body files; text it cannot
   read (stdin body, missing body file, command substitution or backticks in a double-quoted
   body); a hook bypass (`--no-verify`, `core.hooksPath`, overriding `HOME` or `GIT_*`); and
-  missing git hooks. Every other command is allowed.
+  missing git hooks. In addition, a raw `gh issue|pr close|reopen` needs `--comment`: from
+  Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or `reopened`) marker to the
+  comment through a rewrite that keeps the permission prompt; otherwise, or for a compound
+  command, it refuses and names the marker line to add. Every other command is allowed.
+  A body file is read relative to the last literal `cd` before it in the same command (else the
+  hook's working directory), and a double-quoted body whose only substitutions are
+  `$(cat <literal path>)` is scanned by reading those files; any other substitution or backticks,
+  or a `cd` to a non-literal target, is still refused as unreadable text.
 - A pull request that touches a protected path needs a maintainer comment
   `/baton approve <commit sha>` (at least 7 characters of the sha), naming the head commit or an
   earlier one with the same changes to the protected paths.
