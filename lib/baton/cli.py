@@ -481,7 +481,7 @@ def cmd_plan(args):
         text = comment.read_body(args[2], sys.stdin)
         found = checklist.set_issue_plan(_require_config(), run.run, int(args[1]), text,
                                          scan.load_terms())
-        print(f"set Developer Plan of #{args[1]}: {len(found)} task(s)")
+        print(f"set Developer Plan of #{args[1]}: {len(found["tasks"])} task(s)")
         return 0
     if len(args) == 3 and args[0] == "against" and args[1].isdigit():
         checklist.against_issue_plan(_require_config(), run.run, int(args[1]), args[2])
