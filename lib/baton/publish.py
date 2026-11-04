@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 
+from . import branches
 from . import checklist
 from . import cliargs
 from . import identity
@@ -102,14 +103,30 @@ def edit(cfg, runner, target, number, terms, title=None, body=None, add_labels=(
     return _with_body(runner, body, lambda path: argv + ["--body-file", path])
 
 
-def create_pr(cfg, runner, title, body, draft, terms):
+def create_pr(cfg, runner, title, body, draft, terms, head=None):
     _need_body(body)
     _check(cfg, terms, title, body)
 
     def build(path):
         argv = ["gh", "pr", "create", "--title", title, "--body-file", path]
+        if head:
+            argv += ["--head", head]
         return argv + ["--draft"] if draft else argv
     return _with_body(runner, body, build)
+
+
+def resolve_head(runner, cwd, head):
+    """The head branch for a new pull request: the given one, or the pushed branch a detached HEAD stands on."""
+    if head:
+        return head
+    if not branches.detached(runner, cwd):
+        return None
+    found = branches.pushed_branches_at_head(runner, cwd)
+    if len(found) != 1:
+        raise CommentError("HEAD is detached and no single pushed issue-<N>-* branch points at it; "
+                           "push the branch with baton push HEAD:refs/heads/<branch>, "
+                           "or pass --head <branch>")
+    return found[0]
 
 
 def ready_pr(runner, number, undo=False):

@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import cliargs, budget, checklist, clean, comment, compact, config, doctor, gate, githooks, identity, issue, labels, merge, orchestrator, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
+from . import branches, cliargs, budget, checklist, clean, comment, compact, config, doctor, gate, githooks, identity, issue, labels, merge, orchestrator, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
 
 
 @cliargs.command("config")
@@ -275,7 +275,9 @@ def cmd_issue(opts):
 def cmd_pr(opts):
     def act(o, cfg, terms):
         if o.action == "create":
-            return publish.create_pr(cfg, run.run, o.title, _body(o), o.draft, terms)
+            head = publish.resolve_head(run.run, os.getcwd(), o.head)
+            return publish.create_pr(cfg, run.run, o.title, _body(o), o.draft, terms,
+                                     head=head)
         if o.action == "ready":
             return publish.ready_pr(run.run, o.number, o.undo)
         return _edit("pr", o, cfg, terms)
@@ -691,8 +693,18 @@ def cmd_push(opts):
         if problem:
             print(f"baton push: refused {opts.refspec}: {problem}", file=sys.stderr)
             return 1
+    tier1 = not identity.pushes_to_origin()
+    sha = ""
+    if tier1:
+        try:
+            sha = run.run(["git", "rev-parse", "--verify", f"{opts.refspec.partition(':')[0]}^{{commit}}"],
+                          cwd=os.getcwd()).strip()
+        except run.RunError:
+            sha = ""
     argv, env = identity.push_command(opts.refspec, info["nameWithOwner"])
     print(run.run(argv, cwd=os.getcwd(), env=env), end="")
+    if tier1:
+        branches.record_push(run.run, os.getcwd(), opts.refspec, sha)
     return 0
 
 

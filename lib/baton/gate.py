@@ -21,9 +21,14 @@ From Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or
 the permission prompt; otherwise, or for a compound command, it refuses and
 names the marker line to add.
 
+The gate also completes one command: a `gh pr create` from a detached HEAD gets
+`--head <branch>` added (the one pushed issue branch at HEAD) through the same
+rewrite; it never changes a command otherwise.
+
 This guards against mistakes and nudged agents. It is not a sandbox: a script
 that talks to the forge without one of these programs is outside its view.
 """
+import collections
 import functools
 import json
 import os
@@ -33,7 +38,7 @@ import signal
 import sys
 import tempfile
 
-from . import config, githooks, scan
+from . import branches, config, githooks, run, scan
 
 MARKER = "<!-- baton:"
 HOOK_TAG = githooks.HOOK_TAG
@@ -402,6 +407,61 @@ def decide(command, cwd, terms):
     return list(dict.fromkeys(problems))
 
 
+Completion = collections.namedtuple("Completion", "command note problem")
+
+_PR_CREATE_RE = re.compile(_POS + r"(?:[\w.~+-]*/)*gh\s+(?:-\S+\s+)*pr\s+create\b")
+_HEAD_FLAG = re.compile(r"(?<![\w-])(?:--head(?=[\s=]|$)|-H)")
+_PR_CREATE_HEAD = re.compile(r"^\s*(?:[\w.~+-]*/)*gh[ \t]+pr[ \t]+create(?=[ \t]|$)")
+_PUNCT = "();<>|&\n`"
+
+
+def _command_tokens(command):
+    """The command's shell tokens, or None when it is not simple (unbalanced quotes, or any
+    token made only of separator, redirection, substitution or newline characters)."""
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=_PUNCT)
+        lexer.whitespace = " \t\r"
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    if any(token and all(ch in _PUNCT for ch in token) for token in tokens):
+        return None
+    return tokens
+
+
+def _complete(command, cwd, env, runner=run.run):
+    """Add --head to a `gh pr create` from a detached HEAD: a Completion, or None when not needed."""
+    stripped = _QUOTED.sub('""', _HEREDOC.sub("<<HD", command))
+    if not _PR_CREATE_RE.search(stripped) or _HEAD_FLAG.search(stripped):
+        return None
+    if not branches.detached(runner, cwd):
+        return None
+    names = branches.pushed_branches_at_head(runner, cwd)
+    if len(names) != 1 or not branches.BRANCH_NAME.fullmatch(names[0]):
+        return Completion(None, None, (
+            "`gh pr create` from a detached HEAD needs `--head <branch>`, and no single pushed "
+            "issue-<N>-* branch points at HEAD. Push it with `baton push HEAD:refs/heads/<branch>`, "
+            "then add `--head <branch>` after `gh pr create`."))
+    name = shlex.quote(names[0])
+    need = (f"`gh pr create` from a detached HEAD needs `--head <name>`. "
+            f"Add `--head {name}` after `gh pr create` and run it again.")
+    tokens = _command_tokens(command)
+    match = _PR_CREATE_HEAD.match(command)
+    if (tokens is None or len(tokens) < 3 or tokens[1:3] != ["pr", "create"]
+            or os.path.basename(tokens[0]) != "gh" or match is None):
+        return Completion(None, None, need)
+    version = _claude_version(env)
+    if version is None or version < REWRITE_FLOOR:
+        return Completion(None, None, need[:-len(" and run it again.")]
+                          + ": this Claude Code cannot have Baton add it.")
+    new = command[:match.end()] + f" --head {name}" + command[match.end():]
+    note = (f"Baton added `--head {name}` to `gh pr create` (HEAD is detached). "
+            f"The command that ran: {new}")
+    return Completion(new, note, None)
+
+
 TIME_LIMIT = 2.0  # seconds one command may take to check
 
 
@@ -472,6 +532,7 @@ def main(stdin_text):
     command = ""
     cwd = os.getcwd()
     rewritten = None
+    completion = None
     try:
         if not mcp:
             command = payload.get("tool_input", {}).get("command", "")
@@ -486,6 +547,11 @@ def main(stdin_text):
                 if not problems:
                     rewritten, problems = close_marker(
                         command, cwd, payload.get("agent_type"), os.environ)
+                if not problems:
+                    completion = _complete(
+                        rewritten if rewritten is not None else command, cwd, os.environ)
+                    if completion is not None and completion.problem:
+                        problems = [completion.problem]
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
@@ -500,12 +566,19 @@ def main(stdin_text):
         print(f"Baton publish gate could not check this command ({error!r}).", file=sys.stderr)
         return 2
     if not problems:
-        if rewritten is not None:
+        if rewritten is not None or (completion is not None and completion.command):
+            notes = []
+            final = rewritten
+            if rewritten is not None:
+                marker = re.search(r"<!-- baton:\S+ -->", rewritten)
+                notes.append(f"Baton added its {marker.group(0) if marker else 'marker'} marker to the "
+                             f"comment. The command that ran: {rewritten}")
+            if completion is not None and completion.command:
+                final = completion.command
+                notes.append(completion.note)
             updated = dict(payload.get("tool_input") or {})
-            updated["command"] = rewritten
-            marker = re.search(r"<!-- baton:\S+ -->", rewritten)
-            note = (f"Baton added its {marker.group(0) if marker else 'marker'} marker to the "
-                    f"comment. The command that ran: {rewritten}")
+            updated["command"] = final
+            note = " ".join(notes)
             print(json.dumps({"hookSpecificOutput": {
                 "hookEventName": "PreToolUse", "updatedInput": updated,
                 "additionalContext": note}}))
