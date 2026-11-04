@@ -237,7 +237,7 @@ def parse_pr(argv):
     if o["action"] == "ready":
         return {"action": "ready", "number": o["number"], "undo": o["undo"]}
     return {"action": "create", "title": o["title"], "draft": o["draft"],
-            "body_source": o["body_source"]}
+            "head": o["head"], "body_source": o["body_source"]}
 
 
 def parse_milestone(argv):

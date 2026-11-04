@@ -251,7 +251,8 @@ _ISSUE_CREATE = ("usage: baton issue create --title <t> [--label <l>]... "
 _EDIT = ("usage: baton {t} edit <N> [--title <t>] [--body-file <file | ->] "
          "[--add-label <l>]... [--remove-label <l>]... "
          "[--milestone <title> | --remove-milestone]")
-_PR_CREATE = "usage: baton pr create --title <t> [--draft] <body-file | ->"
+_PR_CREATE = ("usage: baton pr create --title <t> [--draft] [--head <branch>] "
+              "<body-file | ->")
 _PR_READY = "usage: baton pr ready <N> [--undo]"
 _MS_CREATE = ("usage: baton milestone create --title <t> [--description <d>] "
               "[--due-on <ISO date>]")
@@ -308,6 +309,7 @@ def _declare_pr(subs):
     p = _action(actions, "pr create", _PR_CREATE)
     p.add_argument("--title", type=nonempty, required=True)
     p.add_argument("--draft", action="store_true")
+    p.add_argument("--head")
     p.add_argument("body_source")
     _declare_edit(actions, "pr")
     p = _action(actions, "pr ready", _PR_READY)
