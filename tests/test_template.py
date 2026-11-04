@@ -14,6 +14,14 @@ def sprint_text():
     return "\n".join(parts)
 
 
+def develop_text():
+    """The develop skill followed by its references/develop-*.md files."""
+    parts = [(ROOT / "skills/develop/SKILL.md").read_text()]
+    for path in sorted((ROOT / "references").glob("develop-*.md")):
+        parts.append(path.read_text())
+    return "\n".join(parts)
+
+
 class TemplateTest(unittest.TestCase):
     def test_template_front_matter_equals_defaults(self):
         meta, body = frontmatter.split((ROOT / "templates" / "brief.md").read_text())
@@ -52,12 +60,12 @@ class TemplateTest(unittest.TestCase):
         self.assertNotIn("baton plan commit", text)
 
     def test_develop_skill_limits_outgrows_decline(self):
-        text = " ".join((ROOT / "skills/develop/SKILL.md").read_text().split())
+        text = " ".join(develop_text().split())
         self.assertIn("cannot be declined as \"outgrows the issue\"", text)
         self.assertIn("name the evidence", text)
 
     def test_develop_skill_has_scratch_file_rule(self):
-        text = (ROOT / "skills/develop/SKILL.md").read_text()
+        text = develop_text()
         self.assertIn("\n## Scratch files\n", text)
         self.assertIn("root-owned", text)
         self.assertLess(text.index("## Scratch files"), text.index("\n## Return\n"))
@@ -246,14 +254,14 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("after spike", agent)
 
     def test_developer_has_no_spikes(self):
-        skill = (ROOT / "skills/develop/SKILL.md").read_text()
+        skill = develop_text()
         self.assertNotIn("## Spikes", skill)
         agent = (ROOT / "agents/baton-developer.md").read_text()
         self.assertNotIn("spike", agent.lower())
 
     def test_developer_instructions_forbid_ticking_review_tasks(self):
         for path in ("skills/develop/SKILL.md", "agents/baton-developer.md"):
-            text = (ROOT / path).read_text().lower()
+            text = (develop_text() if path.startswith("skills") else (ROOT / path).read_text()).lower()
             self.assertIn("never run `baton task done pr`", text, path)
 
     def test_local_brief_template_has_local_data_section(self):
@@ -278,7 +286,7 @@ class TemplateTest(unittest.TestCase):
 
     def test_developer_instructions_forbid_copying_secret_files(self):
         for path in ("skills/develop/SKILL.md", "agents/baton-developer.md"):
-            text = (ROOT / path).read_text()
+            text = develop_text() if path.startswith("skills") else (ROOT / path).read_text()
             self.assertIn("never copy or link `.env`", text.lower(), path)
             self.assertIn("## Local data", text, path)
 
@@ -374,7 +382,7 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("List each spike with its outcome", text)
 
     def test_develop_skill_uses_body_plan(self):
-        text = (ROOT / "skills/develop/SKILL.md").read_text()
+        text = develop_text()
         self.assertIn("## Developer Plan", text)
         self.assertIn("Task <n>:", text)
         self.assertIn("Click to see plan details", text)
@@ -427,6 +435,8 @@ class TemplateTest(unittest.TestCase):
         for name in ("refine", "research", "develop", "review", "sprint", "open-questions"):
             if name == "sprint":
                 text = sprint_text()
+            elif name == "develop":
+                text = develop_text()
             else:
                 text = (ROOT / "skills" / name / "SKILL.md").read_text()
             flat = " ".join(text.split())

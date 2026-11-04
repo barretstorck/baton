@@ -48,6 +48,23 @@ class ReferencedPaths(unittest.TestCase):
                             bad.append(f"{os.path.relpath(path, ROOT)}:{number}: {ref}")
         self.assertEqual(bad, [], "docs name files that do not exist")
 
+    def test_command_rows_are_written_once(self):
+        seen = {}
+        dup = []
+        for path in sorted(glob.glob(os.path.join(ROOT, "references/github*.md"))):
+            name = os.path.basename(path)
+            with open(path, encoding="utf-8") as f:
+                for line in f:
+                    if not line.startswith("|"):
+                        continue
+                    cell = line.split("|")[1].strip()
+                    if cell in ("Step", "") or set(cell) <= set("-: "):
+                        continue
+                    if cell in seen and seen[cell] != name:
+                        dup.append(f"{cell}: {seen[cell]} and {name}")
+                    seen.setdefault(cell, name)
+        self.assertEqual(dup, [], "rows written in more than one file")
+
     def test_sprint_references_are_named(self):
         with open(os.path.join(ROOT, "skills/sprint/SKILL.md"), encoding="utf-8") as f:
             skill = f.read()
