@@ -5,8 +5,11 @@ record of its own transcript. Tokens are the weighted figure `baton usage` repor
 Exit code 2 blocks one tool call; the hook fails open on any error.
 """
 import json
+import os
 import pathlib
+import re
 import sys
+import tempfile
 
 from . import issue, usage
 
@@ -16,6 +19,35 @@ def _transcript(payload):
     if path.endswith(".jsonl"):
         path = path[:-len(".jsonl")]
     return pathlib.Path(path) / "subagents" / f"agent-{payload['agent_id']}.jsonl"
+
+
+def _state_path(agent_id):
+    agent_id = str(agent_id)
+    if not re.fullmatch(r"[\w.-]+", agent_id):
+        return None
+    return os.path.join(tempfile.gettempdir(), f"baton-budget-{agent_id}.json")
+
+
+def _load(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return state if isinstance(state, dict) else None
+
+
+def _save(path, state):
+    tmp = f"{path}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f)
+        os.replace(tmp, path)
+    except (OSError, ValueError):
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 def _is_comment(payload):
@@ -33,12 +65,19 @@ def main(stdin_text):
         path = _transcript(payload)
         if not path.is_file():
             return 0
-        prompt, calls, _ = usage._read(path, set())
+        state_file = _state_path(payload["agent_id"])
+        state = _load(state_file) if state_file else None
+        if state and isinstance(state.get("prompt"), str):
+            box = issue.timebox(state["prompt"])
+            if not (box and box["tokens"]):
+                return 0
+        prompt, used, state = usage.tally(path, state)
+        if state_file:
+            _save(state_file, state)
         box = issue.timebox(prompt or "")
         limit = box and box["tokens"]
         if not limit:
             return 0
-        used = sum(call["weighted"] for call in calls)
         if used < limit or _is_comment(payload):
             return 0
         message = (f"Token budget reached ({used:.0f} of {limit} weighted tokens). Post your findings "
