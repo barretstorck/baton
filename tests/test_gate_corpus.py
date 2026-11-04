@@ -1,7 +1,7 @@
 """Corpus of command shapes for gate.decide.
 
 ALLOWED holds harmless shapes, grouped by what a new rule might hurt; a failing subTest names
-the group. REFUSED holds publishes whose text carries one private finding each. Every private
+the group. REFUSED holds publishes whose text carries one private finding each, and hook bypasses. Every private
 value is assembled from pieces so the commit scan sees no literal private detail.
 """
 import pathlib
@@ -70,9 +70,17 @@ ALLOWED = {
         "gh issue view 5 -R example-org/example-repo",
         "gh --repo example-org/example-repo pr list",
     ),
+    # (h) bypass words in messages
+    "h bypass words in messages": (
+        'git commit -m "use --no-verify rarely"',
+        "git commit -m \"use '--no-verify' rarely\"",
+        "git commit -m 'mention \"-n\" here'",
+        'git commit -m "--no-verify"',
+        "git config get core.hooksPath && git push",
+    ),
 }
 
-# (command shape, expected finding kind)
+# (command shape, expected finding kind); kind "bypass" is a hook bypass, not a privacy finding
 REFUSED = (
     ('gh issue comment 5 --body "host %s is down"' % IP, "private-ip"),
     ('gh issue comment 5 --body "see %s"' % HOME_PATH, "host-path"),
@@ -90,6 +98,9 @@ REFUSED = (
     ('git commit -m "see %s"' % HOME_PATH, "host-path"),
     ('git commit -m "ask %s"' % MAIL, "email"),
     ('git commit -m "about %s"' % TERM, "private-term"),
+    ('git commit "--no-verify" -m x', "bypass"),
+    ("git push '-n' origin x", "bypass"),
+    ("git config set core.hooksPath /dev/null && git push", "bypass"),
 )
 
 
@@ -114,8 +125,12 @@ class CorpusTest(unittest.TestCase):
                 with self.subTest(cmd=cmd, brief=has_brief):
                     problems = gate.decide(cmd, cwd, TERMS)
                     self.assertTrue(problems)
-                    self.assertTrue(any(p.startswith("privacy:") and kind in p for p in problems),
-                                    problems)
+                    if kind == "bypass":
+                        self.assertTrue(any("bypass" in p for p in problems), problems)
+                    else:
+                        self.assertTrue(
+                            any(p.startswith("privacy:") and kind in p for p in problems),
+                            problems)
 
 
 if __name__ == "__main__":
