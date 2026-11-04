@@ -131,12 +131,36 @@ def _read(path, base):
 _CD = re.compile(r"""(?:^|(?<=[;&|(\n]))[ \t]*cd(?:[ \t]+(?:"([^"`]*)"|'([^']*)'|([^\s'"`;&|()<>]*)))?[ \t]*(?=$|[;&|)\n])""")
 
 
+_OPAQUE = re.compile(r"""'[^']*'|"[^"]*"|\$\{[^}]*\}|\$\([^()]*\)|`[^`]*`|(?:(?<=\s)|^)#[^\n]*""")
+
+
 def _cd_base(command, end, cwd):
     """Directory a file named at offset `end` is read from, following literal `cd`s before it.
 
-    None when a `cd` before it has no target or a non-literal one."""
+    A `cd` counts only when it is a plain command the shell ran in the publishing command's
+    shell: outside quotes, comments and substitutions, not in a closed `( )` or `{ }` group,
+    not in a pipeline, not before `||` or `&`, and joined onward by `;`, `&&` or a newline.
+    None when a `cd` has no target or a non-literal one, or when it may not have applied."""
+    masked = _OPAQUE.sub(lambda m: " " * len(m.group(0)), command)
+    stack, owner = [], {}  # innermost open bracket (its offset) at each offset
+    for i, ch in enumerate(masked[:end]):
+        owner[i] = stack[-1] if stack else -1
+        if ch in "({":
+            stack.append(i)
+        elif ch in ")}" and stack:
+            stack.pop()
     base = cwd
     for match in _CD.finditer(command[:end]):
+        pos = match.start() + len(match.group(0)) - len(match.group(0).lstrip())
+        if masked[pos:pos + 2] != "cd":
+            continue  # inside quotes, a comment or a substitution: the shell never runs it
+        before = masked[:pos].rstrip(" \t")
+        after = masked[match.end():end].lstrip(" \t")
+        joined = after[:1] in (";", "\n") or after.startswith("&&")
+        ran = not before.endswith(("|", "&")) or before.endswith("&&")
+        if owner.get(pos, -1) not in [-1] + stack or not joined or not ran:
+            base = None
+            continue
         target = next((g for g in match.groups() if g is not None), None)
         if not target or target == "-" or re.search(r"[$`*?]", target):
             base = None

@@ -177,6 +177,21 @@ class GateTest(unittest.TestCase):
                 self.assertEqual(gate.decide(cmd, repo, TERMS), [])
         problems = gate.decide("cd sub && gh issue comment 5 --body-file n.md", repo, TERMS)
         self.assertTrue(any(p.startswith("privacy:") for p in problems), problems)
+        pathlib.Path(repo, "n.md").write_text(f"server at {IP}\n")
+        for cmd in ("(cd sub); gh issue comment 5 -F n.md",
+                    'echo "; cd sub;" ; gh issue comment 5 -F n.md',
+                    "cd sub | true; gh issue comment 5 -F n.md",
+                    "cd sub || true; gh issue comment 5 -F n.md",
+                    "cd sub & gh issue comment 5 -F n.md",
+                    "# cd sub\ngh issue comment 5 -F n.md"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, repo, TERMS)
+                self.assertTrue(any("n.md not found" in p or p.startswith("privacy:") for p in problems), problems)
+        for cmd in ("cd sub\ngh issue comment 5 -F clean.md",
+                    "(cd sub && gh issue comment 5 -F clean.md )",
+                    "cd sub; echo hi; gh issue comment 5 -F clean.md"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [])
         for cmd in ("cd $DIR && gh issue comment 5 --body-file top.md",
                     "cd sub && gh issue comment 5 --body-file top.md"):
             with self.subTest(cmd=cmd):
