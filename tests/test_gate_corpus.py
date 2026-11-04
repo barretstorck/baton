@@ -99,6 +99,7 @@ REFUSED = (
     ('git commit -m "ask %s"' % MAIL, "email"),
     ('git commit -m "about %s"' % TERM, "private-term"),
     ('git commit "--no-verify" -m x', "bypass"),
+    ('git commit "--no-verify";echo x', "bypass"),
     ("git push '-n' origin x", "bypass"),
     ("git config set core.hooksPath /dev/null && git push", "bypass"),
 )

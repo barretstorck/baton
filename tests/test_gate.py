@@ -188,7 +188,9 @@ class GateTest(unittest.TestCase):
         for cmd in ('git commit "--no-verify" -m x', "git push '-n' origin x",
                     "git config set core.hooksPath /dev/null && git push",
                     "git config set --local core.hooksPath /x && git push",
-                    "git commit '--no-verify' -m x", 'git push "--no-verify" origin x'):
+                    "git commit '--no-verify' -m x", 'git push "--no-verify" origin x',
+                    'git commit "--no-verify";echo x', '( git commit "--no-verify")',
+                    'git commit "--no-verify"&&echo x'):
             with self.subTest(cmd=cmd):
                 problems = gate.decide(cmd, repo, TERMS)
                 self.assertTrue(any("bypass" in p for p in problems), problems)

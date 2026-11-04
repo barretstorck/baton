@@ -45,7 +45,7 @@ def _forge_re(clis):
 _GITPUB = re.compile(_POS + r"(?:[\w.~+-]*/)*git\b[^;&|\n]*?\b(?:commit|push|tag)\b")
 # Run on the command with quoted dash words unquoted (`"--no-verify"` is the flag), then quoted
 # strings blanked, so a commit message may mention these.
-_QUOTED_OPT = re.compile(r"""(?<!-m )(?<!--message )(?<!\S)(["'])(-[^\s"']*)\1(?!\S)""")
+_QUOTED_OPT = re.compile(r"""(?<!-m )(?<!--message )(?<![^\s(;&|])(["'])(-[^\s"']*)\1(?=[\s;&|)`]|$)""")
 _BYPASS_TEXT = re.compile(
     r"--no-v[a-z-]*|--config-env\b"
     r"|(?:^|[\s;&|])(?:HOME|XDG_CONFIG_HOME|BATON_PRIVATE_TERMS|GIT_CONFIG\w*)=")
