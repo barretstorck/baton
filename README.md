@@ -80,7 +80,7 @@ fallback to your login. Permissions: `baton[bot]` has issues, pull requests and 
 `baton-reviewer[bot]` has pull requests write and contents read, and no issues permission. At tier 1 the
 developer's commits are by `baton[bot]` (worktree-local config, set by `baton identity worktree`),
 its pushes use the `baton` App token (`baton push`), and the draft pull request is opened by the
-`baton` App. Merging stays on your login. `baton config` shows the active tier under `identity`. `baton doctor` prints the tier and checks each
+`baton` App. Merging stays on your login. From Claude Code 2.1.290, the gate rewrites a raw `gh` write an agent runs as one command (optionally after `cd <dir> &&`) to `baton exec --role <role> gh ...`, so it is made as the App; other writes (scripts, pipelines, other compound commands, `glab`, `tea`) still use your login. An agent that types `baton exec` itself may only name its own role (`--role` must equal the role the gate derives from the agent type, and is required for every agent but the orchestrator); the gate refuses any other. This is a guardrail against mistakes, not a boundary against deliberate evasion. If your permission rules list `gh` commands, add `Bash(baton:*)` to `permissions.allow`, because the rules see the rewritten command. `baton config` shows the active tier under `identity`. `baton doctor` prints the tier and checks each
 App (its login on GitHub, a minted token, and that the installation includes the repository); it
 exits non-zero on a failure. Tier 2 (a machine user)
 is #225, and creating the Apps and checking the setup is #179.
@@ -216,6 +216,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 |---|---|
 | `baton config` | Print the resolved settings from `.baton/brief.md`, and the `identity` tier |
 | `baton identity worktree` | At tier 1, set this linked worktree's commit author to `baton[bot]` (worktree-local git config); no-op at tier 0 |
+| `baton exec [--role <role>] gh <args...>` | Run `gh` with the role's App token in the child's environment only (tier 1), or unchanged (tier 0) |
 | `baton push <source>:refs/heads/<branch>` | Push to `origin` (tier 0) or over HTTPS with the `baton` App token (tier 1). Refuses (exit 1) a destination outside `refs/heads/`, the default branch, a leading `-` or `+`, an empty source, or a refspec containing `*`, `^`, `?`, `[`, `\` or whitespace; the destination must pass `git check-ref-format`, and at tier 0 `origin` must be the repository `gh repo view` resolves |
 | `baton doctor` | Print the identity tier and check each App (login, token, repository access); exits 1 on a failure |
 | `baton labels [--create]` | Check or create the labels Baton uses |

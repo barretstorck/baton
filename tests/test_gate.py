@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
-from baton import gate
+from baton import gate, identity
 
 TERMS = ["Zebrowski"]
 IP = ".".join(["192", "168", "7", "7"])  # assembled so the commit scan sees no literal
@@ -113,6 +113,22 @@ class GateTest(unittest.TestCase):
         pathlib.Path(repo, "sub", "empty.md").write_text("")
         pathlib.Path(repo, "empty.md").write_text("not empty\n")
         self.assertIn(gate._EMPTY_BODY, gate.decide("cd sub && gh issue edit 5 --body-file empty.md", repo, TERMS))
+
+    def test_baton_exec_role_prefix_is_scanned(self):
+        repo = make_repo()
+        pathlib.Path(repo, "n.md").write_text(f"see {HOME}/x\n")
+        pathlib.Path(repo, "ok.md").write_text("clean text\n")
+        for command in (
+                "baton exec --role developer gh issue comment 5 --body-file n.md",
+                f"baton exec --role=developer gh issue comment 5 --body 'see {HOME}/x'",
+                "baton exec --role developer gh api -X POST repos/o/r/issues -F body=@n.md",
+                "baton exec gh issue comment 5 --body-file n.md"):
+            with self.subTest(command=command):
+                self.assertTrue(gate.decide(command, repo, TERMS))
+        for command in ("baton exec --role developer gh issue comment 5 --body-file ok.md",
+                        "baton exec --role developer gh issue comment 5 --body 'clean'"):
+            with self.subTest(command=command):
+                self.assertEqual(gate.decide(command, repo, TERMS), [])
 
     def setUp(self):
         self.cache = tempfile.mkdtemp()
@@ -767,3 +783,118 @@ class DetachedPrCreateTest(unittest.TestCase):
         code, out, err = self.run_main(f'gh pr create --title t --body "see {IP}"', self.repo())
         self.assertEqual((code, out), (2, ""))
         self.assertIn("privacy", err)
+
+
+class GhWriteOffsetTest(unittest.TestCase):
+    def test_offsets(self):
+        for command, offset in [
+            ("gh issue comment 5 --body x", 0),
+            ("gh pr create --title t --body x", 0),
+            ("gh api -X POST repos/o/r/labels -f name=x", 0),
+            ("gh api repos/o/r/issues -f title=x", 0),
+            ("gh label create bug", 0),
+            ("cd wt && gh issue comment 5 -F notes.md", 9),
+            ("cd 'a b' && cd c && gh pr edit 3 --body \"$(cat notes.md)\"", 20),
+        ]:
+            with self.subTest(command):
+                self.assertEqual(gate._gh_write_offset(command), offset)
+
+    def test_none(self):
+        for command in [
+            "gh issue view 5", "gh api repos/o/r", "gh api -X GET repos/o/r -f q=x",
+            "gh pr merge 5 --squash", "glab mr create", "cd $D && gh issue comment 5 --body x",
+            "gh issue comment 5 --body x; ls", "ls && gh issue comment 5 --body x",
+            'echo "gh issue comment 5" ', "gh issue comment 5 --body x | tee y",
+            "gh issue comment 5 --body x\nls", "baton exec gh issue comment 5 --body x",
+        ]:
+            with self.subTest(command):
+                self.assertIsNone(gate._gh_write_offset(command))
+
+
+class ExecRewriteTest(DetachedPrCreateTest):
+    IDS = identity.Identities(
+        baton=identity.App(app_id=1, installation_id=2, key_path="k", login="baton[bot]"),
+        reviewer=identity.App(app_id=3, installation_id=4, key_path="k", login="baton-reviewer[bot]"))
+
+    def go(self, command, root=None, agent=DetachedPrCreateTest.OK, ids=IDS, agent_type=None):
+        root = root or make_repo()
+        payload = {"tool_name": "Bash", "cwd": root,
+                   "tool_input": {"command": command, "description": "Do"}}
+        if agent_type:
+            payload["agent_type"] = agent_type
+        env = {"BATON_PRIVATE_TERMS": "/nonexistent"}
+        if agent:
+            env["AI_AGENT"] = agent
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, env), \
+                mock.patch.object(gate.identity, "configured_for", return_value=ids), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            if not agent:
+                os.environ.pop("AI_AGENT", None)
+            code = gate.main(json.dumps(payload))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_tier_one_orchestrator(self):
+        code, out, _ = self.go("gh issue comment 5 --body x")
+        self.assertEqual(code, 0)
+        hook = json.loads(out)["hookSpecificOutput"]
+        self.assertNotIn("permissionDecision", hook)
+        self.assertEqual(hook["updatedInput"]["command"],
+                         "baton exec --role orchestrator gh issue comment 5 --body x")
+        self.assertEqual(hook["updatedInput"]["description"], "Do")
+        self.assertIn("baton[bot]", hook["additionalContext"])
+
+    def test_roles(self):
+        for agent_type, role, login in (("baton:baton-reviewer", "reviewer", "baton-reviewer[bot]"),
+                                        ("baton:baton-developer", "developer", "baton[bot]")):
+            _, out, _ = self.go("gh issue comment 5 --body x", agent_type=agent_type)
+            hook = json.loads(out)["hookSpecificOutput"]
+            self.assertEqual(hook["updatedInput"]["command"],
+                             f"baton exec --role {role} gh issue comment 5 --body x")
+            self.assertIn(login, hook["additionalContext"])
+
+    def test_exec_role_bound_to_caller(self):
+        dev = "baton:baton-developer"
+        for command in ("baton exec --role orchestrator gh issue comment 5 --body x",
+                        "baton exec gh issue comment 5 --body x",
+                        "cd wt && baton exec --role=reviewer gh issue comment 5 --body x"):
+            code, _, err = self.go(command, agent_type=dev)
+            self.assertEqual(code, 2, command)
+            self.assertIn("--role developer", err)
+        code, out, _ = self.go("baton exec --role developer gh issue comment 5 --body x", agent_type=dev)
+        self.assertEqual(code, 0)
+        self.assertEqual(out, "")
+        self.assertEqual(self.go("baton exec --role orchestrator gh issue comment 5 --body x")[0], 0)
+        self.assertEqual(self.go("baton exec --role developer gh issue comment 5 --body x")[0], 2)
+        _, out, _ = self.go("gh issue comment 5 --body x", agent_type=dev)
+        self.assertEqual(json.loads(out)["hookSpecificOutput"]["updatedInput"]["command"],
+                         "baton exec --role developer gh issue comment 5 --body x")
+
+    def test_cd_prefix_kept(self):
+        root = make_repo()
+        os.mkdir(os.path.join(root, "wt"))
+        pathlib.Path(root, "wt", "notes.md").write_text("hello\n")
+        _, out, _ = self.go("cd wt && gh issue comment 5 -F notes.md", root)
+        self.assertEqual(json.loads(out)["hookSpecificOutput"]["updatedInput"]["command"],
+                         "cd wt && baton exec --role orchestrator gh issue comment 5 -F notes.md")
+
+    def test_tier_zero_and_old_version_and_read(self):
+        self.assertEqual(self.go("gh issue comment 5 --body x", ids=None)[1], "")
+        self.assertEqual(self.go("gh issue comment 5 --body x", agent="claude-code_2-1-289_agent")[1], "")
+        self.assertEqual(self.go("gh issue comment 5 --body x", agent=None)[1], "")
+        code, out, _ = self.go("gh issue view 5")
+        self.assertEqual((code, out), (0, ""))
+
+    def test_privacy_finding_refused(self):
+        code, out, _ = self.go(f"gh issue comment 5 --body 'host {IP}'")
+        self.assertEqual(code, 2)
+        self.assertEqual(out, "")
+
+    def test_head_and_exec_together(self):
+        code, out, _ = self.go("gh pr create --title t --body x", self.repo())
+        self.assertEqual(code, 0)
+        hook = json.loads(out)["hookSpecificOutput"]
+        self.assertEqual(hook["updatedInput"]["command"],
+                         "baton exec --role orchestrator gh pr create --head issue-216-detached --title t --body x")
+        self.assertIn("--head issue-216-detached", hook["additionalContext"])
+        self.assertIn("baton[bot]", hook["additionalContext"])

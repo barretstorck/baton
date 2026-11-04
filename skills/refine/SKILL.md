@@ -11,7 +11,7 @@ decides how well the sprint goes.
 
 Follows the refinement step of GitLab's
 [build track](https://handbook.gitlab.com/handbook/product-development/how-we-work/product-development-flow/#build-phase-1-plan).
-Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`. Read
+Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_ROOT}/references/github-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/github-refiner.md`. Read
 `${CLAUDE_PLUGIN_ROOT}/references/habits.md` first: read code through filters (`rg -n`,
 `sed -n`, line ranges), not whole files, so refining several issues stays cheap.
 
@@ -319,7 +319,7 @@ Work in your own worktree and do these in order:
 - Start implementing. Refinement ends at a ready description.
 - Merge, close, reopen or label anything except through `baton`.
 - Write to the forge with raw `gh` (comments, issue or pull request edits, labels, reviews, closing,
-  merging) instead of the `baton` command in `references/github.md`; the gate does not stop you,
+  merging) instead of the `baton` command in `references/github.md`, `references/github-shared.md` or `references/github-refiner.md`; the gate does not stop you,
   the rule stands.
 - Commit or push anything but the plan.
 - Leave scratch files outside your worktree.

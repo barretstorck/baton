@@ -499,3 +499,59 @@ class ActualLoginTest(unittest.TestCase):
         self.assertEqual(len(names), 101)
         self.assertIn("o/last", names)
         self.assertEqual(len(urls), 2)
+
+
+class ChildEnvTest(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(identity.use, None)
+
+    def use(self, ids):
+        identity.use(lambda: ids)
+        patcher = mock.patch.object(identity, "token", lambda app, *a: (
+            "tok-reviewer" if app.app_id == 2 else "tok-baton"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_tier_0(self):
+        self.use(None)
+        self.assertIsNone(identity.child_env("developer"))
+
+    def test_tier_1(self):
+        self.use(identity.Identities(identity.App(1, 10, "/k/b.pem", "baton[bot]"),
+                                     identity.App(2, 20, "/k/r.pem", "baton-reviewer[bot]")))
+        self.assertEqual(identity.child_env("developer"),
+                         {"GH_TOKEN": "tok-baton", "GH_PROMPT_DISABLED": "1"})
+        self.assertEqual(identity.child_env("reviewer")["GH_TOKEN"], "tok-reviewer")
+
+    def test_missing_entry(self):
+        self.use(identity.Identities(identity.App(1, 10, "/k/b.pem", "baton[bot]"), None))
+        with self.assertRaises(identity.IdentityError):
+            identity.child_env("reviewer")
+
+
+class ConfiguredForTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        d = pathlib.Path(self.tmp.name) / "o-r"
+        d.mkdir()
+        (d / "identity.toml").write_text(VALID)
+
+    def found(self, url):
+        runner = FakeRunner({"git remote get-url origin": url})
+        return identity.configured_for("/w", runner, home=self.tmp.name)
+
+    def test_https_and_scp(self):
+        self.assertEqual(self.found("https://github.com/o/r.git\n").baton.app_id, 1)
+        self.assertEqual(self.found(SCP + "o/r.git\n").baton.app_id, 1)
+
+    def test_not_github(self):
+        self.assertIsNone(self.found("https://example.org/o/r\n"))
+
+    def test_no_identity_file(self):
+        self.assertIsNone(self.found("https://github.com/o/other\n"))
+
+    def test_run_error(self):
+        def boom(argv, cwd=None):
+            raise identity._run.RunError("no origin")
+        self.assertIsNone(identity.configured_for("/w", boom, home=self.tmp.name))

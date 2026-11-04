@@ -44,7 +44,7 @@ import signal
 import sys
 import tempfile
 
-from . import branches, config, githooks, run, scan
+from . import branches, config, githooks, identity, run, scan
 
 MARKER = "<!-- baton:"
 HOOK_TAG = githooks.HOOK_TAG
@@ -56,7 +56,9 @@ _HTTP_CLIS = ("curl", "wget", "http", "https", "xh")
 
 # Command position: start of text, after a separator, quote or newline, or after a launcher.
 _POS = (r"""(?:^|[;&|(`'"\n{]|\bsudo\b|\benv\b|\bxargs\b|\bexec\b|\bcommand\b|\btime\b|\bnohup\b)"""
-        r"""\s*(?:[A-Za-z_]\w*=\S*\s+)*""")
+        r"""\s*(?:[A-Za-z_]\w*=\S*\s+)*"""
+        # `baton exec [--role <r>]` is a transparent prefix: the forge command after it is scanned.
+        r"""(?:--role(?:\s+|=)[\w.-]+\s+)?""")
 
 
 @functools.lru_cache(maxsize=16)
@@ -514,8 +516,117 @@ def _command_tokens(command):
         return None
     return tokens
 
+_GH_WRITES = {
+    "issue": frozenset("create edit comment close reopen delete lock unlock pin unpin transfer develop".split()),
+    "pr": frozenset("create edit comment close reopen ready review lock unlock".split()),
+    "label": frozenset("create edit delete clone".split()),
+    "release": frozenset("create edit delete upload".split()),
+}
+_CD_STEPS = re.compile(r"^\s*(?:cd[ \t]+(?:'[^']*'|\"[^\"$`\\]*\"|[^\s'\"$`*?;&|()<>]+)[ \t]*&&[ \t]*)*")
+_API_FIELD_FLAGS = frozenset(("-f", "-F", "--field", "--raw-field", "--input"))
 
-def _complete(command, cwd, env, runner=run.run):
+
+def _gh_tokens(command):
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=_PUNCT)
+        lexer.whitespace = " \t\r"
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        return list(lexer)
+    except ValueError:
+        return None
+
+
+def _is_punct(token):
+    return bool(token) and all(ch in _PUNCT for ch in token)
+
+
+def _api_is_write(args):
+    method = None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-X", "--method"):
+            method = args[i + 1] if i + 1 < len(args) else ""
+            i += 1
+        elif a.startswith("--method="):
+            method = a[len("--method="):]
+        elif a.startswith("-X") and len(a) > 2:
+            method = a[2:]
+        i += 1
+    if method is not None:
+        return method.upper() not in ("GET", "HEAD")
+    return any(a in _API_FIELD_FLAGS or a.startswith(("--field=", "--raw-field=", "--input=")) for a in args)
+
+
+def _gh_write_offset(command):
+    """Offset of the `gh` starting a recognised write (after only `cd <dir> &&` steps), else None."""
+    tokens = _gh_tokens(command)
+    if not tokens:
+        return None
+    m = _CD_STEPS.match(command)
+    steps = 0
+    i = 0
+    while i + 2 < len(tokens) and tokens[i] == "cd" and tokens[i + 2] == "&&" and not _is_punct(tokens[i + 1]):
+        steps += 1
+        i += 3
+    if _count_cd(command[:m.end()]) != steps:
+        return None
+    rest = tokens[i:]
+    if len(rest) < 3 or any(_is_punct(t) for t in rest):
+        return None
+    if rest[0].rsplit("/", 1)[-1] != "gh" or not re.match(r"(?:[\w.~+-]*/)*gh(?=[ \t]|$)", command[m.end():]):
+        return None
+    return m.end() if _is_write_words(rest) else None
+
+
+def exec_role_problem(command, agent_type):
+    """A refusal when an agent-typed `baton exec` names a role other than the caller's, else None."""
+    tokens = _gh_tokens(command)
+    if not tokens:
+        return None
+    i = 0
+    while i + 2 < len(tokens) and tokens[i] == "cd" and tokens[i + 2] == "&&" and not _is_punct(tokens[i + 1]):
+        i += 3
+    rest = tokens[i:]
+    if len(rest) < 2 or rest[0].rsplit("/", 1)[-1] != "baton" or rest[1] != "exec":
+        return None
+    role = "orchestrator"
+    j = 2
+    while j < len(rest) and rest[j] not in ("gh", "--"):
+        if rest[j] == "--role" and j + 1 < len(rest):
+            role = rest[j + 1]
+            j += 1
+        elif rest[j].startswith("--role="):
+            role = rest[j][len("--role="):]
+        j += 1
+    mine = _role(agent_type)
+    if role == mine:
+        return None
+    return (f"`baton exec` may only write as your own role: use `--role {mine}` "
+            f"(this command names `{role}`; the default is `orchestrator`).")
+
+
+def _is_write_words(rest):
+    """True when `rest` (gh, group, sub, ...) is a write the gate recognises."""
+    if len(rest) < 3:
+        return False
+    group, sub = rest[1], rest[2]
+    if group == "api":
+        return _api_is_write(rest[2:])
+    return sub in _GH_WRITES.get(group, ())
+
+
+def is_recognised_write(words):
+    """True when the argv `words` is a plain `gh` write the gate recognises (no `cd &&` prefix)."""
+    return bool(words) and words[0] == "gh" and not any(_is_punct(t) for t in words) and _is_write_words(words)
+
+
+def _count_cd(prefix):
+    return len(re.findall(r"(?:^|&&)\s*cd[ \t]", prefix))
+
+
+def _head_step(command, cwd, env, runner=run.run):
     """Add --head to a `gh pr create` from a detached HEAD: a Completion, or None when not needed."""
     stripped = _QUOTED.sub('""', _HEREDOC.sub("<<HD", command))
     if not _PR_CREATE_RE.search(stripped) or _HEAD_FLAG.search(stripped):
@@ -543,6 +654,32 @@ def _complete(command, cwd, env, runner=run.run):
     new = command[:match.end()] + f" --head {name}" + command[match.end():]
     note = (f"Baton added `--head {name}` to `gh pr create` (HEAD is detached). "
             f"The command that ran: {new}")
+    return Completion(new, note, None)
+
+
+def _complete(command, cwd, env, runner=run.run, agent_type=None):
+    """The --head step, then at tier 1 the `baton exec` prefix on a recognised gh write."""
+    done = _head_step(command, cwd, env, runner)
+    if done is not None and done.problem:
+        return done
+    current = done.command if done is not None and done.command else command
+    version = _claude_version(env)
+    if version is None or version < REWRITE_FLOOR:
+        return done
+    offset = _gh_write_offset(current)
+    if offset is None:
+        return done
+    ids = identity.configured_for(cwd, runner)
+    if ids is None:
+        return done
+    role = _role(agent_type)
+    app = getattr(ids, identity.route(role))
+    if app is None:
+        return done
+    new = current[:offset] + f"baton exec --role {role} " + current[offset:]
+    note = f"Baton ran this write as the {app.login} App: {new}"
+    if done is not None and done.command:
+        note = f"{done.note} {note}"
     return Completion(new, note, None)
 
 
@@ -629,11 +766,17 @@ def main(stdin_text):
             else:
                 problems = decide(command, cwd, scan.load_terms(warn=False))
                 if not problems:
+                    agent = payload.get("agent_type")
+                    refusal = exec_role_problem(command, agent if isinstance(agent, str) else None)
+                    problems = [refusal] if refusal else []
+                if not problems:
                     rewritten, problems = close_marker(
                         command, cwd, payload.get("agent_type"), os.environ)
                 if not problems:
+                    agent_type = payload.get("agent_type")
                     completion = _complete(
-                        rewritten if rewritten is not None else command, cwd, os.environ)
+                        rewritten if rewritten is not None else command, cwd, os.environ,
+                        agent_type=agent_type if isinstance(agent_type, str) else None)
                     if completion is not None and completion.problem:
                         problems = [completion.problem]
         finally:
