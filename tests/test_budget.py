@@ -52,6 +52,19 @@ class BudgetTest(unittest.TestCase):
         self.assertEqual(list(self.tmp.iterdir()), [])
         self.assertIsNone(budget._state_path("../x"))
 
+    def test_planted_symlink_not_followed(self):
+        victim = self.root / "victim"
+        victim.write_text("keep")
+        import os
+        os.symlink(victim, f"{self.tmp}/baton-budget-a1.json.{os.getpid()}.tmp")
+        self.assertEqual(self.run_hook(self.spike(n=3)), 2)
+        self.assertEqual(victim.read_text(), "keep")
+
+    def test_foreign_state_does_not_stop_blocking(self):
+        (self.tmp / "baton-budget-a1.json").write_text(json.dumps(
+            {"path": "/elsewhere.jsonl", "prompt": "Do spike issue 5.\nno limit here"}))
+        self.assertEqual(self.run_hook(self.spike(n=3)), 2)
+
     def test_corrupt_state_ignored(self):
         (self.tmp / "baton-budget-a1.json").write_text("{not json")
         self.assertEqual(self.run_hook(self.spike(n=3)), 2)

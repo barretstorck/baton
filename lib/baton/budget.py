@@ -38,16 +38,18 @@ def _load(path):
 
 
 def _save(path, state):
-    tmp = f"{path}.{os.getpid()}.tmp"
+    tmp = None
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=os.path.basename(path) + ".")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(state, f)
         os.replace(tmp, path)
     except (OSError, ValueError):
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
 
 def _is_comment(payload):
@@ -67,7 +69,7 @@ def main(stdin_text):
             return 0
         state_file = _state_path(payload["agent_id"])
         state = _load(state_file) if state_file else None
-        if state and isinstance(state.get("prompt"), str):
+        if state and state.get("path") == str(path) and isinstance(state.get("prompt"), str):
             box = issue.timebox(state["prompt"])
             if not (box and box["tokens"]):
                 return 0
