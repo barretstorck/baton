@@ -1,7 +1,7 @@
 # GitHub reference for Baton skills
 
 How each step in the Baton skills is done on GitHub. Run everything from inside the repository.
-`baton` is on `PATH` when the plugin is enabled; otherwise use `${CLAUDE_PLUGIN_ROOT}/bin/baton`.
+`baton` is on `PATH` when the plugin is enabled; otherwise use `${CLAUDE_PLUGIN_ROOT}/bin/baton`. `baton <command> --help` prints a command's usage.
 
 Baton has no version number. To identify the installed build, read the commit SHA in
 `~/.claude/plugins/installed_plugins.json` (the `version` of the `baton@baton` entry).

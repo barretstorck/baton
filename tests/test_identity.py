@@ -184,16 +184,16 @@ class CliMarkingTest(unittest.TestCase):
         self.assertIsNone(json.loads(out)["question"])
 
     def test_issue_read_prints_a_bot_comment_in_full(self):
-        out, _ = self.run_cmd("_issue_read", ["read", "5"], "Bot")
+        out, _ = self.run_cmd("cmd_issue", ["read", "5"], "Bot")
         self.assertIn("Which one?", out)
 
     def test_issue_read_withholds_a_human_comment(self):
-        out, _ = self.run_cmd("_issue_read", ["read", "5"], "User")
+        out, _ = self.run_cmd("cmd_issue", ["read", "5"], "User")
         self.assertNotIn("Which one?", out)
 
     def test_tier_zero_makes_no_rest_call(self):
         identity.use(None)
-        for fn, args in (("cmd_answers", ["5"]), ("_issue_read", ["read", "5"])):
+        for fn, args in (("cmd_answers", ["5"]), ("cmd_issue", ["read", "5"])):
             _, runner = self.run_cmd(fn, args, "Bot")
             self.assertFalse(any(line.startswith("gh api") for line in runner.lines()))
 

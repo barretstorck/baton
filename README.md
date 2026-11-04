@@ -210,6 +210,8 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 
 ## Commands
 
+`baton <command> --help` prints a command's usage.
+
 | Command | Purpose |
 |---|---|
 | `baton config` | Print the resolved settings from `.baton/brief.md`, and the `identity` tier |

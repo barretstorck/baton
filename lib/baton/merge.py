@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 
 from . import checklist, clean, forbid, gate, identity, labels, planfile, review, scan, state as item_state, verify
@@ -333,3 +334,21 @@ def merge(number, cfg, runner, notes=None, bots=(), reviewers=()):
     if text:
         notes.append(text)
     return []
+
+
+def tolerant(runner):
+    """Wrap ``runner`` so a failed cleanup command is reported, not raised."""
+    def run_tolerant(argv, cwd=None):
+        cleanup = (argv[:3] in (["git", "branch", "-D"], ["git", "push", "origin"],
+                                ["git", "worktree", "remove"]) or argv[:2] == ["git", "-C"])
+        try:
+            return runner(argv, cwd)
+        except RunError as error:
+            if not cleanup:
+                raise
+            if (argv[:4] == ["git", "push", "origin", "--delete"]
+                    and "remote ref does not exist" in str(error)):
+                return ""
+            print(f"baton: cleanup skipped: {error}", file=sys.stderr)
+            return ""
+    return run_tolerant
