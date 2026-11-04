@@ -183,6 +183,27 @@ class GateTest(unittest.TestCase):
                 problems = gate.decide(cmd, repo, TERMS)
                 self.assertFalse(any("bypass" in p for p in problems), problems)
 
+    def test_quoted_flags_and_config_set_are_a_bypass(self):
+        repo = make_repo()
+        for cmd in ('git commit "--no-verify" -m x', "git push '-n' origin x",
+                    "git config set core.hooksPath /dev/null && git push",
+                    "git config set --local core.hooksPath /x && git push",
+                    "git commit '--no-verify' -m x", 'git push "--no-verify" origin x'):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, repo, TERMS)
+                self.assertTrue(any("bypass" in p for p in problems), problems)
+
+    def test_quoted_mentions_and_config_reads_are_not_a_bypass(self):
+        repo = make_repo()
+        for cmd in ('git commit -m "use --no-verify rarely"',
+                    "git commit -m \"use '--no-verify' rarely\"",
+                    "git commit -m 'mention \"-n\" here'",
+                    'git commit -m "--no-verify"',
+                    "git config get core.hooksPath && git push"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, repo, TERMS)
+                self.assertFalse(any("bypass" in p for p in problems), problems)
+
     def test_harmless_git_options_are_not_a_bypass(self):
         repo = make_repo()
         for cmd in ("git commit -m x", "git push origin main", "git push --dry-run origin main",
