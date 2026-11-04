@@ -10,7 +10,7 @@ import re
 import shutil
 import tempfile
 
-from . import checklist, forbid, gate, identity, labels, planfile, review, scan, state as item_state, verify
+from . import checklist, clean, forbid, gate, identity, labels, planfile, review, scan, state as item_state, verify
 from .run import RunError
 from .config import has_login, logins
 
@@ -326,4 +326,10 @@ def merge(number, cfg, runner, notes=None, bots=(), reviewers=()):
         verify.remove_logs(repo["owner"]["login"], repo["name"], number)
     except OSError as error:
         notes.append(f"could not remove the verification logs of #{number} ({error})")
+    try:
+        text = clean.hint(runner, cfg.data["clean"]["hint_worktrees"])
+    except (RunError, OSError):
+        text = None
+    if text:
+        notes.append(text)
     return []

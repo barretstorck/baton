@@ -26,6 +26,32 @@ class NotContained(FakeRunner):
         return super().__call__(argv, cwd, input)
 
 
+def many(n):
+    text = f"worktree {ROOT}\nHEAD aaa\nbranch refs/heads/main\n\n"
+    for i in range(n):
+        text += f"worktree {ROOT}/.claude/worktrees/w{i}\nHEAD bbb\ndetached\n\n"
+    return text + "worktree /elsewhere/other\nHEAD ccc\nbranch refs/heads/other\n\n"
+
+
+class HintTest(unittest.TestCase):
+    def runner(self, n):
+        return FakeRunner({"git worktree list": many(n)})
+
+    def test_hint_above_limit(self):
+        text = clean.hint(self.runner(11), 10)
+        self.assertIn("11 agent worktrees", text)
+        self.assertIn("baton clean", text)
+
+    def test_no_hint_at_limit(self):
+        self.assertIsNone(clean.hint(self.runner(10), 10))
+
+    def test_outside_worktrees_not_counted(self):
+        self.assertIsNone(clean.hint(self.runner(0), 0))
+
+    def test_limit_zero_one_worktree(self):
+        self.assertIn("1 agent worktrees", clean.hint(self.runner(1), 0))
+
+
 class WorktreeTest(unittest.TestCase):
     def go(self, state, extra=None, cls=FakeRunner):
         replies = {"git worktree list --porcelain": listing(state)}
