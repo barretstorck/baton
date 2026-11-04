@@ -297,6 +297,13 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("baton:baton-orchestrator", text)
         self.assertIn("Run the sprint.", text)
         self.assertIn("autoCompactWindow", text)
+        for needle in (
+            "SendMessage",
+            'to: "main"',
+            "The coordinator sent a message",
+            "run_in_background",
+        ):
+            self.assertIn(needle, text)
         self.assertNotIn("suggest starting a fresh session", text)
 
     def test_sprint_skill_files_follow_ups_by_severity(self):
