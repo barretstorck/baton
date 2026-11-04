@@ -186,6 +186,15 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaises(config.ConfigError):
             config.load(str(make_repo("---\nreview:\n  max_rounds: 0\n---\n")))
 
+    def test_clean_hint_worktrees(self):
+        self.assertEqual(config.DEFAULTS["clean"], {"hint_worktrees": 10})
+        self.assertEqual(config.load(str(make_repo("# none\n"))).data["clean"]["hint_worktrees"], 10)
+        cfg = config.load(str(make_repo("---\nclean:\n  hint_worktrees: 3\n---\n")))
+        self.assertEqual(cfg.data["clean"]["hint_worktrees"], 3)
+        with self.assertRaises(config.ConfigError) as ctx:
+            config.load(str(make_repo("---\nclean:\n  hint_worktrees: -1\n---\n")))
+        self.assertIn("clean.hint_worktrees must be 0 or more", str(ctx.exception))
+
     def test_verify_defaults_and_override(self):
         self.assertEqual(config.DEFAULTS["verify"], {"command": "", "timeout_minutes": 10})
         self.assertEqual(config.load(str(make_repo("# none\n"))).data["verify"],

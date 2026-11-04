@@ -43,6 +43,14 @@ def agent_worktrees(runner):
     return [e for e in entries[1:] if e["path"].startswith(prefix)]
 
 
+def hint(runner, limit):
+    """One line suggesting `baton clean` when more than `limit` agent worktrees exist, else None."""
+    count = len(agent_worktrees(runner))
+    if count > limit:
+        return f"{count} agent worktrees under {WORKTREES_DIR}; run baton clean to remove the leftovers"
+    return None
+
+
 def _lock_owner_gone(lock):
     """True when a lock reason ends in `(pid N)` and no process N is alive."""
     match = re.search(r"\(pid (\d+)\)\s*$", lock) if isinstance(lock, str) else None
