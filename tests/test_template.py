@@ -291,7 +291,7 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("Origin: outside", tmpl)
 
     def test_sprint_skill_reconnects_orchestrator(self):
-        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        text = " ".join((ROOT / "references/sprint-parent.md").read_text().split())
         for needle in ("baton orchestrator-agent", "SendMessage", "partial"):
             self.assertIn(needle, text)
         self.assertNotIn("#248", text)
