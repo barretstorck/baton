@@ -279,15 +279,36 @@ def mark_authors(runner, number, comments):
 
 def write(runner, argv, role, **kw):
     """Run a forge write as the role's App at tier 1; exactly `runner(argv, **kw)` at tier 0."""
+    env = child_env(role)
+    if env is None:
+        return runner(argv, **kw)
+    return runner(argv, env=env, **kw)
+
+
+def child_env(role):
+    """The environment overlay a forge write as `role` needs: None at tier 0, else the App token."""
     ids = _identities()
     if ids is None:
-        return runner(argv, **kw)
+        return None
     name = route(role)
     app = getattr(ids, name)
     if app is None:
         raise IdentityError(f"identity.toml has no [{name}] entry for role {role}")
     tok = token(app, _run.run, _post, time.time())
-    return runner(argv, env={"GH_TOKEN": tok, "GH_PROMPT_DISABLED": "1"}, **kw)
+    return {"GH_TOKEN": tok, "GH_PROMPT_DISABLED": "1"}
+
+
+def configured_for(cwd, runner=_run.run, home=None):
+    """The identities configured for the GitHub repository `origin` points at in cwd, else None."""
+    try:
+        url = runner(["git", "remote", "get-url", "origin"], cwd=cwd)
+    except _run.RunError:
+        return None
+    found = github_repo(url)
+    if found is None:
+        return None
+    owner, repo = found.split("/", 1)
+    return load(owner, repo, home)
 
 
 def bot_user_id(runner, login):

@@ -505,6 +505,13 @@ def _declare_sandbox(subs):
     p.add_argument("words", nargs=argparse.REMAINDER)
 
 
+def _declare_exec(subs):
+    usage = "usage: baton exec [--role <role>] gh <args...>"
+    p = _add(subs, "exec", usage)
+    p.add_argument("--role", default="orchestrator")
+    p.add_argument("words", nargs=argparse.REMAINDER)
+
+
 def _declare_lock(subs):
     usage = "usage: baton lock <acquire|release> [--ttl-hours N]"
     actions = _nested(subs, "lock", usage)
@@ -527,7 +534,7 @@ def build() -> BatonParser:
                     _declare_review, _declare_tasks, _declare_task,
                     _declare_plan, _declare_notify, _declare_triage,
                     _declare_git_hook, _declare_usage, _declare_sprint_capacity,
-                    _declare_sprint_metrics, _declare_sandbox, _declare_lock,
+                    _declare_sprint_metrics, _declare_sandbox, _declare_exec, _declare_lock,
                     _declare_compact_reminder, _declare_hook,
                     _declare_orchestrator_agent):
         declare(subs)

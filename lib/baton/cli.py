@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -166,6 +167,16 @@ def cmd_comment(opts):
         print(f"baton: {error}", file=sys.stderr)
         return 1
     return 0
+
+
+@cliargs.command("exec")
+def cmd_exec(opts):
+    words = opts.words
+    if not words or words[0] != "gh" or len(words) < 2 or opts.role not in set(comment.ROLES) | set(config.ROLES):
+        return cliargs.fail("exec")
+    extra = identity.child_env(opts.role)
+    env = {**os.environ, **extra} if extra else None
+    return subprocess.run(words, env=env).returncode
 
 
 @cliargs.command("triage")
@@ -722,6 +733,7 @@ COMMANDS = {
     "notify": cmd_notify,
     "open-questions": cmd_open_questions,
     "comment": cmd_comment,
+    "exec": cmd_exec,
     "ready-check": cmd_ready_check,
     "config": cmd_config,
     "budget": cmd_budget,
