@@ -1,4 +1,5 @@
 import copy
+import json
 import pathlib
 import unittest
 from baton import config, publish
@@ -46,14 +47,37 @@ class IssueTest(unittest.TestCase):
         self.assertEqual(r.calls, [])
 
     def test_edit(self):
-        r = Capture()
+        r = Capture({"gh issue view 5 --json body": "{\"body\": \"\"}"})
         publish.edit(cfg(), r, "pr", 5, [], title="N", add_labels=["a"],
                      remove_labels=["b"], remove_milestone=True)
         self.assertEqual(r.lines()[0], "gh pr edit 5 --title N --add-label a "
                          "--remove-label b --remove-milestone")
         publish.edit(cfg(), r, "issue", 5, [], body="new", milestone="M")
-        self.assertIn("gh issue edit 5 --milestone M --body-file ", r.lines()[1])
+        self.assertEqual(len(r.calls), 3)  # the pull request edit read nothing
+        self.assertEqual(r.lines()[1], "gh issue view 5 --json body")
+        self.assertIn("gh issue edit 5 --milestone M --body-file ", r.lines()[2])
         self.assertEqual(r.body, "new")
+
+    PLAN = ("## Developer Plan\n\nWritten against: abc\n\n- [ ] Task 1: A\n  <details>\n"
+            "  <summary>Click to see plan details</summary>\n\n  - Check: none\n\n"
+            "  </details>\n")
+
+    def _issue_reply(self):
+        return {"gh issue view 5 --json body": json.dumps({"body": "Intro\n\n" + self.PLAN})}
+
+    def test_edit_keeps_dropped_plan(self):
+        r = Capture(self._issue_reply())
+        publish.edit(cfg(), r, "issue", 5, [], body="New text\n")
+        self.assertIn("New text", r.body)
+        self.assertIn("## Developer Plan", r.body)
+        self.assertIn("- [ ] Task 1: A", r.body)
+
+    def test_edit_uses_new_plan_as_given(self):
+        r = Capture(self._issue_reply())
+        new = "X\n\n" + self.PLAN.replace("Task 1: A", "Task 1: B")
+        publish.edit(cfg(), r, "issue", 5, [], body=new)
+        self.assertEqual(r.body, new)
+        self.assertEqual(len(r.calls), 1)
 
     def test_edit_nothing_or_bad(self):
         with self.assertRaises(CommentError):
