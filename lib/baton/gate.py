@@ -93,6 +93,10 @@ def _file_arg_re(flags):
 _UNRESOLVABLE = re.compile(r"[$`*?]")
 _SUBST_BODY = re.compile(r"(?:--body|-b|--title|-t|--message|-m|--raw-field|-f|--field|-d|--data(?:-raw)?)"
                          r"(?:\s+|=)\"[^\"]*(?:\$\((?!cat <<)|`)")
+_BODY_VALUE = re.compile(
+    r"""(?<![\w-])(?:--body|-b|--title|-t|--message|-m|--raw-field|-f|--field|-F|--description|-d"""
+    r"""|--data(?:-raw)?)(?:\s+|=)(?:"([^"]*)"|'([^']*)'|([^\s'"<>|;&]+))""")
+_VARIABLE = re.compile(r"\$[A-Za-z_{]")
 _CAT_SUBST = re.compile(r"""\$\(cat\s+(?:'([^\s'$`]+)'|([^\s'"$`()<>|;&*?\\-][^\s'"$`()<>|;&*?\\]*))\s*\)""")
 _HEREDOC = re.compile(r"<<-?[ \t]*['\"]?(\w+)['\"]?([^\n]*)\n(.*?)\n[ \t]*\1\b", re.S)
 _QUOTED = re.compile(r"""'[^']*'|"[^"]*\"""")
@@ -163,8 +167,8 @@ _BYPASS = ("git hook bypass (--no-verify, -n, core.hooksPath or an overridden en
            "commit or push without it so the Baton hooks scan the change")
 _STDIN = ("a body read from stdin cannot be scanned unless a heredoc in the same command supplies it; "
           "pass the text literally, as an inline heredoc, or as a file")
-_SUBSTITUTED = ("text built from a command substitution or backticks in a double-quoted body cannot be "
-                "scanned; pass it literally, as an inline heredoc, or as a file")
+_SUBSTITUTED = ("text built from a variable, a command substitution or backticks in a title, body or "
+                "field cannot be scanned; pass it literally, as an inline heredoc, or as a file")
 _HOOKS_MISSING = ("Baton git hooks are missing or point at a baton that no longer exists; "
                   "run `baton install-hooks`")
 
@@ -323,6 +327,33 @@ def close_marker(command, cwd, agent_type, env):
     return None, []
 
 
+def _has_variable(segment):
+    for m in _BODY_VALUE.finditer(segment):
+        value = m.group(1) if m.group(1) is not None else m.group(3)
+        if value and _VARIABLE.search(value):
+            return True
+    return False
+
+
+def _forge_segments(command, clis):
+    """The parts of `command`, split at ; && || | & and newlines outside quotes, that run a forge CLI."""
+    segments, current, quote = [], [], ""
+    for ch in command:
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "'\"":
+            quote = ch
+        elif ch in ";&|\n":
+            segments.append("".join(current))
+            current = []
+            continue
+        current.append(ch)
+    segments.append("".join(current))
+    pattern = _forge_re(tuple(clis))
+    return [seg for seg in segments if pattern.search(seg)]
+
+
 def decide(command, cwd, terms):
     stripped = _HEREDOC.sub(r"<<HD\2", command)
     clis, flags = _brief_lists(cwd)
@@ -366,7 +397,8 @@ def decide(command, cwd, terms):
             last = quoted.start() + sub.end()
     scanned.append(stripped[last:])
     without_cats = "".join(scanned)
-    if forge and _SUBST_BODY.search(without_cats):
+    segments = _forge_segments(without_cats, clis) if forge else []
+    if any(_SUBST_BODY.search(seg) or _has_variable(seg) for seg in segments):
         problems.append(_SUBSTITUTED)
 
     texts = [m.group(3) for m in _HEREDOC.finditer(command)]
