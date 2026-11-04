@@ -10,7 +10,7 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   1. `infeasible`: run `baton notify <O> spike-infeasible -` with an inline heredoc naming the
      spike and its reason, then close the spike with the reason.
   2. `single`: remove the `Blocked by: #<S>` entry from `<O>`'s description (write the complete
-     description to a file, then `baton issue edit <O> --body-file <file>`; keep other `Blocked by:`
+     description to a file, then `gh issue edit <O> --body-file <file>`; keep other `Blocked by:`
      entries, and drop the line if it would be empty). Dispatch `baton:baton-refiner` in the
      background, with the Agent tool's `model` and `effort` from `refiner.model` and
      `refiner.effort`, and exactly:
@@ -34,7 +34,7 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   `git ls-remote --heads origin 'issue-<N>-*'`: delete the branch with
   `git push origin --delete <branch>` if it still exists; if the ref is missing, report that to
   the maintainer and do not close the issue. Otherwise set `status:complete` and close the issue with
-  `baton close issue <N> orchestrator <reason-file | ->` (the reason is the findings summary).
+  `gh issue close <N> --comment "<one-line findings summary>"`.
   Spikes are not code-reviewed.
 - **Not a spike and no pull request, or `progress.<N>.plan.next` is set:** the plan is not
   finished (an interrupted task, or a replaced plan). `baton set-status <N> status:in-dev`; `skills/sprint/SKILL.md` step 7 (Dispatch)
@@ -44,7 +44,7 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   task list: review again and write one."
 - **Not a spike, `progress.<N>.plan.next` is null, `draft` is true and `review` is not `changes`,
   `replan`, `escalate` or `repeated`:** the plan is finished (or the review's fixes are replied to), so
-  mark the pull request ready: `baton pr ready <PR>`. CI runs once, now, instead of on every push
+  mark the pull request ready: `gh pr ready <PR>`. CI runs once, now, instead of on every push
   of a draft. The reviewer is dispatched in this same pass (next bullets).
 - **Ready (not a draft), every plan task ticked, and `mergeable` is `CONFLICTING`:** update it
   before any review: dispatch a developer with `Update pull request <P> (issue <N>).` A red `ci`
@@ -71,14 +71,14 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   orchestrator `status` comment), and
   put the issue under `Needs you`. Do not re-draft the pull request or dispatch a fix round. Record the
   answer as a decision (`skills/sprint/SKILL.md`, step 3, Answers; `references/sprint-answers.md`) and then handle it like an answered `escalate`.
-- **`changes`:** if `draft` is false, turn the pull request back into a draft: `baton pr ready <PR>
+- **`changes`:** if `draft` is false, turn the pull request back into a draft: `gh pr ready <PR>
   --undo`, so that CI runs once per "developer done" and not once per pushed fix task. Then
   `baton set-status <N> status:in-dev`. Step 7 then works the review's tasks one
   at a time, and `references/sprint-returns.md` posts the reply when the last one is ticked. This takes a developer slot.
 - **`replan`:** the reviewer says the plan, not the code, is the problem, and the pull request
   has no refiner's reply yet. Run each as a command on its own:
   1. `baton set-status <N> status:refinement` (the issue keeps its milestone).
-  2. `baton pr ready <PR> --undo`, only when `draft` is false.
+  2. `gh pr ready <PR> --undo`, only when `draft` is false.
   3. An orchestrator `status` comment on the issue linking the review:
      `baton comment issue <N> orchestrator status <file>`.
   4. Dispatch `baton:baton-refiner` in the background, with exactly:
@@ -90,7 +90,7 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   posts a `refine` `reply` on the pull request; `skills/sprint/SKILL.md`, step 7 (Dispatch), then dispatches the next task as for a
   resumed issue, and the reviewer comes back after the last one, as after any reply.
 - **Each entry in `re_refine`** (an issue in `status:refinement` with an open pull request and no
-  `needs-maintainer`; a session died after step 3 of `replan`): `baton pr ready <PR> --undo` if
+  `needs-maintainer`; a session died after step 3 of `replan`): `gh pr ready <PR> --undo` if
   `draft` is false, and dispatch the same refiner prompt, unless a refiner for that issue is
   already running in this session. The refiner's work is safe to repeat.
 - **`escalate`:** the review rounds in the brief are used up and the reviewer still asks for
@@ -98,14 +98,14 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   be). Run `baton notify <N> stuck <file | ->` with a text linking the
   last review and the last reply, saying what the two disagree about (it adds `needs-maintainer` and posts the orchestrator `status` comment); the issue goes under
   `Needs you`. When the maintainer answers, record it as a decision (`skills/sprint/SKILL.md`, step 3, Answers; `references/sprint-answers.md`); if the answer sends the
-  review's tasks to a developer, re-draft the pull request as for `changes` (`baton pr ready <PR>
+  review's tasks to a developer, re-draft the pull request as for `changes` (`gh pr ready <PR>
   --undo` when `draft` is false) and work the tasks (`skills/sprint/SKILL.md`, step 7, Dispatch).
 - **`approved`**, or `not-required`:
   0. `approved` with `verify` `missing` (the brief sets `verify.command`; the head moved after the
      approval, typically by merging the default branch in): dispatch a reviewer for a short
      re-approval (see "Dispatching a reviewer"), and merge only once the new review shows `verify`
      `green`. Never run `baton verify` or post a review yourself.
-  1. Still a draft (a fallback; normally ready already): `baton pr ready <PR>`. CI starts now; look
+  1. Still a draft (a fallback; normally ready already): `gh pr ready <PR>`. CI starts now; look
      again next pass.
   2. `ci` is `pending`: wait.
   2a. `ci` is `cancelled`: handle it as the ready-pull-request `cancelled` case above (re-run or
