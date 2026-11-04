@@ -289,6 +289,14 @@ class TemplateTest(unittest.TestCase):
         text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
         self.assertIn("baton pr ready <PR> --undo", text)
 
+    def test_sprint_skill_dispatches_orchestrator(self):
+        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        self.assertIn("## Who runs the sprint", text)
+        self.assertIn("baton:baton-orchestrator", text)
+        self.assertIn("Run the sprint.", text)
+        self.assertIn("autoCompactWindow", text)
+        self.assertNotIn("suggest starting a fresh session", text)
+
     def test_sprint_skill_files_follow_ups_by_severity(self):
         text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
         self.assertIn("Place each by its severity", text)
