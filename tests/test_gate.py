@@ -160,6 +160,57 @@ class GateTest(unittest.TestCase):
             gate.decide("gh issue comment 5 --body \"$(cat <<'EOF'\nhello\nEOF\n)\"", repo, TERMS), [])
         self.assertEqual(gate.decide("gh issue comment 5 --body 'costs $(5)'", repo, TERMS), [])
 
+    def test_body_file_follows_a_literal_cd_in_the_same_command(self):
+        repo = make_repo()
+        sub = pathlib.Path(repo, "sub")
+        sub.mkdir()
+        (sub / "clean.md").write_text("fine\n")
+        (sub / "n.md").write_text(f"server at {IP}\n")
+        pathlib.Path(repo, "top.md").write_text("fine\n")
+        for cmd in ("cd sub && gh issue comment 5 --body-file clean.md",
+                    f"cd {sub} && gh issue comment 5 -F clean.md",
+                    f"cd {repo} && cd sub && gh issue comment 5 --body-file clean.md",
+                    "cd 'sub' && gh pr create --title t --body-file clean.md",
+                    "cd sub && git commit -F clean.md",
+                    "gh issue comment 5 --body-file top.md; cd sub"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [])
+        problems = gate.decide("cd sub && gh issue comment 5 --body-file n.md", repo, TERMS)
+        self.assertTrue(any(p.startswith("privacy:") for p in problems), problems)
+        for cmd in ("cd $DIR && gh issue comment 5 --body-file top.md",
+                    "cd sub && gh issue comment 5 --body-file top.md"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, repo, TERMS)
+                self.assertTrue(any("top.md not found" in p for p in problems), problems)
+
+    def test_cat_substitution_of_a_literal_path_is_read(self):
+        repo = make_repo()
+        clean = pathlib.Path(repo, "clean.md")
+        clean.write_text("fine\n")
+        pathlib.Path(repo, "n.md").write_text(f"server at {IP}\n")
+        pathlib.Path(repo, "Zebrowski.md").write_text("fine\n")
+        sub = pathlib.Path(repo, "sub")
+        sub.mkdir()
+        (sub / "s.md").write_text("fine\n")
+        for cmd in ('gh issue comment 5 --body "$(cat clean.md)"',
+                    f'gh issue comment 5 --body "$(cat {clean})"',
+                    "gh issue comment 5 --body \"$(cat 'clean.md')\"",
+                    'gh pr create --title t --body "Summary: $(cat clean.md)"',
+                    'gh issue comment 5 --body "$(cat Zebrowski.md)"',
+                    'cd sub && gh issue comment 5 --body "$(cat s.md)"'):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [])
+        problems = gate.decide('gh issue comment 5 --body "$(cat n.md)"', repo, TERMS)
+        self.assertTrue(any(p.startswith("privacy:") for p in problems), problems)
+        problems = gate.decide('gh issue comment 5 --body "$(cat missing.md)"', repo, TERMS)
+        self.assertTrue(any("missing.md not found" in p for p in problems), problems)
+        for cmd in ('gh issue comment 5 --body "$(cat $F)"',
+                    'gh issue comment 5 --body "$(cat clean.md) $(date)"',
+                    'gh issue comment 5 --body "$(cat -n clean.md)"',
+                    'gh issue comment 5 --body "$(cat *.md)"'):
+            with self.subTest(cmd=cmd):
+                self.assertIn(gate._SUBSTITUTED, gate.decide(cmd, repo, TERMS))
+
     def test_hook_bypass_is_refused(self):
         repo = make_repo()
         for cmd in ("git commit --no-verify -m x", "git push --no-verify", "git commit -n -m x",
