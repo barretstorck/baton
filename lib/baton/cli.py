@@ -27,6 +27,11 @@ def cmd_gate(args):
     return gate.main(sys.stdin.read())
 
 
+def cmd_hook(args):
+    from . import hook
+    return hook.main(sys.stdin.read())
+
+
 def _report(problems, what):
     if not problems:
         return 0
@@ -859,6 +864,7 @@ COMMANDS = {
     "config": cmd_config,
     "budget": cmd_budget,
     "gate": cmd_gate,
+    "hook": cmd_hook,
     "git-hook": cmd_git_hook,
     "install-hooks": cmd_install_hooks,
     "identity": cmd_identity,

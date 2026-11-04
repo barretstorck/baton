@@ -2,20 +2,8 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" gate" }
-        ]
-      },
-      {
-        "matcher": "mcp__.*",
-        "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" gate" }
-        ]
-      },
-      {
-        "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" budget" }
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" hook" }
         ]
       }
     ]

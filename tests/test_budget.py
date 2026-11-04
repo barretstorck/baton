@@ -96,11 +96,11 @@ class BudgetTest(unittest.TestCase):
         records = [prompt("Do spike issue 5.\nTimebox: 1000 tokens")] + [call("r0")] * 3
         self.assertEqual(self.run_hook(records), 0)
 
-    def test_hooks_json_has_budget_entry(self):
+    def test_hooks_json_has_hook_entry(self):
         hooks = json.loads((ROOT / "hooks" / "hooks.json").read_text())["hooks"]["PreToolUse"]
-        entries = [h for h in hooks if "matcher" not in h]
-        self.assertTrue(any(c["command"].endswith('baton" budget') for e in entries for c in e["hooks"]))
-        self.assertEqual(sum("matcher" in h for h in hooks), 2)
+        self.assertEqual(len(hooks), 1)
+        self.assertNotIn("matcher", hooks[0])
+        self.assertTrue(hooks[0]["hooks"][0]["command"].endswith('baton" hook'))
 
 
 if __name__ == "__main__":
