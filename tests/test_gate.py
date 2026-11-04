@@ -187,6 +187,12 @@ class GateTest(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 problems = gate.decide(cmd, repo, TERMS)
                 self.assertTrue(any("n.md not found" in p or p.startswith("privacy:") for p in problems), problems)
+        for cmd in ("cd $X && gh issue comment 5 -F n.md; echo hi > n.md",
+                    "cd $X && gh issue comment 5 -F n.md # > n.md",
+                    "cd $X && echo hi > n.md && gh issue comment 5 -F n.md"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, repo, TERMS)
+                self.assertTrue(any("n.md not found" in p for p in problems), problems)
         for cmd in ("cd sub\ngh issue comment 5 -F clean.md",
                     "(cd sub && gh issue comment 5 -F clean.md )",
                     "cd sub; echo hi; gh issue comment 5 -F clean.md"):

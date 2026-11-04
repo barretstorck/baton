@@ -257,8 +257,10 @@ def decide(command, cwd, terms):
             continue
         base = _cd_base(stripped, start, cwd)
         full = os.path.join(base, os.path.expanduser(path)) if base is not None else None
-        if (full is None or not os.path.isfile(full)) and re.search(r">\s*" + re.escape(path), stripped):
-            continue  # the same command writes it
+        if base is not None and not os.path.isfile(full):
+            masked = _OPAQUE.sub(lambda m: " " * len(m.group(0)), stripped)
+            if re.search(r"(?<![<>&\d])>>?[ \t]*['\"]?" + re.escape(path) + r"(?=[\s;&|)'\"]|$)", masked[:start]):
+                continue  # an earlier step of the same command writes it
         text, problem = _read(path, base)
         if problem:
             problems.append(problem)
