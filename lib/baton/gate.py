@@ -112,8 +112,8 @@ def _read(path, base):
     """Return (text, problem) for a message file a command publishes, read relative to `base`."""
     if path == "-":
         return None, _STDIN
-    full = os.path.join(base, os.path.expanduser(path))
-    if not os.path.isfile(full):
+    full = os.path.join(base, os.path.expanduser(path)) if base is not None else None
+    if full is None or not os.path.isfile(full):
         return None, (f"body file {path} not found, so it cannot be scanned; "
                       "write it in an earlier step")
     if os.path.getsize(full) > _MAX_FILE:
@@ -122,8 +122,29 @@ def _read(path, base):
         return handle.read(), None
 
 
+_CD = re.compile(r"""(?:^|(?<=[;&|(\n]))[ \t]*cd(?:[ \t]+(?:"([^"`]*)"|'([^']*)'|([^\s'"`;&|()<>]*)))?[ \t]*(?=$|[;&|)\n])""")
+
+
+def _cd_base(command, end, cwd):
+    """Directory a file named at offset `end` is read from, following literal `cd`s before it.
+
+    None when a `cd` before it has no target or a non-literal one."""
+    base = cwd
+    for match in _CD.finditer(command[:end]):
+        target = next((g for g in match.groups() if g is not None), None)
+        if not target or target == "-" or re.search(r"[$`*?]", target):
+            base = None
+            continue
+        target = os.path.expanduser(target)
+        if os.path.isabs(target):
+            base = target
+        elif base is not None:
+            base = os.path.join(base, target)
+    return base
+
+
 def _body_files(command, git_only, flags=BODY_FILE_FLAGS):
-    """Paths of body files the command names."""
+    """(path, offset of the flag) of the body files the command names."""
     paths = []
     flags = tuple(flags)
     for match in _file_arg_re(flags).finditer(command):
@@ -133,17 +154,17 @@ def _body_files(command, git_only, flags=BODY_FILE_FLAGS):
             continue
         if git_only:
             if flag in ("-F", "--file") and not value.startswith("@"):
-                paths.append(value)
+                paths.append((value, match.start()))
         elif flag in flags and flag.startswith("--"):
-            paths.append(value.lstrip("@"))
+            paths.append((value.lstrip("@"), match.start()))
         elif value.startswith("@") and (flag in flags or flag == "-d" or flag.startswith("--data")):
-            paths.append(value[1:])
+            paths.append((value[1:], match.start()))
         elif flag in flags:
             if "=@" in value:
-                paths.append(value.split("=@", 1)[1])
+                paths.append((value.split("=@", 1)[1], match.start()))
             elif "=" not in value:
-                paths.append(value)
-    return [p for p in paths if p != "-"]
+                paths.append((value, match.start()))
+    return [pair for pair in paths if pair[0] != "-"]
 
 
 def decide(command, cwd, terms):
@@ -181,15 +202,16 @@ def decide(command, cwd, terms):
         texts += [m.group(1) for m in _DATA_FLAG.finditer(stripped)]
     else:
         texts += _QUOTED.findall(stripped)
-    for path in _body_files(stripped, git_only=not forge, flags=flags):
+    for path, start in _body_files(stripped, git_only=not forge, flags=flags):
         if _UNRESOLVABLE.search(path):
             problems.append(f"body file {path} is named by a variable or pattern, so it cannot be scanned; "
                             "pass a literal path")
             continue
-        full = os.path.join(cwd, os.path.expanduser(path))
-        if not os.path.isfile(full) and re.search(r">\s*" + re.escape(path), stripped):
+        base = _cd_base(stripped, start, cwd)
+        full = os.path.join(base, os.path.expanduser(path)) if base is not None else None
+        if (full is None or not os.path.isfile(full)) and re.search(r">\s*" + re.escape(path), stripped):
             continue  # the same command writes it
-        text, problem = _read(path, cwd)
+        text, problem = _read(path, base)
         if problem:
             problems.append(problem)
         else:
