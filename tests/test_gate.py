@@ -366,6 +366,34 @@ class GateTest(unittest.TestCase):
             tempfile.gettempdir = original
             gate.decide = decide
 
+    def test_main_rewrites_a_close_with_a_reason(self):
+        repo = make_repo()
+
+        def run(command, env):
+            payload = {"tool_name": "Bash", "cwd": repo, "agent_type": "baton:baton-reviewer",
+                       "tool_input": {"command": command, "description": "Close", "timeout": 5000}}
+            out, err = io.StringIO(), io.StringIO()
+            with mock.patch.dict(os.environ, env), contextlib.redirect_stdout(out), \
+                    contextlib.redirect_stderr(err):
+                code = gate.main(json.dumps(payload))
+            return code, out.getvalue(), err.getvalue()
+
+        ok = {"AI_AGENT": "claude-code_2-1-296_agent"}
+        code, out, _ = run("gh pr close 5 --comment done", ok)
+        self.assertEqual(code, 0)
+        hook = json.loads(out)["hookSpecificOutput"]
+        self.assertNotIn("permissionDecision", hook)
+        updated = hook["updatedInput"]
+        self.assertEqual((updated["description"], updated["timeout"]), ("Close", 5000))
+        self.assertIn("<!-- baton:reviewer:closed -->", updated["command"])
+        self.assertIn(updated["command"], hook["additionalContext"])
+        code, out, err = run("gh pr close 5 --comment done", {"AI_AGENT": ""})
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("<!-- baton:reviewer:closed -->", err)
+        code, _, err = run("gh issue close 5", ok)
+        self.assertEqual(code, 2)
+        self.assertIn("--comment", err)
+
     def test_main_fails_closed_only_on_a_trigger(self):
         original = gate.decide
         gate.decide = lambda *args: 1 / 0

@@ -377,6 +377,7 @@ def main(stdin_text):
         return 0
     command = ""
     cwd = os.getcwd()
+    rewritten = None
     try:
         if not mcp:
             command = payload.get("tool_input", {}).get("command", "")
@@ -388,6 +389,9 @@ def main(stdin_text):
                 problems = decide_mcp(payload.get("tool_input"), cwd, scan.load_terms(warn=False))
             else:
                 problems = decide(command, cwd, scan.load_terms(warn=False))
+                if not problems:
+                    rewritten, problems = close_marker(
+                        command, cwd, payload.get("agent_type"), os.environ)
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
@@ -402,6 +406,16 @@ def main(stdin_text):
         print(f"Baton publish gate could not check this command ({error!r}).", file=sys.stderr)
         return 2
     if not problems:
+        if rewritten is not None:
+            updated = dict(payload.get("tool_input") or {})
+            updated["command"] = rewritten
+            marker = re.search(r"<!-- baton:\S+ -->", rewritten)
+            note = (f"Baton added its {marker.group(0) if marker else 'marker'} marker to the "
+                    f"comment. The command that ran: {rewritten}")
+            print(json.dumps({"hookSpecificOutput": {
+                "hookEventName": "PreToolUse", "updatedInput": updated,
+                "additionalContext": note}}))
+            return 0
         if not mcp:
             try:
                 hint = _hint(payload)
