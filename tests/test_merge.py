@@ -671,7 +671,7 @@ class VerifyLogsTest(unittest.TestCase):
 
 
 class CliCleanupTest(unittest.TestCase):
-    def run_cli(self, branch_list_reply):
+    def run_cli(self, branch_list_reply, push_error=None):
         import contextlib
         import io
         from unittest import mock
@@ -681,6 +681,8 @@ class CliCleanupTest(unittest.TestCase):
         pr = make_pr(state="MERGED", closingIssuesReferences=[])
 
         def fake_run(argv, cwd=None, input=None):
+            if push_error and argv[:4] == ["git", "push", "origin", "--delete"]:
+                raise RunError(push_error)
             if argv[:3] == ["git", "branch", "-D"]:
                 raise RunError("git branch -D failed: boom")
             if argv[:3] == ["gh", "repo", "view"]:
@@ -708,3 +710,14 @@ class CliCleanupTest(unittest.TestCase):
         code, err = self.run_cli("")
         self.assertEqual(code, 0)
         self.assertEqual(err, "")
+
+    def test_already_deleted_remote_branch_prints_nothing(self):
+        code, err = self.run_cli("", push_error="git push origin failed: error: unable to delete "
+                                 "'issue-4-flag': remote ref does not exist")
+        self.assertEqual(code, 0)
+        self.assertEqual(err, "")
+
+    def test_other_remote_delete_failure_is_reported(self):
+        code, err = self.run_cli("", push_error="git push origin failed: fatal: unable to access")
+        self.assertEqual(code, 0)
+        self.assertIn("cleanup skipped: git push origin failed: fatal: unable to access", err)

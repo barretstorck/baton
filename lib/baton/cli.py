@@ -118,6 +118,9 @@ def cmd_merge_pr(args):
         except run.RunError as error:
             if not cleanup:
                 raise
+            if (argv[:4] == ["git", "push", "origin", "--delete"]
+                    and "remote ref does not exist" in str(error)):
+                return ""
             print(f"baton: cleanup skipped: {error}", file=sys.stderr)
             return ""
 
@@ -481,7 +484,7 @@ def cmd_plan(args):
         text = comment.read_body(args[2], sys.stdin)
         found = checklist.set_issue_plan(_require_config(), run.run, int(args[1]), text,
                                          scan.load_terms())
-        print(f"set Developer Plan of #{args[1]}: {len(found)} task(s)")
+        print(f"set Developer Plan of #{args[1]}: {len(found["tasks"])} task(s)")
         return 0
     if len(args) == 3 and args[0] == "against" and args[1].isdigit():
         checklist.against_issue_plan(_require_config(), run.run, int(args[1]), args[2])
@@ -568,7 +571,8 @@ def cmd_notify(args):
             for number in questions.notify_matches(issues, cfg):
                 url = comment.notify(cfg, run.run, number, "rule",
                                      "This issue matches a notify rule in the brief.",
-                                     _maintainers(cfg), scan.load_terms())
+                                     _maintainers(cfg), scan.load_terms(),
+                                     bots=_bots())
                 print(f"#{number} {url or 'already notified'}")
         except comment.CommentError as error:
             print(f"baton: {error}", file=sys.stderr)
@@ -581,7 +585,7 @@ def cmd_notify(args):
     try:
         text = comment.read_body(args[2], sys.stdin)
         url = comment.notify(cfg, run.run, int(args[0]), args[1], text,
-                             _maintainers(cfg), scan.load_terms())
+                             _maintainers(cfg), scan.load_terms(), bots=_bots())
     except comment.CommentError as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
