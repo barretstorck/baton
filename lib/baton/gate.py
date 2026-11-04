@@ -18,6 +18,8 @@ any other substitution or backticks, or a `cd` to a non-literal target, is
 still refused as unreadable text.
 Diffs are scanned by the git hooks (githooks.py), which the gate requires to be
 installed and not bypassed.
+In a Baton repository (a brief exists) it also refuses an empty or whitespace-only
+`--body` / `-b` value or `--body-file` / `-F` file on `gh issue|pr create|edit`.
 
 In a Baton repository a raw `gh issue|pr close|reopen` also needs `--comment`.
 From Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or
@@ -178,8 +180,44 @@ _STDIN = ("a body read from stdin cannot be scanned unless a heredoc in the same
           "pass the text literally, as an inline heredoc, or as a file")
 _SUBSTITUTED = ("text built from a variable, a command substitution or backticks in a title, body or "
                 "field cannot be scanned; pass it literally, as an inline heredoc, or as a file")
+_EMPTY_BODY = ("the body is empty or only whitespace, so this would publish a blank issue or pull request "
+               "text; write the full text first, then pass it with --body or --body-file")
 _HOOKS_MISSING = ("Baton git hooks are missing or point at a baton that no longer exists; "
                   "run `baton install-hooks`")
+
+
+_BODY_WRITE = re.compile(
+    _POS + r"""gh\s+(?:(?:-R|--repo)(?:\s+|=)\S+\s+|--repo=\S+\s+)?(?:issue|pr)\s+(?:create|edit)(?=\s|$)""")
+_EMPTY_INLINE = re.compile(r"""(?<![\w-])(?:--body|-b)(?:\s+|=)(?:"\s*"|'\s*')(?=\s|[;&|)]|$)""")
+
+
+_BODY_FILE_FLAG = re.compile(r"\s*(?:--body-file|-F)(?![\w-])")
+
+
+def _body_write_spans(command):
+    """(start, end) offsets of each `gh [-R repo] issue|pr create|edit` segment in `command`.
+
+    A segment runs to the next unquoted ; & | or newline."""
+    spans = []
+    for match in _BODY_WRITE.finditer(command):
+        index, quote = match.end(), None
+        while index < len(command):
+            char = command[index]
+            if quote:
+                if char == quote:
+                    quote = None
+            elif char in "\"'":
+                quote = char
+            elif char in ";&|\n":
+                break
+            index += 1
+        spans.append((match.start(), index))
+    return spans
+
+
+def _empty_inline_body(command, spans):
+    """True when a quoted --body / -b value inside one of the spans is empty or only whitespace."""
+    return any(_EMPTY_INLINE.search(command, start, end) for start, end in spans)
 
 
 def forge_facing(command, forge_clis=FORGE_CLIS):
@@ -386,6 +424,9 @@ def decide(command, cwd, terms):
         if cfg is not None and not githooks.installed(cfg.root):
             problems.append(_HOOKS_MISSING)
 
+    if cfg is not None and forge and _empty_inline_body(stripped, _body_write_spans(stripped)):
+        problems.append(_EMPTY_BODY)
+
     closing = _close_command(stripped) if cfg is not None else None
     if closing and not closing[2]:
         problems.append(_CLOSE_REASON)
@@ -440,6 +481,9 @@ def decide(command, cwd, terms):
             problems.append(problem)
         else:
             texts.append(text)
+            if (cfg is not None and forge and not text.strip() and _BODY_FILE_FLAG.match(stripped, start)
+                    and any(a <= start < b for a, b in _body_write_spans(stripped))):
+                problems.append(_EMPTY_BODY)
 
     findings = scan.scan_text("\n".join(texts), terms, allow)
     kinds = sorted({finding.kind for finding in findings})

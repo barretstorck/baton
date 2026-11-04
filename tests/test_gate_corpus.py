@@ -2,8 +2,8 @@
 
 ALLOWED holds harmless shapes, grouped by what a new rule might hurt; a failing subTest names
 the group. REFUSED holds publishes whose text carries one private finding each, text the gate cannot read
-("unreadable"), hook bypasses, and close and reopen commands without a reason, refused only where
-there is a brief. Every private
+("unreadable"), hook bypasses, close and reopen commands without a reason, and empty bodies, refused only
+where there is a brief. Every private
 value is assembled from pieces so the commit scan sees no literal private detail.
 """
 import pathlib
@@ -112,6 +112,17 @@ ALLOWED = {
         "gh issue list --state closed",
         'gh issue comment 5 --body "close this"',
     ),
+    # (k) bodies that are not empty
+    "k bodies that are not empty": (
+        "gh issue create --title t --body x",
+        "gh issue edit 5 --body-file notes.md",
+        "gh pr edit 5 --title t",
+        "gh issue edit 5 --milestone m",
+        "gh pr create --fill",
+        'gh issue list --search ""',
+        'gh pr list --search ""',
+        "echo hi > new.md && gh pr edit 5 --body-file new.md",
+    ),
 }
 
 # (command shape, expected finding kind); kind "bypass" is a hook bypass, not a privacy finding
@@ -154,6 +165,12 @@ REFUSED = (
     ("gh pr reopen 5", "close-reason"),
     ("gh issue close --help; gh issue close 6", "close-reason"),
     ("gh issue close 5 --comment x; gh issue close 6", "close-reason"),
+    ('gh issue create --title t --body ""', "empty-body"),
+    ('gh pr create --title t --body "  "', "empty-body"),
+    ("gh issue edit 5 --body ''", "empty-body"),
+    ('gh pr edit 5 -b ""', "empty-body"),
+    ("gh issue edit 5 --body-file empty.md", "empty-body"),
+    ("gh pr edit 5 -F empty.md", "empty-body"),
     ("gh issue close 5 --comment '<!-- baton:developer:closed -->x'; gh issue close 6", "close-reason"),
 )
 
@@ -176,12 +193,19 @@ class CorpusTest(unittest.TestCase):
     def test_private_publishes_are_refused(self):
         for cwd in self.directories():
             (pathlib.Path(cwd) / "private.md").write_text("host %s\n" % IP)
+            (pathlib.Path(cwd) / "empty.md").write_text("")
             (pathlib.Path(cwd) / "sub").mkdir(exist_ok=True)
             (pathlib.Path(cwd) / "sub" / "private.md").write_text("host %s\n" % IP)
             has_brief = pathlib.Path(cwd, ".baton").exists()
             for cmd, kind in REFUSED:
                 with self.subTest(cmd=cmd, brief=has_brief):
                     problems = gate.decide(cmd, cwd, TERMS)
+                    if kind == "empty-body":
+                        if has_brief:
+                            self.assertIn(gate._EMPTY_BODY, problems)
+                        else:
+                            self.assertEqual(problems, [])
+                        continue
                     if kind == "close-reason":
                         if has_brief:
                             self.assertIn(gate._CLOSE_REASON, problems)

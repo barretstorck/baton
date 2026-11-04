@@ -70,6 +70,50 @@ def refused_forms(text):
 
 
 class GateTest(unittest.TestCase):
+    def test_empty_inline_body_is_refused_with_a_brief(self):
+        with_brief, without = both_directories()
+        for command in ('gh issue create --title T --body ""', 'gh pr create --title T --body "  "',
+                        "gh issue edit 5 --body ''", 'gh pr edit 5 -b ""', 'gh issue create --title T --body=""',
+                        'gh -R example-org/example-repo issue edit 5 --body ""'):
+            with self.subTest(command=command):
+                self.assertIn(gate._EMPTY_BODY, gate.decide(command, with_brief, TERMS))
+                self.assertEqual(gate.decide(command, without, TERMS), [])
+
+    def test_empty_inline_body_neighbours_stay_allowed(self):
+        repo = make_repo()
+        for command in ("gh issue create --title T --body x", "gh pr edit 5 --title T",
+                        "gh issue edit 5 --add-label bug", "gh issue edit 5 --milestone M",
+                        "gh pr create --fill", "gh pr create -B main --title T --body x",
+                        'gh issue list --search ""', 'gh pr list --search ""', "gh issue view 5"):
+            with self.subTest(command=command):
+                self.assertEqual(gate.decide(command, repo, TERMS), [])
+        self.assertNotIn(gate._EMPTY_BODY, gate.decide('gh issue create --title T --body "$B"', repo, TERMS))
+
+    def test_empty_body_file_is_refused_with_a_brief(self):
+        for command, text in (("gh issue edit 5 --body-file empty.md", ""), ("gh pr edit 5 -F empty.md", ""),
+                              ("gh issue create --title T --body-file empty.md", "  \n\n"),
+                              ("gh pr create --title T -F=empty.md", "")):
+            with self.subTest(command=command):
+                with_brief, without = both_directories()
+                for d in (with_brief, without):
+                    pathlib.Path(d, "empty.md").write_text(text)
+                self.assertIn(gate._EMPTY_BODY, gate.decide(command, with_brief, TERMS))
+                self.assertEqual(gate.decide(command, without, TERMS), [])
+
+    def test_empty_body_file_neighbours(self):
+        repo = make_repo()
+        pathlib.Path(repo, "notes.md").write_text("clean text\n")
+        pathlib.Path(repo, "empty.md").write_text("")
+        self.assertEqual(gate.decide("gh issue edit 5 --body-file notes.md", repo, TERMS), [])
+        self.assertEqual(gate.decide("echo hi > new.md && gh issue edit 5 --body-file new.md", repo, TERMS), [])
+        self.assertNotIn(gate._EMPTY_BODY, gate.decide("gh issue edit 5 --body-file missing.md", repo, TERMS))
+        self.assertTrue(gate.decide("gh issue edit 5 --body-file missing.md", repo, TERMS))
+        self.assertNotIn(gate._EMPTY_BODY, gate.decide("gh issue comment 5 --body-file empty.md", repo, TERMS))
+        os.mkdir(os.path.join(repo, "sub"))
+        pathlib.Path(repo, "sub", "empty.md").write_text("")
+        pathlib.Path(repo, "empty.md").write_text("not empty\n")
+        self.assertIn(gate._EMPTY_BODY, gate.decide("cd sub && gh issue edit 5 --body-file empty.md", repo, TERMS))
+
     def setUp(self):
         self.cache = tempfile.mkdtemp()
         patcher = mock.patch.dict(os.environ, {"CLAUDE_CODE_PLUGIN_CACHE_DIR": self.cache})

@@ -103,7 +103,10 @@ The gate is a text scanner. It checks commands that talk to a forge (`gh`, `glab
 - in a Baton repository, a raw `gh issue|pr close|reopen` without `--comment`. From Claude Code
   2.1.290 the gate adds the `baton:<role>:closed` (or `reopened`) marker to the comment through a
   rewrite that keeps the permission prompt; otherwise, or for a compound command, it refuses and
-  names the marker line to add.
+  names the marker line to add;
+- in a repository with a brief, a raw `gh issue create`, `gh pr create`, `gh issue edit` or
+  `gh pr edit` whose `--body` / `-b` value or `--body-file` / `-F` file is empty or only
+  whitespace; write the full text first.
 
 It does not judge which command you use, labels, markers or directories. Other commands are allowed.
 
