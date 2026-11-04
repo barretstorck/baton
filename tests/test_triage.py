@@ -286,7 +286,10 @@ class ApplyTests(unittest.TestCase):
         runner, _ = apply_decision(valid("unsure"))
         self.assertEqual(len([c for c in runner.lines()
                               if c.startswith("gh issue comment 5")]), 1)
-        marked = json.dumps({"comments": [{"body": "<!-- baton:notify:triage-unsure -->"}]})
+        marked = json.dumps({"comments": [{
+            "author": {"login": "Boss"},
+            "body": comment.compose("orchestrator", "status",
+                                    "<!-- baton:notify:triage-unsure -->")}]})
         _, again = apply_decision(valid("unsure"),
                                   {"gh issue view 5": issue_json(),
                                    "gh issue view 5 --json comments": marked})

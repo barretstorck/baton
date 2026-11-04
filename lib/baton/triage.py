@@ -244,7 +244,8 @@ def apply(cfg, runner, number, decision, maintainers, terms, owner, repo):
     if category == "unsure":
         url = commentmod.notify(cfg, runner, number, "triage-unsure",
                                 decision.get("comment") or UNSURE_TEXT,
-                                maintainers, terms)
+                                maintainers, terms,
+                                bots=identity.bot_logins())
         if url is None:
             return f"#{number}: already notified"
         return f"notified the maintainers about #{number}"
