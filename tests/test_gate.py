@@ -533,13 +533,12 @@ class GateTest(unittest.TestCase):
             gate.decide(command, "/", TERMS)
             self.assertLess(time.monotonic() - start, 2.0)
 
-    def test_hooks_json_registers_mcp_matcher(self):
+    def test_hooks_json_registers_single_hook(self):
         path = pathlib.Path(__file__).resolve().parent.parent / "hooks" / "hooks.json"
         entries = json.loads(path.read_text())["hooks"]["PreToolUse"]
-        cmd = "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" gate"
-        self.assertTrue(any(e["matcher"] == "mcp__.*"
-                            and any(h.get("command") == cmd for h in e["hooks"])
-                            for e in entries), entries)
+        self.assertEqual(len(entries), 1, entries)
+        self.assertNotIn("matcher", entries[0])
+        self.assertTrue(entries[0]["hooks"][0]["command"].endswith('baton" hook'), entries)
 
     def test_main_ignores_other_tools(self):
         self.assertEqual(self._main("gh issue comment 5 --body x", tool="Read"), 0)

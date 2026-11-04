@@ -1,4 +1,5 @@
 import contextlib, io, json, pathlib, tempfile, unittest
+from unittest import mock
 from baton import budget
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -25,6 +26,11 @@ class BudgetTest(unittest.TestCase):
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
         self.root = pathlib.Path(self.dir.name)
+        self.tmp = self.root / "tmp"
+        self.tmp.mkdir()
+        patcher = mock.patch("tempfile.gettempdir", return_value=str(self.tmp))
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def run_hook(self, records, tool="Read", command=None, agent="a1"):
         write(self.root / "s1" / "subagents" / "agent-a1.jsonl", records)
@@ -32,6 +38,40 @@ class BudgetTest(unittest.TestCase):
                    "tool_name": tool, "tool_input": {"command": command} if command else {}}
         with contextlib.redirect_stderr(io.StringIO()):
             return budget.main(json.dumps(payload))
+
+    def test_state_reused_after_growth(self):
+        self.assertEqual(self.run_hook(self.spike(n=1)), 0)
+        self.assertEqual(self.run_hook(self.spike(n=3)), 2)
+
+    def test_state_file_named_after_agent(self):
+        self.run_hook(self.spike())
+        self.assertTrue((self.tmp / "baton-budget-a1.json").is_file())
+
+    def test_unsafe_agent_id_writes_no_state(self):
+        self.assertEqual(self.run_hook(self.spike(n=3), agent="../x"), 0)  # transcript for ../x is absent
+        self.assertEqual(list(self.tmp.iterdir()), [])
+        self.assertIsNone(budget._state_path("../x"))
+
+    def test_planted_symlink_not_followed(self):
+        victim = self.root / "victim"
+        victim.write_text("keep")
+        import os
+        os.symlink(victim, f"{self.tmp}/baton-budget-a1.json.{os.getpid()}.tmp")
+        self.assertEqual(self.run_hook(self.spike(n=3)), 2)
+        self.assertEqual(victim.read_text(), "keep")
+
+    def test_foreign_state_does_not_stop_blocking(self):
+        (self.tmp / "baton-budget-a1.json").write_text(json.dumps(
+            {"path": "/elsewhere.jsonl", "prompt": "Do spike issue 5.\nno limit here"}))
+        self.assertEqual(self.run_hook(self.spike(n=3)), 2)
+
+    def test_corrupt_state_ignored(self):
+        (self.tmp / "baton-budget-a1.json").write_text("{not json")
+        self.assertEqual(self.run_hook(self.spike(n=3)), 2)
+
+    def test_truncated_transcript_allows_again(self):
+        self.assertEqual(self.run_hook(self.spike(n=3)), 2)
+        self.assertEqual(self.run_hook(self.spike(n=1)), 0)
 
     def spike(self, line="Timebox: 1000 tokens, 90 min", n=1):
         # each call weighs 10 + 100 * 5 = 510
@@ -69,11 +109,11 @@ class BudgetTest(unittest.TestCase):
         records = [prompt("Do spike issue 5.\nTimebox: 1000 tokens")] + [call("r0")] * 3
         self.assertEqual(self.run_hook(records), 0)
 
-    def test_hooks_json_has_budget_entry(self):
+    def test_hooks_json_has_hook_entry(self):
         hooks = json.loads((ROOT / "hooks" / "hooks.json").read_text())["hooks"]["PreToolUse"]
-        entries = [h for h in hooks if "matcher" not in h]
-        self.assertTrue(any(c["command"].endswith('baton" budget') for e in entries for c in e["hooks"]))
-        self.assertEqual(sum("matcher" in h for h in hooks), 2)
+        self.assertEqual(len(hooks), 1)
+        self.assertNotIn("matcher", hooks[0])
+        self.assertTrue(hooks[0]["hooks"][0]["command"].endswith('baton" hook'))
 
 
 if __name__ == "__main__":

@@ -6,12 +6,14 @@ price ratios: cache read 0.1, cache write 1.25 and output 5 times an input token
 """
 import datetime
 import json
+import os
 import pathlib
 import re
 
 WEIGHTS = {"input_tokens": 1.0, "cache_read_input_tokens": 0.1,
            "cache_creation_input_tokens": 1.25, "output_tokens": 5.0}
 LARGE = 250_000
+RECENT = 64   # request ids kept in the incremental state; a request's records are adjacent
 WINDOW = datetime.timedelta(hours=5)
 _PROMPTS = [
     ("orchestrator", re.compile(r"\A\s*Run the sprint\.")),
@@ -60,35 +62,87 @@ def _prompt_text(record):
     return ""
 
 
+def _record(line):
+    """(prompt or None, request id or None, item or None, bad) of one transcript line.
+
+    `prompt` is set for a user record; `item` for an assistant record with usage and a
+    request id; `bad` is 1 for a line that is not JSON or whose usage cannot be read.
+    """
+    if not line.strip():
+        return None, None, None, 0
+    try:
+        record = json.loads(line)
+    except ValueError:
+        return None, None, None, 1
+    if not isinstance(record, dict):
+        return None, None, None, 1
+    prompt = _prompt_text(record) if record.get("type") == "user" else None
+    usage = (record.get("message") or {}).get("usage") if record.get("type") == "assistant" else None
+    request = record.get("requestId")
+    if not usage or not request:
+        return prompt, None, None, 0
+    try:
+        item = {"time": _time(record["timestamp"]),
+                **{key: int(usage.get(key) or 0) for key in WEIGHTS}}
+    except (KeyError, ValueError, TypeError, AttributeError):
+        return prompt, request, None, 1
+    item["context"] = (item["input_tokens"] + item["cache_read_input_tokens"]
+                       + item["cache_creation_input_tokens"])
+    item["weighted"] = sum(item[key] * weight for key, weight in WEIGHTS.items())
+    return prompt, request, item, 0
+
+
 def _read(path, seen):
     """(first prompt, calls) of one transcript; calls are de-duplicated by request id."""
-    prompt, calls, skipped, by_request = None, [], 0, {}
-    for line in path.read_text(errors="replace").splitlines():
-        if not line.strip():
+    prompt, skipped, by_request = None, 0, {}
+    for line in path.read_text(errors="replace").split("\n"):
+        text, request, item, bad = _record(line)
+        if text is not None and prompt is None:
+            prompt = text
+        if request is not None and request in seen:
             continue
-        try:
-            record = json.loads(line)
-        except ValueError:
-            skipped += 1
-            continue
-        if record.get("type") == "user" and prompt is None:
-            prompt = _prompt_text(record)
-        usage = (record.get("message") or {}).get("usage") if record.get("type") == "assistant" else None
-        request = record.get("requestId")
-        if not usage or not request or request in seen:
-            continue
-        try:
-            by_request[request] = {"time": _time(record["timestamp"]),
-                                   **{key: int(usage.get(key) or 0) for key in WEIGHTS}}
-        except (KeyError, ValueError, TypeError):
-            skipped += 1
+        skipped += bad
+        if item is not None:
+            by_request[request] = item
     seen.update(by_request)
-    for item in by_request.values():
-        item["context"] = (item["input_tokens"] + item["cache_read_input_tokens"]
-                           + item["cache_creation_input_tokens"])
-        item["weighted"] = sum(item[key] * weight for key, weight in WEIGHTS.items())
-        calls.append(item)
-    return prompt, calls, skipped
+    return prompt, list(by_request.values()), skipped
+
+
+def tally(path, state=None):
+    """(first prompt, weighted total, state) of a transcript, reading only what is new.
+
+    `state` is what the last call returned. Complete lines after `state["offset"]` are
+    consumed; the state is dropped and the file re-read from the start when it is for
+    another path, the file was replaced or the file is shorter than the offset.
+    The state holds a running total and only the newest `RECENT` request weights.
+    Writes nothing.
+    """
+    path = str(path)
+    info = os.stat(path)
+    if (not isinstance(state, dict) or state.get("path") != path
+            or state.get("dev") != info.st_dev or state.get("ino") != info.st_ino
+            or not isinstance(state.get("offset"), int) or info.st_size < state["offset"]
+            or not isinstance(state.get("recent"), dict)
+            or not isinstance(state.get("total"), (int, float))):
+        state = {"offset": 0, "prompt": None, "recent": {}, "total": 0.0}
+    offset, prompt = state["offset"], state.get("prompt")
+    recent, total = dict(state["recent"]), state["total"]
+    with open(path, "rb") as handle:
+        handle.seek(offset)
+        data = handle.read()
+    end = data.rfind(b"\n") + 1
+    for raw in data[:end].split(b"\n"):
+        text, request, item, _bad = _record(raw.decode("utf-8", errors="replace"))
+        if text is not None and prompt is None:
+            prompt = text
+        if request is not None and item is not None:
+            total += item["weighted"] - recent.pop(request, 0.0)
+            recent[request] = item["weighted"]
+            if len(recent) > RECENT:
+                del recent[next(iter(recent))]
+    new = {"path": path, "dev": info.st_dev, "ino": info.st_ino, "offset": offset + end,
+           "prompt": prompt, "recent": recent, "total": total}
+    return prompt, total, new
 
 
 def _agent_type(path):
