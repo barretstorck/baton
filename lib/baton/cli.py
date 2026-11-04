@@ -568,7 +568,8 @@ def cmd_notify(args):
             for number in questions.notify_matches(issues, cfg):
                 url = comment.notify(cfg, run.run, number, "rule",
                                      "This issue matches a notify rule in the brief.",
-                                     _maintainers(cfg), scan.load_terms())
+                                     _maintainers(cfg), scan.load_terms(),
+                                     bots=_bots())
                 print(f"#{number} {url or 'already notified'}")
         except comment.CommentError as error:
             print(f"baton: {error}", file=sys.stderr)
@@ -581,7 +582,7 @@ def cmd_notify(args):
     try:
         text = comment.read_body(args[2], sys.stdin)
         url = comment.notify(cfg, run.run, int(args[0]), args[1], text,
-                             _maintainers(cfg), scan.load_terms())
+                             _maintainers(cfg), scan.load_terms(), bots=_bots())
     except comment.CommentError as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1

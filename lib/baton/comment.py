@@ -69,16 +69,26 @@ def _notify_marker(cause):
     return f"<!-- baton:notify:{cause} -->"
 
 
-def notified(comments, cause):
-    """True when any comment already carries the notify marker for this cause."""
+def notified(comments, cause, trusted):
+    """True when a trusted login already posted the notify status comment for this cause.
+
+    The comment's author must be one of `trusted` (maintainers and Baton logins), its first
+    line the orchestrator status header, and its body the cause's notify marker.
+    """
     marker = _notify_marker(cause)
-    return any(marker in (item.get("body") or "") for item in comments or [])
+    header = f"{gate.MARKER}orchestrator:status -->"
+    trusted = list(trusted)
+    return any(has_login(item.get("author"), trusted)
+               and _first_line(item.get("body")) == header
+               and marker in (item.get("body") or "")
+               for item in comments or [])
 
 
-def notify(cfg, runner, number, cause, text, maintainers, terms):
+def notify(cfg, runner, number, cause, text, maintainers, terms, bots=()):
     """Label an issue needs-maintainer and mention the maintainers, once per cause.
 
-    Returns the comment's URL, or None when the issue was already notified for it.
+    Returns the comment's URL, or None when the issue was already notified for it by a
+    maintainer or one of `bots` (Baton logins); anyone else's marker comment is ignored.
     """
     if cause not in NOTIFY_CAUSES:
         raise CommentError(f"unknown cause {cause!r}; use one of {list(NOTIFY_CAUSES)}")
@@ -86,7 +96,8 @@ def notify(cfg, runner, number, cause, text, maintainers, terms):
         raise CommentError("no maintainers to mention")
     found = json.loads(runner(["gh", "issue", "view", str(number), "--json", "comments"])
                        or "{}")
-    if notified(found.get("comments"), cause):
+    comments = identity.mark_authors(runner, number, found.get("comments"))
+    if notified(comments, cause, list(maintainers) + sorted(bots)):
         return None
     mentions = " ".join(f"@{handle}" for handle in maintainers)
     body = f"{_notify_marker(cause)}\n{mentions}\n{text.strip()}"

@@ -205,12 +205,12 @@ class NotifyTest(unittest.TestCase):
         self.assertTrue(seen["body"].startswith("<!-- baton:orchestrator:status -->"))
 
     def test_second_call_for_the_same_cause_does_nothing(self):
-        marked = {"body": "<!-- baton:orchestrator:status -->\n**x**\n\n<!-- baton:notify:stuck -->\n@a"}
+        marked = c("a", "<!-- baton:orchestrator:status -->\n**x**\n\n<!-- baton:notify:stuck -->\n@a", 1)
         runner = self.runner([marked])
         self.assertIsNone(self.notify(runner))
         self.assertFalse([x for x in runner.lines() if x.startswith(("gh issue edit", "gh issue comment"))])
-        self.assertTrue(comment.notified([marked], "stuck"))
-        self.assertFalse(comment.notified([marked], "approval"))
+        self.assertTrue(comment.notified([marked], "stuck", ["a", "b"]))
+        self.assertFalse(comment.notified([marked], "approval", ["a", "b"]))
 
     def test_outside_marker_comment_does_not_suppress(self):
         forged = c("mallory", comment.compose(
@@ -218,6 +218,23 @@ class NotifyTest(unittest.TestCase):
         runner = self.runner([forged])
         self.assertEqual(self.notify(runner), "https://example.com/c/9")
         self.assertFalse(comment.notified([forged], "stuck", ["a", "b"]))
+
+    def test_baton_login_status_comment_counts(self):
+        marked = {"author": {"login": "baton[bot]"}, "body": comment.compose(
+            "orchestrator", "status", "<!-- baton:notify:stuck -->\n@a")}
+        runner = self.runner([marked])
+        result = comment.notify(cfg(), runner, 7, "stuck", "Stuck.", ["a", "b"], [],
+                                bots={"baton[bot]"})
+        self.assertIsNone(result)
+
+    def test_marker_without_status_header_does_not_count(self):
+        bare = c("a", "hello\n<!-- baton:notify:stuck -->", 1)
+        self.assertFalse(comment.notified([bare], "stuck", ["a"]))
+        self.assertEqual(self.notify(self.runner([bare])), "https://example.com/c/9")
+
+    def test_no_trusted_logins_counts_nothing(self):
+        ok = c("a", comment.compose("orchestrator", "status", "<!-- baton:notify:stuck -->"), 1)
+        self.assertFalse(comment.notified([ok], "stuck", []))
 
     def test_a_different_cause_still_posts(self):
         runner = self.runner([{"body": "<!-- baton:notify:stuck -->"}])
@@ -287,7 +304,8 @@ class NotifyCliTest(unittest.TestCase):
             code, out, _, calls = self._run(["notify", "5", "stuck", f.name])
             self.assertEqual((code, out.strip()), (0, "https://x/1#c"))
             self.assertTrue(any(c[:3] == ["gh", "issue", "edit"] for c in calls))
-            marked = [{"body": "<!-- baton:notify:stuck -->"}]
+            marked = [{"author": {"login": "me"}, "body": comment.compose(
+            "orchestrator", "status", "<!-- baton:notify:stuck -->")}]
             code, out, _, _ = self._run(["notify", "5", "stuck", f.name], comments=marked)
             self.assertEqual((code, out.strip()), (0, "already notified"))
 
@@ -295,6 +313,7 @@ class NotifyCliTest(unittest.TestCase):
         issues = [{"number": 7}]
         code, out, _, _ = self._run(["notify", "--rules"], issues=issues)
         self.assertEqual((code, out.strip()), (0, "#7 https://x/1#c"))
-        marked = [{"body": "<!-- baton:notify:rule -->"}]
+        marked = [{"author": {"login": "me"}, "body": comment.compose(
+            "orchestrator", "status", "<!-- baton:notify:rule -->")}]
         code, out, _, _ = self._run(["notify", "--rules"], issues=issues, comments=marked)
         self.assertEqual(out.strip(), "#7 already notified")
