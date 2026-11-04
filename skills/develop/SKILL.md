@@ -11,14 +11,9 @@ You were dispatched with one of:
 
 - `Do task <n> of issue <N>.`: one task of the issue's plan (the `## Developer Plan` section of the issue body);
 - `Do review task <r.n> of pull request <P> (issue <N>).`: one task of the latest code review;
-- `Update pull request <P> (issue <N>).`: see "Keeping a pull request mergeable".
+- `Update pull request <P> (issue <N>).`: see `${CLAUDE_PLUGIN_ROOT}/references/develop-cases.md`, Keeping a pull request mergeable.
 
 A spike (`Do spike issue <N>.`) goes to the `baton-researcher` agent, not here.
-
-Adapted from the GitLab handbook's
-[engineering basics](https://handbook.gitlab.com/handbook/engineering/workflow/#basics) and the
-superpowers plugin's plan-execution skills: a fresh developer per task, working from a brief that
-names the files, the interfaces and the check, so nobody's conversation grows large.
 
 Commands for every step are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`. Read
 `${CLAUDE_PLUGIN_ROOT}/references/habits.md` before anything else and keep to it: read through
@@ -51,7 +46,7 @@ filters, send long output to a file, chain related commands, wait for a long run
      `- [ ] Task <n>: <title>`. Read your task's brief and the `### Verification`, `### Pattern` and
      `### Design notes` text, for example
      `baton issue read <N> | sed -n '/^## Developer Plan/,/^--- comments ---$/p'`, then take your
-     task's lines. If the body has no `## Developer Plan`, see "Older issues" below.
+     task's lines. If the body has no `## Developer Plan`, see `${CLAUDE_PLUGIN_ROOT}/references/develop-cases.md`, Older issues.
    - The issue's Context, Acceptance criteria, Out of scope and Decisions, for example:
      `baton issue read <N> | sed -n '/^## Context/,/^## Pointers/p'`.
      `baton answers <N>`.
@@ -65,21 +60,16 @@ filters, send long output to a file, chain related commands, wait for a long run
    the files no longer match and the brief cannot be followed as written, return `REPLAN`.
    Where an earlier task's `Provides (as built):` line sits under its `Provides:`, read your
    `Uses:` against that line, not the original.
-   If your prompt has the line "Start by merging origin/<default>", or you find the branch at
-   least 15 commits behind `origin/<default>` (`git rev-list --count HEAD..origin/<default>`),
-   begin the task by merging the default branch in and resolving the conflicts, as its own
-   commit, before the task's own work; push it with the task's push.
+   If your prompt says to merge the default branch first, or the branch is far behind, see
+   `${CLAUDE_PLUGIN_ROOT}/references/develop-cases.md`, Stale branches.
 
 3. **Get the branch.** The branch `issue-<N>-<short-slug>` is made by task 1 from the default
    branch.
    - *Task 1:* `baton set-status <N> status:in-dev`; create `issue-<N>-<short-slug>` from
      `origin/<default>` (`git fetch --quiet origin <default> && git checkout --detach
      origin/<default>`, pushed as `HEAD:refs/heads/<branch>` in step 6). Do the task (steps 4 to 6);
-     then, after the push in step 6, open a **draft** pull request from the detached checkout with
-     `baton pr create --draft --title "<title>" <file>`; it uses the pushed `issue-<N>-*` branch as
-     the head (or takes `--head <branch>`), so do not create a local branch. The body has
-     `Closes #<N>` on its own line and a short summary of the plan. Drafts may not run CI, which
-     saves minutes.
+     then, after the push in step 6, open the draft pull request (see
+     `${CLAUDE_PLUGIN_ROOT}/references/develop-cases.md`, Opening the draft pull request).
    - *Later tasks:* `git fetch --quiet origin <branch> && git checkout --detach origin/<branch>`.
      A worktree left by an earlier task may still hold the branch; a detached checkout never
      conflicts with it. See what earlier tasks did with
@@ -87,11 +77,8 @@ filters, send long output to a file, chain related commands, wait for a long run
      and open their code only where your brief uses it.
    - After either checkout, run `baton identity worktree`: at tier 1 it makes this worktree's
      commits come from `baton[bot]`; at tier 0 it does nothing.
-   - If the branch already has a `Task <n>:` commit for your task, an interrupted developer did it:
-     check it against the brief and that its commit ticks the task (`baton tasks issue <N>`),
-     finish it if needed, and continue from step 5.
-   - Whatever the task number, if the branch exists but no pull request closes the issue
-     (`gh pr list --head <branch>`), open the draft pull request now, as task 1 would.
+   - If an earlier developer left a `Task <n>:` commit for your task, or the branch has no pull
+     request yet, see `${CLAUDE_PLUGIN_ROOT}/references/develop-cases.md`, Interrupted tasks.
 
 4. **Do the task with tests**, inside its brief and the issue's scope.
    - When changing existing behaviour, pin it first: commit a test of today's behaviour, so the
@@ -112,10 +99,7 @@ filters, send long output to a file, chain related commands, wait for a long run
    long output to a file and read the summary; it must pass. Never run the repository's full verification
    suite (the brief's `verify.command`) yourself: the reviewer runs it with `baton verify`.
 
-6. **Commit and push.** If the hook refuses the commit because it adds a line the brief's
-   `forbid_added` forbids, remove that entry; do not bypass the hook or edit the rule. Only an
-   `Allows: forbid_added "<glob>"` line in your task's brief permits it. If you cannot do the task
-   without it, return `QUESTION`. Stage the code, `git commit -m "Task <n>: <title>"`, then push the branch
+6. **Commit and push.** If the hook refuses the commit, see `${CLAUDE_PLUGIN_ROOT}/references/develop-cases.md`, Hook refusals. Stage the code, `git commit -m "Task <n>: <title>"`, then push the branch
    with `baton push HEAD:refs/heads/<branch>` (a plain push at tier 0, the `baton` App's token at tier 1). Your checkout is detached, so
    there is no `-u`. The push only fast-forwards; if it is refused, someone else moved the branch:
    return `BLOCKED: the branch moved`. Never force-push. Then run `baton tasks issue <N>` and
@@ -151,70 +135,10 @@ filters, send long output to a file, chain related commands, wait for a long run
 4. Do not post a reply: the orchestrator writes it from your result. Do not implement the
    review's follow-up issues.
 
-## Keeping a pull request mergeable
+## Other cases
 
-For `Update pull request <P> (issue <N>).`, follow these steps in order:
-
-1. Check out the pull request branch tip detached, as in step 3 above. Record
-   `before=$(git rev-parse HEAD)`.
-2. `git fetch origin <default>` and `git merge origin/<default>`. Resolve conflicts; for each
-   conflicted file, find the plan tasks whose `Files:` list it (read the plan as in step 2 above)
-   and run only those tasks' `Check:` lines. No conflicts: run none, and do not run the whole
-   suite (Baton handles the full verification of the new head, see #49; you do not run it).
-3. Commit the merge if git did not. Whether or not there was anything to merge, run
-   `baton push HEAD:refs/heads/<branch>` (pushing an unchanged head is a no-op and must still
-   be run). Never force.
-4. Read the pushed head back: `git ls-remote origin refs/heads/<branch>` must print
-   `git rev-parse HEAD`. If it does not, return `BLOCKED: the branch moved`.
-5. Return the update block (see "Return") with that sha. "Already up to date" is a normal
-   outcome: the sha is then `before`, and the block's `Merged:` line says `nothing to merge`. The
-   flow ends only with that block, `BLOCKED:` or `QUESTION:`; a one-word or placeholder report is
-   not a result.
-
-## REPLAN
-
-When the plan cannot be followed as written (an interface changed on the default branch, a step
-is missing, a task is in the wrong order), propose new tasks instead of improvising:
-
-- Write them in the plan's task form (`- [ ] Task <n>: <title>` followed by an indented
-  `<details>` block whose summary is "Click to see plan details" and whose two-space bullets are
-  Files, Uses, Provides, Port from and Check), numbered from the task you were given, replacing it and every open
-  task after it.
-- Say why in one paragraph, and whether the new tasks stay inside the issue's acceptance
-  criteria. If they would change what the issue promises, say so plainly.
-- Push nothing half-done that the new plan does not use.
-
-The orchestrator replaces the open tasks and records the change on the issue, or asks the
-maintainer when the promise would change.
-
-## When you need a decision
-
-Do not guess on anything the description does not settle and that changes behaviour or output.
-
-1. Commit and push your work in progress, so another developer can resume it.
-2. Post the question: what you need decided, the options you see, your recommendation, and what
-   you have done so far. Keep it short and self-contained. See "Posting a comment" below.
-3. `baton set-status <N> status:blocked`
-4. Return `QUESTION:` with the same text and the comment URL. Stop there; do not wait.
-
-A brief that no longer fits the code is not a question: return `REPLAN` (above).
-
-Use `BLOCKED:` in the same way for something that is not a question: a dependency that is not
-merged, missing access, a failing default branch.
-
-## Posting a comment
-
-Pass the body on standard input with an inline heredoc; no file is needed:
-
-    baton comment issue <N> developer <kind> - <<'EOF'
-    <the body>
-    EOF
-
-`baton comment` scans the text, adds the Baton marker and prints the comment's URL. If it
-refuses because of a privacy finding, replace the detail with a placeholder and post again.
-
-If you cannot post at all, put the complete body in your final report inside a block fenced with
-```` ```baton-comment <kind> ````, so the orchestrator can post it unchanged.
+For `Update pull request <P> (issue <N>).`, a REPLAN, a decision you need, posting a comment, or
+an older issue without a `## Developer Plan`, read `${CLAUDE_PLUGIN_ROOT}/references/develop-cases.md` first.
 
 ## Scratch files
 
@@ -264,40 +188,7 @@ Pull request: #<P>, review task <r.n>
 <the technical reasoning, in a few lines>
 ```
 
-A plan that no longer fits:
-
-````
-REPLAN
-Issue: #<N>, from task <n>
-Why: <one paragraph>
-Within the acceptance criteria: yes | no, because <...>
-```baton-plan <n>
-- [ ] Task <n>: <title>
-  <details>
-  <summary>Click to see plan details</summary>
-
-  - Files: ...
-  - Check: ...
-
-  </details>
-```
-````
-
-Any task:
-
-```
-QUESTION:
-Issue: #<N>
-Comment: <URL>
-<the question, options and recommendation>
-Work so far: branch <name>, <what is pushed>
-```
-
-```
-BLOCKED: <one line>
-Issue: #<N>
-<what blocks it, what you tried, what would unblock it>
-```
+For `REPLAN`, `QUESTION:` and `BLOCKED:`, read `${CLAUDE_PLUGIN_ROOT}/references/develop-cases.md` first.
 
 ## Never
 
@@ -325,8 +216,3 @@ Issue: #<N>
 - Return anything but a result form, or stop an update early because the merge was empty.
 - Stop processes, sessions or containers you did not start. On a shared host, end only your own
   by name; never a whole server (`tmux kill-server`) or every container.
-
-## Older issues
-
-An issue whose `Plan:` link points at `refs/plans/<N>` (and has no `## Developer Plan`) is refused
-by baton. Do not read or tick it: return `BLOCKED: run baton plan migrate <N>`.

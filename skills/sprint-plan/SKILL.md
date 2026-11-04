@@ -9,7 +9,7 @@ Turn a goal into a sprint: a milestone holding the issues to deliver. The mainta
 manager and decides what gets built; you prepare the proposal.
 
 Follows GitLab's [plan phase](https://handbook.gitlab.com/handbook/product-development/how-we-work/product-development-flow/#build-phase-1-plan).
-Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`.
+Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_ROOT}/references/github-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/github-orchestrator.md`.
 
 ## Steps
 

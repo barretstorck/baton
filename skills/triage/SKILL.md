@@ -6,7 +6,7 @@ description: Use with /baton:triage <issue-number> to classify one new issue as 
 # Baton triage
 
 Classify **one** new issue and apply the decision. Commands are in
-`${CLAUDE_PLUGIN_ROOT}/references/github.md`. Read `${CLAUDE_PLUGIN_ROOT}/references/habits.md`
+`${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_ROOT}/references/github-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/github-triager.md`. Read `${CLAUDE_PLUGIN_ROOT}/references/habits.md`
 first.
 
 ## Who does what

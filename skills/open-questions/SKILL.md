@@ -11,7 +11,7 @@ never change labels, statuses or descriptions: the refiners and the sprint do th
 
 The mention comments that `baton notify` posts are `status` comments, so the list and the order it shows are unchanged.
 
-Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`. Read
+Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_ROOT}/references/github-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/github-orchestrator.md`. Read
 `${CLAUDE_PLUGIN_ROOT}/references/habits.md` first.
 
 ## The loop
