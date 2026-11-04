@@ -420,28 +420,10 @@ def cmd_plan(opts):
     return 0
 
 
-def cmd_usage(args):
-    since, as_json, root, repo = None, False, "~/.claude/projects", None
-    rest = list(args)
-    while rest:
-        flag = rest.pop(0)
-        if flag == "--json":
-            as_json = True
-        elif flag in ("--since", "--dir", "--repo") and rest:
-            value = rest.pop(0)
-            if flag == "--since":
-                since = value
-            elif flag == "--dir":
-                root = value
-            else:
-                repo = value
-        else:
-            print("usage: baton usage [--repo <owner/repo>] [--since <ISO time>] [--json] "
-                  "[--dir <projects dir>]",
-                  file=sys.stderr)
-            return 64
-    found = usage.report(root, since, repo)
-    print(json.dumps(found, indent=2) if as_json else usage.table(found))
+@cliargs.command("usage")
+def cmd_usage(opts):
+    found = usage.report(opts.dir, opts.since, opts.repo)
+    print(json.dumps(found, indent=2) if opts.json else usage.table(found))
     return 0
 
 
@@ -545,66 +527,22 @@ def cmd_sprint_order(opts):
     return 0
 
 
-_CAPACITY_USAGE = "usage: baton sprint-capacity <days> [--retros <n>]"
-
-
-def cmd_sprint_capacity(args):
-    rest, days, count = list(args), None, sprint.RETRO_COUNT
-    while rest:
-        arg = rest.pop(0)
-        if arg == "--retros" and rest:
-            value = rest.pop(0)
-            if not value.isdigit() or int(value) < 1:
-                print(_CAPACITY_USAGE, file=sys.stderr)
-                return 64
-            count = int(value)
-        elif not arg.startswith("--") and days is None:
-            try:
-                days = float(arg)
-            except ValueError:
-                days = 0
-            if not 0 < days < float("inf"):
-                print(_CAPACITY_USAGE, file=sys.stderr)
-                return 64
-            days = int(days) if days == int(days) else days
-        else:
-            print(_CAPACITY_USAGE, file=sys.stderr)
-            return 64
-    if days is None:
-        print(_CAPACITY_USAGE, file=sys.stderr)
-        return 64
+@cliargs.command("sprint-capacity")
+def cmd_sprint_capacity(opts):
     cfg = _require_config()
+    count = opts.retros or sprint.RETRO_COUNT
     found = sprint.recent_metrics(cfg.root, cfg.data["docs"]["dir"], count)
-    print(json.dumps(sprint.capacity(found, days), indent=2))
+    print(json.dumps(sprint.capacity(found, opts.days), indent=2))
     return 0
 
 
-_METRICS_USAGE = "usage: baton sprint-metrics <milestone> [--since <UTC ISO time>] [--dir <projects dir>]"
-
-
-def cmd_sprint_metrics(args):
-    since, root, rest, milestone = None, "~/.claude/projects", list(args), None
-    while rest:
-        arg = rest.pop(0)
-        if arg in ("--since", "--dir") and rest:
-            value = rest.pop(0)
-            if arg == "--since":
-                since = value
-            else:
-                root = value
-        elif not arg.startswith("--") and milestone is None:
-            milestone = arg
-        else:
-            print(_METRICS_USAGE, file=sys.stderr)
-            return 64
-    if milestone is None:
-        print(_METRICS_USAGE, file=sys.stderr)
-        return 64
+@cliargs.command("sprint-metrics")
+def cmd_sprint_metrics(opts):
     cfg = _require_config()
     try:
         repo = json.loads(run.run(["gh", "repo", "view", "--json", "owner,name"]))
-        found = usage.report(root, since, f"{repo['owner']['login']}/{repo['name']}")
-        metrics = sprint.sprint_metrics(cfg, run.run, milestone, usage.total_weighted(found))
+        found = usage.report(opts.dir, opts.since, f"{repo['owner']['login']}/{repo['name']}")
+        metrics = sprint.sprint_metrics(cfg, run.run, opts.milestone, usage.total_weighted(found))
     except sprint.SnapshotError as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
@@ -639,22 +577,20 @@ def cmd_verify(opts):
     return {"green": 0, "red": 1, "timeout": 3}[out["result"]]
 
 
-def cmd_sandbox(args):
-    action = args[0] if args else ""
-    if action not in ("run", "check") or (action == "run" and len(args) < 2) \
-            or (action == "check" and len(args) != 1):
-        print("usage: baton sandbox <run <command...>|check>", file=sys.stderr)
-        return 64
+@cliargs.command("sandbox")
+def cmd_sandbox(opts):
+    if opts.action == "run" and not opts.words:
+        return cliargs.fail("sandbox")
     cfg = _require_config()
     repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
     owner, name = repo["nameWithOwner"].split("/", 1)
-    branch = repo["defaultBranchRef"]["name"]
-    seconds = cfg["verify"]["timeout_minutes"] * 60
-    if action == "check":
+    if opts.action == "check":
         state = sandbox.check(owner, name)
         print(state)
         return 0 if state == "configured" else 1
-    out = sandbox.run_in_sandbox(run.run, owner, name, branch, " ".join(args[1:]), seconds)
+    seconds = cfg["verify"]["timeout_minutes"] * 60
+    branch = repo["defaultBranchRef"]["name"]
+    out = sandbox.run_in_sandbox(run.run, owner, name, branch, " ".join(opts.words), seconds)
     print(f"sandbox exit={out['exit']}")
     print(f"log: {out['log']}")
     print("--- last 40 lines ---")
@@ -663,26 +599,21 @@ def cmd_sandbox(args):
     return out["exit"]
 
 
-def cmd_lock(args):
-    ttl = 6.0
-    if "--ttl-hours" in args:
-        ttl = float(args[args.index("--ttl-hours") + 1])
+@cliargs.command("lock")
+def cmd_lock(opts):
+    ttl = float(opts.ttl_hours)
     cfg = _require_config()
     common = run.run(["git", "-C", str(cfg.root), "rev-parse", "--git-common-dir"]).strip()
     path = os.path.join(str(cfg.root), common, "baton-sprint.lock")
-    action = args[0] if args else ""
-    if action == "acquire":
+    if opts.action == "acquire":
         if sprint.lock_acquire(path, f"pid {os.getppid()}", ttl):
             print("lock acquired")
             return 0
         print("another sprint run holds the lock", file=sys.stderr)
         return 1
-    if action == "release":
-        sprint.lock_release(path)
-        print("lock released")
-        return 0
-    print("usage: baton lock <acquire|release> [--ttl-hours N]", file=sys.stderr)
-    return 64
+    sprint.lock_release(path)
+    print("lock released")
+    return 0
 
 
 @cliargs.command("clean")

@@ -437,6 +437,65 @@ def _declare_git_hook(subs):
     _leaf(actions, "pre-push", usage)
 
 
+def positive_days(text: str):
+    """A positive finite number; an integral value stays an int."""
+    try:
+        days = float(text)
+    except ValueError:
+        days = 0
+    if not 0 < days < float("inf"):
+        raise argparse.ArgumentTypeError(f"not a positive number: {text}")
+    return int(days) if days == int(days) else days
+
+
+def at_least_one(text: str) -> int:
+    number = digits(text)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1: {text}")
+    return number
+
+
+def _declare_usage(subs):
+    p = _add(subs, "usage",
+             "usage: baton usage [--repo <owner/repo>] [--since <ISO time>] [--json] "
+             "[--dir <projects dir>]")
+    p.add_argument("--repo")
+    p.add_argument("--since")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--dir", default="~/.claude/projects")
+
+
+def _declare_sprint_capacity(subs):
+    p = _add(subs, "sprint-capacity",
+             "usage: baton sprint-capacity <days> [--retros <n>]")
+    p.add_argument("days", type=positive_days)
+    p.add_argument("--retros", type=at_least_one)
+
+
+def _declare_sprint_metrics(subs):
+    p = _add(subs, "sprint-metrics",
+             "usage: baton sprint-metrics <milestone> [--since <UTC ISO time>] "
+             "[--dir <projects dir>]")
+    p.add_argument("milestone")
+    p.add_argument("--since")
+    p.add_argument("--dir", default="~/.claude/projects")
+
+
+def _declare_sandbox(subs):
+    usage = "usage: baton sandbox <run <command...>|check>"
+    actions = _nested(subs, "sandbox", usage)
+    _leaf(actions, "check", usage)
+    p = _leaf(actions, "run", usage)
+    p.add_argument("words", nargs=argparse.REMAINDER)
+
+
+def _declare_lock(subs):
+    usage = "usage: baton lock <acquire|release> [--ttl-hours N]"
+    actions = _nested(subs, "lock", usage)
+    for name in ("acquire", "release"):
+        _leaf(actions, name, usage).add_argument("--ttl-hours", default="6")
+
+
 @functools.lru_cache(maxsize=None)
 def build() -> BatonParser:
     top = BatonParser(prog="baton", usage_text="usage: baton <command> [args]")
@@ -451,7 +510,8 @@ def build() -> BatonParser:
                     _declare_issue, _declare_pr, _declare_milestone,
                     _declare_review, _declare_tasks, _declare_task,
                     _declare_plan, _declare_notify, _declare_triage,
-                    _declare_git_hook):
+                    _declare_git_hook, _declare_usage, _declare_sprint_capacity,
+                    _declare_sprint_metrics, _declare_sandbox, _declare_lock):
         declare(subs)
     _declare_state_change(subs, "close")
     _declare_state_change(subs, "reopen")

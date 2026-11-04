@@ -219,5 +219,46 @@ class StateCommandsTest(PublishCommandsTest):
         self.assertEqual(long, [])
 
 
+class LastCommandsTest(PublishCommandsTest):
+    def test_help_returns_zero(self):
+        for name, argv in (("usage", ["--help"]), ("sprint-capacity", ["--help"]),
+                           ("sprint-metrics", ["--help"]), ("sandbox", ["--help"]),
+                           ("sandbox", ["run", "--help"]), ("lock", ["--help"]),
+                           ("lock", ["acquire", "--help"])):
+            with self.subTest(name, argv=argv):
+                code, out, _ = self.call(name, argv)
+                self.assertEqual((code, out.startswith("usage:")), (0, True))
+
+    def test_malformed_prints_the_command_usage(self):
+        for name, argv in (
+                ("usage", ["--bogus"]), ("usage", ["--since"]), ("usage", ["x"]),
+                ("sprint-capacity", []), ("sprint-capacity", ["0"]),
+                ("sprint-capacity", ["x"]), ("sprint-capacity", ["inf"]),
+                ("sprint-capacity", ["5", "--retros", "0"]),
+                ("sprint-capacity", ["5", "--retros", "x"]),
+                ("sprint-capacity", ["5", "6"]),
+                ("sprint-metrics", []), ("sprint-metrics", ["m", "--bogus"]),
+                ("sandbox", []), ("sandbox", ["bogus"]), ("sandbox", ["check", "x"]),
+                ("sandbox", ["run"]),
+                ("lock", []), ("lock", ["bogus"]), ("lock", ["acquire", "--ttl-hours"])):
+            with self.subTest(name, argv=argv):
+                with unittest.mock.patch("baton.cli._require_config"):
+                    code, _, err = self.call(name, argv)
+                self.assertEqual(code, 64)
+                self.assertTrue(err.startswith("usage: baton " + name), err)
+
+    def test_sandbox_run_keeps_dashed_words(self):
+        o = cliargs.parse("sandbox", ["run", "echo", "-x"])
+        self.assertEqual(o.words, ["echo", "-x"])
+
+    def test_capacity_days_stay_integral(self):
+        self.assertEqual(cliargs.parse("sprint-capacity", ["7"]).days, 7)
+        self.assertEqual(cliargs.parse("sprint-capacity", ["1.5", "--retros", "2"]).days, 1.5)
+
+    def test_usage_defaults(self):
+        o = cliargs.parse("usage", ["--json"])
+        self.assertEqual((o.dir, o.json, o.since, o.repo), ("~/.claude/projects", True, None, None))
+
+
 if __name__ == "__main__":
     unittest.main()
