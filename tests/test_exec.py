@@ -81,3 +81,27 @@ class ExecTest(unittest.TestCase):
         code, m = run_exec(["gh", "api", "-X", "POST", "repos/o/r/issues"])
         self.assertEqual(code, 0)
         m.assert_called_once()
+
+    def test_recognised_api_write_runs_unchanged_at_tier0(self):
+        identity.use(lambda: None)
+        code, m = run_exec(["gh", "api", "-X", "POST", "repos/o/r/issues"])
+        self.assertEqual(code, 0)
+        m.assert_called_once_with(["gh", "api", "-X", "POST", "repos/o/r/issues"], env=None)
+
+    def test_recognised_writes_run_with_token_at_tier1(self):
+        self.tier1()
+        for argv in (["gh", "issue", "comment", "5", "--body", "x"],
+                     ["gh", "api", "-X", "POST", "repos/o/r/issues"]):
+            code, m = run_exec(argv)
+            self.assertEqual(code, 0, argv)
+            args, kw = m.call_args
+            self.assertEqual(args[0], argv)
+            self.assertEqual(kw["env"]["GH_TOKEN"], "tok-baton")
+
+    def test_refused_at_tier1_runs_nothing(self):
+        self.tier1()
+        for argv in (["gh", "issue", "list"], ["gh", "api", "repos/o/r/issues"], ["gh"], [],
+                     ["--role", "nobody", "gh", "issue", "comment", "5"]):
+            code, m = run_exec(argv)
+            self.assertEqual(code, 64, argv)
+            m.assert_not_called()
