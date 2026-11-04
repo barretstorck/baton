@@ -3,7 +3,10 @@ import io
 import unittest
 import unittest.mock
 
-from baton import cliargs
+import ast
+import pathlib
+
+from baton import cli, cliargs
 
 
 def make(positional_only=False, lenient=False):
@@ -258,6 +261,32 @@ class LastCommandsTest(PublishCommandsTest):
     def test_usage_defaults(self):
         o = cliargs.parse("usage", ["--json"])
         self.assertEqual((o.dir, o.json, o.since, o.repo), ("~/.claude/projects", True, None, None))
+
+
+class WholeCliTest(unittest.TestCase):
+    def test_subparsers_match_commands(self):
+        names = set()
+        for action in cliargs.build()._actions:
+            if isinstance(getattr(action, "choices", None), dict):
+                names |= set(action.choices)
+        self.assertEqual(names, set(cli.COMMANDS))
+
+    def test_every_command_has_help(self):
+        for name in sorted(cli.COMMANDS):
+            with self.subTest(command=name):
+                out = io.StringIO()
+                with unittest.mock.patch.object(cli, "_load_identity", return_value=None), \
+                        contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                    code = cli.main([name, "--help"])
+                self.assertEqual(code, 0)
+                self.assertIn("usage:", out.getvalue())
+
+    def test_cli_functions_are_short(self):
+        tree = ast.parse(pathlib.Path(cli.__file__).read_text())
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef):
+                with self.subTest(function=node.name):
+                    self.assertLessEqual(node.end_lineno - node.lineno + 1, 30)
 
 
 if __name__ == "__main__":
