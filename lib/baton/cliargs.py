@@ -31,6 +31,14 @@ class BatonParser(argparse.ArgumentParser):
         self.usage_text = usage_text
         self.lenient = lenient
 
+    def parse_known_args(self, args=None, namespace=None):
+        """A leaf parser refuses extra words itself, so the usage printed is
+        its own and not its parent's."""
+        opts, extras = super().parse_known_args(args, namespace)
+        if extras and not self.lenient and not _has_subparsers(self):
+            self.error("unrecognized arguments")
+        return opts, extras
+
     def error(self, message):
         sys.stderr.write((self.usage_text or self.format_usage()).rstrip("\n")
                          + "\n")
@@ -218,6 +226,95 @@ def _declare_doctor(subs):
     _add(subs, "doctor", "usage: baton doctor")
 
 
+def nonempty(text: str) -> str:
+    if not text:
+        raise argparse.ArgumentTypeError("empty")
+    return text
+
+
+_ISSUE_CREATE = ("usage: baton issue create --title <t> [--label <l>]... "
+                 "[--milestone <title>] <body-file | ->")
+_EDIT = ("usage: baton {t} edit <N> [--title <t>] [--body-file <file | ->] "
+         "[--add-label <l>]... [--remove-label <l>]... "
+         "[--milestone <title> | --remove-milestone]")
+_PR_CREATE = "usage: baton pr create --title <t> [--draft] <body-file | ->"
+_PR_READY = "usage: baton pr ready <N> [--undo]"
+_MS_CREATE = ("usage: baton milestone create --title <t> [--description <d>] "
+              "[--due-on <ISO date>]")
+_MS_EDIT = ("usage: baton milestone edit <number | title> [--title <t>] "
+            "[--description <d>] [--due-on <date>] [--state open|closed]")
+_ISSUE_MISSED = ("usage: baton issue missed <issue number> "
+                 "<milestone title or number>")
+_ISSUE_READ = "usage: baton issue read <issue>"
+
+
+def _action(subs, key: str, usage: str) -> BatonParser:
+    """A nested action parser; ``key`` is "<command> <action>"."""
+    USAGE[key] = usage
+    return subs.add_parser(key.split()[1], usage_text=usage)
+
+
+def _actions(subs, name: str, usage: str) -> argparse._SubParsersAction:
+    parser = _add(subs, name, usage)
+    return parser.add_subparsers(dest="action", required=True,
+                                 parser_class=BatonParser)
+
+
+def _declare_edit(actions, target: str):
+    p = _action(actions, f"{target} edit", _EDIT.format(t=target))
+    p.add_argument("number", type=digits)
+    p.add_argument("--title")
+    p.add_argument("--body-file", dest="body_source")
+    p.add_argument("--add-label", dest="add_labels", action="append",
+                   default=[])
+    p.add_argument("--remove-label", dest="remove_labels", action="append",
+                   default=[])
+    group = p.add_mutually_exclusive_group()
+    group.add_argument("--milestone")
+    group.add_argument("--remove-milestone", action="store_true")
+
+
+def _declare_issue(subs):
+    actions = _actions(subs, "issue", _ISSUE_CREATE + "\n" + _EDIT.format(t="issue"))
+    p = _action(actions, "issue create", _ISSUE_CREATE)
+    p.add_argument("--title", type=nonempty, required=True)
+    p.add_argument("--label", dest="labels", action="append", default=[])
+    p.add_argument("--milestone")
+    p.add_argument("body_source")
+    _declare_edit(actions, "issue")
+    _action(actions, "issue read", _ISSUE_READ).add_argument("number", type=digits)
+    p = _action(actions, "issue missed", _ISSUE_MISSED)
+    p.add_argument("number", type=digits)
+    p.add_argument("milestone")
+
+
+def _declare_pr(subs):
+    actions = _actions(subs, "pr", "\n".join(
+        [_PR_CREATE, _EDIT.format(t="pr"), _PR_READY]))
+    p = _action(actions, "pr create", _PR_CREATE)
+    p.add_argument("--title", type=nonempty, required=True)
+    p.add_argument("--draft", action="store_true")
+    p.add_argument("body_source")
+    _declare_edit(actions, "pr")
+    p = _action(actions, "pr ready", _PR_READY)
+    p.add_argument("number", type=digits)
+    p.add_argument("--undo", action="store_true")
+
+
+def _declare_milestone(subs):
+    actions = _actions(subs, "milestone", _MS_CREATE + "\n" + _MS_EDIT)
+    p = _action(actions, "milestone create", _MS_CREATE)
+    p.add_argument("--title", type=nonempty, required=True)
+    p.add_argument("--description")
+    p.add_argument("--due-on")
+    p = _action(actions, "milestone edit", _MS_EDIT)
+    p.add_argument("ref")
+    p.add_argument("--title")
+    p.add_argument("--description")
+    p.add_argument("--due-on")
+    p.add_argument("--state", choices=["open", "closed"])
+
+
 @functools.lru_cache(maxsize=None)
 def build() -> BatonParser:
     top = BatonParser(prog="baton", usage_text="usage: baton <command> [args]")
@@ -228,7 +325,8 @@ def build() -> BatonParser:
                     _declare_open_questions, _declare_ready_check,
                     _declare_sprint_status, _declare_sprint_order,
                     _declare_pr_state, _declare_verify, _declare_clean,
-                    _declare_identity, _declare_push, _declare_doctor):
+                    _declare_identity, _declare_push, _declare_doctor,
+                    _declare_issue, _declare_pr, _declare_milestone):
         declare(subs)
     _declare_set_group(subs, "priority")
     _declare_set_group(subs, "severity")

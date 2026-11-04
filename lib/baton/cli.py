@@ -211,12 +211,7 @@ def _triage_queue():
     return 0
 
 
-def _publish_cmd(parse, args, act):
-    try:
-        opts = parse(args)
-    except publish.UsageError as error:
-        print(str(error), file=sys.stderr)
-        return 64
+def _publish_run(opts, act):
     try:
         out = act(opts, _require_config(), scan.load_terms())
     except comment.CommentError as error:
@@ -228,76 +223,74 @@ def _publish_cmd(parse, args, act):
 
 
 def _body(opts):
-    source = opts.get("body_source")
+    source = getattr(opts, "body_source", None)
     return None if source is None else comment.read_body(source, sys.stdin)
 
 
 def _edit(target, opts, cfg, terms):
-    publish.edit(cfg, run.run, target, opts["number"], terms, title=opts.get("title"),
-                 body=_body(opts), add_labels=opts["add_labels"],
-                 remove_labels=opts["remove_labels"], milestone=opts.get("milestone"),
-                 remove_milestone=opts["remove_milestone"])
+    publish.edit(cfg, run.run, target, opts.number, terms, title=opts.title,
+                 body=_body(opts), add_labels=opts.add_labels,
+                 remove_labels=opts.remove_labels, milestone=opts.milestone,
+                 remove_milestone=opts.remove_milestone)
     return None
 
 
-def _issue_missed(args):
-    if len(args) != 3 or not args[1].isdigit():
-        print("usage: baton issue missed <issue number> <milestone title or number>",
-              file=sys.stderr)
-        return 64
+def _issue_missed(opts):
     try:
-        publish.mark_missed(_require_config(), run.run, int(args[1]), args[2], scan.load_terms())
+        publish.mark_missed(_require_config(), run.run, opts.number, opts.milestone,
+                            scan.load_terms())
     except comment.CommentError as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
     return 0
 
 
-def _issue_read(args):
-    if len(args) != 2 or not args[1].isdigit():
-        print("usage: baton issue read <issue>", file=sys.stderr)
-        return 64
+def _issue_read(opts):
     cfg = _require_config()
-    data = json.loads(run.run(["gh", "issue", "view", args[1], "--json",
+    number = str(opts.number)
+    data = json.loads(run.run(["gh", "issue", "view", number, "--json",
                                "number,title,state,author,labels,body,comments"]))
-    data["comments"] = identity.mark_authors(run.run, int(args[1]), data.get("comments"))
+    data["comments"] = identity.mark_authors(run.run, opts.number, data.get("comments"))
     print(issue.render(data, _maintainers(cfg), _bots()))
     return 0
 
 
-def cmd_issue(args):
-    if args[:1] == ["missed"]:
-        return _issue_missed(args)
-    if args[:1] == ["read"]:
-        return _issue_read(args)
+@cliargs.command("issue")
+def cmd_issue(opts):
+    if opts.action == "missed":
+        return _issue_missed(opts)
+    if opts.action == "read":
+        return _issue_read(opts)
 
     def act(o, cfg, terms):
-        if o["action"] == "create":
-            return publish.create_issue(cfg, run.run, o["title"], _body(o), o["labels"],
-                                        o["milestone"], terms)
+        if o.action == "create":
+            return publish.create_issue(cfg, run.run, o.title, _body(o), o.labels,
+                                        o.milestone, terms)
         return _edit("issue", o, cfg, terms)
-    return _publish_cmd(publish.parse_issue, args, act)
+    return _publish_run(opts, act)
 
 
-def cmd_pr(args):
+@cliargs.command("pr")
+def cmd_pr(opts):
     def act(o, cfg, terms):
-        if o["action"] == "create":
-            return publish.create_pr(cfg, run.run, o["title"], _body(o), o["draft"], terms)
-        if o["action"] == "ready":
-            return publish.ready_pr(run.run, o["number"], o["undo"])
+        if o.action == "create":
+            return publish.create_pr(cfg, run.run, o.title, _body(o), o.draft, terms)
+        if o.action == "ready":
+            return publish.ready_pr(run.run, o.number, o.undo)
         return _edit("pr", o, cfg, terms)
-    return _publish_cmd(publish.parse_pr, args, act)
+    return _publish_run(opts, act)
 
 
-def cmd_milestone(args):
+@cliargs.command("milestone")
+def cmd_milestone(opts):
     def act(o, cfg, terms):
-        if o["action"] == "create":
-            return publish.create_milestone(cfg, run.run, o["title"], o.get("description"),
-                                            o.get("due_on"), terms)
-        return publish.edit_milestone(cfg, run.run, o["ref"], terms, title=o.get("title"),
-                                      description=o.get("description"), due_on=o.get("due_on"),
-                                      state=o.get("state"))
-    return _publish_cmd(publish.parse_milestone, args, act)
+        if o.action == "create":
+            return publish.create_milestone(cfg, run.run, o.title, o.description,
+                                            o.due_on, terms)
+        return publish.edit_milestone(cfg, run.run, o.ref, terms, title=o.title,
+                                      description=o.description, due_on=o.due_on,
+                                      state=o.state)
+    return _publish_run(opts, act)
 
 
 def _close_flags(args):

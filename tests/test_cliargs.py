@@ -125,6 +125,40 @@ class CommandsTest(unittest.TestCase):
     def test_push_takes_dash_word_as_value(self):
         self.assertEqual(cliargs.parse("push", ["--force"]).refspec, "--force")
 
+class PublishCommandsTest(unittest.TestCase):
+    def call(self, name, argv):
+        from baton import cli
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.COMMANDS[name](argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_help_returns_zero(self):
+        for name, argv in (("issue", ["--help"]), ("issue", ["create", "--help"]),
+                           ("pr", ["ready", "--help"]),
+                           ("milestone", ["edit", "--help"])):
+            with self.subTest(argv):
+                code, out, _ = self.call(name, argv)
+                self.assertEqual((code, out.startswith("usage:")), (0, True))
+
+    def test_malformed_prints_the_action_usage(self):
+        for name, argv, key in (
+                ("issue", ["create"], "issue create"),
+                ("issue", ["read", "x"], "issue read"),
+                ("issue", ["missed", "7"], "issue missed"),
+                ("pr", ["ready", "x"], "pr ready"),
+                ("pr", ["edit", "5", "--milestone", "M", "--remove-milestone"], "pr edit"),
+                ("milestone", ["edit", "3", "--state", "bogus"], "milestone edit"),
+                ("milestone", [], "milestone"),
+                ("issue", ["bogus"], "issue")):
+            with self.subTest(argv):
+                code, _, err = self.call(name, argv)
+                self.assertEqual((code, err), (64, cliargs.USAGE[key] + "\n"))
+
+    def test_option_value_may_look_like_an_option(self):
+        o = cliargs.parse("issue", ["create", "--title", "-x", "-"])
+        self.assertEqual((o.title, o.body_source), ("-x", "-"))
+
 
 if __name__ == "__main__":
     unittest.main()
