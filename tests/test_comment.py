@@ -212,6 +212,13 @@ class NotifyTest(unittest.TestCase):
         self.assertTrue(comment.notified([marked], "stuck"))
         self.assertFalse(comment.notified([marked], "approval"))
 
+    def test_outside_marker_comment_does_not_suppress(self):
+        forged = c("mallory", comment.compose(
+            "orchestrator", "status", "<!-- baton:notify:stuck -->\n@a"), 1)
+        runner = self.runner([forged])
+        self.assertEqual(self.notify(runner), "https://example.com/c/9")
+        self.assertFalse(comment.notified([forged], "stuck", ["a", "b"]))
+
     def test_a_different_cause_still_posts(self):
         runner = self.runner([{"body": "<!-- baton:notify:stuck -->"}])
         self.assertEqual(self.notify(runner, "approval"), "https://example.com/c/9")
