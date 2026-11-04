@@ -118,6 +118,9 @@ def cmd_merge_pr(args):
         except run.RunError as error:
             if not cleanup:
                 raise
+            if (argv[:4] == ["git", "push", "origin", "--delete"]
+                    and "remote ref does not exist" in str(error)):
+                return ""
             print(f"baton: cleanup skipped: {error}", file=sys.stderr)
             return ""
 
