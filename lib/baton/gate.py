@@ -575,10 +575,22 @@ def _gh_write_offset(command):
         return None
     if rest[0].rsplit("/", 1)[-1] != "gh" or not re.match(r"(?:[\w.~+-]*/)*gh(?=[ \t]|$)", command[m.end():]):
         return None
+    return m.end() if _is_write_words(rest) else None
+
+
+def _is_write_words(rest):
+    """True when `rest` (gh, group, sub, ...) is a write the gate recognises."""
+    if len(rest) < 3:
+        return False
     group, sub = rest[1], rest[2]
     if group == "api":
-        return m.end() if _api_is_write(rest[2:]) else None
-    return m.end() if sub in _GH_WRITES.get(group, ()) else None
+        return _api_is_write(rest[2:])
+    return sub in _GH_WRITES.get(group, ())
+
+
+def is_recognised_write(words):
+    """True when the argv `words` is a plain `gh` write the gate recognises (no `cd &&` prefix)."""
+    return bool(words) and words[0] == "gh" and not any(_is_punct(t) for t in words) and _is_write_words(words)
 
 
 def _count_cd(prefix):

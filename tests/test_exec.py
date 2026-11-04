@@ -45,7 +45,7 @@ class ExecTest(unittest.TestCase):
 
     def test_exit_code_returned(self):
         identity.use(lambda: None)
-        self.assertEqual(run_exec(["gh", "issue", "view", "5"], 3)[0], 3)
+        self.assertEqual(run_exec(["gh", "issue", "close", "5"], 3)[0], 3)
 
     def test_usage_errors(self):
         identity.use(lambda: None)
@@ -53,3 +53,16 @@ class ExecTest(unittest.TestCase):
             code, m = run_exec(argv)
             self.assertEqual(code, 64, argv)
             m.assert_not_called()
+
+    def test_unrecognised_gh_refused(self):
+        identity.use(lambda: None)
+        for argv in (["gh", "issue", "list"], ["gh", "api", "repos/o/r/issues"], ["gh", "pr", "view", "3"]):
+            code, m = run_exec(argv)
+            self.assertEqual(code, 64, argv)
+            m.assert_not_called()
+
+    def test_recognised_api_write_runs(self):
+        identity.use(lambda: None)
+        code, m = run_exec(["gh", "api", "-X", "POST", "repos/o/r/issues"])
+        self.assertEqual(code, 0)
+        m.assert_called_once()

@@ -172,7 +172,8 @@ def cmd_comment(opts):
 @cliargs.command("exec")
 def cmd_exec(opts):
     words = opts.words
-    if not words or words[0] != "gh" or len(words) < 2 or opts.role not in set(comment.ROLES) | set(config.ROLES):
+    if not words or words[0] != "gh" or len(words) < 2 or opts.role not in set(comment.ROLES) | set(config.ROLES) \
+            or not gate.is_recognised_write(words):
         return cliargs.fail("exec")
     extra = identity.child_env(opts.role)
     env = {**os.environ, **extra} if extra else None
