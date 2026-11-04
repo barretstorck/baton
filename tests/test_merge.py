@@ -389,8 +389,8 @@ class MergeTest(unittest.TestCase):
     def test_clean_hint_failure_does_not_fail_merge(self):
         class Late(FakeRunner):
             def __call__(self, argv, cwd=None, input=None, env=None):
-                if argv[:3] == ["git", "worktree", "list"] and any(
-                        c[:3] == ["git", "worktree", "remove"] for c in self.calls):
+                listed = sum(c[:3] == ["git", "worktree", "list"] for c in self.calls)
+                if argv[:3] == ["git", "worktree", "list"] and listed >= 2:
                     raise RunError("boom")
                 return super().__call__(argv, cwd, input, env)
         notes = []
