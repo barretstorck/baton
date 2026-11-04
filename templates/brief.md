@@ -62,6 +62,8 @@ labels:
     severity:4: "severity:4"
 merge:
   allow_no_ci: false          # true only for repositories with no CI at all; the reviewer then starts without waiting for CI
+clean:
+  hint_worktrees: 10          # baton merge-pr suggests baton clean when more agent worktrees than this are under .claude/worktrees
 verify:
   command: ""                 # the full check the reviewer runs on the pull request head, e.g. "cd {worktree} && make test"; {worktree} is the quoted worktree path; empty: no local verification
   timeout_minutes: 10         # the run is killed after this many minutes and counts as a timeout
