@@ -86,9 +86,11 @@ The gate is a text scanner. It checks commands that talk to a forge (`gh`, `glab
 `curl`, `wget`, `http`, `https`, `xh`) and git commit, push and tag. It refuses:
 
 - a privacy finding in the quoted text, heredoc or body file of such a command;
-- text it cannot read: a body from stdin (`-F -`, `--body-file -`) without a heredoc or pipe, a
-  body file that does not exist yet (write the file in one step, post it in the next), or `$(...)`
-  or backticks in a double-quoted title, body or message. Inline text and inline heredocs
+- text it cannot read: a body from stdin (`-F -`, `--body-file -`, `--description -`) without a heredoc
+  (a pipe does not count), a body file that does not exist yet (write the file in one step, post
+  it in the next), or a variable (`$B`, `${B}`), `$(...)` or backticks in a title, body, message
+  or field value. Unquoted title, body and field values are scanned like quoted ones. Pass the
+  text literally, as an inline heredoc, or as a file. Inline text and inline heredocs
   (`"$(cat <<'EOF' ... EOF)"`) are fine;
 - a hook bypass on a git commit, push or tag: `--no-verify`, `core.hooksPath`, or overriding
   `HOME` or `GIT_*` settings;

@@ -4,9 +4,13 @@ Runs as a Claude Code PreToolUse hook. The gate is a text scanner: it does not
 parse shell and does not know which `gh` subcommand writes. For a command that
 names a forge-facing program (`FORGE_CLIS`) or publishes with git (`commit`,
 `push`, `tag`), it scans every quoted string, heredoc body and body file the
-command would send. It refuses only for four safety reasons: a privacy finding
-in that text, text it cannot read (stdin, a missing body file, command
-substitution in a double-quoted body), a git hook bypass, and missing hooks.
+command would send, and the unquoted value of a title, body, message, field or
+description flag. It refuses only for four safety reasons: a privacy finding
+in that text, text it cannot read (a stdin body without a heredoc, even when
+piped, and `--description -`; a missing body file; a variable such as `$B` or
+`${B}`, or command substitution, in the value of such a flag), a git hook
+bypass, and missing hooks. The refusal says to pass the text literally, as an
+inline heredoc, or as a file.
 A body file is read relative to the last literal `cd` before it in the same
 command (else the hook's working directory). A double-quoted body whose only
 substitutions are `$(cat <literal path>)` is scanned by reading those files;

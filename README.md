@@ -321,9 +321,10 @@ information only and is never enforced.
 
 - The gate is a text scanner over commands that talk to a forge (`FORGE_CLIS`: `gh`, `glab`,
   `tea`, `fj`, `curl`, `wget`, `http`, `https`, `xh`) and over git `commit`, `push` and `tag`. It
-  refuses only a privacy finding in their quoted text, heredocs or body files; text it cannot
-  read (stdin body, missing body file, command substitution or backticks in a double-quoted
-  body); a hook bypass (`--no-verify`, `core.hooksPath`, overriding `HOME` or `GIT_*`); and
+  refuses only a privacy finding in their quoted or unquoted title, body and field values,
+  heredocs or body files; text it cannot read (a stdin body without a heredoc, piped or not,
+  and `--description -`; a missing body file; a variable, command substitution or backticks in
+  a title, body or field value); a hook bypass (`--no-verify`, `core.hooksPath`, overriding `HOME` or `GIT_*`); and
   missing git hooks. In addition, a raw `gh issue|pr close|reopen` needs `--comment`: from
   Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or `reopened`) marker to the
   comment through a rewrite that keeps the permission prompt; otherwise, or for a compound
