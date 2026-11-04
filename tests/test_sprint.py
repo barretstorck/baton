@@ -817,7 +817,20 @@ class DefaultBranchStateTest(unittest.TestCase):
         result = self._outside()
         self.assertEqual(result["dispatchable"], [])
         self.assertEqual(result["held"], [{"number": 5, "reason":
-                         "outside issue without a maintainer's '/baton ready' comment"}])
+                         "outside issue: it needs a comment '/baton ready' from a maintainer"}])
+
+    def test_outside_issue_edited_after_approval_is_held(self):
+        ready = dict(comment(OWNER, "/baton ready", 1), createdAt="2026-11-01T10:00:00Z")
+        edit = "2026-11-01T11:00:00Z\tstranger\tUser\n"
+        runner = FakeRunner(replies(
+            [issue(5, "ready", "deliverable", author="stranger", comments=[ready])],
+            extra={"gh api graphql": edit}))
+        result = sprint.snapshot(cfg(), runner)
+        self.assertEqual(result["dispatchable"], [])
+        self.assertEqual(result["held"], [{"number": 5, "reason":
+                         "outside issue: @stranger edited the body at 2026-11-01T11:00:00Z, "
+                         "after the '/baton ready' comment of 2026-11-01T10:00:00Z; "
+                         "a maintainer must post '/baton ready' again"}])
 
     def test_outside_issue_with_maintainer_approval_is_dispatchable(self):
         result = self._outside([comment(OWNER, "/baton ready", 1)])

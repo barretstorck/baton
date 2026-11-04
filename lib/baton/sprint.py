@@ -435,8 +435,13 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
         number = item["number"]
         open_blockers = [n for n in issue_fields.blocked_by(item.get("body"))
                          if _blocker_open(n, by_number, runner)]
-        if issue_fields.is_outside(item, maintainers, bots) and not issue_fields.approved(item, maintainers, bots):
-            reason = "outside issue without a maintainer's '/baton ready' comment"
+        problem = None
+        if issue_fields.is_outside(item, maintainers, bots):
+            if "edits" not in item:
+                item["edits"] = issue_fields.body_edits(runner, number)
+            problem = issue_fields.approval_problem(item, maintainers, bots)
+        if problem is not None:
+            reason = f"outside issue: {problem}"
         elif red and not repair:
             reason = "default branch is red; only the repair issue may proceed"
         elif missing_count(number) >= STALE_MISSING_PATHS:
