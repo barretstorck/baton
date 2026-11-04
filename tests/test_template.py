@@ -287,6 +287,16 @@ class TemplateTest(unittest.TestCase):
             self.assertIn(f"`{placement}`", text)
         self.assertIn("`needs-maintainer` label", text)
 
+    def test_sprint_skill_runs_clean_at_close(self):
+        text = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        start = text.index("### 9. Close the sprint")
+        end = text.index(" ## Scheduled runs", start)
+        close = text[start:end]
+        self.assertIn("baton clean", close)
+        self.assertGreater(
+            close.index("baton clean"), close.index("open a pull request for it")
+        )
+
     def test_review_skill_reads_state_from_pr_state(self):
         text = (ROOT / "skills/review/SKILL.md").read_text()
         self.assertIn("baton pr-state", text)

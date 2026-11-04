@@ -370,6 +370,34 @@ class MergeTest(unittest.TestCase):
         add = next(l for l in lines if l.startswith("git worktree add --detach"))
         self.assertTrue(add.endswith(HEAD))
 
+    TWO_TREES = ("worktree /repo\nbranch refs/heads/main\n\n"
+                 "worktree /repo/.claude/worktrees/a\ndetached\n\n"
+                 "worktree /repo/.claude/worktrees/b\ndetached\n\n")
+
+    def test_clean_hint_note_above_threshold(self):
+        replies = self.replies(make_pr())
+        replies["git worktree list"] = self.TWO_TREES
+        notes = []
+        merge.merge(9, make_config(clean={"hint_worktrees": 1}), FakeRunner(replies), notes)
+        self.assertTrue(any("baton clean" in n for n in notes))
+
+    def test_no_clean_hint_by_default(self):
+        notes = []
+        merge.merge(9, make_config(), FakeRunner(self.replies(make_pr())), notes)
+        self.assertFalse(any("baton clean" in n for n in notes))
+
+    def test_clean_hint_failure_does_not_fail_merge(self):
+        class Late(FakeRunner):
+            def __call__(self, argv, cwd=None, input=None, env=None):
+                listed = sum(c[:3] == ["git", "worktree", "list"] for c in self.calls)
+                if argv[:3] == ["git", "worktree", "list"] and listed >= 2:
+                    raise RunError("boom")
+                return super().__call__(argv, cwd, input, env)
+        notes = []
+        runner = Late(self.replies(make_pr()))
+        self.assertEqual(merge.merge(9, make_config(clean={"hint_worktrees": 0}), runner, notes), [])
+        self.assertFalse(any("baton clean" in n for n in notes))
+
     TIP = "f" * 40
 
     def ref_replies(self, tip=None):
