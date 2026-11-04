@@ -18,6 +18,14 @@
           { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" budget" }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/baton\" compact-reminder" }
+        ]
+      }
     ]
   }
 }
