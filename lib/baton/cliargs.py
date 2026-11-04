@@ -315,6 +315,128 @@ def _declare_milestone(subs):
     p.add_argument("--state", choices=["open", "closed"])
 
 
+def _nested(subs, name: str, usage: str):
+    """A command with actions; wrong actions print the command's usage."""
+    parser = _add(subs, name, usage)
+    return parser.add_subparsers(dest="action", required=True,
+                                 parser_class=BatonParser)
+
+
+def _leaf(actions, name: str, usage: str) -> BatonParser:
+    return actions.add_parser(name, usage_text=usage)
+
+
+def _declare_state_change(subs, name: str):
+    usage = f"usage: baton {name} <issue|pr> <number> <role> <reason-file | ->"
+    if name == "close":
+        usage += (" [--reason spam|duplicate|support|wont-do|completed]"
+                  " [--duplicate-of <N>] [--lock]")
+    p = _add(subs, name, usage)
+    if name == "close":
+        p.add_argument("--reason", dest="close_reason")
+        p.add_argument("--duplicate-of", dest="duplicate_of", type=digits)
+        p.add_argument("--lock", action="store_true")
+    p.add_argument("target")
+    p.add_argument("number", type=digits)
+    p.add_argument("role")
+    p.add_argument("reason_file")
+
+
+_REVIEW_USAGE = ("usage: baton review state <pr> | baton review post <pr> "
+                 "<approve|changes|blocked|replan> <full commit sha> "
+                 "<body-file | ->")
+
+
+def _declare_review(subs):
+    actions = _nested(subs, "review", _REVIEW_USAGE)
+    _leaf(actions, "state", _REVIEW_USAGE).add_argument("pr", type=digits)
+    p = _leaf(actions, "post", _REVIEW_USAGE)
+    p.add_argument("pr", type=digits)
+    p.add_argument("verdict")
+    p.add_argument("commit")
+    p.add_argument("body")
+
+
+def _declare_tasks(subs):
+    p = _add(subs, "tasks", "usage: baton tasks <issue|pr> <number>")
+    p.add_argument("target", choices=["issue", "pr"])
+    p.add_argument("number", type=digits)
+
+
+def _declare_task(subs):
+    usage = ("usage: baton task done <issue|pr> <number> <task> "
+             "[--as-built <text>]")
+    actions = _nested(subs, "task", usage)
+    p = _leaf(actions, "done", usage)
+    p.add_argument("--as-built", dest="as_built")
+    p.add_argument("target", choices=["issue", "pr"])
+    p.add_argument("number", type=digits)
+    p.add_argument("task")
+
+
+_PLAN_USAGE = (
+    "usage: baton plan replace <issue> <from-task> <file | -> [--drop]\n"
+    "       baton plan insert <issue> <before-task> <file | ->\n"
+    "       baton plan set <issue> <file | ->\n"
+    "       baton plan against <issue> <sha>\n"
+    "       baton plan commit <issue> <path> <file | ->   (deprecated, does nothing)\n"
+    "       baton plan pin <issue>   (deprecated, does nothing)\n"
+    "       baton plan link <issue> ...   (deprecated, does nothing)\n"
+    "       baton plan migrate <issue>\n")
+
+
+def _declare_plan(subs):
+    actions = _nested(subs, "plan", _PLAN_USAGE)
+    for name in ("replace", "insert"):
+        p = _leaf(actions, name, _PLAN_USAGE)
+        p.add_argument("issue", type=digits)
+        p.add_argument("task", type=digits)
+        p.add_argument("file")
+        p.add_argument("--drop", action="store_true")
+    p = _leaf(actions, "set", _PLAN_USAGE)
+    p.add_argument("issue", type=digits)
+    p.add_argument("file")
+    p = _leaf(actions, "against", _PLAN_USAGE)
+    p.add_argument("issue", type=digits)
+    p.add_argument("sha")
+    for name in ("commit", "pin", "link"):
+        p = _leaf(actions, name, _PLAN_USAGE)
+        p.add_argument("issue", type=digits)
+        p.add_argument("rest", nargs=argparse.REMAINDER)
+    _leaf(actions, "migrate", _PLAN_USAGE).add_argument("issue", type=digits)
+
+
+def _declare_notify(subs):
+    from . import comment
+    p = _add(subs, "notify",
+             "usage: baton notify <issue> <cause> <text-file | ->  |  "
+             "baton notify --rules\n"
+             f"causes: {', '.join(comment.NOTIFY_CAUSES)}")
+    p.add_argument("--rules", action="store_true")
+    p.add_argument("issue", nargs="?", type=digits)
+    p.add_argument("cause", nargs="?", choices=list(comment.NOTIFY_CAUSES))
+    p.add_argument("file", nargs="?")
+
+
+def _declare_triage(subs):
+    usage = ("usage: baton triage apply <issue> <decision.json>  |  "
+             "baton triage queue")
+    actions = _nested(subs, "triage", usage)
+    p = _leaf(actions, "apply", usage)
+    p.add_argument("issue", type=digits)
+    p.add_argument("decision")
+    _leaf(actions, "queue", usage)
+
+
+def _declare_git_hook(subs):
+    usage = ("usage: baton git-hook pre-commit | commit-msg <message-file> | "
+             "pre-push")
+    actions = _nested(subs, "git-hook", usage)
+    _leaf(actions, "pre-commit", usage)
+    _leaf(actions, "commit-msg", usage).add_argument("message_file")
+    _leaf(actions, "pre-push", usage)
+
+
 @functools.lru_cache(maxsize=None)
 def build() -> BatonParser:
     top = BatonParser(prog="baton", usage_text="usage: baton <command> [args]")
@@ -326,8 +448,13 @@ def build() -> BatonParser:
                     _declare_sprint_status, _declare_sprint_order,
                     _declare_pr_state, _declare_verify, _declare_clean,
                     _declare_identity, _declare_push, _declare_doctor,
-                    _declare_issue, _declare_pr, _declare_milestone):
+                    _declare_issue, _declare_pr, _declare_milestone,
+                    _declare_review, _declare_tasks, _declare_task,
+                    _declare_plan, _declare_notify, _declare_triage,
+                    _declare_git_hook):
         declare(subs)
+    _declare_state_change(subs, "close")
+    _declare_state_change(subs, "reopen")
     _declare_set_group(subs, "priority")
     _declare_set_group(subs, "severity")
     return top

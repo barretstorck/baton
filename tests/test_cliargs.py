@@ -160,5 +160,64 @@ class PublishCommandsTest(unittest.TestCase):
         self.assertEqual((o.title, o.body_source), ("-x", "-"))
 
 
+class StateCommandsTest(PublishCommandsTest):
+    COMMANDS = (
+        ("close", ["--help"]), ("reopen", ["--help"]), ("review", ["--help"]),
+        ("review", ["post", "--help"]), ("tasks", ["--help"]),
+        ("task", ["--help"]), ("task", ["done", "--help"]),
+        ("plan", ["--help"]), ("plan", ["replace", "--help"]),
+        ("notify", ["--help"]), ("triage", ["--help"]),
+        ("triage", ["apply", "--help"]), ("git-hook", ["--help"]),
+        ("git-hook", ["commit-msg", "--help"]))
+
+    def test_help_returns_zero(self):
+        for name, argv in self.COMMANDS:
+            with self.subTest(name, argv=argv):
+                code, out, _ = self.call(name, argv)
+                self.assertEqual((code, out.startswith("usage:")), (0, True))
+
+    def test_malformed_prints_the_command_usage(self):
+        for name, argv in (
+                ("close", ["issue", "5", "dev"]),
+                ("close", ["issue", "5", "dev", "-", "--duplicate-of", "x"]),
+                ("close", ["issue", "5", "dev", "-", "--bogus"]),
+                ("reopen", ["issue", "5", "dev", "-", "--lock"]),
+                ("review", ["state"]), ("review", ["post", "5"]),
+                ("tasks", ["issue"]), ("tasks", ["x", "5"]),
+                ("task", ["done", "pr", "5", "1", "--as-built", "x"]),
+                ("task", ["done", "issue", "5"]),
+                ("plan", ["replace", "5"]), ("plan", ["bogus"]),
+                ("notify", []), ("notify", ["--rules", "5"]),
+                ("notify", ["5", "bogus", "-"]),
+                ("triage", ["apply", "x", "f"]), ("triage", []),
+                ("git-hook", ["commit-msg"]), ("git-hook", ["bogus"])):
+            with self.subTest(name, argv=argv):
+                with unittest.mock.patch("baton.cli._require_config"):
+                    code, _, err = self.call(name, argv)
+                self.assertEqual(code, 64)
+                self.assertTrue(err.startswith("usage: baton " + name), err)
+
+    def test_close_flags(self):
+        o = cliargs.parse("close", ["issue", "5", "dev", "-", "--reason", "duplicate",
+                                    "--duplicate-of", "3", "--lock"])
+        self.assertEqual((o.close_reason, o.duplicate_of, o.lock, o.number),
+                         ("duplicate", 3, True, 5))
+
+    def test_plan_deprecated_actions_take_more_words(self):
+        o = cliargs.parse("plan", ["commit", "5", "path", "-"])
+        self.assertEqual((o.action, o.issue), ("commit", 5))
+
+    def test_cli_functions_are_short(self):
+        import ast, inspect
+        from baton import cli
+        tree = ast.parse(inspect.getsource(cli))
+        long = [f.name for f in tree.body if isinstance(f, ast.FunctionDef)
+                and f.name in ("cmd_close", "cmd_reopen", "cmd_review", "cmd_tasks",
+                               "cmd_task", "cmd_plan", "cmd_notify", "cmd_triage",
+                               "cmd_git_hook", "_plan_replace", "_notify_rules")
+                and f.end_lineno - f.lineno + 1 > 30]
+        self.assertEqual(long, [])
+
+
 if __name__ == "__main__":
     unittest.main()

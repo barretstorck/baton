@@ -39,20 +39,14 @@ def _report(problems, what):
     return 1
 
 
-def cmd_git_hook(args):
-    name = args[0] if args else ""
+@cliargs.command("git-hook")
+def cmd_git_hook(opts):
     terms = scan.load_terms()
-    if name == "pre-commit":
+    if opts.action == "pre-commit":
         return _report(githooks.pre_commit(os.getcwd(), terms), "commit")
-    if name == "commit-msg":
-        if len(args) < 2:
-            print("usage: baton git-hook commit-msg <message-file>", file=sys.stderr)
-            return 64
-        return _report(githooks.commit_msg(os.getcwd(), args[1], terms), "commit")
-    if name == "pre-push":
-        return _report(githooks.pre_push(os.getcwd(), sys.stdin.read(), terms), "push")
-    print(f"baton: unknown git hook {name!r}", file=sys.stderr)
-    return 64
+    if opts.action == "commit-msg":
+        return _report(githooks.commit_msg(os.getcwd(), opts.message_file, terms), "commit")
+    return _report(githooks.pre_push(os.getcwd(), sys.stdin.read(), terms), "push")
 
 
 @cliargs.command("install-hooks")
@@ -163,23 +157,19 @@ def cmd_comment(opts):
     return 0
 
 
-def cmd_triage(args):
-    usage_line = "usage: baton triage apply <issue> <decision.json>  |  baton triage queue"
-    if args == ["queue"]:
+@cliargs.command("triage")
+def cmd_triage(opts):
+    if opts.action == "queue":
         return _triage_queue()
-    if len(args) != 3 or args[0] != "apply" or not args[1].isdigit():
-        print(usage_line, file=sys.stderr)
-        return 64
     try:
-        with open(args[2], encoding="utf-8") as handle:
+        with open(opts.decision, encoding="utf-8") as handle:
             text = handle.read()
     except OSError:
-        print(usage_line, file=sys.stderr)
-        return 64
+        return cliargs.fail("triage")
     cfg = _require_config()
     owner, _, repo = _repo_name().partition("/")
     decision = triage.parse_decision(text)
-    print(triage.apply(cfg, run.run, int(args[1]), decision, _maintainers(cfg),
+    print(triage.apply(cfg, run.run, opts.issue, decision, _maintainers(cfg),
                        scan.load_terms(), owner, repo))
     return 0
 
@@ -293,194 +283,141 @@ def cmd_milestone(opts):
     return _publish_run(opts, act)
 
 
-def _close_flags(args):
-    """Split close's flags from its positional arguments; None when malformed."""
-    rest, flags, i = [], {}, 0
-    while i < len(args):
-        arg = args[i]
-        if arg == "--lock":
-            flags["lock"] = True
-        elif arg.startswith(("--reason", "--duplicate-of")):
-            name, eq, value = arg.partition("=")
-            if name not in ("--reason", "--duplicate-of"):
-                return None
-            if not eq:
-                i += 1
-                if i >= len(args):
-                    return None
-                value = args[i]
-            if name == "--duplicate-of":
-                if not value.isdigit():
-                    return None
-                flags["duplicate_of"] = int(value)
-            else:
-                flags["close_reason"] = value
-        elif arg.startswith("--"):
-            return None
-        else:
-            rest.append(arg)
-        i += 1
-    return rest, flags
-
-
-def _change_state(action, args):
-    flags = {}
-    if action == "close":
-        parsed = _close_flags(args)
-        if parsed is not None:
-            args, flags = parsed
-    elif any(a.startswith("--") for a in args):
-        args = []
-    if len(args) != 4 or (action == "close" and parsed is None):
-        reason_usage = " [--reason spam|duplicate|support|wont-do|completed]" \
-                       " [--duplicate-of <N>] [--lock]" if action == "close" else ""
-        print(f"usage: baton {action} <issue|pr> <number> <role> <reason-file | ->{reason_usage}",
-              file=sys.stderr)
-        return 64
-    target, number, role, path = args
+def _change_state(action, opts):
+    flags = {"close_reason": getattr(opts, "close_reason", None),
+             "duplicate_of": getattr(opts, "duplicate_of", None),
+             "lock": getattr(opts, "lock", False)}
+    flags = {k: v for k, v in flags.items() if v}
     try:
-        reason = comment.read_body(path, sys.stdin)
-        print(state.change(_require_config(), run.run, action, target, int(number), role,
-                           reason, scan.load_terms(), **flags))
+        reason = comment.read_body(opts.reason_file, sys.stdin)
+        print(state.change(_require_config(), run.run, action, opts.target, opts.number,
+                           opts.role, reason, scan.load_terms(), **flags))
     except comment.CommentError as error:
         print(f"baton: {error}", file=sys.stderr)
         return 1
     return 0
 
 
-def cmd_close(args):
-    return _change_state("close", args)
+@cliargs.command("close")
+def cmd_close(opts):
+    return _change_state("close", opts)
 
 
-def cmd_reopen(args):
-    return _change_state("reopen", args)
+@cliargs.command("reopen")
+def cmd_reopen(opts):
+    return _change_state("reopen", opts)
 
 
-def cmd_review(args):
-    if len(args) == 2 and args[0] == "state" and args[1].isdigit():
+def _review_state(opts):
+    cfg = _require_config()
+    repo = json.loads(run.run(["gh", "repo", "view", "--json", "owner,defaultBranchRef"]))
+    pr = json.loads(run.run(["gh", "pr", "view", str(opts.pr), "--json",
+                             "number,headRefName,headRefOid,comments"]))
+    pr["comments"] = identity.mark_authors(run.run, opts.pr, pr.get("comments"))
+    print(json.dumps(review.current(pr, _trusted(cfg), cfg, run.run,
+                                    repo["defaultBranchRef"]["name"],
+                                    list(_maintainers(cfg)) + sorted(_bots())),
+                     indent=2, default=review.json_default))
+    return 0
+
+
+def _review_post(opts):
+    try:
+        body = comment.read_body(opts.body, sys.stdin)
         cfg = _require_config()
-        repo = json.loads(run.run(["gh", "repo", "view", "--json", "owner,defaultBranchRef"]))
-        pr = json.loads(run.run(["gh", "pr", "view", args[1], "--json",
-                                 "number,headRefName,headRefOid,comments"]))
-        pr["comments"] = identity.mark_authors(run.run, int(args[1]), pr.get("comments"))
-        print(json.dumps(review.current(pr, _trusted(cfg), cfg, run.run,
-                                        repo["defaultBranchRef"]["name"],
-                                        list(_maintainers(cfg)) + sorted(_bots())),
-                         indent=2, default=review.json_default))
-        return 0
-    if len(args) == 5 and args[0] == "post" and args[1].isdigit():
-        _, number, verdict, commit, path = args
-        try:
-            body = comment.read_body(path, sys.stdin)
-            cfg = _require_config()
-            print(review.post(cfg, run.run, int(number), verdict, commit, body,
-                              scan.load_terms(), _owner(), _repo_name().split("/", 1)[1],
-                              maintainers=_trusted(cfg)))
-        except (comment.CommentError, review.ReviewError, checklist.TaskError) as error:
-            print(f"baton: {error}", file=sys.stderr)
-            return 1
-        return 0
-    print("usage: baton review state <pr> | baton review post <pr> <approve|changes|blocked|replan> "
-          "<full commit sha> <body-file | ->", file=sys.stderr)
-    return 64
+        print(review.post(cfg, run.run, opts.pr, opts.verdict, opts.commit, body,
+                          scan.load_terms(), _owner(), _repo_name().split("/", 1)[1],
+                          maintainers=_trusted(cfg)))
+    except (comment.CommentError, review.ReviewError, checklist.TaskError) as error:
+        print(f"baton: {error}", file=sys.stderr)
+        return 1
+    return 0
 
 
-def cmd_tasks(args):
-    if len(args) == 2 and args[0] == "issue" and args[1].isdigit():
-        cfg = _require_config()
-        found = checklist.issue_plan(run.run, int(args[1]), cfg.data["docs"]["dir"])
+@cliargs.command("review")
+def cmd_review(opts):
+    return _review_state(opts) if opts.action == "state" else _review_post(opts)
+
+
+@cliargs.command("tasks")
+def cmd_tasks(opts):
+    cfg = _require_config()
+    if opts.target == "issue":
+        found = checklist.issue_plan(run.run, opts.number, cfg.data["docs"]["dir"])
         print(json.dumps({**found, **checklist.progress(found["tasks"])}, indent=2))
         return 0
-    if len(args) == 2 and args[0] == "pr" and args[1].isdigit():
-        cfg = _require_config()
-        pr = json.loads(run.run(["gh", "pr", "view", args[1], "--json", "comments"]))
-        pr["comments"] = identity.mark_authors(run.run, int(args[1]), pr.get("comments"))
-        print(json.dumps(review.review_tasks(pr, _trusted(cfg)), indent=2))
-        return 0
-    print("usage: baton tasks <issue|pr> <number>", file=sys.stderr)
-    return 64
-
-
-_TASK_USAGE = "usage: baton task done <issue|pr> <number> <task> [--as-built <text>]"
+    pr = json.loads(run.run(["gh", "pr", "view", str(opts.number), "--json", "comments"]))
+    pr["comments"] = identity.mark_authors(run.run, opts.number, pr.get("comments"))
+    print(json.dumps(review.review_tasks(pr, _trusted(cfg)), indent=2))
+    return 0
 
 
 def _repo_name():
     return json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
 
 
-def cmd_task(args):
-    as_built = None
-    if "--as-built" in args:
-        at = args.index("--as-built")
-        if at + 1 >= len(args) or args[1:2] != ["issue"]:
-            print(_TASK_USAGE, file=sys.stderr)
-            return 64
-        as_built = args[at + 1]
-        args = args[:at] + args[at + 2:]
-    if len(args) == 4 and args[0] == "done" and args[1] in ("issue", "pr") and args[2].isdigit():
-        cfg = _require_config()
-        if args[1] == "issue":
-            changed = checklist.tick_issue(run.run, int(args[2]), args[3], cwd=os.getcwd(),
-                                           docs_dir=cfg.data["docs"]["dir"], as_built=as_built,
-                                           terms=scan.load_terms() if as_built else None,
-                                           allow=cfg.data["privacy_allow"])
-        else:
-            if as_built:
-                print(_TASK_USAGE, file=sys.stderr)
-                return 64
-            if (os.environ.get("BATON_ROLE") != "orchestrator"
-                    and review.in_linked_worktree(run.run, os.getcwd())):
-                print("baton: warning: task done pr is the orchestrator's; developers report "
-                      "FIXED or DECLINED instead. Set BATON_ROLE=orchestrator to silence this.",
-                      file=sys.stderr)
-            changed = review.tick_review(run.run, int(args[2]), _trusted(cfg), args[3])
-        print(f"ticked task {args[3]}" if changed else f"task {args[3]} was already ticked")
-        return 0
-    print(_TASK_USAGE, file=sys.stderr)
-    return 64
-
-
-def cmd_plan(args):
-    drop = "--drop" in args
-    args = [a for a in args if a != "--drop"]
-    if (len(args) == 4 and args[0] in ("replace", "insert")
-            and args[1].isdigit() and args[2].isdigit()):
-        insert = args[0] == "insert"
-        text = comment.read_body(args[3], sys.stdin)
-        found = checklist.replace_issue_plan(_require_config(), run.run, int(args[1]), args[2],
-                                             text, scan.load_terms(), drop=drop, insert=insert)
-        for label, key in (("replaced", "replaced"), ("new", "written")):
-            for task_id, title in found[key]:
-                print(f"{label} task {task_id}: {title}")
-        print(json.dumps(found, indent=2))
-        return 0
-    if len(args) == 3 and args[0] == "set" and args[1].isdigit():
-        text = comment.read_body(args[2], sys.stdin)
-        found = checklist.set_issue_plan(_require_config(), run.run, int(args[1]), text,
-                                         scan.load_terms())
-        print(f"set Developer Plan of #{args[1]}: {len(found["tasks"])} task(s)")
-        return 0
-    if len(args) == 3 and args[0] == "against" and args[1].isdigit():
-        checklist.against_issue_plan(_require_config(), run.run, int(args[1]), args[2])
-        print(f"written against {args[2]}")
-        return 0
-    if args and args[0] in ("commit", "pin", "link") and len(args) >= 2 and args[1].isdigit():
-        print("deprecated: plans live in the issue body; use `baton plan set <N> <file>`",
+def _tick_pr(opts, cfg):
+    if (os.environ.get("BATON_ROLE") != "orchestrator"
+            and review.in_linked_worktree(run.run, os.getcwd())):
+        print("baton: warning: task done pr is the orchestrator's; developers report "
+              "FIXED or DECLINED instead. Set BATON_ROLE=orchestrator to silence this.",
               file=sys.stderr)
+    return review.tick_review(run.run, opts.number, _trusted(cfg), opts.task)
+
+
+@cliargs.command("task")
+def cmd_task(opts):
+    cfg = _require_config()
+    if opts.target == "issue":
+        as_built = opts.as_built
+        changed = checklist.tick_issue(run.run, opts.number, opts.task, cwd=os.getcwd(),
+                                       docs_dir=cfg.data["docs"]["dir"], as_built=as_built,
+                                       terms=scan.load_terms() if as_built else None,
+                                       allow=cfg.data["privacy_allow"])
+    elif opts.as_built:
+        return cliargs.fail("task")
+    else:
+        changed = _tick_pr(opts, cfg)
+    print(f"ticked task {opts.task}" if changed else f"task {opts.task} was already ticked")
+    return 0
+
+
+def _plan_replace(opts):
+    text = comment.read_body(opts.file, sys.stdin)
+    found = checklist.replace_issue_plan(_require_config(), run.run, opts.issue, str(opts.task),
+                                         text, scan.load_terms(), drop=opts.drop,
+                                         insert=opts.action == "insert")
+    for label, key in (("replaced", "replaced"), ("new", "written")):
+        for task_id, title in found[key]:
+            print(f"{label} task {task_id}: {title}")
+    print(json.dumps(found, indent=2))
+    return 0
+
+
+def _plan_set(opts):
+    text = comment.read_body(opts.file, sys.stdin)
+    found = checklist.set_issue_plan(_require_config(), run.run, opts.issue, text,
+                                     scan.load_terms())
+    print(f"set Developer Plan of #{opts.issue}: {len(found["tasks"])} task(s)")
+    return 0
+
+
+@cliargs.command("plan")
+def cmd_plan(opts):
+    if opts.action in ("replace", "insert"):
+        return _plan_replace(opts)
+    if opts.action == "set":
+        return _plan_set(opts)
+    if opts.action == "against":
+        checklist.against_issue_plan(_require_config(), run.run, opts.issue, opts.sha)
+        print(f"written against {opts.sha}")
         return 0
-    if len(args) == 2 and args[0] == "migrate" and args[1].isdigit():
-        print(planfile.migrate(_require_config(), run.run, int(args[1])))
+    if opts.action == "migrate":
+        print(planfile.migrate(_require_config(), run.run, opts.issue))
         return 0
-    print("usage: baton plan replace <issue> <from-task> <file | -> [--drop]\n"
-          "       baton plan insert <issue> <before-task> <file | ->\n"
-          "       baton plan set <issue> <file | ->\n"
-          "       baton plan against <issue> <sha>\n"
-          "       baton plan commit <issue> <path> <file | ->   (deprecated, does nothing)\n"
-          "       baton plan pin <issue>   (deprecated, does nothing)\n"
-          "       baton plan link <issue> ...   (deprecated, does nothing)\n"
-          "       baton plan migrate <issue>\n"
-          , file=sys.stderr)
-    return 64
+    print("deprecated: plans live in the issue body; use `baton plan set <N> <file>`",
+          file=sys.stderr)
+    return 0
 
 
 def cmd_usage(args):
@@ -530,31 +467,34 @@ def cmd_open_questions(opts):
     return 0
 
 
-def cmd_notify(args):
-    usage = ("usage: baton notify <issue> <cause> <text-file | ->  |  baton notify --rules\n"
-             f"causes: {', '.join(comment.NOTIFY_CAUSES)}")
-    if args == ["--rules"]:
-        cfg = _require_config()
-        issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "300",
-                                     "--json", "number,title,state,labels,body,author,comments"]))
-        try:
-            for number in questions.notify_matches(issues, cfg):
-                url = comment.notify(cfg, run.run, number, "rule",
-                                     "This issue matches a notify rule in the brief.",
-                                     _maintainers(cfg), scan.load_terms(),
-                                     bots=_bots())
-                print(f"#{number} {url or 'already notified'}")
-        except comment.CommentError as error:
-            print(f"baton: {error}", file=sys.stderr)
-            return 1
-        return 0
-    if len(args) != 3 or not args[0].isdigit() or args[1] not in comment.NOTIFY_CAUSES:
-        print(usage, file=sys.stderr)
-        return 64
+def _notify_rules():
+    cfg = _require_config()
+    issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "300",
+                                 "--json", "number,title,state,labels,body,author,comments"]))
+    try:
+        for number in questions.notify_matches(issues, cfg):
+            url = comment.notify(cfg, run.run, number, "rule",
+                                 "This issue matches a notify rule in the brief.",
+                                 _maintainers(cfg), scan.load_terms(),
+                                 bots=_bots())
+            print(f"#{number} {url or 'already notified'}")
+    except comment.CommentError as error:
+        print(f"baton: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+@cliargs.command("notify")
+def cmd_notify(opts):
+    given = [opts.issue, opts.cause, opts.file]
+    if opts.rules:
+        return _notify_rules() if not any(given) else cliargs.fail("notify")
+    if None in given:
+        return cliargs.fail("notify")
     cfg = _require_config()
     try:
-        text = comment.read_body(args[2], sys.stdin)
-        url = comment.notify(cfg, run.run, int(args[0]), args[1], text,
+        text = comment.read_body(opts.file, sys.stdin)
+        url = comment.notify(cfg, run.run, opts.issue, opts.cause, text,
                              _maintainers(cfg), scan.load_terms(), bots=_bots())
     except comment.CommentError as error:
         print(f"baton: {error}", file=sys.stderr)
