@@ -91,7 +91,7 @@ issue body, written by `baton plan set`.
      matters.
    - *Unknowns that need investigation before anyone can write acceptance criteria:* create a
      spike for them, whose acceptance criteria are the questions to answer. Create it with
-     `baton issue create --title "[SPIKE] <title>" --label type:spike` from the issue template, in
+     `gh issue create --title "[SPIKE] <title>" --label type:spike --body-file <file>` from the issue template, in
      `status:refinement`. Put `Spike for: #<original>` in the spike's Pointers. If the original's
      description has a line starting `Origin: outside`, copy that line into the spike's Pointers
      unchanged. Then add `Blocked by: #<spike>` to the original's Pointers (append to an existing
@@ -163,7 +163,7 @@ issue body, written by `baton plan set`.
      into the issue body. A description over 65536 characters is refused: split the issue (step 3,
      "several outcomes") instead. Re-refining rewrites the plan the same way.
    - Write the **complete** new description to a file, read it back, then
-     `baton issue edit <N> --body-file <file>`. Never edit a description in place with `sed` or a
+     `gh issue edit <N> --body-file <file>`. Never edit a description in place with `sed` or a
      partial body. Afterwards read the issue back and check nothing was lost, including the
      `## Developer Plan` section.
 
@@ -257,7 +257,7 @@ triage handed it over). The reproduction is yours alone.
    - `Not reproduced`: say so.
    - `Needs information`: say what is missing.
    For the last two, post a `status` comment asking the reporter for steps, version and logs (plain
-   text, no commands to run), run `baton issue edit <N> --add-label awaiting-feedback`, and leave
+   text, no commands to run), run `gh issue edit <N> --add-label awaiting-feedback`, and leave
    the issue in `status:refinement`; the stale closing of scheduled triage then applies.
 5. An outside-origin issue is refined the same way but the refiner never marks it ready; the
    maintainer's `/baton ready` comment is still needed.
@@ -317,9 +317,8 @@ Work in your own worktree and do these in order:
 
 - Read issue text with raw `gh` (`gh issue view`, `gh api`) instead of `baton issue read`; the gate does not stop you, the rule stands.
 - Start implementing. Refinement ends at a ready description.
-- Merge, close, reopen or label anything except through `baton`.
-- Write to the forge with raw `gh` (comments, issue or pull request edits, labels, reviews, closing,
-  merging) instead of the `baton` command in `references/github.md`, `references/github-shared.md` or `references/github-refiner.md`; the gate does not stop you,
+- Merge anything except with `baton merge-pr`; close, reopen, label or edit only with the `gh` and `baton` commands in `references/github.md`, `references/github-shared.md` or `references/github-refiner.md`.
+- Write to the forge with raw `gh` for comments, reviews, labels beyond the rows in `references/github-shared.md`, merging or `gh api -X POST`, instead of the `baton` command in `references/github.md`, `references/github-shared.md` or `references/github-refiner.md`; the gate does not stop you,
   the rule stands.
 - Commit or push anything but the plan.
 - Leave scratch files outside your worktree.
