@@ -134,15 +134,21 @@ def _simple_argv(command):
 
 
 def _close_command(stripped):
-    """(target, action, has_reason) for a gh issue|pr close|reopen in the command, else None."""
+    """(target, action, has_reason, count) for the gh issue|pr close|reopen commands, else None.
+
+    Every close or reopen is judged on its own segment (cut at the next ; & | or newline); a segment
+    with --help is skipped. target and action are the first judged one's; has_reason is False when any
+    judged segment lacks a reason; count is how many were judged.
+    """
     blanked = _QUOTED.sub('""', stripped)
-    match = _CLOSE_RE.search(blanked)
-    if not match:
+    judged = []
+    for match in _CLOSE_RE.finditer(blanked):
+        segment = re.split(r"[;&|\n]", blanked[match.start():], maxsplit=1)[0]
+        if not _HELP.search(segment):
+            judged.append((match.group(1), match.group(2), bool(_HAS_REASON.search(segment))))
+    if not judged:
         return None
-    segment = re.split(r"[;&|\n]", blanked[match.start():], maxsplit=1)[0]
-    if _HELP.search(segment):
-        return None
-    return match.group(1), match.group(2), bool(_HAS_REASON.search(segment))
+    return judged[0][0], judged[0][1], all(j[2] for j in judged), len(judged)
 
 
 _BYPASS = ("git hook bypass (--no-verify, -n, core.hooksPath or an overridden environment) is not allowed here; "
@@ -219,14 +225,22 @@ def close_marker(command, cwd, agent_type, env):
     """
     stripped = _HEREDOC.sub("<<HD", command)
     found = _close_command(stripped)
-    if not found or not found[2] or _MARKED.search(command):
+    if not found or not found[2]:
         return None, []
     try:
         if config.load(cwd) is None:
             return None, []
     except config.ConfigError:
         return None, []
-    target, action, _ = found
+    target, action, _, count = found
+    if count > 1:
+        if len(_MARKED.findall(command)) >= count:
+            return None, []
+        return None, [f"`gh {target} {action}`: several close/reopen commands in one command cannot be "
+                      "rewritten; run each on its own, or put Baton's marker "
+                      f"(`{MARKER}<role>:closed -->`) on every --comment"]
+    if _MARKED.search(command):
+        return None, []
     kind = "closed" if action == "close" else "reopened"
     role = _role(agent_type)
     line = f"{MARKER}{role}:{kind} -->"

@@ -106,6 +106,9 @@ REFUSED = (
     ("gh pr close 5 --delete-branch", "close-reason"),
     ("gh issue reopen 5", "close-reason"),
     ("gh pr reopen 5", "close-reason"),
+    ("gh issue close --help; gh issue close 6", "close-reason"),
+    ("gh issue close 5 --comment x; gh issue close 6", "close-reason"),
+    ("gh issue close 5 --comment '<!-- baton:developer:closed -->x'; gh issue close 6", "close-reason"),
 )
 
 
