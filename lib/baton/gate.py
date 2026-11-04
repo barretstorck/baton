@@ -79,6 +79,7 @@ def _file_arg_re(flags):
 _UNRESOLVABLE = re.compile(r"[$`*?]")
 _SUBST_BODY = re.compile(r"(?:--body|-b|--title|-t|--message|-m|--raw-field|-f|--field|-d|--data(?:-raw)?)"
                          r"(?:\s+|=)\"[^\"]*(?:\$\((?!cat <<)|`)")
+_CAT_SUBST = re.compile(r"""\$\(cat\s+(?:'([^\s'$`]+)'|([^\s'"$`()<>|;&*?\\-][^\s'"$`()<>|;&*?\\]*))\s*\)""")
 _HEREDOC = re.compile(r"<<-?[ \t]*['\"]?(\w+)['\"]?\n(.*?)\n[ \t]*\1\b", re.S)
 _QUOTED = re.compile(r"""'[^']*'|"[^"]*\"""")
 _DATA_FLAG = re.compile(r"""(?:--data(?:-raw|-binary|-urlencode)?|--json|--form|-[dF])(?:\s+|=)('[^']*'|"[^"]*"|\S+)""")
@@ -194,14 +195,32 @@ def decide(command, cwd, terms):
     stdin_pattern = _stdin_re(flags) if forge else _GIT_STDIN
     if stdin_pattern.search(stripped) and "<<" not in stripped and "|" not in stripped:
         problems.append(_STDIN)
-    if forge and _SUBST_BODY.search(stripped):
+    cats = []  # (path, offset) of each literal $(cat <path>) inside a double-quoted string
+    scanned = []
+    last = 0
+    for quoted in _QUOTED.finditer(stripped):
+        if not quoted.group().startswith('"'):
+            continue
+        for sub in _CAT_SUBST.finditer(quoted.group()):
+            cats.append((sub.group(1) or sub.group(2), quoted.start() + sub.start()))
+            scanned.append(stripped[last:quoted.start() + sub.start()])
+            last = quoted.start() + sub.end()
+    scanned.append(stripped[last:])
+    without_cats = "".join(scanned)
+    if forge and _SUBST_BODY.search(without_cats):
         problems.append(_SUBSTITUTED)
 
     texts = [m.group(2) for m in _HEREDOC.finditer(command)]
     if http_only:
         texts += [m.group(1) for m in _DATA_FLAG.finditer(stripped)]
     else:
-        texts += _QUOTED.findall(stripped)
+        texts += _QUOTED.findall(without_cats)
+    for path, start in cats:
+        text, problem = _read(path, _cd_base(stripped, start, cwd))
+        if problem:
+            problems.append(problem)
+        else:
+            texts.append(text)
     for path, start in _body_files(stripped, git_only=not forge, flags=flags):
         if _UNRESOLVABLE.search(path):
             problems.append(f"body file {path} is named by a variable or pattern, so it cannot be scanned; "
