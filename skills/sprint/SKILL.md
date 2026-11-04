@@ -507,17 +507,20 @@ is running:
    table from `baton usage --repo <owner>/<repo> --since <the sprint's first dispatch, as UTC ISO time>`: it holds only
    issue numbers and counts. Name the issues whose tasks still grew large (peak over 250K) and
    why.
-2. For each improvement, say where it belongs. A change to this repository's brief goes in the
+2. Run `baton clean` to remove the leftover agent worktrees and the log folders of closed or
+   merged pull requests. Keep its `removed`, `kept ... : <reason>` and `cannot remove` lines for the
+   final response. Exit 1 (something could not be removed) does not stop the close-out.
+3. For each improvement, say where it belongs. A change to this repository's brief goes in the
    same pull request, which the maintainer must approve because `.baton/` is protected. A change
    to Baton itself is written up for the maintainer; never edit the plugin's files.
-3. For each unfinished issue: remove it from the milestone and add the label
+4. For each unfinished issue: remove it from the milestone and add the label
    `missed-sprint` and a `Missed sprint:` line to its description (`baton issue missed <N> "<sprint title>"`) ([GitLab's milestone cleanup](https://handbook.gitlab.com/handbook/engineering/workflow/#milestone-cleanup)).
-4. List each spike with its outcome and its prototype in the retrospective.
-5. Close the milestone: `baton milestone edit <title> --state closed`.
-6. End with a regular, full response, not the three-section update. This is the only point in a
+5. List each spike with its outcome and its prototype in the retrospective.
+6. Close the milestone: `baton milestone edit <title> --state closed`.
+7. End with a regular, full response, not the three-section update. This is the only point in a
    sprint where details are given in the session. Give: what was delivered and what was carried
    over (each with links), the decisions made, what went wrong and its root cause, quota use, the
-   spike outcomes and prototypes, the retrospective pull request, and what still needs the maintainer.
+   spike outcomes and prototypes, the retrospective pull request, the `baton clean` report (how many worktrees and log folders were removed, and each one kept with its reason), and what still needs the maintainer (including any `cannot remove` lines).
 
 ## Scheduled runs
 
