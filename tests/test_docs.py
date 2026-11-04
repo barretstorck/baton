@@ -65,6 +65,31 @@ class ReferencedPaths(unittest.TestCase):
                     seen.setdefault(cell, name)
         self.assertEqual(dup, [], "rows written in more than one file")
 
+    def test_skills_name_their_command_files(self):
+        core, shared = "references/github.md", "references/github-shared.md"
+        roles = {
+            "develop": [core],
+            "review": [core, shared, "references/github-reviewer.md"],
+            "refine": [core, shared, "references/github-refiner.md"],
+            "research": [core, shared],
+            "triage": [core, shared, "references/github-triager.md"],
+            "sprint": [core, shared, "references/github-orchestrator.md"],
+            "sprint-plan": [core, shared, "references/github-orchestrator.md"],
+            "open-questions": [core, shared, "references/github-orchestrator.md"],
+        }
+        every = sorted(
+            os.path.relpath(p, ROOT)
+            for p in glob.glob(os.path.join(ROOT, "references/github*.md"))
+        )
+        for skill, want in roles.items():
+            with open(os.path.join(ROOT, "skills", skill, "SKILL.md"), encoding="utf-8") as f:
+                text = f.read()
+            named = [
+                r for r in every
+                if re.search(r"references/" + re.escape(os.path.basename(r)) + r"(?![A-Za-z0-9_-])", text)
+            ]
+            self.assertEqual(named, sorted(want), f"{skill} names the wrong command files")
+
     def test_sprint_references_are_named(self):
         with open(os.path.join(ROOT, "skills/sprint/SKILL.md"), encoding="utf-8") as f:
             skill = f.read()

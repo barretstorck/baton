@@ -8,7 +8,7 @@ description: Use when assigned one Baton spike ("Do spike issue <N>.") as a Bato
 Do **one spike** and stop. The deliverable is knowledge, and there is no plan: you do the whole
 investigation. You were dispatched with `Do spike issue <N>.`.
 
-Read `references/habits.md` of the Baton plugin before anything else and keep to it: read through
+Commands are in `references/github.md` and `references/github-shared.md` of the Baton plugin. Read `references/habits.md` of the Baton plugin before anything else and keep to it: read through
 filters, send long output to a file, chain related commands, wait for a long run once.
 
 ## What to trust
