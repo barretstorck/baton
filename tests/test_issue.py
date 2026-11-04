@@ -495,6 +495,42 @@ class ReadyCheckNoteTest(unittest.TestCase):
         self.assertEqual(self.check(make()), (0, "ready"))
 
 
+class ReadyCheckEditsTest(unittest.TestCase):
+    def check(self, data, runner):
+        import contextlib
+        import io
+        from unittest import mock
+        from baton import cli
+        out = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli, "_maintainers", return_value=[OWNER]), \
+                mock.patch.object(cli, "_bots", return_value=frozenset()), \
+                mock.patch.object(cli.run, "run", runner), \
+                contextlib.redirect_stdout(out):
+            code = cli.cmd_ready_check(["5"])
+        return code, out.getvalue()
+
+    def runner(self, data):
+        return FakeRunner({
+            "gh issue view": __import__("json").dumps(data),
+            "gh api graphql": "2026-11-01T11:00:00Z\tmallory\tUser\n",
+        })
+
+    def test_outside_edit_after_approval_is_reported(self):
+        ready = dict(comment(OWNER, "/baton ready"), createdAt="2026-11-01T10:00:00Z")
+        data = make(author="stranger")
+        data["comments"] = [ready]
+        code, text = self.check(data, self.runner(data))
+        self.assertEqual(code, 1)
+        self.assertIn("- outside issue: @mallory edited the body at 2026-11-01T11:00:00Z", text)
+
+    def test_maintainer_issue_makes_no_graphql_call(self):
+        data = make()
+        runner = self.runner(data)
+        self.check(data, runner)
+        self.assertFalse([c for c in runner.calls if "graphql" in c])
+
+
 def _person(login):
     return {"login": login}
 
