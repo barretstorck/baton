@@ -1,4 +1,4 @@
-import json, pathlib, tempfile, unittest
+import json, os, pathlib, tempfile, unittest
 from baton import usage
 
 
@@ -16,6 +16,74 @@ def write(path, records, extra_lines=()):
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [json.dumps(r) for r in records] + list(extra_lines)
     path.write_text("\n".join(lines) + "\n")
+
+
+def full(path):
+    prompt, calls, _ = usage._read(path, set())
+    return prompt, sum(c["weighted"] for c in calls)
+
+
+class TallyTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.path = pathlib.Path(self.dir.name) / "t.jsonl"
+
+    def append(self, records):
+        with open(self.path, "a") as handle:
+            for r in records:
+                handle.write(json.dumps(r) + "\n")
+
+    def test_equals_full_parse(self):
+        write(self.path, [prompt("Do spike issue 9."), call("a", "2026-10-09T10:00:00Z", read=500)],
+              extra_lines=["{bad"])
+        got, total, _ = usage.tally(self.path)
+        self.assertEqual((got, total), full(self.path))
+        self.assertEqual(got, "Do spike issue 9.")
+
+    def test_incremental_with_repeated_request(self):
+        write(self.path, [prompt("p"), call("a", "2026-10-09T10:00:00Z", out=10)])
+        _, _, state = usage.tally(self.path)
+        self.append([call("a", "2026-10-09T10:00:01Z", out=50),
+                     call("b", "2026-10-09T10:00:02Z", read=100)])
+        got, total, state = usage.tally(self.path, state)
+        self.assertEqual((got, total), full(self.path))
+        self.append([call("c", "2026-10-09T10:00:03Z")])
+        self.assertEqual(usage.tally(self.path, state)[:2], full(self.path))
+
+    def test_partial_last_line_waits(self):
+        write(self.path, [prompt("p"), call("a", "2026-10-09T10:00:00Z")])
+        line = json.dumps(call("b", "2026-10-09T10:00:01Z", read=1000))
+        with open(self.path, "a") as handle:
+            handle.write(line[:20])
+        _, before, state = usage.tally(self.path)
+        self.assertEqual(before, full(self.path)[1])
+        with open(self.path, "a") as handle:
+            handle.write(line[20:] + "\n")
+        got, total, _ = usage.tally(self.path, state)
+        self.assertGreater(total, before)
+        self.assertEqual((got, total), full(self.path))
+
+    def test_truncated(self):
+        write(self.path, [prompt("p")] + [call(f"r{i}", "2026-10-09T10:00:00Z") for i in range(5)])
+        _, _, state = usage.tally(self.path)
+        write(self.path, [prompt("q"), call("x", "2026-10-09T10:00:00Z", read=7)])
+        got, total, _ = usage.tally(self.path, state)
+        self.assertEqual((got, total), full(self.path))
+
+    def test_replaced_file(self):
+        write(self.path, [prompt("p"), call("a", "2026-10-09T10:00:00Z")])
+        _, _, state = usage.tally(self.path)
+        other = self.path.with_name("new.jsonl")
+        write(other, [prompt("q")] + [call(f"n{i}", "2026-10-09T10:00:00Z", read=9) for i in range(4)])
+        os.replace(other, self.path)
+        got, total, _ = usage.tally(self.path, state)
+        self.assertEqual((got, total), full(self.path))
+        self.assertEqual(got, "q")
+
+    def test_read_dedups_request_ids(self):
+        write(self.path, [call("a", "2026-10-09T10:00:00Z"), call("a", "2026-10-09T10:00:00Z")])
+        self.assertEqual(len(usage._read(self.path, set())[1]), 1)
 
 
 class ClassifyTest(unittest.TestCase):
