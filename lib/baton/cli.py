@@ -169,11 +169,22 @@ def cmd_comment(opts):
     return 0
 
 
+_EXEC_REFUSED_GROUPS = ("auth", "extension", "alias")
+
+
+def _exec_forbidden(words):
+    """Explicit refusals that hold even if the write allowlist changes: token-printing or
+    code-running groups, a leading global flag, and --hostname (would send the token elsewhere)."""
+    if words[1].startswith("-") or words[1] in _EXEC_REFUSED_GROUPS:
+        return True
+    return any(w == "--hostname" or w.startswith("--hostname=") for w in words)
+
+
 @cliargs.command("exec")
 def cmd_exec(opts):
     words = opts.words
     if not words or words[0] != "gh" or len(words) < 2 or opts.role not in set(comment.ROLES) | set(config.ROLES) \
-            or not gate.is_recognised_write(words):
+            or not gate.is_recognised_write(words) or _exec_forbidden(words):
         return cliargs.fail("exec")
     extra = identity.child_env(opts.role)
     env = {**os.environ, **extra} if extra else None

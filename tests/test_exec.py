@@ -54,6 +54,21 @@ class ExecTest(unittest.TestCase):
             self.assertEqual(code, 64, argv)
             m.assert_not_called()
 
+    def test_dangerous_gh_refused(self):
+        for tier in (lambda: None, None):
+            if tier is None:
+                self.tier1()
+            else:
+                identity.use(tier)
+            for argv in (["gh", "auth", "token"], ["gh", "auth", "status"],
+                         ["gh", "extension", "install", "x"], ["gh", "alias", "set", "x", "y"],
+                         ["gh", "issue", "comment", "5", "--hostname", "h"],
+                         ["gh", "issue", "comment", "5", "--hostname=h"],
+                         ["gh", "-R", "x", "auth", "token"]):
+                code, m = run_exec(argv)
+                self.assertEqual(code, 64, argv)
+                m.assert_not_called()
+
     def test_unrecognised_gh_refused(self):
         identity.use(lambda: None)
         for argv in (["gh", "issue", "list"], ["gh", "api", "repos/o/r/issues"], ["gh", "pr", "view", "3"]):
