@@ -601,6 +601,8 @@ def cmd_ready_check(args):
     data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "author,body,labels,comments"]))
     data["comments"] = identity.mark_authors(run.run, int(args[0]), data.get("comments"))
     maintainers = _maintainers(cfg)
+    if issue.is_outside(data, maintainers, _bots()):
+        data["edits"] = issue.body_edits(run.run, int(args[0]))
     problems = issue.ready_problems(data, cfg, maintainers, run.run, _bots())
     for problem in problems:
         print(f"- {problem}")

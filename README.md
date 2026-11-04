@@ -47,7 +47,7 @@ published text, state changes without a marker comment), but they are not a sand
 [SECURITY.md](SECURITY.md). Only issues written by a maintainer enter a sprint, and only the
 maintainer's comments count as answers. An issue is *outside* when its author is not a maintainer
 or its body has a line `Origin: outside (@<author>)`; it enters a sprint only with a comment that
-is exactly `/baton ready`, unmarked, from a maintainer. Agents can only post marker comments
+is exactly `/baton ready`, unmarked, from a maintainer. The approval stops counting when someone other than a maintainer or Baton edits the body after it; a maintainer then posts `/baton ready` again. Agents can only post marker comments
 through `baton comment`, but a raw comment an agent writes with `gh` looks like yours, so until
 agents have their own login (#150) this rule is only as strong as that interim. Try it on a
 repository you can afford to experiment on first. The triager is the only agent that reads outside
