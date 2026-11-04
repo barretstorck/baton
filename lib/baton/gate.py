@@ -406,6 +406,9 @@ def decide(command, cwd, terms):
         texts += [m.group(1) for m in _DATA_FLAG.finditer(stripped)]
     else:
         texts += _QUOTED.findall(without_cats)
+    for seg in segments:
+        texts += [m.group(3) for m in _BODY_VALUE.finditer(seg)
+                  if m.group(3) and m.group(3)[0] not in "-@$"]
     for path, start in cats:
         text, problem = _read(path, _cd_base(stripped, start, cwd))
         if problem:
