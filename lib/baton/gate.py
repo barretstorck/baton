@@ -4,7 +4,7 @@ Runs as a Claude Code PreToolUse hook. The gate is a text scanner: it does not
 parse shell and does not know which `gh` subcommand writes. For a command that
 names a forge-facing program (`FORGE_CLIS`) or publishes with git (`commit`,
 `push`, `tag`), it scans every quoted string, heredoc body and body file the
-command would send. It refuses only for four safety reasons: a privacy finding
+command would send. It refuses only for four safety reasons (and one more in a Baton repository): a privacy finding
 in that text, text it cannot read (stdin, a missing body file, command
 substitution in a double-quoted body), a git hook bypass, and missing hooks.
 A body file is read relative to the last literal `cd` before it in the same
@@ -14,6 +14,8 @@ any other substitution or backticks, or a `cd` to a non-literal target, is
 still refused as unreadable text.
 Diffs are scanned by the git hooks (githooks.py), which the gate requires to be
 installed and not bypassed.
+In a Baton repository (a brief exists) it also refuses an empty or whitespace-only
+`--body` / `-b` value or `--body-file` / `-F` file on `gh issue|pr create|edit`.
 
 In a Baton repository a raw `gh issue|pr close|reopen` also needs `--comment`.
 From Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or
