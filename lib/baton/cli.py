@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import budget, checklist, clean, comment, config, doctor, gate, githooks, identity, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
+from . import branches, budget, checklist, clean, comment, config, doctor, gate, githooks, identity, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
 
 
 def cmd_config(args):
@@ -847,8 +847,18 @@ def cmd_push(args):
         if problem:
             print(f"baton push: refused {args[0]}: {problem}", file=sys.stderr)
             return 1
+    tier1 = not identity.pushes_to_origin()
+    sha = ""
+    if tier1:
+        try:
+            sha = run.run(["git", "rev-parse", "--verify", f"{args[0].partition(':')[0]}^{{commit}}"],
+                          cwd=os.getcwd()).strip()
+        except run.RunError:
+            sha = ""
     argv, env = identity.push_command(args[0], info["nameWithOwner"])
     print(run.run(argv, cwd=os.getcwd(), env=env), end="")
+    if tier1:
+        branches.record_push(run.run, os.getcwd(), args[0], sha)
     return 0
 
 
