@@ -3,10 +3,11 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import budget, checklist, clean, comment, config, doctor, gate, githooks, identity, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
+from . import cliargs, budget, checklist, clean, comment, config, doctor, gate, githooks, identity, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
 
 
-def cmd_config(args):
+@cliargs.command("config")
+def cmd_config(opts):
     cfg = config.load(os.getcwd())
     if cfg is None:
         print("not a Baton repository: .baton/brief.md not found", file=sys.stderr)
@@ -19,11 +20,13 @@ def cmd_config(args):
     return 0
 
 
-def cmd_budget(args):
+@cliargs.command("budget")
+def cmd_budget(opts):
     return budget.main(sys.stdin.read())
 
 
-def cmd_gate(args):
+@cliargs.command("gate")
+def cmd_gate(opts):
     return gate.main(sys.stdin.read())
 
 
@@ -52,7 +55,8 @@ def cmd_git_hook(args):
     return 64
 
 
-def cmd_install_hooks(args):
+@cliargs.command("install-hooks")
+def cmd_install_hooks(opts):
     baton_bin = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "baton"))
     try:
         for path in githooks.install(os.getcwd(), baton_bin):
@@ -70,9 +74,10 @@ def _require_config():
     return cfg
 
 
-def cmd_labels(args):
+@cliargs.command("labels")
+def cmd_labels(opts):
     cfg = _require_config()
-    create = cfg.data["labels"]["auto_create"] or "--create" in args
+    create = cfg.data["labels"]["auto_create"] or opts.create
     created, still = labels.ensure(cfg, run.run, create=create)
     for name in created:
         print(f"created {name}")
@@ -81,52 +86,32 @@ def cmd_labels(args):
     return 1 if still else 0
 
 
-def cmd_set_status(args):
-    if len(args) != 2:
-        print("usage: baton set-status <issue-number> <status:name>", file=sys.stderr)
-        return 64
-    labels.set_status(_require_config(), run.run, int(args[0]), args[1])
+@cliargs.command("set-status")
+def cmd_set_status(opts):
+    labels.set_status(_require_config(), run.run, opts.issue, opts.status)
     return 0
 
 
-def _set_group(group, args):
-    if len(args) != 2 or not args[0].isdigit() or not args[1].isdigit():
-        print(f"usage: baton set-{group} <issue-number> <1-4>", file=sys.stderr)
-        return 64
-    labels.set_group(_require_config(), run.run, int(args[0]), group, int(args[1]))
+def _set_group(group, opts):
+    labels.set_group(_require_config(), run.run, opts.issue, group, opts.value)
     return 0
 
 
-def cmd_set_priority(args):
-    return _set_group("priority", args)
+@cliargs.command("set-priority")
+def cmd_set_priority(opts):
+    return _set_group("priority", opts)
 
 
-def cmd_set_severity(args):
-    return _set_group("severity", args)
+@cliargs.command("set-severity")
+def cmd_set_severity(opts):
+    return _set_group("severity", opts)
 
 
-def cmd_merge_pr(args):
-    if len(args) != 1 or not args[0].isdigit():
-        print("usage: baton merge-pr <pull-request-number>", file=sys.stderr)
-        return 64
-
-    def tolerant(argv, cwd=None):
-        cleanup = (argv[:3] in (["git", "branch", "-D"], ["git", "push", "origin"],
-                                ["git", "worktree", "remove"]) or argv[:2] == ["git", "-C"])
-        try:
-            return run.run(argv, cwd)
-        except run.RunError as error:
-            if not cleanup:
-                raise
-            if (argv[:4] == ["git", "push", "origin", "--delete"]
-                    and "remote ref does not exist" in str(error)):
-                return ""
-            print(f"baton: cleanup skipped: {error}", file=sys.stderr)
-            return ""
-
+@cliargs.command("merge-pr")
+def cmd_merge_pr(opts):
     notes = []
     try:
-        problems = merge.merge(int(args[0]), _require_config(), tolerant, notes, bots=_bots(),
+        problems = merge.merge(opts.pr, _require_config(), merge.tolerant(run.run), notes, bots=_bots(),
                                reviewers=_reviewers())
     except merge.PlanRetired as note:
         print(f"baton: {note}; not merged yet")
@@ -135,11 +120,11 @@ def cmd_merge_pr(args):
         print(f"baton: {error}", file=sys.stderr)
         return 1
     if problems:
-        print(f"Baton refused to merge #{args[0]}:", file=sys.stderr)
+        print(f"Baton refused to merge #{opts.pr}:", file=sys.stderr)
         for problem in problems:
             print(f"- {problem}", file=sys.stderr)
         return 1
-    print(f"merged #{args[0]}")
+    print(f"merged #{opts.pr}")
     for note in notes:
         print(f"baton: {note}", file=sys.stderr)
     return 0
@@ -166,15 +151,11 @@ def _reviewers():
     return identity.reviewer_logins()
 
 
-def cmd_comment(args):
-    if len(args) != 5:
-        print("usage: baton comment <issue|pr> <number> <role> <kind> <body-file | ->",
-              file=sys.stderr)
-        return 64
-    target, number, role, kind, path = args
+@cliargs.command("comment")
+def cmd_comment(opts):
     try:
-        body = comment.read_body(path, sys.stdin)
-        print(comment.post(_require_config(), run.run, target, int(number), role, kind,
+        body = comment.read_body(opts.body, sys.stdin)
+        print(comment.post(_require_config(), run.run, opts.target, opts.number, opts.role, opts.kind,
                            body, scan.load_terms()))
     except comment.CommentError as error:
         print(f"baton: {error}", file=sys.stderr)
@@ -534,21 +515,17 @@ def cmd_usage(args):
     return 0
 
 
-def cmd_answers(args):
-    if len(args) != 1 or not args[0].isdigit():
-        print("usage: baton answers <issue-number>", file=sys.stderr)
-        return 64
+@cliargs.command("answers")
+def cmd_answers(opts):
     cfg = _require_config()
-    data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "comments"]))
-    data["comments"] = identity.mark_authors(run.run, int(args[0]), data.get("comments"))
+    data = json.loads(run.run(["gh", "issue", "view", str(opts.issue), "--json", "comments"]))
+    data["comments"] = identity.mark_authors(run.run, opts.issue, data.get("comments"))
     print(json.dumps(comment.pending_answers(data, _maintainers(cfg), _bots()), indent=2))
     return 0
 
 
-def cmd_open_questions(args):
-    if args:
-        print("usage: baton open-questions", file=sys.stderr)
-        return 64
+@cliargs.command("open-questions")
+def cmd_open_questions(opts):
     cfg = _require_config()
     issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "300",
                                  "--json", "number,title,state,labels,body,author,comments"]))
@@ -593,16 +570,15 @@ def cmd_notify(args):
     return 0
 
 
-def cmd_ready_check(args):
-    if len(args) != 1 or not args[0].isdigit():
-        print("usage: baton ready-check <issue-number>", file=sys.stderr)
-        return 64
+@cliargs.command("ready-check")
+def cmd_ready_check(opts):
     cfg = _require_config()
-    data = json.loads(run.run(["gh", "issue", "view", args[0], "--json", "author,body,labels,comments"]))
-    data["comments"] = identity.mark_authors(run.run, int(args[0]), data.get("comments"))
+    number = opts.issue
+    data = json.loads(run.run(["gh", "issue", "view", str(number), "--json", "author,body,labels,comments"]))
+    data["comments"] = identity.mark_authors(run.run, number, data.get("comments"))
     maintainers = _maintainers(cfg)
     if issue.is_outside(data, maintainers, _bots()):
-        data["edits"] = issue.body_edits(run.run, int(args[0]))
+        data["edits"] = issue.body_edits(run.run, number)
     problems = issue.ready_problems(data, cfg, maintainers, run.run, _bots())
     for problem in problems:
         print(f"- {problem}")
@@ -612,27 +588,25 @@ def cmd_ready_check(args):
     return 1 if problems else 0
 
 
-def cmd_sprint_status(args):
+@cliargs.command("sprint-status")
+def cmd_sprint_status(opts):
     cfg = _require_config()
-    print(json.dumps(sprint.snapshot(cfg, run.run, args[0] if args else None,
+    print(json.dumps(sprint.snapshot(cfg, run.run, opts.milestone,
                                   bots=_bots(), reviewers=_reviewers()), indent=2))
     return 0
 
 
-def cmd_sprint_order(args):
-    if not args or not all(a.isdigit() for a in args):
-        print("usage: baton sprint-order <issue>...", file=sys.stderr)
-        return 64
+@cliargs.command("sprint-order")
+def cmd_sprint_order(opts):
     cfg = _require_config()
     issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "300",
                                  "--json", "number,labels"]))
     spike = cfg.label("type:spike")
     flags = {i["number"]: any(l.get("name") == spike for l in i.get("labels", []))
              for i in issues}
-    numbers = [int(a) for a in args]
+    numbers = opts.issues
     if any(n not in flags for n in numbers):
-        print("usage: baton sprint-order <issue>...", file=sys.stderr)
-        return 64
+        return cliargs.fail("sprint-order")
     found = sprint.spikes_first(numbers, flags, cfg.data["spike"]["max_per_sprint"])
     print(json.dumps(found, indent=2))
     return 0
@@ -705,27 +679,23 @@ def cmd_sprint_metrics(args):
     return 0
 
 
-def cmd_pr_state(args):
-    if not args:
-        print("usage: baton pr-state <PR>", file=sys.stderr)
-        return 64
+@cliargs.command("pr-state")
+def cmd_pr_state(opts):
     cfg = _require_config()
-    pr = json.loads(run.run(["gh", "pr", "view", args[0], "--json", sprint.PR_STATE_FIELDS]))
-    number = pr.get("number") or (int(args[0]) if args[0].isdigit() else None)
+    pr = json.loads(run.run(["gh", "pr", "view", opts.pr, "--json", sprint.PR_STATE_FIELDS]))
+    number = pr.get("number") or (int(opts.pr) if opts.pr.isdigit() else None)
     if number:
         pr["comments"] = identity.mark_authors(run.run, number, pr.get("comments"))
     print(json.dumps(sprint.pr_state(pr, cfg, run.run, reviewers=_reviewers()), indent=2))
     return 0
 
 
-def cmd_verify(args):
-    if len(args) != 2 or not args[0].isdigit():
-        print("usage: baton verify <PR> <worktree>", file=sys.stderr)
-        return 64
+@cliargs.command("verify")
+def cmd_verify(opts):
     cfg = _require_config()
     owner, name = _repo_name().split("/", 1)
-    worktree = os.path.abspath(args[1])
-    out = verify.verify(cfg, run.run, int(args[0]), worktree, owner, name)
+    worktree = os.path.abspath(opts.worktree)
+    out = verify.verify(cfg, run.run, opts.pr, worktree, owner, name)
     exit_text = "-" if out["exit"] is None else str(out["exit"])
     print(f"verify {out['result']} commit={out['commit'][:7]} exit={exit_text} "
           f"duration={out['seconds']}s")
@@ -782,7 +752,8 @@ def cmd_lock(args):
     return 64
 
 
-def cmd_clean(args):
+@cliargs.command("clean")
+def cmd_clean(opts):
     _require_config()
     repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
     owner, name = repo["nameWithOwner"].split("/", 1)
@@ -796,10 +767,8 @@ def cmd_clean(args):
     return 1 if failed or failed_logs else 0
 
 
-def cmd_identity(args):
-    if args != ["worktree"]:
-        print("usage: baton identity worktree", file=sys.stderr)
-        return 64
+@cliargs.command("identity")
+def cmd_identity(opts):
     who = identity.commit_identity(run.run)
     if who is None:
         print("tier 0: commits keep your git identity")
@@ -821,15 +790,13 @@ def cmd_identity(args):
     return 0
 
 
-def cmd_push(args):
-    if len(args) != 1:
-        print("usage: baton push <refspec>", file=sys.stderr)
-        return 64
+@cliargs.command("push")
+def cmd_push(opts):
     info = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
     default = (info.get("defaultBranchRef") or {}).get("name", "")
-    problem = identity.refspec_problem(args[0], default, identity.ref_format_ok)
+    problem = identity.refspec_problem(opts.refspec, default, identity.ref_format_ok)
     if problem:
-        print(f"baton push: refused {args[0]}: {problem}", file=sys.stderr)
+        print(f"baton push: refused {opts.refspec}: {problem}", file=sys.stderr)
         return 1
     if identity.pushes_to_origin():
         try:
@@ -838,17 +805,15 @@ def cmd_push(args):
         except run.RunError:
             problem = "no origin remote"
         if problem:
-            print(f"baton push: refused {args[0]}: {problem}", file=sys.stderr)
+            print(f"baton push: refused {opts.refspec}: {problem}", file=sys.stderr)
             return 1
-    argv, env = identity.push_command(args[0], info["nameWithOwner"])
+    argv, env = identity.push_command(opts.refspec, info["nameWithOwner"])
     print(run.run(argv, cwd=os.getcwd(), env=env), end="")
     return 0
 
 
-def cmd_doctor(args):
-    if args:
-        print("usage: baton doctor", file=sys.stderr)
-        return 64
+@cliargs.command("doctor")
+def cmd_doctor(opts):
     return doctor.main(_repo_name())
 
 

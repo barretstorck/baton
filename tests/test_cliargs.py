@@ -80,5 +80,51 @@ class FrameworkTest(unittest.TestCase):
         self.assertTrue(hasattr(handler, "__wrapped__"))
 
 
+BAD = {
+    "set-status": ["1"], "set-priority": ["x", "1"], "set-severity": ["1"],
+    "merge-pr": ["x"], "comment": ["issue", "1"], "answers": [],
+    "open-questions": ["x"], "ready-check": ["x"], "sprint-order": ["x"],
+    "pr-state": [], "verify": ["x", "dir"], "identity": ["nope"],
+    "push": [], "doctor": ["x"],
+}
+LENIENT = ["config", "budget", "gate", "install-hooks", "labels",
+           "sprint-status", "clean"]
+
+
+class CommandsTest(unittest.TestCase):
+    def call(self, name, argv):
+        from baton import cli
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.COMMANDS[name](argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_help_returns_zero(self):
+        for name in [*BAD, *LENIENT]:
+            with self.subTest(name):
+                code, out, _ = self.call(name, ["--help"])
+                self.assertEqual((code, out.startswith("usage:")), (0, True))
+
+    def test_malformed_prints_old_usage(self):
+        for name, argv in BAD.items():
+            with self.subTest(name):
+                code, _, err = self.call(name, argv)
+                self.assertEqual(code, 64)
+                self.assertEqual(err, cliargs.USAGE[name] + "\n")
+
+    def test_sprint_order_usage_text(self):
+        self.assertEqual(cliargs.USAGE["sprint-order"],
+                         "usage: baton sprint-order <issue>...")
+
+    def test_lenient_commands_ignore_extra_words(self):
+        for name in LENIENT:
+            with self.subTest(name):
+                opts = cliargs.parse(name, ["extra", "--zzz"])
+                self.assertIsNotNone(opts)
+
+    def test_push_takes_dash_word_as_value(self):
+        self.assertEqual(cliargs.parse("push", ["--force"]).refspec, "--force")
+
+
 if __name__ == "__main__":
     unittest.main()

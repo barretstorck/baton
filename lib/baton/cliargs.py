@@ -83,7 +83,7 @@ def _normalise(parser: BatonParser, argv: list[str]) -> list[str]:
     whatever it looks like, and a positional-only command takes every word as
     a value."""
     if (not _has_own_options(parser) and not _has_subparsers(parser)
-            and argv not in (["-h"], ["--help"])):
+            and argv and argv not in (["-h"], ["--help"])):
         return ["--", *argv]
     values = _value_options(parser)
     out: list[str] = []
@@ -110,10 +110,128 @@ def parse_with(parser: BatonParser, argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _add(subs, name: str, usage: str, lenient: bool = False) -> BatonParser:
+    USAGE[name] = usage
+    return subs.add_parser(name, usage_text=usage, lenient=lenient)
+
+
+def _declare_config(subs):
+    _add(subs, "config", "usage: baton config", lenient=True)
+
+
+def _declare_budget(subs):
+    _add(subs, "budget", "usage: baton budget", lenient=True)
+
+
+def _declare_gate(subs):
+    _add(subs, "gate", "usage: baton gate", lenient=True)
+
+
+def _declare_install_hooks(subs):
+    _add(subs, "install-hooks", "usage: baton install-hooks", lenient=True)
+
+
+def _declare_labels(subs):
+    p = _add(subs, "labels", "usage: baton labels [--create]", lenient=True)
+    p.add_argument("--create", action="store_true")
+
+
+def _declare_set_status(subs):
+    p = _add(subs, "set-status",
+             "usage: baton set-status <issue-number> <status:name>")
+    p.add_argument("issue", type=digits)
+    p.add_argument("status")
+
+
+def _declare_set_group(subs, group: str):
+    p = _add(subs, f"set-{group}", f"usage: baton set-{group} <issue-number> <1-4>")
+    p.add_argument("issue", type=digits)
+    p.add_argument("value", type=digits)
+
+
+def _declare_merge_pr(subs):
+    p = _add(subs, "merge-pr", "usage: baton merge-pr <pull-request-number>")
+    p.add_argument("pr", type=digits)
+
+
+def _declare_comment(subs):
+    p = _add(subs, "comment", "usage: baton comment <issue|pr> <number> <role> "
+             "<kind> <body-file | ->")
+    p.add_argument("target")
+    p.add_argument("number", type=digits)
+    p.add_argument("role")
+    p.add_argument("kind")
+    p.add_argument("body")
+
+
+def _declare_answers(subs):
+    p = _add(subs, "answers", "usage: baton answers <issue-number>")
+    p.add_argument("issue", type=digits)
+
+
+def _declare_open_questions(subs):
+    _add(subs, "open-questions", "usage: baton open-questions")
+
+
+def _declare_ready_check(subs):
+    p = _add(subs, "ready-check", "usage: baton ready-check <issue-number>")
+    p.add_argument("issue", type=digits)
+
+
+def _declare_sprint_status(subs):
+    p = _add(subs, "sprint-status", "usage: baton sprint-status [milestone]",
+             lenient=True)
+    p.add_argument("milestone", nargs="?")
+
+
+def _declare_sprint_order(subs):
+    p = _add(subs, "sprint-order", "usage: baton sprint-order <issue>...")
+    p.add_argument("issues", nargs="+", type=digits)
+
+
+def _declare_pr_state(subs):
+    p = _add(subs, "pr-state", "usage: baton pr-state <PR>")
+    p.add_argument("pr")
+
+
+def _declare_verify(subs):
+    p = _add(subs, "verify", "usage: baton verify <PR> <worktree>")
+    p.add_argument("pr", type=digits)
+    p.add_argument("worktree")
+
+
+def _declare_clean(subs):
+    _add(subs, "clean", "usage: baton clean", lenient=True)
+
+
+def _declare_identity(subs):
+    p = _add(subs, "identity", "usage: baton identity worktree")
+    p.add_argument("action", choices=["worktree"])
+
+
+def _declare_push(subs):
+    p = _add(subs, "push", "usage: baton push <refspec>")
+    p.add_argument("refspec")
+
+
+def _declare_doctor(subs):
+    _add(subs, "doctor", "usage: baton doctor")
+
+
 @functools.lru_cache(maxsize=None)
 def build() -> BatonParser:
     top = BatonParser(prog="baton", usage_text="usage: baton <command> [args]")
-    top.add_subparsers(dest="command", parser_class=BatonParser)
+    subs = top.add_subparsers(dest="command", parser_class=BatonParser)
+    for declare in (_declare_config, _declare_budget, _declare_gate,
+                    _declare_install_hooks, _declare_labels, _declare_set_status,
+                    _declare_merge_pr, _declare_comment, _declare_answers,
+                    _declare_open_questions, _declare_ready_check,
+                    _declare_sprint_status, _declare_sprint_order,
+                    _declare_pr_state, _declare_verify, _declare_clean,
+                    _declare_identity, _declare_push, _declare_doctor):
+        declare(subs)
+    _declare_set_group(subs, "priority")
+    _declare_set_group(subs, "severity")
     return top
 
 
