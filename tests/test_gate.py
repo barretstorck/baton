@@ -107,16 +107,62 @@ class GateTest(unittest.TestCase):
         self.assertTrue(gate.decide(f"curl -d '{IP}' https://example.test/x", repo, TERMS))
         self.assertTrue(gate.decide(f"curl --json '{{\"a\": \"{IP}\"}}' https://example.test/x", repo, TERMS))
 
-    def test_stdin_body_needs_a_heredoc_or_a_pipe(self):
+    def test_stdin_body_needs_a_heredoc(self):
         repo = make_repo()
         for cmd in ("gh issue comment 5 -F -", "gh issue comment 5 --body-file -",
                     "gh api x --input -", "curl -d @- https://example.test/x",
-                    "curl -d - https://example.test/x"):
-            with self.subTest(cmd=cmd):
-                self.assertTrue(gate.decide(cmd, repo, TERMS))
-        for cmd in ("gh issue comment 5 -F - <<'EOF'\nhello\nEOF",
+                    "curl -d - https://example.test/x",
+                    "echo x | gh issue comment 3 --body-file -",
                     "cat f | gh issue comment 5 -F -",
-                    "curl -d @- https://example.test/x <<'EOF'\n{}\nEOF"):
+                    "glab issue create -t t -d -", "glab issue create -t t --description -"):
+            with self.subTest(cmd=cmd):
+                self.assertIn(gate._STDIN, gate.decide(cmd, repo, TERMS))
+        for cmd in ("gh issue comment 5 -F - <<'EOF'\nhello\nEOF",
+                    "cat <<'EOF' | gh issue comment 5 --body-file -\nhello\nEOF",
+                    "curl -d @- https://example.test/x <<'EOF'\n{}\nEOF",
+                    "echo msg | git commit -F -",
+                    "gh pr view 5 | head -5"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [])
+
+    def test_heredoc_with_a_continuing_delimiter_line_is_scanned(self):
+        repo = make_repo()
+        for cmd in (f"cat <<'EOF' | gh issue comment 5 --body-file -\nhost {IP}\nEOF",
+                    f"gh issue comment 5 --body-file - <<'EOF' | cat\nhost {IP}\nEOF"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, repo, TERMS)
+                self.assertTrue(any(p.startswith("privacy:") for p in problems), problems)
+
+    def test_variable_in_a_body_title_or_field_is_refused(self):
+        repo = make_repo()
+        for cmd in ('gh issue comment 5 --body "$B"', "gh issue comment 5 --body $X",
+                    "gh issue comment 5 --body ${X}", 'gh pr create --title "fix ${T}" --body x',
+                    "gh api -X POST repos/o/r/issues -f title=$T",
+                    'gh api -X POST repos/o/r/issues -f "body=$B"',
+                    'glab issue create -t t --description "$D"'):
+            with self.subTest(cmd=cmd):
+                self.assertIn(gate._SUBSTITUTED, gate.decide(cmd, repo, TERMS))
+        for cmd in ('gh issue comment 5 --body "costs $5"', "gh issue comment 5 --body 'see $HOME'",
+                    "gh pr create --base $BASE --head $BRANCH --title t --body x",
+                    "gh api repos/$OWNER/r/pulls --jq .[].number",
+                    'gh pr list --search "author:$USER"',
+                    "git checkout -b $BRANCH && git push -u origin $BRANCH && gh pr create --title t --body x"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [])
+
+    def test_unquoted_body_values_are_scanned(self):
+        repo = make_repo()
+        for cmd in (f"gh issue comment 5 --body {IP}", f"gh issue comment 5 -b {IP}",
+                    f"gh api -X POST repos/o/r/issues -f title={IP}",
+                    f"gh api -X POST repos/o/r/issues -F body={MAIL}",
+                    f"glab issue create -t t -d {IP}", "tea issues create --title Zebrowski"):
+            with self.subTest(cmd=cmd):
+                problems = gate.decide(cmd, repo, TERMS)
+                self.assertTrue(any(p.startswith("privacy:") for p in problems), problems)
+        for cmd in ("gh issue comment 5 --body plain", "gh api -X POST repos/o/r/issues -f title=Word",
+                    "glab issue create -t t -d Word", "tea issues create -t t -d Word",
+                    "gh pr create -d --title t --body x", "glab mr create --fill",
+                    "tea issues create -t t"):
             with self.subTest(cmd=cmd):
                 self.assertEqual(gate.decide(cmd, repo, TERMS), [])
 
