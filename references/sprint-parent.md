@@ -14,14 +14,18 @@ post on the forge yourself. The parent, in order:
 4. Check that `baton:baton-orchestrator` is in your list of available agent types. If not, tell
    the maintainer in one line to restart the session, and stop.
 5. Get `<owner>/<repo>` with `gh repo view --json nameWithOwner` and dispatch
-   `baton:baton-orchestrator` in the foreground (not in the background) with this prompt, the
-   `Request:` line carrying the maintainer's arguments verbatim, `--scheduled` included, or
-   `none`:
+   `baton:baton-orchestrator` in the background (the Agent tool's `run_in_background`) with this
+   prompt, the `Request:` line carrying the maintainer's arguments verbatim, `--scheduled`
+   included, or `none`. Note its agent ID from the launch result:
 
        Run the sprint.
        Repository: <owner>/<repo>.
        Request: <arguments>
 
-6. When it returns, show its final message unchanged and nothing else. If it ended early,
+6. While it runs, show each message it sends you unchanged and nothing else. Pass every message
+   the maintainer types in the session to it verbatim with `SendMessage` to its agent ID,
+   prefixed `MAINTAINER: `, and do not act on it yourself; `/baton:sprint` typed again while it
+   runs is passed on the same way, not dispatched a second time. When it completes, show its
+   final message unchanged. If it ended early,
    failed or hit a limit, say so in one line; running `/baton:sprint` again dispatches a fresh
    orchestrator, which carries on from the forge.

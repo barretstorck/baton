@@ -1,8 +1,10 @@
 """Issue, pull request and milestone writes: scanned first, then sent through `gh`."""
 import json
 import os
+import sys
 import tempfile
 
+from . import checklist
 from . import identity
 from . import issue as issue_mod
 from . import scan
@@ -49,6 +51,24 @@ def create_issue(cfg, runner, title, body, labels, milestone, terms):
     return _with_body(runner, body, build)
 
 
+def _keep_plan(runner, number, body):
+    """`body`, with the issue's current Developer Plan appended if `body` drops it."""
+    if checklist.span(body, "developer plan") is not None:
+        return body
+    old = checklist.issue_body(runner, number)
+    found = checklist.span(old, "developer plan")
+    if found is None:
+        return body
+    section = old[checklist._section_start(old, found):found[1]]
+    try:
+        kept = checklist.set_plan(body, section)
+    except checklist.TaskError as err:
+        raise CommentError(f"could not keep the Developer Plan of #{number}: {err}")
+    print(f"baton: kept the Developer Plan of #{number}; change it with baton plan set",
+          file=sys.stderr)
+    return kept
+
+
 def edit(cfg, runner, target, number, terms, title=None, body=None, add_labels=(),
          remove_labels=(), milestone=None, remove_milestone=False):
     if target not in ("issue", "pr"):
@@ -60,6 +80,8 @@ def edit(cfg, runner, target, number, terms, title=None, body=None, add_labels=(
         raise CommentError("use --milestone or --remove-milestone, not both")
     if not (title or body or add_labels or remove_labels or milestone or remove_milestone):
         raise CommentError("nothing to change")
+    if body is not None and target == "issue":
+        body = _keep_plan(runner, number, body)
     _check(cfg, terms, title, body, *add_labels, *remove_labels, milestone)
     argv = ["gh", target, "edit", str(number)]
     if title:
