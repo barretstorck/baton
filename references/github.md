@@ -42,7 +42,7 @@ Every skill reads issue text with `baton issue read <N>`, never with raw `gh iss
 
 ## Writing
 
-These commands are the rule, not only what the gate checks: every write to the forge goes through the `baton` command in this table. A raw `gh` write (`gh issue comment`, `gh pr create`, `gh pr merge`, `gh label ...`, `gh api -X POST ...`) is not allowed even where the gate lets it through, because it skips the Baton marker and the checks `baton` makes.
+These commands are the rule, not only what the gate checks: every write to the forge goes through the `baton` command in this table. A raw `gh` write (`gh issue comment`, `gh pr create`, `gh pr merge`, `gh label ...`, `gh api -X POST ...`) is not allowed even where the gate lets it through. The gate lets a clean raw `gh` write pass, but the `baton` command adds the Baton marker, refuses an empty body, and at tier 1 writes as the `baton` App (a raw `gh` write runs with the maintainer's own login).
 
 | Step | Command |
 |---|---|
@@ -91,7 +91,10 @@ The gate is a text scanner. It checks commands that talk to a forge (`gh`, `glab
 - text it cannot read: a body from stdin (`-F -`, `--body-file -`) without a heredoc or pipe, a
   body file that does not exist yet (write the file in one step, post it in the next), or `$(...)`
   or backticks in a double-quoted title, body or message. Inline text and inline heredocs
-  (`"$(cat <<'EOF' ... EOF)"`) are fine;
+  (`"$(cat <<'EOF' ... EOF)"`) are fine. A body file is read relative to the last literal `cd <dir>`
+  before it in the same command (else the working directory), and a double-quoted body whose only
+  substitutions are `$(cat <literal path>)` is scanned by reading those files; any other `$(...)`
+  or backticks, or a `cd` to a non-literal target, is still refused as unreadable text;
 - a hook bypass on a git commit, push or tag: `--no-verify`, `core.hooksPath`, or overriding
   `HOME` or `GIT_*` settings;
 - missing git hooks;

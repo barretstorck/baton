@@ -232,8 +232,8 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton issue create\|edit ...` | Create an issue, or edit its title, description, labels or milestone; scans the text first |
 | `baton pr create\|edit\|ready ...` | Open a (draft) pull request, edit it, or mark it ready (`--undo` back to draft) |
 | `baton milestone create\|edit ...` | Create a milestone, or edit its title, description, due date or state |
-| `baton close <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:closed` marker comment with the reason, then close; a raw `gh issue|pr close|reopen` needs `--comment`; from Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or `reopened`) marker to the comment through a rewrite that keeps the permission prompt, otherwise, or for a compound command, it refuses and names the marker line to add |
-| `baton reopen <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:reopened` marker comment with the reason, then reopen; the raw `gh ... reopen` rule is the same as for close |
+| `baton close <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:closed` marker comment with the reason, then close; a raw `gh issue|pr close|reopen` needs `--comment`; from Claude Code 2.1.290 the gate adds the `baton:<role>:closed` (or `reopened`) marker to the comment through a rewrite that keeps the permission prompt, otherwise, or for a compound command, it refuses and names the marker line to add; a raw close that passes the gate still skips the empty-reason check of `baton close` and, at tier 1, runs under your own login instead of the `baton` App |
+| `baton reopen <issue\|pr> <number> <role> <reason-file \| ->` | Post a `baton:<role>:reopened` marker comment with the reason, then reopen; the raw `gh ... reopen` rule, and what a raw reopen skips, is the same as for close |
 | `baton review state <pr>` | The pull request's review state at its head commit |
 | `baton review post <pr> <approve\|changes\|blocked\|replan> <sha> <file \| ->` | Post a review of that commit |
 | `baton answers <issue>` | The latest agent question and the maintainer's replies |
