@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import budget, checklist, clean, comment, config, doctor, gate, githooks, identity, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
+from . import budget, checklist, clean, comment, compact, config, doctor, gate, githooks, identity, issue, labels, merge, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
 
 
 def cmd_config(args):
@@ -21,6 +21,10 @@ def cmd_config(args):
 
 def cmd_budget(args):
     return budget.main(sys.stdin.read())
+
+
+def cmd_compact_reminder(args):
+    return compact.main(sys.stdin.read())
 
 
 def cmd_gate(args):
@@ -864,6 +868,7 @@ COMMANDS = {
     "ready-check": cmd_ready_check,
     "config": cmd_config,
     "budget": cmd_budget,
+    "compact-reminder": cmd_compact_reminder,
     "gate": cmd_gate,
     "git-hook": cmd_git_hook,
     "install-hooks": cmd_install_hooks,
