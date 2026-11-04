@@ -83,6 +83,25 @@ _HEREDOC = re.compile(r"<<-?[ \t]*['\"]?(\w+)['\"]?\n(.*?)\n[ \t]*\1\b", re.S)
 _QUOTED = re.compile(r"""'[^']*'|"[^"]*\"""")
 _DATA_FLAG = re.compile(r"""(?:--data(?:-raw|-binary|-urlencode)?|--json|--form|-[dF])(?:\s+|=)('[^']*'|"[^"]*"|\S+)""")
 
+_CLOSE_RE = re.compile(r"(?<![\w-])gh\s+(?:(?:-R|--repo)\s+\S+\s+|-\S+\s+)*(issue|pr)\s+(close|reopen)\b")
+_CLOSE_REASON = ("`gh issue|pr close|reopen` needs a reason in a Baton repository: add --comment \"<reason>\"; "
+                 "Baton adds its marker to the comment")
+_HAS_REASON = re.compile(r"(?<![\w-])(?:-c|--comment)(?=[\s=]|$)|(?<![\w-])-c\S")
+_HELP = re.compile(r"(?<![\w-])(?:--help|-h)(?![\w-])")
+
+
+def _close_command(stripped):
+    """(target, action, has_reason) for a gh issue|pr close|reopen in the command, else None."""
+    blanked = _QUOTED.sub('""', stripped)
+    match = _CLOSE_RE.search(blanked)
+    if not match:
+        return None
+    segment = re.split(r"[;&|\n]", blanked[match.start():], maxsplit=1)[0]
+    if _HELP.search(segment):
+        return None
+    return match.group(1), match.group(2), bool(_HAS_REASON.search(segment))
+
+
 _BYPASS = ("git hook bypass (--no-verify, -n, core.hooksPath or an overridden environment) is not allowed here; "
            "commit or push without it so the Baton hooks scan the change")
 _STDIN = "a body read from stdin cannot be scanned; pass --body or a file path"
@@ -168,6 +187,10 @@ def decide(command, cwd, terms):
             problems.append(_BYPASS)
         if cfg is not None and not githooks.installed(cfg.root):
             problems.append(_HOOKS_MISSING)
+
+    closing = _close_command(stripped) if cfg is not None else None
+    if closing and not closing[2]:
+        problems.append(_CLOSE_REASON)
 
     http_only = bool(forge) and not git and all(name in _HTTP_CLIS for name in forge)
     stdin_pattern = _stdin_re(flags) if forge else _GIT_STDIN

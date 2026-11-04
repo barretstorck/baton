@@ -270,6 +270,19 @@ class GateTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             return gate.main(json.dumps(payload))
 
+    def test_close_without_a_reason_is_refused_in_a_baton_repo(self):
+        with_brief, without = make_repo(), make_repo(brief=None)
+        for cmd in ["gh issue close 5", "gh pr close 5 --delete-branch", "gh issue reopen 5",
+                    "gh -R o/r pr reopen 5", "cd sub && gh issue close 5"]:
+            self.assertIn(gate._CLOSE_REASON, gate.decide(cmd, with_brief, TERMS), cmd)
+            self.assertEqual(gate.decide(cmd, without, TERMS), [], cmd)
+        for cmd in ['gh issue close 5 --comment "done"', "gh pr close 5 -c done",
+                    "gh issue reopen 5 --comment=again", "gh issue close --help",
+                    "gh issue view 5 --comments", "gh issue list --state closed",
+                    'gh issue comment 5 --body "close this"']:
+            for repo in (with_brief, without):
+                self.assertEqual(gate.decide(cmd, repo, TERMS), [], cmd)
+
     def test_merge_hint_once_per_session(self):
         def run(command, session="s1"):
             payload = {"tool_name": "Bash", "cwd": "/", "tool_input": {"command": command}}
