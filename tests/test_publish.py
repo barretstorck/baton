@@ -108,6 +108,11 @@ class PrTest(unittest.TestCase):
         self.assertTrue(r.lines()[0].endswith("--draft"))
         self.assertTrue(r.lines()[0].startswith("gh pr create --title T --body-file "))
 
+    def test_create_pr_head(self):
+        r = Capture()
+        publish.create_pr(cfg(), r, "T", "b", False, [], head="b")
+        self.assertIn(" --head b", r.lines()[0])
+
     def test_ready(self):
         r = Capture()
         publish.ready_pr(r, 7)
@@ -235,6 +240,9 @@ class ParseTest(unittest.TestCase):
     def test_pr_create_and_ready(self):
         o = publish.parse_pr(["create", "--title", "T", "--draft", "f"])
         self.assertTrue(o["draft"])
+        self.assertIsNone(o["head"])
+        o = publish.parse_pr(["create", "--title", "T", "--head", "b", "f"])
+        self.assertEqual(o["head"], "b")
         self.assertEqual(publish.parse_pr(["ready", "3", "--undo"]),
                          {"action": "ready", "number": 3, "undo": True})
         with self.assertRaises(publish.UsageError):

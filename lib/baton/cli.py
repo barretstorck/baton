@@ -306,7 +306,9 @@ def cmd_issue(args):
 def cmd_pr(args):
     def act(o, cfg, terms):
         if o["action"] == "create":
-            return publish.create_pr(cfg, run.run, o["title"], _body(o), o["draft"], terms)
+            head = publish.resolve_head(run.run, os.getcwd(), o["head"])
+            return publish.create_pr(cfg, run.run, o["title"], _body(o), o["draft"], terms,
+                                     head=head)
         if o["action"] == "ready":
             return publish.ready_pr(run.run, o["number"], o["undo"])
         return _edit("pr", o, cfg, terms)
