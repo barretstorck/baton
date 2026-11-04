@@ -39,6 +39,7 @@ DEFAULTS = {
         "map": {name: name for name in STATUSES + OTHER_LABELS + PRIORITIES + SEVERITIES},
     },
     "merge": {"allow_no_ci": False},
+    "clean": {"hint_worktrees": 10},
     "verify": {"command": "", "timeout_minutes": 10},
     "docs": {"dir": "docs/baton"},
     "notify": {"severity": [], "labels": []},
@@ -269,6 +270,8 @@ def load(path):
             raise ConfigError(f".baton/brief.md: {role}.model must be one of " + ", ".join(MODELS))
     if merged["review"]["max_rounds"] < 1:
         raise ConfigError(".baton/brief.md: review.max_rounds must be at least 1")
+    if merged["clean"]["hint_worktrees"] < 0:
+        raise ConfigError(".baton/brief.md: clean.hint_worktrees must be 0 or more")
     if merged["verify"]["timeout_minutes"] < 1:
         raise ConfigError(".baton/brief.md: verify.timeout_minutes must be at least 1")
     for key in ("max_per_run", "stale_days"):
