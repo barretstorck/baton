@@ -34,6 +34,30 @@ class DocsMatchGate(unittest.TestCase):
         self.assertEqual(bad, [], "docs name gh commands the gate refuses")
 
 
+class DocsGhStateValues(unittest.TestCase):
+    """Each documented `gh <command> --state <value>` uses a value that command accepts."""
+
+    STATES = {
+        "issue list": {"open", "closed", "all"},
+        "pr list": {"open", "closed", "merged", "all"},
+        "search issues": {"open", "closed"},
+        "search prs": {"open", "closed"},
+    }
+    STATE = re.compile(r"--state[ =](\S+)")
+
+    def test_documented_state_values_are_accepted(self):
+        bad = []
+        for path in doc_files():
+            with open(path, encoding="utf-8") as f:
+                for number, line in enumerate(f, 1):
+                    for span in SPAN.findall(line):
+                        command = " ".join(span.split()[1:3])
+                        for value in self.STATE.findall(span):
+                            if value not in self.STATES.get(command, ()):
+                                bad.append(f"{os.path.relpath(path, ROOT)}:{number}: {span}")
+        self.assertEqual(bad, [], "docs pass a --state value the gh command refuses")
+
+
 class ReferencedPaths(unittest.TestCase):
     PATH = re.compile(
         r"(?:\$\{CLAUDE_PLUGIN_ROOT\}/)?((?:references|templates)/[A-Za-z0-9_.-]+\.md)")
@@ -72,7 +96,7 @@ class ReferencedPaths(unittest.TestCase):
             "review": [core, shared, "references/github-reviewer.md"],
             "refine": [core, shared, "references/github-refiner.md"],
             "research": [core, shared],
-            "triage": [core, shared, "references/github-triager.md"],
+            "triage": [],
             "sprint": [core, shared, "references/github-orchestrator.md"],
             "sprint-plan": [core, shared, "references/github-orchestrator.md"],
             "open-questions": [core, shared, "references/github-orchestrator.md"],
@@ -96,6 +120,36 @@ class ReferencedPaths(unittest.TestCase):
         for path in sorted(glob.glob(os.path.join(ROOT, "references/sprint-*.md"))):
             name = os.path.basename(path)
             self.assertIn(name, skill, f"{name} is not named in the sprint skill")
+
+
+class AgentsCanReadTheirSkills(unittest.TestCase):
+    """An agent without Read is never told to read a file (#314)."""
+
+    @staticmethod
+    def _front(path):
+        with open(path, encoding="utf-8") as f:
+            meta = f.read().split("---\n")[1]
+        tools, skills = [], []
+        for line in meta.splitlines():
+            if line.startswith("tools:"):
+                tools = [t.strip() for t in line[len("tools:"):].split(",")]
+            elif line.startswith("  - baton:"):
+                skills.append(line[len("  - baton:"):].strip())
+        return tools, skills
+
+    def test_agents_can_read_the_files_their_skills_name(self):
+        bad = []
+        for path in sorted(glob.glob(os.path.join(ROOT, "agents/*.md"))):
+            tools, skills = self._front(path)
+            self.assertTrue(tools, path)
+            self.assertTrue(skills, path)
+            if "Read" in tools:
+                continue
+            for skill in skills:
+                with open(os.path.join(ROOT, "skills", skill, "SKILL.md"), encoding="utf-8") as f:
+                    named = sorted(set(ReferencedPaths.PATH.findall(f.read())))
+                bad.extend(f"{os.path.basename(path)}: skill {skill} names {ref}" for ref in named)
+        self.assertEqual(bad, [], "agents without Read are told to read files")
 
 
 class DenyRules(unittest.TestCase):

@@ -156,8 +156,10 @@ class TemplateTest(unittest.TestCase):
                        "baton sandbox run",
                        "reproduction skipped: no sandbox configured",
                        "baton notify", "awaiting-feedback", "baton issue read",
-                       "Needs information"):
+                       "Needs information",
+                       "A bug written by a maintainer follows this section even when it has a `## Triage summary`."):
             self.assertIn(needle, skill)
+        self.assertNotIn("its body has `## Triage summary` (scheduled", skill)
 
     def test_refine_skill_and_agent_cover_re_refine(self):
         skill = (ROOT / "skills" / "refine" / "SKILL.md").read_text()
@@ -319,6 +321,13 @@ class TemplateTest(unittest.TestCase):
         for needle in ("`.baton-scratch/`", "baton-triager-<N>", "scratchpad"):
             self.assertIn(needle, doc)
         self.assertIn("docs/scratch-files.md", (ROOT / "README.md").read_text())
+
+    def test_refine_skill_sets_outcome_of_created_spikes(self):
+        text = " ".join((ROOT / "skills/refine/SKILL.md").read_text().split())
+        self.assertTrue("run `baton ready-check <spike>` and set its outcome as in step 7" in text)
+        self.assertTrue("each spike you created and its status" in text)
+        agent = " ".join((ROOT / "agents/baton-refiner.md").read_text().split())
+        self.assertTrue("each spike you created and its status" in agent)
 
     def test_sprint_skill_reconnects_orchestrator(self):
         text = " ".join((ROOT / "references/sprint-parent.md").read_text().split())

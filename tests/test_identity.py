@@ -50,6 +50,35 @@ class LoadTest(unittest.TestCase):
         self.assertEqual(ids.reviewer.login, "custom[bot]")
         self.assertEqual(ids.logins(), ["baton[bot]", "custom[bot]"])
 
+    def test_machine_valid(self):
+        ids = self.load(VALID + '[machine]\nlogin = "baton-user"\n')
+        self.assertEqual(ids.machine, "baton-user")
+        self.assertEqual(ids.logins(), ["baton[bot]", "custom[bot]"])
+
+    def test_machine_not_table(self):
+        with self.assertRaisesRegex(identity.IdentityError, r"identity.toml \[machine\] must be a table"):
+            self.load('machine = "x"\n[baton]\napp_id = 1\ninstallation_id = 2\nkey_path = "k"\n')
+
+    def test_machine_missing_login(self):
+        with self.assertRaisesRegex(identity.IdentityError, r"identity.toml \[machine\] is missing login"):
+            self.load('[baton]\napp_id = 1\ninstallation_id = 2\nkey_path = "k"\n' + '[machine]\n')
+
+    def test_machine_empty_login(self):
+        with self.assertRaisesRegex(identity.IdentityError, r"identity.toml \[machine\] login must be a non-empty"):
+            self.load('[baton]\napp_id = 1\ninstallation_id = 2\nkey_path = "k"\n' + '[machine]\nlogin = ""\n')
+
+    def test_machine_app_login(self):
+        with self.assertRaisesRegex(identity.IdentityError, "must be a user login, not an App login"):
+            self.load('[baton]\napp_id = 1\ninstallation_id = 2\nkey_path = "k"\n' + '[machine]\nlogin = "x[bot]"\n')
+
+    def test_machine_unknown_keys(self):
+        with self.assertRaisesRegex(identity.IdentityError, r"identity.toml \[machine\] has unknown keys: token"):
+            self.load('[baton]\napp_id = 1\ninstallation_id = 2\nkey_path = "k"\n' + '[machine]\nlogin = "u"\ntoken = "t"\n')
+
+    def test_machine_needs_baton(self):
+        with self.assertRaisesRegex(identity.IdentityError, r"identity.toml \[machine\] needs a \[baton\] entry"):
+            self.load('[machine]\nlogin = "u"\n')
+
     def test_only_one_entry(self):
         ids = self.load('[reviewer]\napp_id = 2\ninstallation_id = 3\nkey_path = "k"\n')
         self.assertIsNone(ids.baton)
@@ -86,6 +115,20 @@ class ReviewerLoginsTest(unittest.TestCase):
         self.assertEqual(identity.reviewer_logins(), frozenset())
         identity.use(None)
         self.assertEqual(identity.reviewer_logins(), frozenset())
+
+
+class MachineLoginTest(unittest.TestCase):
+    def test_machine_login(self):
+        self.addCleanup(identity.use, None)
+        identity.use(None)
+        self.assertIsNone(identity.machine_login())
+        baton = identity.App(1, 10, "k", "baton[bot]")
+        identity.use(lambda: identity.Identities(baton, None))
+        self.assertIsNone(identity.machine_login())
+        identity.use(lambda: identity.Identities(baton, None, "baton-user"))
+        self.assertEqual(identity.machine_login(), "baton-user")
+        self.assertNotIn("baton-user", identity.bot_logins())
+        self.assertNotIn("baton-user", identity.reviewer_logins())
 
 
 class MarkAuthorsTest(unittest.TestCase):
@@ -356,12 +399,27 @@ class DescribeTest(unittest.TestCase):
         self.assertEqual(out["tier"], 0)
         self.assertEqual(out["roles"]["reviewer"], {"login": None, "route": "maintainer"})
         self.assertIn("orchestrator", out["roles"])
+        self.assertNotIn("machine", out)
 
     def test_tier_one_has_nothing_secret(self):
         ids = identity.Identities(identity.App(11, 22, "/secret/key.pem", "baton[bot]"),
                                   identity.App(33, 44, "/secret/r.pem", "baton-reviewer[bot]"))
         out = identity.describe(ids)
         self.assertEqual(out["tier"], 1)
+        self.assertNotIn("machine", out)
+        self.assertEqual(out["roles"]["reviewer"], {"login": "baton-reviewer[bot]", "route": "reviewer"})
+        self.assertEqual(out["roles"]["developer"], {"login": "baton[bot]", "route": "baton"})
+        text = json.dumps(out)
+        for bad in ("secret", "11", "22", "33", "44", ".pem"):
+            self.assertNotIn(bad, text)
+
+    def test_tier_two(self):
+        ids = identity.Identities(identity.App(11, 22, "/secret/key.pem", "baton[bot]"),
+                                  identity.App(33, 44, "/secret/r.pem", "baton-reviewer[bot]"),
+                                  "baton-user")
+        out = identity.describe(ids)
+        self.assertEqual(out["tier"], 2)
+        self.assertEqual(out["machine"], "baton-user")
         self.assertEqual(out["roles"]["reviewer"], {"login": "baton-reviewer[bot]", "route": "reviewer"})
         self.assertEqual(out["roles"]["developer"], {"login": "baton[bot]", "route": "baton"})
         text = json.dumps(out)

@@ -257,7 +257,8 @@ def _triage_queue():
         "overdue": late["number"] if late else None,
         "stale": triage.stale(issues, cfg, now, block["stale_days"], _maintainers(cfg)),
         "reproduce": triage.reproduce_candidates(
-            issues, cfg, now, block["max_reproductions_per_day"], closed=closed),
+            issues, cfg, now, block["max_reproductions_per_day"], closed=closed,
+            maintainers=_maintainers(cfg), bots=_bots()),
     }, indent=2))
     return 0
 
@@ -660,7 +661,7 @@ def cmd_sandbox(opts):
         state = sandbox.check(owner, name)
         print(state)
         return 0 if state == "configured" else 1
-    seconds = cfg["verify"]["timeout_minutes"] * 60
+    seconds = cfg.data["verify"]["timeout_minutes"] * 60
     branch = repo["defaultBranchRef"]["name"]
     out = sandbox.run_in_sandbox(run.run, owner, name, branch, " ".join(opts.words), seconds)
     print(f"sandbox exit={out['exit']}")
