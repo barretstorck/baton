@@ -607,6 +607,69 @@ def exec_role_problem(command, agent_type):
             f"(this command names `{role}`; the default is `orchestrator`).")
 
 
+_SCRATCH_AGENT_RE = re.compile(r"baton-(developer|refiner|reviewer|researcher|triager|orchestrator)")
+_CMD_PREFIXES = frozenset(("sudo", "command", "env", "nohup", "time"))
+_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _strip_dir_tail(target):
+    while True:
+        for tail in ("/*", "/.*", "/."):
+            if target.endswith(tail):
+                target = target[:-len(tail)]
+                break
+        else:
+            if len(target) > 1 and target.endswith("/"):
+                target = target.rstrip("/")
+            else:
+                return target
+
+
+def scratch_rm_problem(command, agent_type, env):
+    """A refusal when a Baton agent's `rm` removes the shared temporary directory, else None."""
+    if not agent_type or not _SCRATCH_AGENT_RE.search(agent_type):
+        return None
+    tokens = _gh_tokens(command)
+    if tokens is None:
+        return None
+    shared = {"/tmp", "/var/tmp", "$TMPDIR", "${TMPDIR}", tempfile.gettempdir().rstrip("/")}
+    tmpdir = (env.get("TMPDIR") or "").rstrip("/") if env else ""
+    if tmpdir:
+        shared.add(tmpdir)
+    at_start = True
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if _is_punct(token):
+            at_start = True
+            i += 1
+            continue
+        if at_start and (token in _CMD_PREFIXES or _ASSIGNMENT_RE.match(token)):
+            i += 1
+            continue
+        if at_start and token.rsplit("/", 1)[-1] == "rm":
+            j = i + 1
+            options_done = False
+            while j < len(tokens) and not _is_punct(tokens[j]):
+                arg = tokens[j]
+                j += 1
+                if not options_done and arg == "--":
+                    options_done = True
+                    continue
+                if not options_done and arg.startswith("-"):
+                    continue
+                rest = _strip_dir_tail(arg)
+                if rest in shared or rest.rsplit("/", 1)[-1] == "scratchpad":
+                    return (f"`{arg}` is the shared temporary directory or all of its contents; "
+                            "the session and other agents keep files there. Remove only your own "
+                            "scratch folder (`.baton-scratch/` in your worktree, or "
+                            "`<tmp>/baton-triager-<N>/`); see docs/scratch-files.md.")
+            i = j
+        else:
+            i += 1
+        at_start = False
+
+
 def _is_write_words(rest):
     """True when `rest` (gh, group, sub, ...) is a write the gate recognises."""
     if len(rest) < 3:
@@ -768,6 +831,11 @@ def main(stdin_text):
                 if not problems:
                     agent = payload.get("agent_type")
                     refusal = exec_role_problem(command, agent if isinstance(agent, str) else None)
+                    problems = [refusal] if refusal else []
+                if not problems:
+                    agent = payload.get("agent_type")
+                    refusal = scratch_rm_problem(
+                        command, agent if isinstance(agent, str) else None, os.environ)
                     problems = [refusal] if refusal else []
                 if not problems:
                     rewritten, problems = close_marker(
