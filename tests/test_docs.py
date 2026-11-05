@@ -72,7 +72,7 @@ class ReferencedPaths(unittest.TestCase):
             "review": [core, shared, "references/github-reviewer.md"],
             "refine": [core, shared, "references/github-refiner.md"],
             "research": [core, shared],
-            "triage": [core, shared, "references/github-triager.md"],
+            "triage": [],
             "sprint": [core, shared, "references/github-orchestrator.md"],
             "sprint-plan": [core, shared, "references/github-orchestrator.md"],
             "open-questions": [core, shared, "references/github-orchestrator.md"],
