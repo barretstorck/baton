@@ -542,6 +542,14 @@ class ReproduceTests(unittest.TestCase):
                   bug(6, {"days": 2}), bug(7, {"days": 6}), bug(8, state="CLOSED")]
         self.assertEqual(triage.reproduce_candidates(issues, make_cfg(), NOW, 5), [7, 6])
 
+    def test_maintainer_bug_is_not_handed_off(self):
+        own = bug(1, author="boss")
+        outside = bug(2)
+        relayed = bug(3, author="boss",
+                      body="## Triage summary\nx\nOrigin: outside (@visitor)")
+        self.assertEqual(triage.reproduce_candidates(
+            [own, outside, relayed], make_cfg(), NOW, 5, maintainers=["Boss"]), [2, 3])
+
 
 class QueueCommandTests(unittest.TestCase):
     def drive(self, issues, home, args=("triage", "queue"), since="", closed=(), cap=3):
