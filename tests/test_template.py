@@ -298,6 +298,28 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("Spike for:", tmpl)
         self.assertIn("Origin: outside", tmpl)
 
+    def test_agents_keep_scratch_in_their_own_folder(self):
+        def flat(path):
+            return " ".join((ROOT / path).read_text().split())
+        for path in ("agents/baton-developer.md", "agents/baton-refiner.md",
+                     "agents/baton-reviewer.md", "agents/baton-researcher.md",
+                     "skills/develop/SKILL.md", "skills/research/SKILL.md",
+                     "skills/refine/SKILL.md", "skills/review/SKILL.md", "references/habits.md"):
+            text = flat(path)
+            self.assertIn("`.baton-scratch/`", text, path)
+            self.assertIn("remove only", text.lower(), path)
+        for path in ("agents/baton-triager.md", "skills/triage/SKILL.md"):
+            text = flat(path)
+            self.assertIn("baton-triager-<N>", text, path)
+            self.assertIn("remove only", text.lower(), path)
+        self.assertNotIn("/tmp/", flat("skills/review/SKILL.md"))
+
+    def test_docs_say_where_scratch_files_go(self):
+        doc = " ".join((ROOT / "docs/scratch-files.md").read_text().split())
+        for needle in ("`.baton-scratch/`", "baton-triager-<N>", "scratchpad"):
+            self.assertIn(needle, doc)
+        self.assertIn("docs/scratch-files.md", (ROOT / "README.md").read_text())
+
     def test_sprint_skill_reconnects_orchestrator(self):
         text = " ".join((ROOT / "references/sprint-parent.md").read_text().split())
         for needle in ("baton orchestrator-agent", "SendMessage", "partial"):
