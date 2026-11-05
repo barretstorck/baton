@@ -184,6 +184,11 @@ class OutsideTest(unittest.TestCase):
         data = self.with_edits([self.READY], [self.edit("mallory", "2026-11-01T09:00:00Z")])
         self.assertTrue(issue.approved(data, OWNER))
 
+    def test_outside_edit_at_approval_time_drops_it(self):
+        data = self.with_edits([self.READY], [self.edit("mallory", "2026-11-01T10:00:00Z")])
+        self.assertFalse(issue.approved(data, OWNER))
+        self.assertIn("@mallory edited", issue.approval_problem(data, OWNER))
+
     def test_second_approval_restores_it(self):
         again = dict(comment(OWNER, "/baton ready"), createdAt="2026-11-01T12:00:00Z")
         data = self.with_edits([self.READY, again], [self.edit("mallory", "2026-11-01T11:00:00Z")])
