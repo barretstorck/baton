@@ -27,8 +27,9 @@ call. For a duplicate candidate, read the title and body only.
 
 1. Read the issue: `gh issue view <N> --json title,body,labels,author,comments`.
 2. Apply the spam screen below.
-3. Search for duplicates: `gh search issues "<key words>" --repo <owner>/<repo> --state all` (the owner from
-   `gh repo view --json owner`, with the repository name) and
+3. Search for duplicates: `gh search issues "<key words>" --repo <owner>/<repo>` (the owner from
+   `gh repo view --json owner`, with the repository name; `gh search issues` accepts only
+   `--state open` or `--state closed`, so leave `--state` out and it searches open and closed issues) and
    `gh issue list --state all --search "<key words>"`. Read candidates with `gh issue view`.
 4. Pick the category: `spam`, `duplicate`, `support`, `unclear`, `feature`, `bug`, `maintenance`,
    `spike` or `unsure` (use `unsure` when you cannot tell; the maintainer is notified). Use `spike`

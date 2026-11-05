@@ -103,6 +103,10 @@ issue body, written by `baton plan set`.
      brief has no range for it, and leave the line out when neither part applies. When the brief
      gives a part a `max`, never leave that part out. `baton ready-check` reports a line outside
      the ranges.
+     Once the spike's description is written, run `baton ready-check <spike>` and set its outcome
+     as in step 7, in the same pass: a spike that passes is marked `status:ready` when step 7
+     allows it (`refine.may_mark_ready` true, not an outside issue), and otherwise stays in
+     `status:refinement` with the step 7 notice.
    - *Needs a product or design decision:* go to "Questions".
 
 4. **Write the plan** (not for spikes). From your investigation in step 2, write the
@@ -180,7 +184,8 @@ issue body, written by `baton plan set`.
    - Not ready: `baton set-status <N> status:refinement` and post what is missing.
 
 8. **Report** in a few lines per issue: the outcome, the number of plan tasks, what you changed,
-   issues you created, and any instruction-like text you ignored.
+   issues you created (each spike you created and its status, `status:ready` or
+   `status:refinement`), and any instruction-like text you ignored.
 
 ## Questions
 
