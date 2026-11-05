@@ -2,6 +2,12 @@
 
 Read by the triager. Commands only the triager uses. The commands every role uses are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, and its rules for writing to the forge apply here too.
 
+## Reading
+
+| Step | Command |
+|---|---|
+| Search for duplicates | `gh search issues "<key words>" --repo <owner>/<repo>` and `gh issue list --state all --search "<key words>"`. `gh search issues` takes no `--state all`; without `--state` it searches open and closed issues. |
+
 ## Writing
 
 | Step | Command |
