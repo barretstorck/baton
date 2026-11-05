@@ -47,7 +47,7 @@ published text, state changes without a marker comment), but they are not a sand
 [SECURITY.md](SECURITY.md). Only issues written by a maintainer enter a sprint, and only the
 maintainer's comments count as answers. An issue is *outside* when its author is not a maintainer
 or its body has a line `Origin: outside (@<author>)`; it enters a sprint only with a comment that
-is exactly `/baton ready`, unmarked, from a maintainer. The approval stops counting when someone other than a maintainer or Baton edits the body after it; a maintainer then posts `/baton ready` again. Agents can only post marker comments
+is exactly `/baton ready`, unmarked, from a maintainer. The approval stops counting when someone other than a maintainer or Baton edits the body after it; a maintainer then posts `/baton ready` again. At tier 2, a maintainer's assignment of the issue to the machine user approves it like `/baton ready`, under the same edit rule. Agents can only post marker comments
 through `baton comment`, but a raw comment an agent writes with `gh` looks like yours, so until
 agents have their own login (#150) this rule is only as strong as that interim. Try it on a
 repository you can afford to experiment on first. The triager is the only agent that reads outside
@@ -82,8 +82,7 @@ developer's commits are by `baton[bot]` (worktree-local config, set by `baton id
 its pushes use the `baton` App token (`baton push`), and the draft pull request is opened by the
 `baton` App. Merging stays on your login. From Claude Code 2.1.290, the gate rewrites a raw `gh` write an agent runs as one command (optionally after `cd <dir> &&`) to `baton exec --role <role> gh ...`, so it is made as the App; other writes (scripts, pipelines, other compound commands, `glab`, `tea`) still use your login. An agent that types `baton exec` itself may only name its own role (`--role` must equal the role the gate derives from the agent type, and is required for every agent but the orchestrator); the gate refuses any other. This is a guardrail against mistakes, not a boundary against deliberate evasion. If your permission rules list `gh` commands, add `Bash(baton:*)` to `permissions.allow`, because the rules see the rewritten command. `baton config` shows the active tier under `identity`. `baton doctor` prints the tier and checks each
 App (its login on GitHub, a minted token, and that the installation includes the repository); it
-exits non-zero on a failure. What assigning to the machine user does
-is #225, and creating the Apps and checking the setup is #179.
+exits non-zero on a failure. Creating the Apps and checking the setup is #179.
 
 Tier 2 adds a machine user: a plain GitHub account the maintainer invites as a collaborator, so
 issues can be assigned to it and reviews requested from it. Baton stores no token for it. It needs
@@ -92,6 +91,12 @@ a `[baton]` entry, and `baton config` shows tier 2 under `identity`. Add a `[mac
 
     [machine]
     login = "baton-user"
+
+A maintainer's assignment of an issue to the machine user approves an outside issue like
+`/baton ready` (an assignment by anyone else is ignored), and `baton sprint-status` reports it as
+`assigned_to_baton`. A maintainer's review request for the machine user on a pull request sets
+`review_requested` in `baton sprint-status`, and the orchestrator dispatches a new review; the new
+review clears it.
 
 Keep the keys from agents. The private keys and `identity.toml` sit under `~/.baton/`, readable by
 the user the agents run as. Add these two rules to `permissions.deny` in your user settings,
@@ -250,7 +255,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton notify <issue> <cause> <file \| ->` | Add `needs-maintainer` and post one `status` comment mentioning the maintainers, once per issue per cause (only an earlier notify `status` comment by a maintainer or a Baton login counts; an outside comment carrying the marker does not suppress it) (`stuck`, `approval`, `triage-unsure`, `spike-infeasible`, `repro-skipped`, `rule`); prints the URL or `already notified`. `/baton:open-questions` is unchanged |
 | `baton notify --rules` | Run `notify` with cause `rule` for each open issue matching the brief's `notify:` severities or labels; one line per issue |
 | `baton open-questions` | List open issues waiting on the maintainer (unanswered question, `status:blocked` or `needs-maintainer`) as JSON, most pressing first |
-| `baton ready-check <issue>` | The mechanical half of the definition of ready |
+| `baton ready-check <issue>` | The mechanical half of the definition of ready; at tier 2 it counts a maintainer's assignment to Baton as approval of an outside issue and prints a `note:` line for an assignment by someone else, which is ignored |
 | `baton tasks <issue\|pr> <number>` | An issue's plan tasks, or the latest review's tasks, as JSON |
 | `baton task done <issue\|pr> <number> <task>` | Tick one task: in the issue body's plan for an issue (the developer), in the review for a pull request (the orchestrator) |
 | `baton plan replace <issue> <from-task> <file \| -> [--drop]` | Replace a plan's open tasks from that number on |
@@ -265,7 +270,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton compact-reminder` | A SessionStart hook, not run by hand: after any compaction it reminds the sprint orchestrator to run `baton sprint-status` before acting (the hook cannot tell which agent compacted, so the text is conditional) |
 | `baton sprint-capacity <days> [--retros <n>]` | Read the last retros' `## Metrics` (3 by default) and propose somewhat less than their average issues and plan tasks for `<days>`, as JSON |
 | `baton sprint-order <issue>...` | Put spikes first in the given order, apply `spike.max_per_sprint` and list the spikes it left out (`order`, `spikes`, `left_out`, `cap`), as JSON; exit 64 for no argument or a number that is not an open issue |
-| `baton sprint-status [milestone]` | The sprint's state and what may be dispatched now, as JSON; `waiting_links` gives each `waiting_on_maintainer` issue's question comment URL and `progress.<N>.next_task_url` links the next plan task; `progress.<N>.stale`, `branch_behind` and `merge_first` report plans naming missing paths (a ready issue with two or more is held for re-refinement) and branches far behind the default branch |
+| `baton sprint-status [milestone]` | The sprint's state and what may be dispatched now, as JSON; `waiting_links` gives each `waiting_on_maintainer` issue's question comment URL and `progress.<N>.next_task_url` links the next plan task; `issues[].assigned_to_baton` and `in_review[].review_requested` (tier 2 only) report a maintainer's assignment to, and review request for, Baton; `progress.<N>.stale`, `branch_behind` and `merge_first` report plans naming missing paths (a ready issue with two or more is held for re-refinement) and branches far behind the default branch |
 | `baton clean` | Remove leftover agent worktrees (kept: an open issue's branch, a lock held by a live process, unmerged detached work; uncommitted files are removed with the worktree) and the log folders of closed or merged pull requests; exit 1 if a worktree could not be removed |
 | `baton lock <acquire\|release>` | Stop two scheduled runs overlapping |
 
