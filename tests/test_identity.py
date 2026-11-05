@@ -57,7 +57,7 @@ class LoadTest(unittest.TestCase):
 
     def test_machine_not_table(self):
         with self.assertRaisesRegex(identity.IdentityError, r"identity.toml \[machine\] must be a table"):
-            self.load('[baton]\napp_id = 1\ninstallation_id = 2\nkey_path = "k"\n' + 'machine = "x"\n')
+            self.load('machine = "x"\n[baton]\napp_id = 1\ninstallation_id = 2\nkey_path = "k"\n')
 
     def test_machine_missing_login(self):
         with self.assertRaisesRegex(identity.IdentityError, r"identity.toml \[machine\] is missing login"):
