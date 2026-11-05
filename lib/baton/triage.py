@@ -17,8 +17,8 @@ from . import verify
 from .comment import CommentError
 
 CATEGORIES = ("spam", "duplicate", "support", "unclear", "feature", "bug",
-              "maintenance", "unsure")
-REAL = ("feature", "bug", "maintenance")
+              "maintenance", "spike", "unsure")
+REAL = ("feature", "bug", "maintenance", "spike")
 SUMMARY_KEYS = ("symptom", "expected", "actual", "area", "version", "type")
 KEYS = ("category", "duplicate_of", "priority", "severity", "comment", "summary")
 COMMENT_MAX = 2000
@@ -93,7 +93,7 @@ def parse_decision(text):
     if decision["severity"] is not None and category != "bug":
         raise TriageError("severity applies to bugs only")
     if decision["priority"] is not None and category not in REAL:
-        raise TriageError("priority applies to feature, bug and maintenance only")
+        raise TriageError("priority applies to feature, bug, maintenance and spike only")
     comment = decision["comment"]
     if category in ("support", "unclear"):
         if not isinstance(comment, str) or not comment.strip():
@@ -201,6 +201,14 @@ def check(cfg, runner, number, decision, issue, maintainers, terms, owner, repo)
     author = ((issue.get("author") or {}).get("login") or "").lower()
     if category in CLOSING and author in {name.lower() for name in maintainers}:
         raise TriageError("never closes an issue written by a maintainer")
+    spiked = cfg.label("type:spike") in {
+        item["name"] for item in issue.get("labels") or []}
+    if spiked and category in ("feature", "bug", "maintenance"):
+        raise TriageError(f"issue #{number} is labelled {cfg.label('type:spike')}; "
+                          "use category spike")
+    if category == "spike" and not spiked:
+        raise TriageError(f"category spike needs an issue already labelled "
+                          f"{cfg.label('type:spike')}")
     original = decision.get("duplicate_of")
     if category == "duplicate":
         if original == number:
