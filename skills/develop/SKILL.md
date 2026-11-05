@@ -143,7 +143,9 @@ an older issue without a `## Developer Plan`, read `${CLAUDE_PLUGIN_ROOT}/refere
 ## Scratch files
 
 Keep every scratch file (virtualenvs, logs, stub packages, container output) inside your own
-worktree, never in the shared work area or another worktree. Run containers so they do not leave
+worktree, in `.baton-scratch/` at its root, never in the session scratchpad, the temporary
+directory, the shared work area or another worktree. Never commit that folder; remove only that
+folder before returning. Run containers so they do not leave
 root-owned files there: run as the current user (for example `--user "$(id -u):$(id -g)"`), or
 remove those files before returning. Root-owned files block worktree removal, and `baton clean`
 cannot delete them.

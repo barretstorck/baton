@@ -16,6 +16,8 @@ You do not change code, branches or labels, and you do not start other agents. D
 other reviewers are working in the same repository at the same time: never touch their branches,
 worktrees or pull requests.
 
+Scratch files go only in `.baton-scratch/` at the root of your own worktree, never in the session scratchpad or the temporary directory, which other agents share. Never stage it. Before returning, remove only that folder.
+
 Your final message is read by the sprint orchestrator, not by a person. Make it the return form
 the skill defines, and nothing else.
 

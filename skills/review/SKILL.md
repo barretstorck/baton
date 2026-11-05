@@ -55,11 +55,11 @@ condition is every task of the plan, including the tasks the refiner added, and 
    round: compare the change you reviewed with the change now, so commits merged in from the
    default branch drop out:
 
-       git diff $(git merge-base origin/<default> <last reviewed commit>) <last reviewed commit> > /tmp/before.diff
-       git diff $(git merge-base origin/<default> HEAD) HEAD > /tmp/after.diff
-       diff -u /tmp/before.diff /tmp/after.diff
+       git diff $(git merge-base origin/<default> <last reviewed commit>) <last reviewed commit> > <worktree>/.baton-scratch/before.diff
+       git diff $(git merge-base origin/<default> HEAD) HEAD > <worktree>/.baton-scratch/after.diff
+       diff -u <worktree>/.baton-scratch/before.diff <worktree>/.baton-scratch/after.diff
 
-   (use your worktree or scratch directory in place of `/tmp`). The fixes are the commits named
+   The fixes are the commits named
    `Review <r.n>:`. Check that each earlier task was fixed, or declined with a reason you accept. Code that came from the
    default branch is not part of this review. If the change is too big for one pass, review it in
    passes yourself and say so. Never start a subagent. The plan is in the issue body, not on the branch, so there is nothing of it to review there.
@@ -67,7 +67,7 @@ condition is every task of the plan, including the tasks the refiner added, and 
    and do not flag its ticks or its later removal by `merge-pr`.
 
 4. **Start the verification and the CI wait, in the background.** In one shell call, with output to
-   files in your scratch area (`$WORK`):
+   files in your scratch area (`$WORK`, which is `.baton-scratch/` in your worktree; remove only that folder before returning):
    - when the brief sets `verify.command`, `baton verify <PR> <worktree> > "$WORK/verify.out" 2>&1 &`.
      It refuses unless the worktree is at the pull request's head and clean. It prints a summary line
      (`verify <state> commit=... exit=... duration=...`), `log: <path>` and the last 40 lines of
