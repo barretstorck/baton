@@ -380,7 +380,7 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, ho
         verify = found["result"] if found else "missing"
     text = compose(verdict, commit, body, verify)
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json",
-                            "headRefOid,comments,closingIssuesReferences"]))
+                            "headRefOid,comments,closingIssuesReferences,reviewRequests"]))
     pr["comments"] = pr_comments(runner, number, pr.get("comments"))
     head = pr["headRefOid"]
     if head != commit:
@@ -427,8 +427,20 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, ho
     logins = identity.reviewer_logins()
     try:
         if logins:
-            return comment.publish_review(cfg, runner, number, text, terms,
-                                          VERDICTS[verdict]["event"], sorted(logins)[0])
-        return comment.publish(cfg, runner, "pr", number, text, terms, role="reviewer")
+            url = comment.publish_review(cfg, runner, number, text, terms,
+                                         VERDICTS[verdict]["event"], sorted(logins)[0])
+        else:
+            url = comment.publish(cfg, runner, "pr", number, text, terms, role="reviewer")
     except comment.CommentError as error:
         raise ReviewError(str(error)) from error
+    machine = identity.machine_login()
+    if machine and any((req.get("login") or "").lower() == machine.lower()
+                       for req in pr.get("reviewRequests") or []):
+        try:
+            identity.write(runner, ["gh", "api", "-X", "DELETE",
+                                    f"repos/{{owner}}/{{repo}}/pulls/{number}/requested_reviewers",
+                                    "-f", f"reviewers[]={machine}", "--silent"], "reviewer")
+        except run.RunError as error:
+            raise ReviewError(f"the review was posted but the review request for {machine} "
+                              "could not be removed") from error
+    return url
