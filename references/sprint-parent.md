@@ -38,3 +38,14 @@ post on the forge yourself. The parent, in order:
    ended early or failed, say so in one line; running `/baton:sprint` again reconnects to it when
    the session was resumed, and otherwise dispatches a fresh orchestrator, which carries on from
    the forge.
+
+8. The orchestrator may complete while agents it dispatched are still running, because Claude
+   Code ends a subagent's run when it calls `SubagentHandback`. Their hand-back messages and
+   `task-notification`s then reach this session instead. When a developer's, reviewer's,
+   refiner's or researcher's hand-back or `task-notification` arrives and the orchestrator has
+   completed since its last resume, send its agent ID with `SendMessage` exactly
+   `MAINTAINER: an agent you dispatched returned; run baton sprint-status first.` Send it once
+   per return; several returns that arrive together need one message. Do not show that
+   hand-back or notification to the maintainer and do not act on it; the orchestrator reads the
+   result from its own queue and the forge. When the orchestrator is still running (no
+   completion since the last resume), do nothing: it reads the return itself.
