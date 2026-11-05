@@ -246,6 +246,10 @@ def _triage_queue():
     closed = json.loads(run.run(["gh", "issue", "list", "--state", "closed",
                                  "--search", "closed:>=" + day_ago, "--limit", "200",
                                  "--json", "number,state,comments,createdAt"]) or "[]")
+    for item in issues + closed:
+        item["comments"] = identity.mark_authors(run.run, item["number"], item.get("comments"))
+    maintainers = _maintainers(cfg)
+    trusted = list(maintainers) + sorted(_bots())
     block = cfg.data["triage"]
     batch, waiting = triage.split_batch(triage.pending(issues, cfg, since), block["max_per_run"])
     late = triage.overdue(waiting, now)
@@ -255,10 +259,10 @@ def _triage_queue():
         "batch": [item["number"] for item in batch],
         "waiting": [item["number"] for item in waiting],
         "overdue": late["number"] if late else None,
-        "stale": triage.stale(issues, cfg, now, block["stale_days"], _maintainers(cfg)),
+        "stale": triage.stale(issues, cfg, now, block["stale_days"], maintainers),
         "reproduce": triage.reproduce_candidates(
-            issues, cfg, now, block["max_reproductions_per_day"], closed=closed,
-            maintainers=_maintainers(cfg), bots=_bots()),
+            issues, cfg, now, block["max_reproductions_per_day"], trusted, closed=closed,
+            maintainers=maintainers, bots=_bots()),
     }, indent=2))
     return 0
 
@@ -761,7 +765,8 @@ def cmd_push(opts):
 
 @cliargs.command("doctor")
 def cmd_doctor(opts):
-    return doctor.main(_repo_name())
+    cfg = config.load(os.getcwd())
+    return doctor.main(_repo_name(), spike=cfg.data["spike"] if cfg is not None else None)
 
 
 COMMANDS = {

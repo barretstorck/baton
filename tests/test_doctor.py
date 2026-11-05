@@ -18,6 +18,7 @@ app_id = 2
 installation_id = 20
 key_path = "{key}"
 """
+TOML_MACHINE = TOML + '\n[machine]\nlogin = "baton-user"\n'
 REPO = "o/r"
 
 
@@ -36,24 +37,47 @@ class DoctorTest(unittest.TestCase):
             self.addCleanup(p.stop)
         self.slugs = ["baton", "baton-reviewer"]
         self.repos = [{"full_name": REPO}]
+        self.status_urls = []
 
     def write(self, text=None):
-        (self.dir / "identity.toml").write_text(text or TOML.format(key=self.key))
+        (self.dir / "identity.toml").write_text((text or TOML).format(key=self.key))
+
+    def status(self, url, headers):
+        self.status_urls.append(url)
+        return 204
 
     def get(self, url, headers):
         if url.endswith("/app"):
             return {"slug": self.slugs.pop(0)}
         return {"total_count": len(self.repos), "repositories": self.repos}
 
-    def run_main(self, get=None):
+    def run_main(self, get=None, status=None, spike=None):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             code = doctor.main(REPO, runner=None, get=get or self.get, post=None, now=1000,
-                               home=self.tmp.name)
+                               home=self.tmp.name, spike=spike, status=status or self.status)
         text = out.getvalue()
         for secret in ("jwt-secret", "tok-secret", "KEY-CONTENT", str(self.key)):
             self.assertNotIn(secret, text)
         return code, text
+
+    def test_spike_warning_tier_zero(self):
+        code, text = self.run_main(spike={"tokens": {}, "minutes": {}, "max_per_sprint": 2})
+        self.assertEqual(code, 0)
+        self.assertEqual(text, "tier: 0\n" + doctor.SPIKE_WARNING + "\n")
+        self.assertIn("spike: WARN: spike.tokens and spike.minutes have no range", text)
+
+    def test_spike_ranges_no_warning(self):
+        for sp in ({"tokens": {"max": 500000}, "minutes": {}, "max_per_sprint": 2},
+                   {"tokens": {}, "minutes": {"min": 30, "max": 120}, "max_per_sprint": 2}):
+            self.assertEqual(self.run_main(spike=sp), (0, "tier: 0\n"))
+
+    def test_spike_warning_with_bad_identity(self):
+        self.write("[baton\n")
+        code, text = self.run_main(spike={"tokens": {}, "minutes": {}})
+        self.assertEqual(code, 1)
+        self.assertIn("identity.toml:", text)
+        self.assertIn(doctor.SPIKE_WARNING, text)
 
     def test_tier_zero(self):
         self.assertEqual(self.run_main(), (0, "tier: 0\n"))
@@ -65,6 +89,32 @@ class DoctorTest(unittest.TestCase):
         self.assertIn("tier: 1", text)
         self.assertIn("baton: ok (baton[bot], can read o/r)", text)
         self.assertIn("reviewer: ok (baton-reviewer[bot], can read o/r)", text)
+        self.assertNotIn("machine:", text)
+        self.assertEqual(self.status_urls, [])
+
+    def test_tier_two_ok(self):
+        self.write(TOML_MACHINE)
+        code, text = self.run_main()
+        self.assertEqual(code, 0)
+        self.assertIn("tier: 2", text)
+        self.assertIn("machine: ok (baton-user can be assigned on o/r)", text)
+        self.assertTrue(self.status_urls[0].endswith("/repos/o/r/assignees/baton-user"))
+
+    def test_machine_not_assignable(self):
+        self.write(TOML_MACHINE)
+        code, text = self.run_main(status=lambda url, headers: 404)
+        self.assertEqual(code, 1)
+        self.assertIn("machine: FAIL: baton-user cannot be assigned on o/r (HTTP 404); "
+                      "invite it as a collaborator and accept the invitation", text)
+
+    def test_machine_request_error(self):
+        self.write(TOML_MACHINE)
+
+        def bad(url, headers):
+            raise identity.IdentityError("request failed")
+        code, text = self.run_main(status=bad)
+        self.assertEqual(code, 1)
+        self.assertIn("machine: FAIL: request failed", text)
 
     def test_login_mismatch(self):
         self.write()

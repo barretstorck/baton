@@ -82,7 +82,7 @@ developer's commits are by `baton[bot]` (worktree-local config, set by `baton id
 its pushes use the `baton` App token (`baton push`), and the draft pull request is opened by the
 `baton` App. Merging stays on your login. From Claude Code 2.1.290, the gate rewrites a raw `gh` write an agent runs as one command (optionally after `cd <dir> &&`) to `baton exec --role <role> gh ...`, so it is made as the App; other writes (scripts, pipelines, other compound commands, `glab`, `tea`) still use your login. An agent that types `baton exec` itself may only name its own role (`--role` must equal the role the gate derives from the agent type, and is required for every agent but the orchestrator); the gate refuses any other. This is a guardrail against mistakes, not a boundary against deliberate evasion. If your permission rules list `gh` commands, add `Bash(baton:*)` to `permissions.allow`, because the rules see the rewritten command. `baton config` shows the active tier under `identity`. `baton doctor` prints the tier and checks each
 App (its login on GitHub, a minted token, and that the installation includes the repository); it
-exits non-zero on a failure. What assigning to the machine user does
+exits non-zero on a failure. At tier 2 it also checks that the machine user can be assigned on the repository, and fails when it cannot. What assigning to the machine user does
 is #225, and creating the Apps and checking the setup is #179.
 
 Tier 2 adds a machine user: a plain GitHub account the maintainer invites as a collaborator, so
@@ -135,7 +135,7 @@ whole issue grows large and expensive: in the second sprint, single developers r
   `## Plan` section is moved into the body by `baton plan migrate`.
 - The reviewer runs when every task is ticked and the pull request is ready. What it wants fixed is a `## Tasks`
   checklist in its review, worked the same way, one developer per task.
-- A spike has a timebox: `spike.tokens` and `spike.minutes` in the brief give the allowed ranges, the refiner writes a `Timebox:` line in the spike, and the researcher stops at either limit.
+- A spike has a timebox: `spike.tokens` and `spike.minutes` in the brief give the allowed ranges, the refiner writes a `Timebox:` line in the spike, and the researcher stops at either limit. With no range for either part the refiner writes no `Timebox:` line and a spike has no limit; `baton doctor` warns about this.
 - `baton usage` measures the result per issue and role from the local transcripts, and the
   retrospective includes its table. Transcripts record output tokens while streaming, so `baton usage` undercounts output: its `Output>=` column and the JSON `output_lower_bound` are lower bounds. Spike budgets (`baton budget`) therefore rest on input and cache tokens.
 
@@ -183,7 +183,7 @@ a `Prototype:` link to the commit.
 | Skill | Purpose |
 |---|---|
 | `/baton:init` | Set a repository up: brief, labels, private files, git hooks |
-| `/baton:triage <issue>` | Classify one new issue: spam, duplicate, support, unclear or a real bug, feature or maintenance item; used by the `baton-triager` subagent |
+| `/baton:triage <issue>` | Classify one new issue: spam, duplicate, support, unclear or a real bug, feature, maintenance or spike item; used by the `baton-triager` subagent |
 | `/baton:refine <issue>` | Bring an issue up to the definition of ready, including its plan |
 | `/baton:sprint-plan` | Plan a sprint with the maintainer and create its milestone |
 | `/baton:sprint` | Work a sprint: dispatches the orchestrator agent in the background, which reports progress in the session, dispatches developers and reviewers, merges and writes the retrospective |
@@ -228,7 +228,7 @@ Where agents keep scratch files is described in [docs/scratch-files.md](docs/scr
 | `baton identity worktree` | At tier 1, set this linked worktree's commit author to `baton[bot]` (worktree-local git config); no-op at tier 0 |
 | `baton exec [--role <role>] gh <args...>` | Run `gh` with the role's App token in the child's environment only (tier 1), or unchanged (tier 0) |
 | `baton push <source>:refs/heads/<branch>` | Push to `origin` (tier 0) or over HTTPS with the `baton` App token (tier 1). Refuses (exit 1) a destination outside `refs/heads/`, the default branch, a leading `-` or `+`, an empty source, or a refspec containing `*`, `^`, `?`, `[`, `\` or whitespace; the destination must pass `git check-ref-format`, and at tier 0 `origin` must be the repository `gh repo view` resolves |
-| `baton doctor` | Print the identity tier and check each App (login, token, repository access); exits 1 on a failure |
+| `baton doctor` | Print the identity tier and check each App (login, token, repository access); also warns when the brief gives spikes no `tokens` or `minutes` range (the warning does not change the exit code); exits 1 on a failure |
 | `baton labels [--create]` | Check or create the labels Baton uses |
 | `baton set-status <issue> <status:name>` | Switch an issue's status label |
 | `baton install-hooks` | Install the `pre-commit` and `pre-push` privacy hooks. The hooks find the current install through `installed_plugins.json`, so a plugin update needs no re-install; run it again only when the gate or a hook says the hooks are missing |
@@ -238,7 +238,7 @@ Where agents keep scratch files is described in [docs/scratch-files.md](docs/scr
 | `baton sprint-metrics <milestone> [--since <UTC ISO time>] [--dir <projects dir>]` | Print the seven sprint metrics (`duration_days`, `issues_worked`, `issues_completed`, `issues_missed`, `plan_tasks_done`, `spikes`, `tokens`) for the retro's `## Metrics` section |
 | `baton merge-pr <number>` | Check the review, CI and the rest, then merge; suggests `baton clean` when more than `clean.hint_worktrees` (default 10) agent worktrees are under `.claude/worktrees` |
 | `baton comment <issue\|pr> <number> <role> <kind> <file \| ->` | Scan, stamp and post an agent comment |
-| `baton triage apply <issue> <decision.json>` | Check a triager's decision, then act on it. Keys: `category` (spam, duplicate, support, unclear, feature, bug, maintenance, unsure), `duplicate_of`, `priority`, `severity` (bugs only), `comment`, `summary` (symptom, expected, actual, area, version, type). Refuses a label outside the known set, a missing, same or unknown `duplicate_of`, a severity on a non-bug, a comment that fails the privacy scan or links outside the repository and its docs, and a summary with code blocks, commands, links or over-long fields. Spam: `closed:spam` and lock. Duplicate: `closed:duplicate` with back-links. Support: comment, then `closed:support`. Unclear: comment, then `awaiting-feedback`. Feature, bug, maintenance: type label, `priority:`, `severity:` (bugs), `status:refinement`, and a `## Triage summary` section (with `Origin: outside (@author)` for a non-maintainer). Unsure: notifies the maintainers (`triage-unsure`). It never closes a maintainer's issue. |
+| `baton triage apply <issue> <decision.json>` | Check a triager's decision, then act on it. Keys: `category` (spam, duplicate, support, unclear, feature, bug, maintenance, spike, unsure), `duplicate_of`, `priority`, `severity` (bugs only), `comment`, `summary` (symptom, expected, actual, area, version, type). Refuses a label outside the known set, a missing, same or unknown `duplicate_of`, a severity on a non-bug, `spike` for an issue without `type:spike`, or feature, bug or maintenance for one with it, a comment that fails the privacy scan or links outside the repository and its docs, and a summary with code blocks, commands, links or over-long fields. Spam: `closed:spam` and lock. Duplicate: `closed:duplicate` with back-links. Support: comment, then `closed:support`. Unclear: comment, then `awaiting-feedback`. Feature, bug, maintenance, spike: type label, `priority:`, `severity:` (bugs), `status:refinement`, and a `## Triage summary` section (with `Origin: outside (@author)` for a non-maintainer). Unsure: notifies the maintainers (`triage-unsure`). It never closes a maintainer's issue. |
 | `baton issue read <issue>` | Print an issue for an agent: title, labels, body and comments. Text by non-maintainers is replaced by `[untrusted text from @<author> withheld; see Triage summary]`; the `## Triage summary` and `## Developer Plan` of an outside issue are kept. Never use `gh issue view` for issue text |
 | `baton issue create\|edit ...` | A wrapper kept for scripts and older setups; agents write with `gh issue create --title "<t>" --label <l> --body-file <file>` or `gh issue edit <N> ...` instead, which the gate scans. Scans the text first |
 | `baton pr create\|edit\|ready ...` | A wrapper kept for scripts and older setups; agents use `gh pr create --draft --title "<t>" --body-file <file>` (from a detached HEAD the gate adds `--head`), `gh pr edit <N> ...` and `gh pr ready <N> [--undo]` instead |

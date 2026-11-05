@@ -71,6 +71,7 @@ class ParseTests(unittest.TestCase):
         refused(self, "feature", "severity", severity=2)
         refused(self, "spam", "priority", priority=2)
         refused(self, "support", "priority", priority=2)
+        refused(self, "spike", "severity", severity=2)
 
     def test_comment(self):
         refused(self, "support", "comment", comment=KeyError)
@@ -230,6 +231,13 @@ class CheckTests(unittest.TestCase):
         data["comment"] = "see https://example.com/x"
         self.refuse(data, self.issue(), "outside the repository")
 
+    def test_spike_label_decides_the_type(self):
+        spike = dict(self.issue(), labels=[{"name": "type:spike"}])
+        for category in ("feature", "bug", "maintenance"):
+            self.refuse(valid(category), spike, "type:spike")
+        self.refuse(valid("spike"), self.issue(), "type:spike")
+        run_check(self, dict(valid("spike"), priority=2), spike)
+
     def test_load_issue(self):
         runner = FakeRunner({"gh issue view 5": issue_json()})
         self.assertEqual(triage.load_issue(runner, 5)["number"], 5)
@@ -348,6 +356,25 @@ class ApplyTests(unittest.TestCase):
     def test_feature_without_priority(self):
         runner, _, _ = self.real(valid("feature"))
         self.assertFalse([c for c in runner.lines() if "priority:" in c or "severity:" in c])
+
+    def test_spike_keeps_one_type_label(self):
+        runner, _, line = self.real(dict(valid("spike"), priority=2),
+                                    labels=["type:spike", "type:feature"])
+        lines = runner.lines()
+        typ = self.index(lines, "gh issue edit 5 --add-label type:spike")
+        self.assertIn("--remove-label type:feature", lines[typ])
+        self.assertEqual([c for c in lines if c.startswith("gh issue edit 5 --add-label type:")],
+                         [lines[typ]])
+        self.index(lines, "gh issue edit 5 --add-label priority:2")
+        self.assertFalse([c for c in lines if "severity:" in c])
+        self.assertIn("spike", line)
+
+    def test_every_other_type_label_is_removed(self):
+        runner, _, _ = self.real(valid("bug"), labels=["type:feature", "type:maintenance"])
+        lines = runner.lines()
+        typ = lines[self.index(lines, "gh issue edit 5 --add-label type:bug")]
+        self.assertIn("--remove-label type:feature", typ)
+        self.assertIn("--remove-label type:maintenance", typ)
 
 
 class CliTests(unittest.TestCase):
@@ -489,7 +516,7 @@ def bug(number, ago=None, labels=("type:bug", "status:refinement"), body="## Tri
         handoffs=(), **kw):
     data = item(number, ago or {"days": 1}, labels, **kw)
     data["body"] = body
-    data["comments"] = [{"createdAt": stamp(**h), "body": comment.compose("orchestrator", "status",
+    data["comments"] = [{"createdAt": stamp(**h), "author": {"login": "Boss"}, "body": comment.compose("orchestrator", "status",
                                                            triage.REPRO_MARK + "\nhanded")}
                         for h in handoffs]
     return data
@@ -499,39 +526,39 @@ class ReproduceTests(unittest.TestCase):
     def test_handoffs_window(self):
         issues = [bug(1, handoffs=[{"hours": 23}, {"hours": 25}]),
                   bug(2, handoffs=[{"hours": 1}], state="CLOSED")]
-        self.assertEqual(triage.handoffs_last_day(issues, NOW), 2)
+        self.assertEqual(triage.handoffs_last_day(issues, NOW, ["Boss"]), 2)
 
     def test_closed_issue_handoff_counts(self):
         closed = [bug(1, handoffs=[{"hours": 1}], state="CLOSED")]
-        self.assertEqual(triage.reproduce_candidates([bug(2)], make_cfg(), NOW, 1, closed=closed), [])
-        self.assertEqual(triage.reproduce_candidates([bug(2)], make_cfg(), NOW, 2, closed=closed), [2])
+        self.assertEqual(triage.reproduce_candidates([bug(2)], make_cfg(), NOW, 1, ["Boss"], closed=closed), [])
+        self.assertEqual(triage.reproduce_candidates([bug(2)], make_cfg(), NOW, 2, ["Boss"], closed=closed), [2])
 
     def test_same_number_in_both_lists_counts_once(self):
         both = bug(1, handoffs=[{"hours": 1}])
         closed = [bug(1, handoffs=[{"hours": 1}], state="CLOSED")]
-        self.assertEqual(triage.reproduce_candidates([both, bug(2)], make_cfg(), NOW, 2, closed=closed), [2])
+        self.assertEqual(triage.reproduce_candidates([both, bug(2)], make_cfg(), NOW, 2, ["Boss"], closed=closed), [2])
 
     def test_other_comments_do_not_count(self):
         issue = bug(1)
-        issue["comments"] = [{"createdAt": stamp(hours=1), "body": comment.compose("orchestrator", "status", "hi")}]
-        self.assertEqual(triage.handoffs_last_day([issue], NOW), 0)
+        issue["comments"] = [{"createdAt": stamp(hours=1), "author": {"login": "Boss"}, "body": comment.compose("orchestrator", "status", "hi")}]
+        self.assertEqual(triage.handoffs_last_day([issue], NOW, ["Boss"]), 0)
 
     def test_composed_handoff_counts_and_excludes(self):
         issue = bug(1)
-        issue["comments"] = [{"createdAt": stamp(hours=1), "body": comment.compose(
+        issue["comments"] = [{"createdAt": stamp(hours=1), "author": {"login": "Boss"}, "body": comment.compose(
             "orchestrator", "status", triage.REPRO_MARK + "\nhanded")}]
         other = bug(2)
-        self.assertEqual(triage.handoffs_last_day([issue], NOW), 1)
-        self.assertEqual(triage.reproduce_candidates([issue, other], make_cfg(), NOW, 5), [2])
+        self.assertEqual(triage.handoffs_last_day([issue], NOW, ["Boss"]), 1)
+        self.assertEqual(triage.reproduce_candidates([issue, other], make_cfg(), NOW, 5, ["Boss"]), [2])
 
     def test_limit_minus_recent(self):
         issues = [bug(1, handoffs=[{"hours": 1}]), bug(2, handoffs=[{"hours": 2}]),
                   bug(3, {"days": 5}), bug(4, {"days": 4}), bug(5, {"days": 3})]
-        self.assertEqual(triage.reproduce_candidates(issues, make_cfg(), NOW, 3), [3])
-        self.assertEqual(triage.reproduce_candidates(issues, make_cfg(), NOW, 1), [])
+        self.assertEqual(triage.reproduce_candidates(issues, make_cfg(), NOW, 3, ["Boss"]), [3])
+        self.assertEqual(triage.reproduce_candidates(issues, make_cfg(), NOW, 1, ["Boss"]), [])
 
     def test_limit_zero(self):
-        self.assertEqual(triage.reproduce_candidates([bug(1)], make_cfg(), NOW, 0), [])
+        self.assertEqual(triage.reproduce_candidates([bug(1)], make_cfg(), NOW, 0, ["Boss"]), [])
 
     def test_exclusions_and_order(self):
         issues = [bug(1, labels=("type:feature", "status:refinement")),
@@ -540,7 +567,7 @@ class ReproduceTests(unittest.TestCase):
                   bug(4, labels=("type:bug", "status:refinement", "awaiting-feedback")),
                   bug(5, labels=("type:bug", "status:ready")),
                   bug(6, {"days": 2}), bug(7, {"days": 6}), bug(8, state="CLOSED")]
-        self.assertEqual(triage.reproduce_candidates(issues, make_cfg(), NOW, 5), [7, 6])
+        self.assertEqual(triage.reproduce_candidates(issues, make_cfg(), NOW, 5, ["Boss"]), [7, 6])
 
     def test_maintainer_bug_is_not_handed_off(self):
         own = bug(1, author="boss")
@@ -548,7 +575,39 @@ class ReproduceTests(unittest.TestCase):
         relayed = bug(3, author="boss",
                       body="## Triage summary\nx\nOrigin: outside (@visitor)")
         self.assertEqual(triage.reproduce_candidates(
-            [own, outside, relayed], make_cfg(), NOW, 5, maintainers=["Boss"]), [2, 3])
+            [own, outside, relayed], make_cfg(), NOW, 5, ["Boss"], maintainers=["Boss"]), [2, 3])
+
+
+class HandoffAuthorTests(unittest.TestCase):
+    def handoff(self, login, quoted=False, bot=False):
+        body = comment.compose("orchestrator", "status", triage.REPRO_MARK + "\nhanded")
+        if quoted:
+            body = "> " + body
+        author = {"login": login}
+        if bot:
+            author["type"] = "Bot"
+        issue = bug(1)
+        issue["comments"] = [{"createdAt": stamp(hours=1), "author": author, "body": body}]
+        return issue
+
+    def test_outside_comment_with_marker_does_not_count(self):
+        issue = self.handoff("mallory")
+        self.assertEqual(triage.handoffs_last_day([issue], NOW, ["Boss"]), 0)
+        self.assertEqual(triage.reproduce_candidates([issue], make_cfg(), NOW, 1, ["Boss"]), [1])
+
+    def test_quoted_marker_does_not_count(self):
+        issue = self.handoff("Boss", quoted=True)
+        self.assertEqual(triage.handoffs_last_day([issue], NOW, ["Boss"]), 0)
+
+    def test_maintainer_handoff_counts(self):
+        issue = self.handoff("boss")
+        self.assertEqual(triage.handoffs_last_day([issue], NOW, ["Boss"]), 1)
+        self.assertEqual(triage.reproduce_candidates([issue, bug(2)], make_cfg(), NOW, 5, ["Boss"]),
+                         [2])
+
+    def test_app_handoff_counts(self):
+        issue = self.handoff("baton-orchestrator", bot=True)
+        self.assertEqual(triage.handoffs_last_day([issue], NOW, ["baton-orchestrator[bot]"]), 1)
 
 
 class QueueCommandTests(unittest.TestCase):
@@ -627,7 +686,7 @@ class QueueCommandTests(unittest.TestCase):
         issue["createdAt"] = "2020-01-01T00:00:00Z"
         stamp_now = datetime.now(timezone.utc) - timedelta(hours=1)
         closed = [{"number": 1, "state": "CLOSED", "createdAt": "2020-01-01T00:00:00Z",
-                   "comments": [{"createdAt": stamp_now.isoformat(),
+                   "comments": [{"createdAt": stamp_now.isoformat(), "author": {"login": "Boss"},
                                  "body": comment.compose("orchestrator", "status",
                                                          triage.REPRO_MARK + "\nhanded")}]}]
         with tempfile.TemporaryDirectory() as home:

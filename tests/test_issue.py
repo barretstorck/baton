@@ -184,6 +184,11 @@ class OutsideTest(unittest.TestCase):
         data = self.with_edits([self.READY], [self.edit("mallory", "2026-11-01T09:00:00Z")])
         self.assertTrue(issue.approved(data, OWNER))
 
+    def test_outside_edit_at_approval_time_drops_it(self):
+        data = self.with_edits([self.READY], [self.edit("mallory", "2026-11-01T10:00:00Z")])
+        self.assertFalse(issue.approved(data, OWNER))
+        self.assertIn("@mallory edited", issue.approval_problem(data, OWNER))
+
     def test_second_approval_restores_it(self):
         again = dict(comment(OWNER, "/baton ready"), createdAt="2026-11-01T12:00:00Z")
         data = self.with_edits([self.READY, again], [self.edit("mallory", "2026-11-01T11:00:00Z")])
@@ -247,6 +252,16 @@ class OutsideTest(unittest.TestCase):
         self.assertTrue(issue.ready_problems(self.check([], author=OWNER, body=body), cfg(), OWNER))
         data = self.check([comment(OWNER, "/baton ready")], author=OWNER, body=body)
         self.assertEqual(issue.ready_problems(data, cfg(), OWNER), [])
+
+    def test_malformed_origin_line_is_reported(self):
+        for line in ("Origin: outside", "Origin: outside @someone",
+                     "Origin: outside (only when the issue this spike was made from has this line)"):
+            with self.subTest(line=line):
+                data = make(body=BODY + "\n" + line + "\n")
+                self.assertFalse(issue.is_outside(data, [OWNER]))
+                found = issue.ready_problems(data, cfg(), OWNER)
+                self.assertTrue([p for p in found
+                                 if line in p and "Origin: outside (@<login>)" in p], found)
 
     def test_ignored_comments(self):
         for who, text in (("mallory", "/baton ready"), (OWNER, self.MARK + "/baton ready"),
