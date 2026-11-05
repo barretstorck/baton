@@ -399,12 +399,27 @@ class DescribeTest(unittest.TestCase):
         self.assertEqual(out["tier"], 0)
         self.assertEqual(out["roles"]["reviewer"], {"login": None, "route": "maintainer"})
         self.assertIn("orchestrator", out["roles"])
+        self.assertNotIn("machine", out)
 
     def test_tier_one_has_nothing_secret(self):
         ids = identity.Identities(identity.App(11, 22, "/secret/key.pem", "baton[bot]"),
                                   identity.App(33, 44, "/secret/r.pem", "baton-reviewer[bot]"))
         out = identity.describe(ids)
         self.assertEqual(out["tier"], 1)
+        self.assertNotIn("machine", out)
+        self.assertEqual(out["roles"]["reviewer"], {"login": "baton-reviewer[bot]", "route": "reviewer"})
+        self.assertEqual(out["roles"]["developer"], {"login": "baton[bot]", "route": "baton"})
+        text = json.dumps(out)
+        for bad in ("secret", "11", "22", "33", "44", ".pem"):
+            self.assertNotIn(bad, text)
+
+    def test_tier_two(self):
+        ids = identity.Identities(identity.App(11, 22, "/secret/key.pem", "baton[bot]"),
+                                  identity.App(33, 44, "/secret/r.pem", "baton-reviewer[bot]"),
+                                  "baton-user")
+        out = identity.describe(ids)
+        self.assertEqual(out["tier"], 2)
+        self.assertEqual(out["machine"], "baton-user")
         self.assertEqual(out["roles"]["reviewer"], {"login": "baton-reviewer[bot]", "route": "reviewer"})
         self.assertEqual(out["roles"]["developer"], {"login": "baton[bot]", "route": "baton"})
         text = json.dumps(out)

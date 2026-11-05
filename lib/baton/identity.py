@@ -451,4 +451,8 @@ def describe(ids):
         name = route(role)
         app = getattr(ids, name)
         roles[role] = {"login": app.login if app else None, "route": name}
-    return {"tier": 0 if ids is None else 1, "roles": roles}
+    out = {"tier": 0 if ids is None else 1, "roles": roles}
+    if ids is not None and ids.machine:
+        out["tier"] = 2
+        out["machine"] = ids.machine
+    return out
