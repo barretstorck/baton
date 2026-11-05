@@ -1,6 +1,6 @@
 ---
 name: triage
-description: Use with /baton:triage <issue-number> to classify one new issue as spam, duplicate, support, unclear, feature, bug, maintenance or unsure, and apply the decision through baton triage apply.
+description: Use with /baton:triage <issue-number> to classify one new issue as spam, duplicate, support, unclear, feature, bug, maintenance, spike or unsure, and apply the decision through baton triage apply.
 ---
 
 # Baton triage
@@ -30,29 +30,32 @@ call. For a duplicate candidate, read the title and body only.
 3. Search for duplicates: `gh search issues "<key words>" --repo <owner>/<repo> --state all` (the owner from
    `gh repo view --json owner`, with the repository name) and
    `gh issue list --state all --search "<key words>"`. Read candidates with `gh issue view`.
-4. Pick the category: `spam`, `duplicate`, `support`, `unclear`, `feature`, `bug`, `maintenance`
-   or `unsure` (use it when you cannot tell; the maintainer is notified).
+4. Pick the category: `spam`, `duplicate`, `support`, `unclear`, `feature`, `bug`, `maintenance`,
+   `spike` or `unsure` (use `unsure` when you cannot tell; the maintainer is notified). Use `spike`
+   only when the issue already has the `type:spike` label, and then always: never feature, bug or
+   maintenance for it.
 5. Write the decision as JSON to `triage-<N>.json` in the temporary directory. Leave out fields
    that do not apply:
    - `category`: as above.
    - `duplicate_of`: the original issue number, for `duplicate` only.
-   - `priority`: for feature, bug or maintenance.
+   - `priority`: for feature, bug, maintenance or spike.
    - `severity`: for bug only.
    - `comment`: for `support` and `unclear` (required there): plain text a reporter can read, no
      commands, no links outside the repository.
-   - `summary`: for feature, bug or maintenance (required there): an object with exactly the
+   - `summary`: for feature, bug, maintenance or spike (required there): an object with exactly the
      keys `symptom`, `expected`, `actual`, `area`, `version`, `type`; `type` equals the category;
      each value is one short line.
 6. Run `baton triage apply <N> <file>`. If it refuses, fix the decision once from the message; if
    it refuses again, use category `unsure`. It refuses a label outside the known set; a missing,
-   same or unknown `duplicate_of`; a severity on a non-bug; a comment that fails the privacy scan
+   same or unknown `duplicate_of`; a severity on a non-bug; `spike` for an issue without `type:spike`, or feature, bug or
+   maintenance for one with it; a comment that fails the privacy scan
    or links outside the repository and its docs; and a summary with code blocks, commands, links
    or over-long fields. Per category it does this:
    - spam: `closed:spam` and lock;
    - duplicate: `closed:duplicate` with back-links;
    - support: comment, then `closed:support`;
    - unclear: comment, then `awaiting-feedback`;
-   - feature, bug, maintenance: type label, priority, severity (bugs), `status:refinement` and a
+   - feature, bug, maintenance, spike: type label, priority, severity (bugs), `status:refinement` and a
      `## Triage summary`;
    - unsure: notifies the maintainers.
 
@@ -76,7 +79,7 @@ could be a real report):
 
 Compare `author.login` with the maintainers (`maintainers` from `baton config`; when that list is
 empty, the owner from `gh repo view --json owner`). An issue written by a maintainer only gets labels: use
-only feature, bug or maintenance (with `priority` and `severity`), no `comment`, and never spam,
+only feature, bug, maintenance or spike (a spike only for an issue labelled `type:spike`; with `priority` and `severity`), no `comment`, and never spam,
 duplicate, support or unclear.
 
 ## Never
