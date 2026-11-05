@@ -568,6 +568,11 @@ class BlockedTest(unittest.TestCase):
         self.assertEqual([e["cause"] for e in events],
                          ["default-branch", "environment", None, None])
 
+    def test_history_carries_the_time(self):
+        item = dict(rev("changes"), createdAt="2026-11-01T10:00:00Z")
+        self.assertEqual(review.history([item], OWNER)[0]["at"], "2026-11-01T10:00:00Z")
+        self.assertEqual(review.state([item], OWNER, 2)["review"]["at"], "2026-11-01T10:00:00Z")
+
     def test_state_blocked_then_replied(self):
         found = review.state([blocked()], OWNER, 2)
         self.assertEqual((found["state"], found["rounds"]), ("blocked", 0))

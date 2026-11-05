@@ -92,6 +92,7 @@ The states handled for each `in_review` entry:
 - Spike outcomes: `infeasible`, `single`, `multiple`, `partial`.
 - Plan not finished.
 - `review` states: `none`, `replied`, `stale`, `blocked`, `repeated`, `changes`, `replan`, `escalate`, `approved`, `not-required`.
+- `review_requested` (tier 2).
 - `re_refine`.
 - Conflicts, cancelled CI and `merge-pr` refusals.
 
