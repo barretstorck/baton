@@ -51,8 +51,9 @@ The gate is a text scanner. It checks commands that talk to a forge (`gh`, `glab
 - a privacy finding in the quoted text, heredoc or body file of such a command;
 - text it cannot read: a body from stdin (`-F -`, `--body-file -`, `--description -`) without a heredoc
   (a pipe does not count), a body file that does not exist yet (write the file in one step, post
-  it in the next), or a variable (`$B`, `${B}`), `$(...)` or backticks in a title, body, message
-  or field value. Unquoted title, body and field values are scanned like quoted ones. Pass the
+  it in the next), or a variable (`$B`, `${B}`), a positional or special parameter (`$1`, `$@`, `$?`), `$'...'`,
+  or an unquoted `$(...)` or backticks in a title, body, message
+  or field value (a line continuation does not hide them). Unquoted title, body and field values are scanned like quoted ones. Pass the
   text literally, as an inline heredoc, or as a file. Inline text and inline heredocs
   (`"$(cat <<'EOF' ... EOF)"`) are fine. A body file is read relative to the last literal `cd <dir>`
   before it in the same command (else the working directory), and a double-quoted body whose only

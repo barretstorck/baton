@@ -202,7 +202,7 @@ class GateTest(unittest.TestCase):
                     'glab issue create -t t --description "$D"'):
             with self.subTest(cmd=cmd):
                 self.assertIn(gate._SUBSTITUTED, gate.decide(cmd, repo, TERMS))
-        for cmd in ('gh issue comment 5 --body "costs $5"', "gh issue comment 5 --body 'see $HOME'",
+        for cmd in ("gh issue comment 5 --body 'costs $5'", "gh issue comment 5 --body 'see $HOME'",
                     "gh pr create --base $BASE --head $BRANCH --title t --body x",
                     "gh api repos/$OWNER/r/pulls --jq .[].number",
                     'gh pr list --search "author:$USER"',
@@ -265,6 +265,40 @@ class GateTest(unittest.TestCase):
         self.assertEqual(
             gate.decide("gh issue comment 5 --body \"$(cat <<'EOF'\nhello\nEOF\n)\"", repo, TERMS), [])
         self.assertEqual(gate.decide("gh issue comment 5 --body 'costs $(5)'", repo, TERMS), [])
+
+    def test_special_parameter_or_unquoted_substitution_in_a_body_is_refused(self):
+        for repo in both_directories():
+            for cmd in ('gh issue comment 5 --body "$1"', "gh issue comment 5 --body $1",
+                        'gh issue comment 5 --body "$@"', 'gh issue comment 5 --body "$*"',
+                        'gh issue comment 5 --body "x $?"', 'gh issue comment 5 --body "$#"',
+                        'gh issue comment 5 --body "$$"', 'gh issue comment 5 --body "$!"',
+                        'gh issue comment 5 --body "costs $5"',
+                        "gh issue comment 5 --body $'a\\nb'", "gh issue comment 5 --body x$'a'",
+                        "gh issue comment 5 --body `date`", "gh issue comment 5 --body x`date`",
+                        "gh issue comment 5 --body $(cat notes.md)",
+                        "gh api -X POST repos/o/r/issues -f title=$1",
+                        "gh api -X POST repos/o/r/issues -f title=`date`"):
+                with self.subTest(cmd=cmd, repo=repo):
+                    self.assertIn(gate._SUBSTITUTED, gate.decide(cmd, repo, TERMS))
+
+    def test_body_after_a_line_continuation_is_refused(self):
+        for repo in both_directories():
+            for cmd in ('gh issue comment 5 \\\n  --body "$B"', 'gh issue comment 5 --body \\\n  "$B"',
+                        'gh pr create --title t \\\n  --body "x $(date)"',
+                        'gh issue comment 5 --body \\\n  "x `date`"',
+                        "gh issue comment 5 --body \\\n  $X",
+                        'gh issue comment 5 \\\n  --body "$1"'):
+                with self.subTest(cmd=cmd, repo=repo):
+                    self.assertIn(gate._SUBSTITUTED, gate.decide(cmd, repo, TERMS))
+
+    def test_literal_bodies_with_continuations_or_single_quotes_are_allowed(self):
+        for repo in both_directories():
+            for cmd in ('gh issue comment 5 --body "fine" \\\n  --repo o/r',
+                        "gh pr create --title t \\\n  --body x",
+                        "gh issue comment 5 --body 'see $1'",
+                        "gh issue comment 5 --body 'it is \\\n one line'"):
+                with self.subTest(cmd=cmd, repo=repo):
+                    self.assertEqual(gate.decide(cmd, repo, TERMS), [])
 
     def test_body_file_follows_a_literal_cd_in_the_same_command(self):
         repo = make_repo()

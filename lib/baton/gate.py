@@ -8,7 +8,9 @@ command would send, and the unquoted value of a title, body, message, field or
 description flag. It refuses only for four safety reasons: a privacy finding
 in that text, text it cannot read (a stdin body without a heredoc, even when
 piped, and `--description -`; a missing body file; a variable such as `$B` or
-`${B}`, or command substitution, in the value of such a flag), a git hook
+`${B}`, a positional or special parameter (`$1`, `$@`, `$?`), `$'...'`, or an
+unquoted `$(...)` or backticks, in the value of such a flag; a backslash line
+continuation does not hide any of these), a git hook
 bypass, and missing hooks. The refusal says to pass the text literally, as an
 inline heredoc, or as a file.
 A body file is read relative to the last literal `cd` before it in the same
@@ -109,7 +111,7 @@ _SUBST_BODY = re.compile(r"(?:--body|-b|--title|-t|--message|-m|--raw-field|-f|-
 _BODY_VALUE = re.compile(
     r"""(?<![\w-])(?:--body|-b|--title|-t|--message|-m|--raw-field|-f|--field|-F|--description|-d"""
     r"""|--data(?:-raw)?)(?:\s+|=)(?:"([^"]*)"|'([^']*)'|([^\s'"<>|;&]+))""")
-_VARIABLE = re.compile(r"\$[A-Za-z_{]")
+_VARIABLE = re.compile(r"\$[A-Za-z_{0-9@*#?$!-]")
 _CAT_SUBST = re.compile(r"""\$\(cat\s+(?:'([^\s'$`]+)'|([^\s'"$`()<>|;&*?\\-][^\s'"$`()<>|;&*?\\]*))\s*\)""")
 _HEREDOC = re.compile(r"<<-?[ \t]*['\"]?(\w+)['\"]?([^\n]*)\n(.*?)\n[ \t]*\1\b", re.S)
 _QUOTED = re.compile(r"""'[^']*'|"[^"]*\"""")
@@ -381,7 +383,38 @@ def _has_variable(segment):
         value = m.group(1) if m.group(1) is not None else m.group(3)
         if value and _VARIABLE.search(value):
             return True
+        # An unquoted value also hides `$'...'` (it stops at the quote), `$(...)` and backticks.
+        unquoted = m.group(3)
+        if unquoted and ("`" in unquoted or "$(" in unquoted or unquoted.endswith("$")):
+            return True
     return False
+
+
+def _join_continuations(text):
+    """`text` without its backslash-newline pairs outside single quotes, as the shell removes them.
+
+    Quotes are tracked as in `_forge_segments`. An escaped backslash (`\\\\`) before a newline stays.
+    """
+    out, quote, i = [], "", 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\" and quote != "'" and i + 1 < len(text):
+            nxt = text[i + 1]
+            if nxt == "\n":
+                i += 2
+                continue
+            if nxt == "\\":
+                out.append("\\\\")
+                i += 2
+                continue
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "'\"":
+            quote = ch
+        out.append(ch)
+        i += 1
+    return "".join(out)
 
 
 def _forge_segments(command, clis):
@@ -404,7 +437,7 @@ def _forge_segments(command, clis):
 
 
 def decide(command, cwd, terms):
-    stripped = _HEREDOC.sub(r"<<HD\2", command)
+    stripped = _join_continuations(_HEREDOC.sub(r"<<HD\2", command))
     clis, flags = _brief_lists(cwd)
     forge = [m.group(1) for m in _forge_re(clis).finditer(stripped)]
     git = _GITPUB.search(stripped)

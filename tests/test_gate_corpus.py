@@ -78,7 +78,7 @@ ALLOWED = {
         "gh api -X POST repos/example-org/example-repo/issues -f title=Word",
         "glab issue create -t t -d Word",
         "tea issues create -t t",
-        'gh issue comment 5 --body "costs $5"',
+        "gh issue comment 5 --body 'costs $5'",
         "gh pr create --base $BASE --head $BRANCH --title t --body x",
         'gh pr list --search "author:$USER"',
         "gh api repos/$OWNER/example-repo/pulls --jq .[].number",
@@ -86,6 +86,7 @@ ALLOWED = {
         "cat <<'EOF' | gh issue comment 5 --body-file -\nA clean comment\nEOF",
         "echo msg | git commit -F -",
         "gh pr view 5 | head -5",
+        'gh issue comment 5 --body "fine" \\\n  --repo example-org/example-repo',
     ),
     # (g) repository selectors
     "g repository selectors": (
@@ -155,6 +156,11 @@ REFUSED = (
     ("cat <<'EOF' | gh issue comment 5 --body-file -\nhost %s\nEOF" % IP, "private-ip"),
     ('gh issue comment 5 --body "$B"', "unreadable"),
     ("gh issue comment 5 --body $B", "unreadable"),
+    ('gh issue comment 5 \\\n  --body "$B"', "unreadable"),
+    ('gh issue comment 5 --body "$1"', "unreadable"),
+    ('gh issue comment 5 --body "costs $5"', "unreadable"),
+    ("gh issue comment 5 --body $'a'", "unreadable"),
+    ("gh issue comment 5 --body $(cat notes.md)", "unreadable"),
     ('gh pr create --title "${T}" --body x', "unreadable"),
     ("gh api -X POST repos/example-org/example-repo/issues -f title=$T", "unreadable"),
     ("echo x | gh issue comment 5 --body-file -", "unreadable"),
