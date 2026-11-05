@@ -90,6 +90,19 @@ class Tier1Test(unittest.TestCase):
         self.assertEqual(tokens[-1], "tok-reviewer")
         self.assertEqual(tokens[:-1], [None] * (len(tokens) - 1))
 
+    def test_tick_review_edits_a_formal_review(self):
+        from tests.test_review import formal
+        item = json.loads(formal("baton-reviewer[bot]", "changes", "2026-01-02T00:00:00Z", "R1"))
+        item["body"] = changes_with_tasks()["body"]
+        item["url"] = "https://x/pull/9#pullrequestreview-77"
+        runner = pr_runner()
+        runner.replies["gh api --paginate repos/{owner}/{repo}/pulls/9/reviews"] = json.dumps(item) + "\n"
+        self.assertTrue(review.tick_review(runner, 9, [OWNER, "baton-reviewer[bot]"], "1.1"))
+        call = runner.calls[-1]
+        self.assertEqual(call[:4], ["gh", "api", "-X", "PUT"])
+        self.assertEqual(call[4], "repos/{owner}/{repo}/pulls/9/reviews/77")
+        self.assertEqual(self.tokens(runner)[-1], "tok-reviewer")
+
     def test_triage_writes_are_orchestrator(self):
         runner, _ = apply_decision(valid("bug"))
         pairs = list(zip(runner.calls, runner.envs))

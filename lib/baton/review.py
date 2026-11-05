@@ -36,6 +36,7 @@ _REPLY = f"{gate.MARKER}developer:reply -->"
 _REFINE_REPLY = f"{gate.MARKER}refine:reply -->"
 _HUNK = re.compile(r"^@@ [^@]* @@.*$")
 _COMMENT_ID = re.compile(r"#issuecomment-(\d+)$")
+_REVIEW_ID = re.compile(r"#pullrequestreview-(\d+)$")
 
 
 class ReviewError(Exception):
@@ -333,15 +334,20 @@ def tick_review(runner, number, owner, task_id):
     new, changed = checklist.tick(item["body"], "tasks", task_id)
     if not changed:
         return False
-    found = _COMMENT_ID.search(item.get("url") or "")
+    url = item.get("url") or ""
+    formal_review = _REVIEW_ID.search(url)
+    found = formal_review or _COMMENT_ID.search(url)
     if not found:
         raise ReviewError("cannot tell the review comment's id from its URL")
+    if formal_review:
+        method, target = "PUT", f"repos/{{owner}}/{{repo}}/pulls/{number}/reviews/{found.group(1)}"
+    else:
+        method, target = "PATCH", f"repos/{{owner}}/{{repo}}/issues/comments/{found.group(1)}"
     handle, path = tempfile.mkstemp(suffix=".md")
     try:
         with os.fdopen(handle, "w", newline="") as out:
             out.write(new)
-        identity.write(runner, ["gh", "api", "-X", "PATCH",
-                                f"repos/{{owner}}/{{repo}}/issues/comments/{found.group(1)}",
+        identity.write(runner, ["gh", "api", "-X", method, target,
                                 "-F", f"body=@{path}", "--silent"], "reviewer")
     finally:
         os.unlink(path)
