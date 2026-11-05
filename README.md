@@ -208,6 +208,8 @@ Typical use:
 
 Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 
+Where agents keep scratch files is described in [docs/scratch-files.md](docs/scratch-files.md).
+
 ## Commands
 
 `baton <command> --help` prints a command's usage.
