@@ -613,3 +613,24 @@ class ConfiguredForTest(unittest.TestCase):
         def boom(argv, cwd=None):
             raise identity._run.RunError("no origin")
         self.assertIsNone(identity.configured_for("/w", boom, home=self.tmp.name))
+
+
+class StatusTest(unittest.TestCase):
+    def test_204(self):
+        resp = mock.MagicMock()
+        resp.status = 204
+        resp.__enter__.return_value = resp
+        with mock.patch.object(identity.urllib.request, "urlopen", return_value=resp):
+            self.assertEqual(identity._status("https://x/y", {}), 204)
+
+    def test_http_error_code(self):
+        err = identity.urllib.error.HTTPError("https://x/y", 404, "nf", {}, None)
+        with mock.patch.object(identity.urllib.request, "urlopen", side_effect=err):
+            self.assertEqual(identity._status("https://x/y", {}), 404)
+
+    def test_url_error(self):
+        err = identity.urllib.error.URLError("boom")
+        with mock.patch.object(identity.urllib.request, "urlopen", side_effect=err):
+            with self.assertRaises(identity.IdentityError) as cm:
+                identity._status("https://x/y", {"Authorization": "Bearer SECRET"})
+        self.assertNotIn("SECRET", str(cm.exception))
