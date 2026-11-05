@@ -97,6 +97,36 @@ def history(comments, owner, repliers=None):
     return events
 
 
+REVIEWS_JQ = (".[] | select(.submitted_at != null) | {id: .node_id, "
+              "author: {login: .user.login, type: .user.type}, body: .body, "
+              "createdAt: .submitted_at, url: .html_url} | @json")
+
+
+def app_reviews(runner, number):
+    """The pull request's submitted reviews written by the reviewer App, as comment-shaped dicts."""
+    text = runner(["gh", "api", "--paginate",
+                   f"repos/{{owner}}/{{repo}}/pulls/{number}/reviews?per_page=100",
+                   "--jq", REVIEWS_JQ])
+    logins = identity.reviewer_logins()
+    found = []
+    for line in (text or "").splitlines():
+        if line.strip():
+            item = json.loads(line)
+            if has_login(item.get("author"), logins):
+                found.append(item)
+    return found
+
+
+def pr_comments(runner, number, comments):
+    """A pull request's comments with author types marked, plus the reviewer App's formal
+    reviews at tier 1 or higher, oldest first."""
+    marked = identity.mark_authors(runner, number, comments)
+    if not identity.reviewer_logins():
+        return marked
+    return sorted(list(marked) + app_reviews(runner, number),
+                  key=lambda item: item.get("createdAt") or "")
+
+
 def json_default(value):
     """json.dumps fallback: sets (the failure ids) become sorted lists."""
     if isinstance(value, (set, frozenset)):

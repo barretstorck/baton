@@ -2,7 +2,7 @@ import copy
 import json
 import pathlib
 import unittest
-from baton import config, review, run
+from baton import config, identity, review, run
 from tests.fakes import FakeRunner
 
 OWNER = "octo"
@@ -86,6 +86,57 @@ class MaintainersTest(unittest.TestCase):
         plain = [bot(rev("changes"), "baton-reviewer"), bot(reply(), "baton")]
         plain[1]["author"] = {"login": "baton"}
         self.assertEqual(review.state(plain, owner, 2, repliers)["state"], "changes")
+
+
+def formal(login, verdict, at, rid):
+    return json.dumps({"id": rid, "author": {"login": login, "type": "Bot"},
+                       "body": review.compose(verdict, NEW, "Round 1."),
+                       "createdAt": at, "url": f"u/{rid}"})
+
+
+class PrCommentsTest(unittest.TestCase):
+    TRUSTED = frozenset({OWNER, "baton-reviewer[bot]"})
+
+    def tier1(self):
+        identity.use(lambda: identity.Identities(identity.App(1, 10, "k", "baton[bot]"),
+                                                 identity.App(2, 20, "k", "baton-reviewer[bot]")))
+        self.addCleanup(identity.use, None)
+
+    def test_tier0_returns_comments_and_reads_no_reviews(self):
+        identity.use(None)
+        runner = FakeRunner()
+        comments = [rev("changes")]
+        self.assertEqual(review.pr_comments(runner, 9, comments), comments)
+        self.assertFalse([c for c in runner.lines() if "pulls/9/reviews" in c])
+
+    def test_tier1_merges_only_the_reviewer_apps_reviews_in_order(self):
+        self.tier1()
+        older = dict(rev("changes"), createdAt="2026-01-01T00:00:00Z")
+        out = "\n".join([
+            formal("baton-reviewer[bot]", "approve", "2026-01-03T00:00:00Z", "R2"),
+            formal("octo", "approve", "2026-01-04T00:00:00Z", "R3"),
+            formal("baton-reviewer[bot]", "changes", "2026-01-02T00:00:00Z", "R1"), ""])
+        runner = FakeRunner({"gh api --paginate repos/{owner}/{repo}/pulls/9/reviews": out})
+        merged = review.pr_comments(runner, 9, [older])
+        self.assertEqual([c.get("id", "old") for c in merged], ["old", "R1", "R2"])
+        found = review.history(merged, self.TRUSTED)
+        self.assertEqual([e["verdict"] for e in found], ["changes", "changes", "approve"])
+        self.assertEqual(review.state(merged, self.TRUSTED, 5)["state"], "approved")
+
+    def test_formal_reviews_alone_give_changes_then_approve(self):
+        self.tier1()
+        out = formal("baton-reviewer[bot]", "changes", "2026-01-02T00:00:00Z", "R1") + "\n"
+        runner = FakeRunner({"gh api --paginate repos/{owner}/{repo}/pulls/9/reviews": out})
+        self.assertEqual(review.state(review.pr_comments(runner, 9, []), self.TRUSTED, 5)["state"],
+                         "changes")
+        out += formal("baton-reviewer[bot]", "approve", "2026-01-03T00:00:00Z", "R2") + "\n"
+        runner = FakeRunner({"gh api --paginate repos/{owner}/{repo}/pulls/9/reviews": out})
+        self.assertEqual(review.state(review.pr_comments(runner, 9, []), self.TRUSTED, 5)["state"],
+                         "approved")
+
+    def test_no_reviews_adds_nothing(self):
+        self.tier1()
+        self.assertEqual(review.pr_comments(FakeRunner(), 9, []), [])
 
 
 class StateTest(unittest.TestCase):
