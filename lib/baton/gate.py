@@ -388,6 +388,33 @@ def _has_variable(segment):
     return False
 
 
+def _join_continuations(text):
+    """`text` without its backslash-newline pairs outside single quotes, as the shell removes them.
+
+    Quotes are tracked as in `_forge_segments`. An escaped backslash (`\\\\`) before a newline stays.
+    """
+    out, quote, i = [], "", 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\" and quote != "'" and i + 1 < len(text):
+            nxt = text[i + 1]
+            if nxt == "\n":
+                i += 2
+                continue
+            if nxt == "\\":
+                out.append("\\\\")
+                i += 2
+                continue
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "'\"":
+            quote = ch
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _forge_segments(command, clis):
     """The parts of `command`, split at ; && || | & and newlines outside quotes, that run a forge CLI."""
     segments, current, quote = [], [], ""
@@ -408,7 +435,7 @@ def _forge_segments(command, clis):
 
 
 def decide(command, cwd, terms):
-    stripped = _HEREDOC.sub(r"<<HD\2", command)
+    stripped = _join_continuations(_HEREDOC.sub(r"<<HD\2", command))
     clis, flags = _brief_lists(cwd)
     forge = [m.group(1) for m in _forge_re(clis).finditer(stripped)]
     git = _GITPUB.search(stripped)
