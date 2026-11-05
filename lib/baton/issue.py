@@ -17,6 +17,7 @@ _FILES = re.compile(r"^\s*Expected files:(.*)$", re.M | re.I)
 _TIMEBOX = re.compile(r"^\s*Timebox:(.*)$", re.M | re.I)
 _TIMEBOX_PART = re.compile(r"^(\d+)\s*(tokens|min)$", re.I)
 _ORIGIN_OUTSIDE = re.compile(r"^\s*Origin:\s*outside\s*\(@[\w-]+\)\s*$", re.M | re.I)
+_ORIGIN_LINE = re.compile(r"^\s*Origin:.*$", re.M | re.I)
 APPROVAL = "/baton ready"
 _LIST_ITEM = re.compile(r"^\s*(?:[-*]|\d+\.)\s+\S", re.M)
 
@@ -172,6 +173,18 @@ def approved(issue, maintainers, bots=()):
     return approval_problem(issue, maintainers, bots) is None
 
 
+def origin_problems(body):
+    """One problem per `Origin:` line that is not exactly `Origin: outside (@<login>)`."""
+    problems = []
+    for match in _ORIGIN_LINE.finditer(body or ""):
+        if _ORIGIN_OUTSIDE.fullmatch(match.group(0)):
+            continue
+        line = match.group(0).strip()
+        problems.append(f"the line '{line}' is not the outside marker "
+                        "'Origin: outside (@<login>)'; write it in that form or remove it")
+    return problems
+
+
 def ready_problems(issue, cfg, owner, runner=None, bots=()):
     """Why this issue does not meet the definition of ready; empty when it does.
 
@@ -188,6 +201,7 @@ def ready_problems(issue, cfg, owner, runner=None, bots=()):
         problem = approval_problem(issue, owner, bots)
         if problem:
             problems.append(f"outside issue: {problem}")
+    problems.extend(origin_problems(body))
     if not parts.get("context"):
         problems.append("Context section is missing or empty (say why the work matters)")
     if not _LIST_ITEM.search(parts.get("acceptance criteria", "")):
@@ -291,7 +305,7 @@ def render(data, maintainers, bots=()):
     A maintainer's text is printed in full. On an issue by anyone else the body is replaced
     by a placeholder, keeping only the Triage summary and Developer Plan sections; a comment
     by anyone else is replaced by the placeholder. A Baton login (`bots`) counts as a
-    maintainer for its issues (unless the body has an `Origin: outside` line) and for comments
+    maintainer for its issues (unless the body has an `Origin: outside (@login)` line) and for comments
     that start with the Baton marker.
     """
     allowed = {name.lower() for name in logins(maintainers)}

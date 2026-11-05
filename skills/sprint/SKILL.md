@@ -114,7 +114,7 @@ For each issue in `verification`:
 Developers return follow-up suggestions. For each one worth keeping, create an issue from
 `${CLAUDE_PLUGIN_ROOT}/templates/issue.md` in `status:refinement`, mentioning where it came from
 ("see #N", never a closing keyword). A follow-up from a spike also carries the spike's
-`Spike for:` and `Origin: outside` lines.
+`Spike for:` and `Origin: outside (@<login>)` lines.
 
 Read `${CLAUDE_PLUGIN_ROOT}/references/sprint-follow-ups.md` before filing one: it says how to check its claim and where to place it by severity.
 
