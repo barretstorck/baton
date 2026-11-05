@@ -8,6 +8,7 @@ import pathlib
 
 from . import comment as commentmod
 from . import identity
+from . import issue as issuemod
 from . import labels
 from . import run as runmod
 from . import scan
@@ -370,13 +371,15 @@ def handoffs_last_day(issues, now):
     return count
 
 
-def reproduce_candidates(issues, cfg, now, limit, closed=()):
+def reproduce_candidates(issues, cfg, now, limit, closed=(), maintainers=(), bots=()):
     """Numbers of triaged open bugs to hand to the refiner, oldest first.
 
     At most `limit` minus the hand-offs of the last 24 hours, never negative.
     The hand-offs are counted over `issues` plus `closed` (recently closed
     issues), each issue number once, the entry in `issues` winning. Only open
-    entries of `issues` are candidates.
+    entries of `issues` are candidates, and only those from outside (author not a
+    maintainer or Baton login, or an `Origin: outside (@login)` line); a
+    maintainer's bug is refined by worktree reproduction.
     """
     seen = {item.get("number") for item in issues}
     counted = list(issues) + [item for item in closed if item.get("number") not in seen]
@@ -387,6 +390,7 @@ def reproduce_candidates(issues, cfg, now, limit, closed=()):
              if item.get("state") == "OPEN"
              and {bug, refine} <= _names(item) and skip not in _names(item)
              and _SUMMARY_HEADING.search(item.get("body") or "")
-             and not _handed_off(item)]
+             and not _handed_off(item)
+             and issuemod.is_outside(item, maintainers, bots)]
     found.sort(key=lambda item: (_parse(item["createdAt"]), item["number"]))
     return [item["number"] for item in found[:room]]
