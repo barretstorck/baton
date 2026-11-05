@@ -149,6 +149,18 @@ def _get(url, headers):
         raise IdentityError("request failed")
 
 
+def _status(url, headers):
+    """GET and return only the HTTP status code; the body is never read."""
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status
+    except urllib.error.HTTPError as e:
+        return e.code
+    except (urllib.error.URLError, OSError):
+        raise IdentityError("request failed")
+
+
 def _headers(bearer):
     return {"Authorization": f"Bearer {bearer}", "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28"}
