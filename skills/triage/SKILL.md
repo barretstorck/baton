@@ -90,7 +90,7 @@ the issue.
    text saying the issue is closed because no feedback came in `triage.stale_days` days, and that
    it can be reopened.
 6. Hand bugs to the refiner. Run `baton triage queue` again; its `reproduce` list holds the
-   triaged bugs from outside (author not a maintainer or Baton login, or an `Origin: outside` line) still to reproduce, already cut to what is left of `triage.max_reproductions_per_day`
+   triaged bugs from outside (author not a maintainer or Baton login, or an `Origin: outside (@<login>)` line) still to reproduce, already cut to what is left of `triage.max_reproductions_per_day`
    for the last 24 hours (0 turns hand-off off). For each number in `reproduce`, run
    `baton comment issue <N> orchestrator status -` with the first line of the body `<!-- baton:repro-handoff -->`
    and one sentence saying reproduction was handed to the refiner. Then start one

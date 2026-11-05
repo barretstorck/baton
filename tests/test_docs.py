@@ -33,6 +33,16 @@ class DocsMatchGate(unittest.TestCase):
                             bad.append(f"{os.path.relpath(path, ROOT)}:{number}: {span}")
         self.assertEqual(bad, [], "docs name gh commands the gate refuses")
 
+    def test_docs_write_the_exact_origin_marker(self):
+        loose = re.compile(r"Origin: outside(?! \(@)")
+        bad = []
+        for path in list(doc_files()) + sorted(glob.glob(os.path.join(ROOT, "templates/*.md"))):
+            with open(path, encoding="utf-8") as f:
+                for number, line in enumerate(f, 1):
+                    if loose.search(line):
+                        bad.append(f"{os.path.relpath(path, ROOT)}:{number}")
+        self.assertEqual(bad, [], "docs name the outside marker without (@<login>)")
+
 
 class ReferencedPaths(unittest.TestCase):
     PATH = re.compile(
@@ -169,13 +179,3 @@ class DenyRules(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-    def test_docs_write_the_exact_origin_marker(self):
-        loose = re.compile(r"Origin: outside(?! \(@)")
-        bad = []
-        for path in list(doc_files()) + sorted(glob.glob(os.path.join(ROOT, "templates/*.md"))):
-            with open(path, encoding="utf-8") as f:
-                for number, line in enumerate(f, 1):
-                    if loose.search(line):
-                        bad.append(f"{os.path.relpath(path, ROOT)}:{number}")
-        self.assertEqual(bad, [], "docs name the outside marker without (@<login>)")
