@@ -156,8 +156,10 @@ class TemplateTest(unittest.TestCase):
                        "baton sandbox run",
                        "reproduction skipped: no sandbox configured",
                        "baton notify", "awaiting-feedback", "baton issue read",
-                       "Needs information"):
+                       "Needs information",
+                       "A bug written by a maintainer follows this section even when it has a `## Triage summary`."):
             self.assertIn(needle, skill)
+        self.assertNotIn("its body has `## Triage summary` (scheduled", skill)
 
     def test_refine_skill_and_agent_cover_re_refine(self):
         skill = (ROOT / "skills" / "refine" / "SKILL.md").read_text()
