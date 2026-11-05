@@ -1,10 +1,15 @@
+import contextlib
+import io
+import json
 import os
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
-from baton import sandbox
+from baton import cli, config, sandbox
 from tests.fakes import FakeRunner
+from tests.test_config import make_repo
 
 TPL = "docker run --rm --network none -v {checkout}:/work sh -c {command}"
 
@@ -36,6 +41,44 @@ class SandboxTemplateTest(unittest.TestCase):
             p.parent.mkdir(parents=True)
             p.write_text(f"## Sandbox\nCommand: {TPL}\n")
             self.assertEqual(sandbox.load_template("o", "r", home=home), TPL)
+
+
+class CmdSandboxTest(unittest.TestCase):
+    def test_run_with_a_loaded_config(self):
+        cfg = config.load(str(make_repo("---\nverify:\n  timeout_minutes: 7\n---\n")))
+        seen = {}
+
+        def execute(command, cwd, log_path, timeout):
+            seen["timeout"] = timeout
+            pathlib.Path(log_path).write_text("hi\n")
+            return 0
+
+        real = sandbox.run_in_sandbox
+
+        def run_in_sandbox(*args, **kwargs):
+            return real(*args, execute=execute, **kwargs)
+
+        runner = FakeRunner({
+            "gh repo view": json.dumps({"nameWithOwner": "o/r",
+                                        "defaultBranchRef": {"name": "main"}}),
+            "git remote get-url origin": "https://example.invalid/o/r.git\n"})
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as home:
+            path = sandbox.brief_path("o", "r", home=home)
+            path.parent.mkdir(parents=True)
+            path.write_text(f"## Sandbox\nCommand: {TPL}\n")
+            with mock.patch.object(cli, "_require_config", return_value=cfg), \
+                    mock.patch.object(cli.run, "run", runner), \
+                    mock.patch.object(cli.sandbox, "run_in_sandbox", run_in_sandbox), \
+                    mock.patch.dict(os.environ, {"BATON_HOME": home}), \
+                    contextlib.redirect_stdout(out):
+                code = cli.main(["sandbox", "run", "echo", "hi"])
+        self.assertEqual(code, 0)
+        self.assertEqual(seen["timeout"], 420)
+        lines = out.getvalue().splitlines()
+        self.assertEqual(lines[0], "sandbox exit=0")
+        self.assertTrue(lines[1].startswith("log: "))
+        self.assertEqual(lines[2:], ["--- last 40 lines ---", "hi"])
 
 
 class SandboxRunTest(unittest.TestCase):

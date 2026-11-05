@@ -1,11 +1,16 @@
+import contextlib
 import datetime
+import io
 import json
+import os
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
-from baton import verify
+from baton import cli, config, verify
 from tests.fakes import FakeRunner
+from tests.test_config import make_repo
 
 SHA = "a" * 40
 OTHER = "b" * 40
@@ -210,3 +215,33 @@ class CmdVerifyTest(unittest.TestCase):
                 contextlib.redirect_stderr(err):
             self.assertEqual(cli.main(["verify", "1", "/w"]), 1)
         self.assertEqual(err.getvalue().strip(), "baton: no")
+
+    def test_main_with_a_loaded_config(self):
+        cfg = config.load(str(make_repo(
+            "---\nverify:\n  command: \"true\"\n  timeout_minutes: 3\n---\n")))
+        seen = {}
+
+        def execute(command, cwd, log_path, timeout):
+            seen["timeout"] = timeout
+            pathlib.Path(log_path).write_text("ok\n")
+            return 0
+
+        real = verify.verify
+
+        def wrapped(*args, **kwargs):
+            return real(*args, execute=execute, **kwargs)
+
+        runner = FakeRunner({"gh repo view": json.dumps({"nameWithOwner": "o/r"}),
+                             "gh pr view": json.dumps({"headRefOid": SHA}),
+                             "git -C /w rev-parse HEAD": SHA + "\n"})
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as home:
+            with mock.patch.object(cli, "_require_config", return_value=cfg), \
+                    mock.patch.object(cli.run, "run", runner), \
+                    mock.patch.object(cli.verify, "verify", wrapped), \
+                    mock.patch.dict(os.environ, {"BATON_HOME": home}), \
+                    contextlib.redirect_stdout(out):
+                code = cli.main(["verify", "12", "/w"])
+        self.assertEqual(code, 0)
+        self.assertEqual(seen["timeout"], 180)
+        self.assertTrue(out.getvalue().startswith("verify green commit=aaaaaaa exit=0 "))
