@@ -8,7 +8,9 @@ command would send, and the unquoted value of a title, body, message, field or
 description flag. It refuses only for four safety reasons: a privacy finding
 in that text, text it cannot read (a stdin body without a heredoc, even when
 piped, and `--description -`; a missing body file; a variable such as `$B` or
-`${B}`, or command substitution, in the value of such a flag), a git hook
+`${B}`, a positional or special parameter (`$1`, `$@`, `$?`), `$'...'`, or an
+unquoted `$(...)` or backticks, in the value of such a flag; a backslash line
+continuation does not hide any of these), a git hook
 bypass, and missing hooks. The refusal says to pass the text literally, as an
 inline heredoc, or as a file.
 A body file is read relative to the last literal `cd` before it in the same
