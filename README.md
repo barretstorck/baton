@@ -82,7 +82,7 @@ developer's commits are by `baton[bot]` (worktree-local config, set by `baton id
 its pushes use the `baton` App token (`baton push`), and the draft pull request is opened by the
 `baton` App. Merging stays on your login. From Claude Code 2.1.290, the gate rewrites a raw `gh` write an agent runs as one command (optionally after `cd <dir> &&`) to `baton exec --role <role> gh ...`, so it is made as the App; other writes (scripts, pipelines, other compound commands, `glab`, `tea`) still use your login. An agent that types `baton exec` itself may only name its own role (`--role` must equal the role the gate derives from the agent type, and is required for every agent but the orchestrator); the gate refuses any other. This is a guardrail against mistakes, not a boundary against deliberate evasion. If your permission rules list `gh` commands, add `Bash(baton:*)` to `permissions.allow`, because the rules see the rewritten command. `baton config` shows the active tier under `identity`. `baton doctor` prints the tier and checks each
 App (its login on GitHub, a minted token, and that the installation includes the repository); it
-exits non-zero on a failure. What assigning to the machine user does
+exits non-zero on a failure. At tier 2 it also checks that the machine user can be assigned on the repository, and fails when it cannot. What assigning to the machine user does
 is #225, and creating the Apps and checking the setup is #179.
 
 Tier 2 adds a machine user: a plain GitHub account the maintainer invites as a collaborator, so

@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pathlib
 
 from . import comment as commentmod
+from . import gate
 from . import identity
 from . import issue as issuemod
 from . import labels
@@ -15,6 +16,7 @@ from . import scan
 from . import state
 from . import verify
 from .comment import CommentError
+from .config import has_login
 
 CATEGORIES = ("spam", "duplicate", "support", "unclear", "feature", "bug",
               "maintenance", "spike", "unsure")
@@ -364,25 +366,33 @@ def stale(issues, cfg, now, stale_days, maintainers):
 REPRO_MARK = "<!-- baton:repro-handoff -->"
 
 
-def _handed_off(item):
+def _handed_off(item, trusted):
+    """The item's hand-off comments: posted by a trusted login, status header first, marker in the body."""
+    header = f"{gate.MARKER}orchestrator:status -->"
+    trusted = list(trusted)
     return [c for c in item.get("comments") or []
-            if REPRO_MARK in (c.get("body") or "")]
+            if has_login(c.get("author"), trusted)
+            and commentmod._first_line(c.get("body")) == header
+            and REPRO_MARK in (c.get("body") or "")]
 
 
-def handoffs_last_day(issues, now):
-    """Hand-off comments created within 24 hours of `now`, across the given issues, open or closed."""
+def handoffs_last_day(issues, now, trusted):
+    """Hand-off comments created within 24 hours of `now`, across the given issues, open or closed.
+
+    Only hand-offs posted by a maintainer or Baton login (`trusted`) count."""
     count = 0
     for item in issues:
-        for comment in _handed_off(item):
+        for comment in _handed_off(item, trusted):
             if comment.get("createdAt") and now - _parse(comment["createdAt"]) < timedelta(hours=24):
                 count += 1
     return count
 
 
-def reproduce_candidates(issues, cfg, now, limit, closed=(), maintainers=(), bots=()):
+def reproduce_candidates(issues, cfg, now, limit, trusted, closed=(), maintainers=(), bots=()):
     """Numbers of triaged open bugs to hand to the refiner, oldest first.
 
-    At most `limit` minus the hand-offs of the last 24 hours, never negative.
+    Only hand-offs by a maintainer or Baton login (`trusted`) count, both for
+    skipping an issue and for the limit. At most `limit` minus the hand-offs of the last 24 hours, never negative.
     The hand-offs are counted over `issues` plus `closed` (recently closed
     issues), each issue number once, the entry in `issues` winning. Only open
     entries of `issues` are candidates, and only those from outside (author not a
@@ -391,14 +401,14 @@ def reproduce_candidates(issues, cfg, now, limit, closed=(), maintainers=(), bot
     """
     seen = {item.get("number") for item in issues}
     counted = list(issues) + [item for item in closed if item.get("number") not in seen]
-    room = max(0, limit - handoffs_last_day(counted, now))
+    room = max(0, limit - handoffs_last_day(counted, now, trusted))
     bug, refine = cfg.label("type:bug"), cfg.label("status:refinement")
     skip = cfg.label("awaiting-feedback")
     found = [item for item in issues
              if item.get("state") == "OPEN"
              and {bug, refine} <= _names(item) and skip not in _names(item)
              and _SUMMARY_HEADING.search(item.get("body") or "")
-             and not _handed_off(item)
+             and not _handed_off(item, trusted)
              and issuemod.is_outside(item, maintainers, bots)]
     found.sort(key=lambda item: (_parse(item["createdAt"]), item["number"]))
     return [item["number"] for item in found[:room]]
