@@ -668,3 +668,43 @@ class ReadCommandTests(unittest.TestCase):
         code, _, err = self.run_cmd(["issue", "edit"])
         self.assertEqual(code, 64)
         self.assertNotIn("baton issue read", err)
+
+
+def _tsv(*rows):
+    return "\n".join("\t".join(r) for r in rows) + "\n"
+
+
+class TimelineTest(unittest.TestCase):
+    def test_parses_lines_and_skips_bad_ones(self):
+        out = _tsv(("assigned", "boss", "baton-bot", "2026-01-01T00:00:00Z"))
+        out += "garbage\tline\n"
+        runner = FakeRunner({"gh api --paginate repos/{owner}/{repo}/issues/5/timeline": out})
+        self.assertEqual(issue.timeline(runner, 5), [
+            {"event": "assigned", "by": "boss", "subject": "baton-bot",
+             "at": "2026-01-01T00:00:00Z"}])
+
+    def test_none_when_runner_raises(self):
+        self.assertIsNone(issue.timeline(RaisingRunner(), 5))
+
+    def ev(self, event, by, subject, at):
+        return {"event": event, "by": by, "subject": subject, "at": at}
+
+    def test_assignment_latest_wins(self):
+        events = [self.ev("assigned", "a", "Bot", "1"), self.ev("assigned", "b", "bot", "2")]
+        self.assertEqual(issue.assignment(events, "BOT"), {"by": "b", "at": "2"})
+
+    def test_assignment_none_after_unassigned_or_other_login(self):
+        events = [self.ev("assigned", "a", "bot", "1"), self.ev("unassigned", "a", "bot", "2")]
+        self.assertIsNone(issue.assignment(events, "bot"))
+        self.assertIsNone(issue.assignment([self.ev("assigned", "a", "x", "1")], "bot"))
+        self.assertIsNone(issue.assignment(events, ""))
+        self.assertEqual(issue.assignment(events + [self.ev("assigned", "c", "bot", "3")],
+                                          "bot"), {"by": "c", "at": "3"})
+
+    def test_review_request(self):
+        req = self.ev("review_requested", "a", "bot", "1")
+        self.assertEqual(issue.review_request([req], "Bot"), {"by": "a", "at": "1"})
+        gone = self.ev("review_request_removed", "a", "bot", "2")
+        self.assertIsNone(issue.review_request([req, gone], "bot"))
+        self.assertIsNone(issue.review_request([self.ev("assigned", "a", "bot", "1")], "bot"))
+        self.assertIsNone(issue.review_request([req], ""))

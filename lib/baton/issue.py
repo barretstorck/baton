@@ -49,6 +49,59 @@ def body_edits(runner, number):
     return edits
 
 
+TIMELINE_JQ = (
+    '.[] | select(.event == "assigned" or .event == "unassigned" or '
+    '.event == "review_requested" or .event == "review_request_removed") | '
+    '[.event, '
+    '(if .event == "assigned" or .event == "unassigned" then (.actor.login // "") '
+    'else (.review_requester.login // .actor.login // "") end), '
+    '(if .event == "assigned" or .event == "unassigned" then (.assignee.login // "") '
+    'else (.requested_reviewer.login // "") end), '
+    '(.created_at // "")] | @tsv')
+
+
+def timeline(runner, number):
+    """Assignment and review-request events of an issue or pull request, oldest first;
+    None when the timeline cannot be read."""
+    try:
+        text = runner(["gh", "api", "--paginate",
+                       f"repos/{{owner}}/{{repo}}/issues/{number}/timeline?per_page=100",
+                       "--jq", TIMELINE_JQ])
+    except RunError:
+        return None
+    events = []
+    for line in (text or "").splitlines():
+        parts = line.rstrip("\r\n").split("\t")
+        if len(parts) != 4:
+            continue
+        events.append({"event": parts[0], "by": parts[1], "subject": parts[2], "at": parts[3]})
+    return events
+
+
+def _latest(events, login, added, removed):
+    if not login:
+        return None
+    found = None
+    for ev in events or []:
+        if ev.get("subject", "").lower() != login.lower():
+            continue
+        if ev.get("event") == added:
+            found = {"by": ev.get("by", ""), "at": ev.get("at", "")}
+        elif ev.get("event") == removed:
+            found = None
+    return found
+
+
+def assignment(events, login):
+    """The latest assignment of `login`, unless it was later removed; else None."""
+    return _latest(events, login, "assigned", "unassigned")
+
+
+def review_request(events, login):
+    """The latest review request for `login`, unless later removed; else None."""
+    return _latest(events, login, "review_requested", "review_request_removed")
+
+
 def sections(body):
     """Map each lower-cased heading to the text under it."""
     body = body or ""
