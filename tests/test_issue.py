@@ -248,6 +248,16 @@ class OutsideTest(unittest.TestCase):
         data = self.check([comment(OWNER, "/baton ready")], author=OWNER, body=body)
         self.assertEqual(issue.ready_problems(data, cfg(), OWNER), [])
 
+    def test_malformed_origin_line_is_reported(self):
+        for line in ("Origin: outside", "Origin: outside @someone",
+                     "Origin: outside (only when the issue this spike was made from has this line)"):
+            with self.subTest(line=line):
+                data = make(body=BODY + "\n" + line + "\n")
+                self.assertFalse(issue.is_outside(data, [OWNER]))
+                found = issue.ready_problems(data, cfg(), OWNER)
+                self.assertTrue([p for p in found
+                                 if line in p and "Origin: outside (@<login>)" in p], found)
+
     def test_ignored_comments(self):
         for who, text in (("mallory", "/baton ready"), (OWNER, self.MARK + "/baton ready"),
                           (OWNER, "/baton ready please"), (OWNER, "/Baton ready")):

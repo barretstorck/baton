@@ -51,15 +51,33 @@ class DoctorTest(unittest.TestCase):
             return {"slug": self.slugs.pop(0)}
         return {"total_count": len(self.repos), "repositories": self.repos}
 
-    def run_main(self, get=None, status=None):
+    def run_main(self, get=None, status=None, spike=None):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             code = doctor.main(REPO, runner=None, get=get or self.get, post=None, now=1000,
-                               home=self.tmp.name, status=status or self.status)
+                               home=self.tmp.name, spike=spike, status=status or self.status)
         text = out.getvalue()
         for secret in ("jwt-secret", "tok-secret", "KEY-CONTENT", str(self.key)):
             self.assertNotIn(secret, text)
         return code, text
+
+    def test_spike_warning_tier_zero(self):
+        code, text = self.run_main(spike={"tokens": {}, "minutes": {}, "max_per_sprint": 2})
+        self.assertEqual(code, 0)
+        self.assertEqual(text, "tier: 0\n" + doctor.SPIKE_WARNING + "\n")
+        self.assertIn("spike: WARN: spike.tokens and spike.minutes have no range", text)
+
+    def test_spike_ranges_no_warning(self):
+        for sp in ({"tokens": {"max": 500000}, "minutes": {}, "max_per_sprint": 2},
+                   {"tokens": {}, "minutes": {"min": 30, "max": 120}, "max_per_sprint": 2}):
+            self.assertEqual(self.run_main(spike=sp), (0, "tier: 0\n"))
+
+    def test_spike_warning_with_bad_identity(self):
+        self.write("[baton\n")
+        code, text = self.run_main(spike={"tokens": {}, "minutes": {}})
+        self.assertEqual(code, 1)
+        self.assertIn("identity.toml:", text)
+        self.assertIn(doctor.SPIKE_WARNING, text)
 
     def test_tier_zero(self):
         self.assertEqual(self.run_main(), (0, "tier: 0\n"))
