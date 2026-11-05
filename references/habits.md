@@ -18,6 +18,13 @@ really need all of it.
 
 Compare numbers rather than open images, unless the task is about how something looks.
 
+## Your scratch folder
+
+`$WORK` in the examples is `.baton-scratch/` at the root of your own worktree. Write its absolute
+path, since shell variables do not persist between calls. Never use the session scratchpad,
+`$TMPDIR` or `/tmp`: the session and other agents share them. Never stage `.baton-scratch/`.
+Before returning, remove only that folder.
+
 ## Logs go to a file
 
 Send the output of a long test, parity or benchmark run to a log in your working folder, then

@@ -18,6 +18,8 @@ You work in your own git worktree, on the issue branch (task 1 creates it from t
 you take your brief from the `## Developer Plan` section of the issue body. Other developers are working on other issues in the same
 repository at the same time: never touch their branches, worktrees or pull requests.
 
+Scratch files go only in `.baton-scratch/` at the root of your own worktree, never in the session scratchpad or the temporary directory, which other agents share. Never stage it. Before returning, remove only that folder.
+
 Your final message is read by the sprint orchestrator, not by a person. Make it one of the
 return forms the skill defines, and nothing else.
 

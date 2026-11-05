@@ -898,3 +898,41 @@ class ExecRewriteTest(DetachedPrCreateTest):
                          "baton exec --role orchestrator gh pr create --head issue-216-detached --title t --body x")
         self.assertIn("--head issue-216-detached", hook["additionalContext"])
         self.assertIn("baton[bot]", hook["additionalContext"])
+
+
+class ScratchRemoveTest(unittest.TestCase):
+    PAD = "/tmp/claude-1000/-work/s1/scratchpad"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.repo = make_repo()
+
+    def run_gate(self, command, agent_type="baton:baton-refiner", env=None):
+        payload = {"tool_name": "Bash", "cwd": self.repo, "tool_input": {"command": command}}
+        if agent_type:
+            payload["agent_type"] = agent_type
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, env or {}), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = gate.main(json.dumps(payload))
+        return code, err.getvalue()
+
+    def test_refuses_removing_the_shared_temporary_directory(self):
+        for command in (f"rm -rf {self.PAD}", f"rm -rf {self.PAD}/", f"rm -rf {self.PAD}/*",
+                        f"cd /x && rm -r {self.PAD}/.", "rm -rf /tmp", "rm -rf /tmp/*",
+                        'rm -rf "$TMPDIR"/*', "rm -fr ${TMPDIR}", f"rm {self.PAD}/*",
+                        f"sudo rm -rf {self.PAD}"):
+            code, err = self.run_gate(command)
+            self.assertEqual(code, 2, command)
+            self.assertIn("temporary directory", err, command)
+
+    def test_refuses_the_tmpdir_value(self):
+        code, _ = self.run_gate("rm -rf /var/scratch/t/", env={"TMPDIR": "/var/scratch/t"})
+        self.assertEqual(code, 2)
+
+    def test_allows_an_own_subfolder_and_other_callers(self):
+        for command in (f"rm -rf {self.PAD}/baton-refiner-313", "rm -rf /tmp/baton-triager-5",
+                        "rm -f /tmp/triage-5.json", "ls /tmp/*", "echo rm -rf /tmp"):
+            self.assertEqual(self.run_gate(command)[0], 0, command)
+        self.assertEqual(self.run_gate(f"rm -rf {self.PAD}", agent_type=None)[0], 0)
+        self.assertEqual(self.run_gate(f"rm -rf {self.PAD}", agent_type="general-purpose")[0], 0)

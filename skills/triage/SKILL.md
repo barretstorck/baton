@@ -35,7 +35,7 @@ call. For a duplicate candidate, read the title and body only.
    `spike` or `unsure` (use `unsure` when you cannot tell; the maintainer is notified). Use `spike`
    only when the issue already has the `type:spike` label, and then always: never feature, bug or
    maintenance for it.
-5. Write the decision as JSON to `triage-<N>.json` in the temporary directory. Leave out fields
+5. Write the decision as JSON to `<tmp>/baton-triager-<N>/triage-<N>.json`, where `<tmp>` is the temporary directory you were given (the session scratchpad when Claude Code names one, else `$TMPDIR`, else `/tmp`). Leave out fields
    that do not apply:
    - `category`: as above.
    - `duplicate_of`: the original issue number, for `duplicate` only.
@@ -47,7 +47,7 @@ call. For a duplicate candidate, read the title and body only.
      keys `symptom`, `expected`, `actual`, `area`, `version`, `type`; `type` equals the category;
      each value is one short line.
 6. Run `baton triage apply <N> <file>`. If it refuses, fix the decision once from the message; if
-   it refuses again, use category `unsure`. It refuses a label outside the known set; a missing,
+   it refuses again, use category `unsure`. Then remove only your folder: `rm -rf <tmp>/baton-triager-<N>`. It refuses a label outside the known set; a missing,
    same or unknown `duplicate_of`; a severity on a non-bug; `spike` for an issue without `type:spike`, or feature, bug or
    maintenance for one with it; a comment that fails the privacy scan
    or links outside the repository and its docs; and a summary with code blocks, commands, links

@@ -76,7 +76,7 @@ issue body, written by `baton plan set`.
    You work in your own worktree, so you may build the project, run its tests, write throwaway
    files and run quick experiments there, and you may use online research and logs, whatever
    gives the developer the context they need. You commit nothing but the plan (through
-   `baton plan set`, into the issue body). Leave no scratch files behind: everything stays inside your worktree,
+   `baton plan set`, into the issue body). Leave no scratch files behind: everything stays in `.baton-scratch/` in your worktree, and you remove only that folder before returning,
    containers run as the current user so they leave no root-owned files (or you remove them
    before returning). Send long command output to a log file and read it through filters
    (`tail`, `rg -n`), so your context stays small across the issues of one run.
@@ -110,7 +110,7 @@ issue body, written by `baton plan set`.
    - *Needs a product or design decision:* go to "Questions".
 
 4. **Write the plan** (not for spikes). From your investigation in step 2, write the
-   `## Developer Plan` section to a file in your scratch area, from the plan template. It holds
+   `## Developer Plan` section to a file in `.baton-scratch/`, from the plan template. It holds
    `Written against:`, `### Verification`, `### Pattern`, optional `### Design notes` and the tasks:
    - `Written against: <full sha>` from `git rev-parse origin/<default>`.
    - One task per unit of work that has its own check. In order: a task may use only what
