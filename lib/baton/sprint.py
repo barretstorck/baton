@@ -24,9 +24,9 @@ STALE_MISSING_PATHS = 2  # hold a ready issue whose plan names at least this man
 BEHIND_LIMIT = 15  # default-branch commits behind that count as far behind
 _ON_LINE = re.compile(r"""^["']?on["']?\s*:(.*)$""")
 _PUSH_WORD = re.compile(r"(?<![\w-])push(?![\w-])")
-ISSUE_FIELDS = "number,title,state,labels,body,author,comments"
+ISSUE_FIELDS = "number,title,state,labels,body,author,comments,assignees"
 PR_FIELDS = ("number,headRefName,headRefOid,isDraft,mergeable,closingIssuesReferences,"
-             "statusCheckRollup,comments")
+             "statusCheckRollup,comments,reviewRequests")
 
 
 class SnapshotError(Exception):
@@ -231,7 +231,7 @@ def spikes_first(entries, spike_flags, cap):
             "spikes": spikes[:cap], "left_out": spikes[cap:], "cap": cap}
 
 
-def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
+def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None):
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     owner, branch = repo["owner"]["login"], repo["defaultBranchRef"]["name"]
     maintainers = cfg.maintainers(owner)
@@ -345,6 +345,7 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
             return None
         return branch_behind(runner, branch, pr["headRefName"])
 
+    assignments = {}
     for item in sorted(issues, key=lambda entry: entry["number"]):
         number = item["number"]
         labels = {label["name"] for label in item.get("labels") or []}
@@ -353,8 +354,18 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
                 else "stretch" if cfg.label("stretch") in labels else None)
         files = issue_fields.expected_files(item.get("body"))
         repair = repair_label in labels
-        result["issues"].append({"number": number, "title": item["title"], "status": status,
-                                 "tier": tier, "state": item["state"], "repair": repair})
+        entry = {"number": number, "title": item["title"], "status": status,
+                 "tier": tier, "state": item["state"], "repair": repair}
+        if machine:
+            assigned = None
+            if item["state"] == "OPEN" and issue_fields.has_login(
+                    {"login": machine}, [a.get("login") for a in item.get("assignees") or []]):
+                assigned = issue_fields.assignment(
+                    issue_fields.timeline(runner, number) or [], machine)
+            assignments[number] = assigned
+            entry["assigned_to_baton"] = bool(
+                assigned and issue_fields._assignment_counts(assigned, maintainers, bots))
+        result["issues"].append(entry)
         if repair and item["state"] == "OPEN":
             result["repair_issue"] = number
         if cfg.label("needs-maintainer") in labels and status != "status:complete":
@@ -439,7 +450,8 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
         if issue_fields.is_outside(item, maintainers, bots):
             if "edits" not in item:
                 item["edits"] = issue_fields.body_edits(runner, number)
-            problem = issue_fields.approval_problem(item, maintainers, bots)
+            problem = issue_fields.approval_problem(item, maintainers, bots,
+                                                      assigned=assignments.get(number))
         if problem is not None:
             reason = f"outside issue: {problem}"
         elif red and not repair:

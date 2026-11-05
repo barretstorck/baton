@@ -590,7 +590,8 @@ def cmd_ready_check(opts):
 def cmd_sprint_status(opts):
     cfg = _require_config()
     print(json.dumps(sprint.snapshot(cfg, run.run, opts.milestone,
-                                  bots=_bots(), reviewers=_reviewers()), indent=2))
+                                  bots=_bots(), reviewers=_reviewers(),
+                                  machine=_machine()), indent=2))
     return 0
 
 

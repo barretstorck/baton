@@ -837,6 +837,35 @@ class DefaultBranchStateTest(unittest.TestCase):
         self.assertEqual(result["dispatchable"], [5])
         self.assertEqual(result["held"], [])
 
+    def _assigned(self, by, machine="baton-bot", assignees=("baton-bot",)):
+        item = issue(5, "ready", "deliverable", author="stranger")
+        item["assignees"] = [{"login": n} for n in assignees]
+        line = f"assigned\t{by}\t{machine}\t2026-11-01T10:00:00Z\n"
+        runner = FakeRunner(replies(
+            [item], extra={"gh api --paginate repos/{owner}/{repo}/issues/5/timeline": line,
+                   "gh api graphql": ""}))
+        return sprint.snapshot(cfg(), runner, machine=machine), runner
+
+    def test_maintainer_assignment_makes_outside_issue_dispatchable(self):
+        result, _ = self._assigned(OWNER)
+        self.assertEqual(result["dispatchable"], [5])
+        self.assertTrue(result["issues"][0]["assigned_to_baton"])
+
+    def test_outside_assignment_leaves_outside_issue_held(self):
+        result, _ = self._assigned("stranger")
+        self.assertEqual(result["dispatchable"], [])
+        self.assertEqual(result["held"], [{"number": 5, "reason":
+                         "outside issue: it needs a comment '/baton ready' from a maintainer"}])
+        self.assertFalse(result["issues"][0]["assigned_to_baton"])
+
+    def test_no_machine_adds_no_key_and_reads_no_timeline(self):
+        item = issue(5, "ready", "deliverable", author="stranger")
+        item["assignees"] = [{"login": "baton-bot"}]
+        runner = FakeRunner(replies([item]))
+        result = sprint.snapshot(cfg(), runner)
+        self.assertNotIn("assigned_to_baton", result["issues"][0])
+        self.assertFalse([c for c in runner.calls if "timeline" in " ".join(c)])
+
     def test_issue_by_a_baton_login_is_not_outside(self):
         item = issue(5, "ready", "deliverable", author="app/baton")
         held = sprint.snapshot(cfg(), FakeRunner(replies([item])))
