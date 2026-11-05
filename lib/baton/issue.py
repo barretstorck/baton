@@ -183,12 +183,13 @@ def _when(text):
         return None
 
 
-def approval_problem(issue, maintainers, bots=()):
+def approval_problem(issue, maintainers, bots=(), assigned=None):
     """Why the issue has no standing approval, or None when it has one.
 
     The approval is the latest comment by a maintainer (never a Baton login) that is unmarked and
     exactly `/baton ready`. An edit of the body by anyone but a maintainer or a Baton login after
-    it drops it; an unreadable edit history fails closed.
+    it drops it; an unreadable edit history fails closed. `assigned` (an `assignment(...)` result)
+    made by a maintainer counts as an approval too; the newer of the two is the approval used.
     """
     latest = None
     for comment in issue.get("comments") or []:
@@ -197,12 +198,16 @@ def approval_problem(issue, maintainers, bots=()):
         if (has_login(author, maintainers) and not has_login(author, list(bots))
                 and gate.MARKER not in body and body.strip() == APPROVAL):
             latest = comment
-    if latest is None:
+    by_assignment = _assignment_counts(assigned, maintainers, bots)
+    if by_assignment and latest is not None:
+        a_time, c_time = _when(assigned.get("at")), _when(latest.get("createdAt"))
+        by_assignment = a_time is not None and (c_time is None or a_time > c_time)
+    if latest is None and not by_assignment:
         return f"it needs a comment '{APPROVAL}' from a maintainer"
     edits = issue.get("edits")
     if edits is None:
         return "the body's edit history could not be read"
-    created = latest.get("createdAt")
+    created = assigned.get("at") if by_assignment else latest.get("createdAt")
     approved_at = _when(created)
     newest = None
     for edit in edits:
@@ -217,13 +222,28 @@ def approval_problem(issue, maintainers, bots=()):
     if newest is None:
         return None
     who = "@" + ((newest.get("editor") or {}).get("login") or "ghost")
-    return (f"{who} edited the body at {newest.get('editedAt')}, after the '{APPROVAL}' comment "
-            f"of {created or 'unknown'}; a maintainer must post '{APPROVAL}' again")
+    after = (f"the assignment to Baton of {created or 'unknown'}" if by_assignment
+             else f"the '{APPROVAL}' comment of {created or 'unknown'}")
+    return (f"{who} edited the body at {newest.get('editedAt')}, after {after}; "
+            f"a maintainer must post '{APPROVAL}' again")
 
 
-def approved(issue, maintainers, bots=()):
+def _assignment_counts(assigned, maintainers, bots=()):
+    by = (assigned or {}).get("by")
+    person = {"login": by}
+    return bool(assigned) and has_login(person, maintainers) and not has_login(person, list(bots))
+
+
+def ignored_assignment(assigned, maintainers, bots=()):
+    """Why an assignment to Baton was ignored, or None when there is none or it counts."""
+    if not assigned or _assignment_counts(assigned, maintainers, bots):
+        return None
+    return f"the assignment to Baton by @{assigned.get('by')} was ignored: not a maintainer"
+
+
+def approved(issue, maintainers, bots=(), assigned=None):
     """True when `approval_problem` finds nothing."""
-    return approval_problem(issue, maintainers, bots) is None
+    return approval_problem(issue, maintainers, bots, assigned) is None
 
 
 def origin_problems(body):
@@ -238,7 +258,7 @@ def origin_problems(body):
     return problems
 
 
-def ready_problems(issue, cfg, owner, runner=None, bots=()):
+def ready_problems(issue, cfg, owner, runner=None, bots=(), assigned=None):
     """Why this issue does not meet the definition of ready; empty when it does.
 
     A non-spike with a `Plan:` link has its Verification and plan read from the linked file
@@ -251,7 +271,7 @@ def ready_problems(issue, cfg, owner, runner=None, bots=()):
     spike = cfg.label("type:spike") in labels
     problems = []
     if is_outside(issue, owner, bots):
-        problem = approval_problem(issue, owner, bots)
+        problem = approval_problem(issue, owner, bots, assigned)
         if problem:
             problems.append(f"outside issue: {problem}")
     problems.extend(origin_problems(body))

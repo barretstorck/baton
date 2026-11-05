@@ -194,6 +194,39 @@ class OutsideTest(unittest.TestCase):
         self.assertFalse(issue.approved(data, OWNER))
         self.assertIn("@ghost edited", issue.approval_problem(data, OWNER))
 
+    ASSIGN = {"by": OWNER, "at": "2026-11-01T10:00:00Z"}
+
+    def test_maintainer_assignment_approves(self):
+        data = self.with_edits([], [])
+        self.assertTrue(issue.approved(data, OWNER, assigned=self.ASSIGN))
+        self.assertFalse(issue.approved(data, OWNER))
+
+    def test_outside_assignment_does_not_approve(self):
+        data = self.with_edits([], [])
+        stranger = {"by": "stranger", "at": "2026-11-01T10:00:00Z"}
+        self.assertEqual(issue.approval_problem(data, OWNER, assigned=stranger),
+                         "it needs a comment '/baton ready' from a maintainer")
+        self.assertEqual(issue.ignored_assignment(stranger, OWNER),
+                         "the assignment to Baton by @stranger was ignored: not a maintainer")
+        self.assertIsNone(issue.ignored_assignment(self.ASSIGN, OWNER))
+        self.assertIsNone(issue.ignored_assignment(None, OWNER))
+
+    def test_baton_login_assignment_does_not_approve(self):
+        data = self.with_edits([], [])
+        bot = {"by": "baton[bot]", "at": "2026-11-01T10:00:00Z"}
+        self.assertFalse(issue.approved(data, [OWNER, "baton[bot]"], {"baton[bot]"}, bot))
+
+    def test_outside_edit_after_assignment_drops_it(self):
+        data = self.with_edits([], [self.edit("mallory", "2026-11-01T11:00:00Z")])
+        text = issue.approval_problem(data, OWNER, assigned=self.ASSIGN)
+        self.assertIn("after the assignment to Baton of 2026-11-01T10:00:00Z", text)
+        self.assertIn("a maintainer must post '/baton ready' again", text)
+
+    def test_newer_comment_restores_after_dropped_assignment(self):
+        again = dict(comment(OWNER, "/baton ready"), createdAt="2026-11-01T12:00:00Z")
+        data = self.with_edits([again], [self.edit("mallory", "2026-11-01T11:00:00Z")])
+        self.assertTrue(issue.approved(data, OWNER, assigned=self.ASSIGN))
+
     def test_missing_edit_history_fails_closed(self):
         text = "the body's edit history could not be read"
         data = self.with_edits([self.READY], None)
