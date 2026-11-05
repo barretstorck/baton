@@ -16,6 +16,7 @@ from . import run as _run
 from . import verify
 
 NAMES = ("baton", "reviewer")
+MACHINE = "machine"
 DEFAULT_LOGINS = {"baton": "baton[bot]", "reviewer": "baton-reviewer[bot]"}
 
 
@@ -35,6 +36,7 @@ class App:
 class Identities:
     baton: "App | None" = None
     reviewer: "App | None" = None
+    machine: "str | None" = None
 
     def logins(self):
         return [app.login for app in (self.baton, self.reviewer) if app is not None]
@@ -64,6 +66,22 @@ def _app(name, table):
                _int(name, "installation_id", table["installation_id"]), key_path, login)
 
 
+def _machine(table):
+    if not isinstance(table, dict):
+        raise IdentityError("identity.toml [machine] must be a table")
+    if "login" not in table:
+        raise IdentityError("identity.toml [machine] is missing login")
+    extra = sorted(set(table) - {"login"})
+    if extra:
+        raise IdentityError(f"identity.toml [machine] has unknown keys: {', '.join(extra)}")
+    login = table["login"]
+    if not isinstance(login, str) or not login:
+        raise IdentityError("identity.toml [machine] login must be a non-empty string")
+    if config.bot_slug(login) is not None:
+        raise IdentityError("identity.toml [machine] login must be a user login, not an App login")
+    return login
+
+
 def load(owner, repo, home=None):
     path = verify._home(home) / f"{owner}-{repo}" / "identity.toml"
     try:
@@ -74,10 +92,15 @@ def load(owner, repo, home=None):
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as e:
         raise IdentityError(f"identity.toml is not valid TOML: {e}")
-    unknown = sorted(set(data) - set(NAMES))
+    unknown = sorted(set(data) - set(NAMES) - {MACHINE})
     if unknown:
         raise IdentityError(f"identity.toml has unknown entries: {', '.join(unknown)}")
-    return Identities(**{name: _app(name, data[name]) for name in NAMES if name in data})
+    if MACHINE in data and "baton" not in data:
+        raise IdentityError("identity.toml [machine] needs a [baton] entry: tier 2 builds on tier 1")
+    found = {name: _app(name, data[name]) for name in NAMES if name in data}
+    if MACHINE in data:
+        found["machine"] = _machine(data[MACHINE])
+    return Identities(**found)
 
 
 def _b64(raw):
@@ -223,6 +246,12 @@ def reviewer_logins():
     if ids is None or ids.reviewer is None:
         return frozenset()
     return frozenset({ids.reviewer.login})
+
+
+def machine_login():
+    """The machine user's login; None at tier 0 or 1, with no loader or with no machine entry."""
+    ids = _identities()
+    return ids.machine if ids is not None else None
 
 
 AUTHOR_TYPES_JQ = '.[] | [.node_id, .user.type] | @tsv'
