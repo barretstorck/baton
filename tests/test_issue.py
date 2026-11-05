@@ -574,6 +574,51 @@ class ReadyCheckEditsTest(unittest.TestCase):
         self.assertFalse([c for c in runner.calls if "graphql" in c])
 
 
+class ReadyCheckAssignmentTest(unittest.TestCase):
+    def check(self, data, runner, machine):
+        import contextlib
+        import io
+        from unittest import mock
+        from baton import cli
+        out = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli, "_maintainers", return_value=[OWNER]), \
+                mock.patch.object(cli, "_bots", return_value=frozenset()), \
+                mock.patch.object(cli, "_machine", return_value=machine), \
+                mock.patch.object(cli.run, "run", runner), \
+                contextlib.redirect_stdout(out):
+            code = cli.cmd_ready_check(["5"])
+        return code, out.getvalue()
+
+    def runner(self, data, by):
+        return FakeRunner({
+            "gh issue view": __import__("json").dumps(data),
+            "gh api graphql": "",
+            "gh api --paginate repos/{owner}/{repo}/issues/5/timeline":
+                _tsv(("assigned", by, "baton-bot", "2026-11-01T10:00:00Z")),
+        })
+
+    def test_maintainer_assignment_is_ready(self):
+        data = make(author="stranger")
+        code, text = self.check(data, self.runner(data, OWNER), "baton-bot")
+        self.assertEqual(code, 0)
+        self.assertIn("ready (outside issue: ", text)
+        self.assertNotIn("note:", text)
+
+    def test_outside_assignment_is_noted(self):
+        data = make(author="stranger")
+        code, text = self.check(data, self.runner(data, "stranger"), "baton-bot")
+        self.assertEqual(code, 1)
+        self.assertIn("it needs a comment '/baton ready' from a maintainer", text)
+        self.assertIn("note: the assignment to Baton by @stranger was ignored: not a maintainer", text)
+
+    def test_no_machine_makes_no_timeline_call(self):
+        data = make(author="stranger")
+        runner = self.runner(data, OWNER)
+        self.check(data, runner, None)
+        self.assertFalse([c for c in runner.calls if "timeline" in " ".join(c)])
+
+
 def _person(login):
     return {"login": login}
 

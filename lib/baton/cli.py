@@ -158,6 +158,10 @@ def _reviewers():
     return identity.reviewer_logins()
 
 
+def _machine():
+    return identity.machine_login()
+
+
 @cliargs.command("comment")
 def cmd_comment(opts):
     try:
@@ -567,12 +571,18 @@ def cmd_ready_check(opts):
     maintainers = _maintainers(cfg)
     if issue.is_outside(data, maintainers, _bots()):
         data["edits"] = issue.body_edits(run.run, number)
-    problems = issue.ready_problems(data, cfg, maintainers, run.run, _bots())
+    machine = _machine()
+    assigned = (issue.assignment(issue.timeline(run.run, number) or [], machine)
+                if machine else None)
+    problems = issue.ready_problems(data, cfg, maintainers, run.run, _bots(), assigned=assigned)
     for problem in problems:
         print(f"- {problem}")
     if not problems:
         print("ready (outside issue: the maintainer marks it ready)"
               if issue.is_outside(data, maintainers, _bots()) else "ready")
+    note = issue.ignored_assignment(assigned, maintainers, _bots())
+    if note:
+        print(f"note: {note}")
     return 1 if problems else 0
 
 
