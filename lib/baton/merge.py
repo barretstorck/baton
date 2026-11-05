@@ -306,7 +306,7 @@ def merge(number, cfg, runner, notes=None, bots=(), reviewers=()):
     notes = [] if notes is None else notes
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", PR_FIELDS]))
-    pr["comments"] = identity.mark_authors(runner, number, pr.get("comments"))
+    pr["comments"] = review.pr_comments(runner, number, pr.get("comments"))
     if pr.get("state") != "MERGED":
         problems = check(pr, cfg, cfg.maintainers(repo["owner"]["login"]), repo["defaultBranchRef"]["name"], runner,
                          notes, bots, reviewers)

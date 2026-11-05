@@ -134,6 +134,17 @@ class PrCommentsTest(unittest.TestCase):
         self.assertEqual(review.state(review.pr_comments(runner, 9, []), self.TRUSTED, 5)["state"],
                          "approved")
 
+    def test_review_tasks_found_from_a_formal_changes_review(self):
+        self.tier1()
+        item = json.loads(formal("baton-reviewer[bot]", "changes", "2026-01-02T00:00:00Z", "R1"))
+        item["body"] = changes_with_tasks()["body"]
+        runner = FakeRunner({"gh api --paginate repos/{owner}/{repo}/pulls/9/reviews":
+                             json.dumps(item) + "\n"})
+        pr = {"comments": review.pr_comments(runner, 9, [])}
+        found = review.review_tasks(pr, self.TRUSTED)
+        self.assertEqual(found["review"], "u/R1")
+        self.assertTrue(found["tasks"])
+
     def test_no_reviews_adds_nothing(self):
         self.tier1()
         self.assertEqual(review.pr_comments(FakeRunner(), 9, []), [])
