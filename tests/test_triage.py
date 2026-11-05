@@ -71,6 +71,7 @@ class ParseTests(unittest.TestCase):
         refused(self, "feature", "severity", severity=2)
         refused(self, "spam", "priority", priority=2)
         refused(self, "support", "priority", priority=2)
+        refused(self, "spike", "severity", severity=2)
 
     def test_comment(self):
         refused(self, "support", "comment", comment=KeyError)
@@ -230,6 +231,13 @@ class CheckTests(unittest.TestCase):
         data["comment"] = "see https://example.com/x"
         self.refuse(data, self.issue(), "outside the repository")
 
+    def test_spike_label_decides_the_type(self):
+        spike = dict(self.issue(), labels=[{"name": "type:spike"}])
+        for category in ("feature", "bug", "maintenance"):
+            self.refuse(valid(category), spike, "type:spike")
+        self.refuse(valid("spike"), self.issue(), "type:spike")
+        run_check(self, dict(valid("spike"), priority=2), spike)
+
     def test_load_issue(self):
         runner = FakeRunner({"gh issue view 5": issue_json()})
         self.assertEqual(triage.load_issue(runner, 5)["number"], 5)
@@ -348,6 +356,25 @@ class ApplyTests(unittest.TestCase):
     def test_feature_without_priority(self):
         runner, _, _ = self.real(valid("feature"))
         self.assertFalse([c for c in runner.lines() if "priority:" in c or "severity:" in c])
+
+    def test_spike_keeps_one_type_label(self):
+        runner, _, line = self.real(dict(valid("spike"), priority=2),
+                                    labels=["type:spike", "type:feature"])
+        lines = runner.lines()
+        typ = self.index(lines, "gh issue edit 5 --add-label type:spike")
+        self.assertIn("--remove-label type:feature", lines[typ])
+        self.assertEqual([c for c in lines if c.startswith("gh issue edit 5 --add-label type:")],
+                         [lines[typ]])
+        self.index(lines, "gh issue edit 5 --add-label priority:2")
+        self.assertFalse([c for c in lines if "severity:" in c])
+        self.assertIn("spike", line)
+
+    def test_every_other_type_label_is_removed(self):
+        runner, _, _ = self.real(valid("bug"), labels=["type:feature", "type:maintenance"])
+        lines = runner.lines()
+        typ = lines[self.index(lines, "gh issue edit 5 --add-label type:bug")]
+        self.assertIn("--remove-label type:feature", typ)
+        self.assertIn("--remove-label type:maintenance", typ)
 
 
 class CliTests(unittest.TestCase):
