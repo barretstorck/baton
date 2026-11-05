@@ -127,7 +127,7 @@ whole issue grows large and expensive: in the second sprint, single developers r
   `## Plan` section is moved into the body by `baton plan migrate`.
 - The reviewer runs when every task is ticked and the pull request is ready. What it wants fixed is a `## Tasks`
   checklist in its review, worked the same way, one developer per task.
-- A spike has a timebox: `spike.tokens` and `spike.minutes` in the brief give the allowed ranges, the refiner writes a `Timebox:` line in the spike, and the researcher stops at either limit.
+- A spike has a timebox: `spike.tokens` and `spike.minutes` in the brief give the allowed ranges, the refiner writes a `Timebox:` line in the spike, and the researcher stops at either limit. With no range for either part the refiner writes no `Timebox:` line and a spike has no limit; `baton doctor` warns about this.
 - `baton usage` measures the result per issue and role from the local transcripts, and the
   retrospective includes its table. Transcripts record output tokens while streaming, so `baton usage` undercounts output: its `Output>=` column and the JSON `output_lower_bound` are lower bounds. Spike budgets (`baton budget`) therefore rest on input and cache tokens.
 
@@ -218,7 +218,7 @@ Unattended runs are described in [docs/scheduling.md](docs/scheduling.md).
 | `baton identity worktree` | At tier 1, set this linked worktree's commit author to `baton[bot]` (worktree-local git config); no-op at tier 0 |
 | `baton exec [--role <role>] gh <args...>` | Run `gh` with the role's App token in the child's environment only (tier 1), or unchanged (tier 0) |
 | `baton push <source>:refs/heads/<branch>` | Push to `origin` (tier 0) or over HTTPS with the `baton` App token (tier 1). Refuses (exit 1) a destination outside `refs/heads/`, the default branch, a leading `-` or `+`, an empty source, or a refspec containing `*`, `^`, `?`, `[`, `\` or whitespace; the destination must pass `git check-ref-format`, and at tier 0 `origin` must be the repository `gh repo view` resolves |
-| `baton doctor` | Print the identity tier and check each App (login, token, repository access); exits 1 on a failure |
+| `baton doctor` | Print the identity tier and check each App (login, token, repository access); also warns when the brief gives spikes no `tokens` or `minutes` range (the warning does not change the exit code); exits 1 on a failure |
 | `baton labels [--create]` | Check or create the labels Baton uses |
 | `baton set-status <issue> <status:name>` | Switch an issue's status label |
 | `baton install-hooks` | Install the `pre-commit` and `pre-push` privacy hooks. The hooks find the current install through `installed_plugins.json`, so a plugin update needs no re-install; run it again only when the gate or a hook says the hooks are missing |
