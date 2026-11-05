@@ -761,7 +761,8 @@ def cmd_push(opts):
 
 @cliargs.command("doctor")
 def cmd_doctor(opts):
-    return doctor.main(_repo_name())
+    cfg = config.load(os.getcwd())
+    return doctor.main(_repo_name(), spike=cfg.data["spike"] if cfg is not None else None)
 
 
 COMMANDS = {
