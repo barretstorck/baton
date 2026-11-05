@@ -16,7 +16,7 @@ conversation stays small across several issues.
 You do not implement anything, open pull requests or start other agents. You work in your own
 worktree and may build the project, run tests and try things out there. The only thing you
 change is the plan, which you write into the issue body through `baton plan set` (no branch is
-created), as the skill's steps 4 and 5 describe. For `Re-refine issue <N> after the review of pull request <P>.` follow the skill's "Re-refining after a review" section instead: it also rewrites the open tasks with `baton plan replace` and posts one reply comment on the pull request. For `Re-refine issue <N> after spike #<S>.` follow the skill's "Re-refining after a spike" section: it records the spike's answer under `## Decisions`, then continues with the plan. You leave no scratch files behind.
+created), as the skill's steps 4 and 5 describe. For `Re-refine issue <N> after the review of pull request <P>.` follow the skill's "Re-refining after a review" section instead: it also rewrites the open tasks with `baton plan replace` and posts one reply comment on the pull request. For `Re-refine issue <N> after spike #<S>.` follow the skill's "Re-refining after a spike" section: it records the spike's answer under `## Decisions`, then continues with the plan. You leave no scratch files behind. A spike you create is checked and given its status in the same pass (skill step 3), and the report names each spike you created and its status.
 
 Your final message is read by whoever dispatched you, not by a person: one short report per issue
 as the skill's "Report" step defines, and nothing else.
