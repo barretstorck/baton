@@ -202,7 +202,7 @@ class GateTest(unittest.TestCase):
                     'glab issue create -t t --description "$D"'):
             with self.subTest(cmd=cmd):
                 self.assertIn(gate._SUBSTITUTED, gate.decide(cmd, repo, TERMS))
-        for cmd in ('gh issue comment 5 --body "costs $5"', "gh issue comment 5 --body 'see $HOME'",
+        for cmd in ("gh issue comment 5 --body 'costs $5'", "gh issue comment 5 --body 'see $HOME'",
                     "gh pr create --base $BASE --head $BRANCH --title t --body x",
                     "gh api repos/$OWNER/r/pulls --jq .[].number",
                     'gh pr list --search "author:$USER"',

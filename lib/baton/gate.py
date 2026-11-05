@@ -109,7 +109,7 @@ _SUBST_BODY = re.compile(r"(?:--body|-b|--title|-t|--message|-m|--raw-field|-f|-
 _BODY_VALUE = re.compile(
     r"""(?<![\w-])(?:--body|-b|--title|-t|--message|-m|--raw-field|-f|--field|-F|--description|-d"""
     r"""|--data(?:-raw)?)(?:\s+|=)(?:"([^"]*)"|'([^']*)'|([^\s'"<>|;&]+))""")
-_VARIABLE = re.compile(r"\$[A-Za-z_{]")
+_VARIABLE = re.compile(r"\$[A-Za-z_{0-9@*#?$!-]")
 _CAT_SUBST = re.compile(r"""\$\(cat\s+(?:'([^\s'$`]+)'|([^\s'"$`()<>|;&*?\\-][^\s'"$`()<>|;&*?\\]*))\s*\)""")
 _HEREDOC = re.compile(r"<<-?[ \t]*['\"]?(\w+)['\"]?([^\n]*)\n(.*?)\n[ \t]*\1\b", re.S)
 _QUOTED = re.compile(r"""'[^']*'|"[^"]*\"""")
@@ -380,6 +380,10 @@ def _has_variable(segment):
     for m in _BODY_VALUE.finditer(segment):
         value = m.group(1) if m.group(1) is not None else m.group(3)
         if value and _VARIABLE.search(value):
+            return True
+        # An unquoted value also hides `$'...'` (it stops at the quote), `$(...)` and backticks.
+        unquoted = m.group(3)
+        if unquoted and ("`" in unquoted or "$(" in unquoted or unquoted.endswith("$")):
             return True
     return False
 

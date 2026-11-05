@@ -78,7 +78,7 @@ ALLOWED = {
         "gh api -X POST repos/example-org/example-repo/issues -f title=Word",
         "glab issue create -t t -d Word",
         "tea issues create -t t",
-        'gh issue comment 5 --body "costs $5"',
+        "gh issue comment 5 --body 'costs $5'",
         "gh pr create --base $BASE --head $BRANCH --title t --body x",
         'gh pr list --search "author:$USER"',
         "gh api repos/$OWNER/example-repo/pulls --jq .[].number",
