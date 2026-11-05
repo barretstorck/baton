@@ -197,6 +197,7 @@ condition is every task of the plan, including the tasks the refiner added, and 
    an approval while any task of the plan or of the last review is open. Fix the body and post
    again; if it refuses an approval for open tasks, do not approve: return that to the
    orchestrator in your report.
+   At tier 1 or higher `baton review post` posts the verdict as a GitHub review by the reviewer App (approve: Approve; changes and replan: Request changes; blocked: Comment), and at tier 2 it then removes a pending review request for the machine user; at tier 0 it stays a comment.
    If you cannot post at all, put the body in your final report inside a block fenced with
    ```` ```baton-review <approve|changes|blocked|replan> <full head sha> ````.
 

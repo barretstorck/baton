@@ -258,6 +258,7 @@ class ReviewMarkingTest(unittest.TestCase):
                    "author": {"login": "baton-reviewer"}, "body": body}
         runner = FakeRunner({"gh pr view 9 --json comments": json.dumps({"comments": [comment]}),
                              "gh api --paginate": f"IC_9\t{rest_type}\n",
+                             "gh api --paginate repos/{owner}/{repo}/pulls/9/reviews": "",
                              "gh api -X PATCH": ""})
         owner = ["owner", "baton-reviewer[bot]"]
         with mock.patch.object(identity, "write", lambda run, argv, role: run(argv)):

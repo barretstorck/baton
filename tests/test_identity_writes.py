@@ -29,6 +29,54 @@ class Tier1Test(unittest.TestCase):
     def tokens(self, runner):
         return [e and e["GH_TOKEN"] for e in runner.envs]
 
+    def test_review_post_is_a_formal_review_by_the_reviewer(self):
+        from tests.test_review import NEW, TASKS_NEW
+        read = "gh api --paginate repos/{owner}/{repo}/pulls/9/reviews?per_page=100 --jq .[] | select(.user.login"
+        bodies = {"approve": ("Looks right.", "approve"),
+                  "changes": (TASKS_NEW, "request-changes"),
+                  "replan": ("## Feedback\nThe plan is wrong.", "request-changes"),
+                  "blocked": ("Cause: environment\n\n## Reason\nNo tool.", "comment")}
+        for verdict, (body, event) in bodies.items():
+            with self.subTest(verdict=verdict):
+                runner = pr_runner()
+                runner.replies[read] = "https://x/pull/9#pullrequestreview-8\n"
+                url = review.post(cfg(), runner, 9, verdict, NEW, body, [], OWNER)
+                self.assertEqual(url, "https://x/pull/9#pullrequestreview-8")
+                posted = [i for i, c in enumerate(runner.calls) if c[:4] == ["gh", "pr", "review", "9"]]
+                self.assertEqual(len(posted), 1)
+                self.assertEqual(runner.calls[posted[0]][4], f"--{event}")
+                self.assertEqual(self.tokens(runner)[posted[0]], "tok-reviewer")
+                self.assertFalse(any(c[:3] == ["gh", "pr", "comment"] for c in runner.calls))
+
+    def test_machine_review_request_is_removed_at_tier_2(self):
+        from tests.test_review import NEW
+        ids = identity.Identities(identity.App(1, 10, "/k/b.pem", "baton[bot]"),
+                                  identity.App(2, 20, "/k/r.pem", "baton-reviewer[bot]"),
+                                  "baton-user")
+        view = "gh pr view 9 --json headRefOid,comments,closingIssuesReferences,reviewRequests"
+        for requests, machine, want in (([{"login": "Baton-User"}], True, 1),
+                                        ([{"login": "someone"}], True, 0),
+                                        ([{"login": "Baton-User"}], False, 0)):
+            with self.subTest(requests=requests, machine=machine):
+                identity.use(lambda: ids if machine else identity.Identities(ids.baton, ids.reviewer))
+                runner = pr_runner()
+                runner.replies["gh api --paginate repos/{owner}/{repo}/pulls/9/reviews?per_page=100 --jq .[] | select(.user.login"] = (
+                    "https://x/pull/9#pullrequestreview-8\n")
+                runner.replies[view] = json.dumps({"headRefOid": NEW, "comments": [],
+                                                   "closingIssuesReferences": [],
+                                                   "reviewRequests": requests})
+                review.post(cfg(), runner, 9, "approve", NEW, "Looks right.", [], OWNER)
+                dels = [i for i, c in enumerate(runner.calls) if c[:4] == ["gh", "api", "-X", "DELETE"]]
+                self.assertEqual(len(dels), want)
+                if want:
+                    i = dels[0]
+                    self.assertEqual(runner.calls[i][4:],
+                                     ["repos/{owner}/{repo}/pulls/9/requested_reviewers",
+                                      "-f", "reviewers[]=baton-user", "--silent"])
+                    self.assertEqual(self.tokens(runner)[i], "tok-reviewer")
+                    posted = [j for j, c in enumerate(runner.calls) if c[:3] == ["gh", "pr", "review"]]
+                    self.assertLess(posted[0], i)
+
     def test_comment_post_uses_the_role(self):
         for role, want in (("developer", "tok-baton"), ("reviewer", "tok-reviewer")):
             runner = FakeRunner()
@@ -70,6 +118,19 @@ class Tier1Test(unittest.TestCase):
         tokens = self.tokens(runner)
         self.assertEqual(tokens[-1], "tok-reviewer")
         self.assertEqual(tokens[:-1], [None] * (len(tokens) - 1))
+
+    def test_tick_review_edits_a_formal_review(self):
+        from tests.test_review import formal
+        item = json.loads(formal("baton-reviewer[bot]", "changes", "2026-01-02T00:00:00Z", "R1"))
+        item["body"] = changes_with_tasks()["body"]
+        item["url"] = "https://x/pull/9#pullrequestreview-77"
+        runner = pr_runner()
+        runner.replies["gh api --paginate repos/{owner}/{repo}/pulls/9/reviews?per_page=100"] = json.dumps(item) + "\n"
+        self.assertTrue(review.tick_review(runner, 9, [OWNER, "baton-reviewer[bot]"], "1.1"))
+        call = runner.calls[-1]
+        self.assertEqual(call[:4], ["gh", "api", "-X", "PUT"])
+        self.assertEqual(call[4], "repos/{owner}/{repo}/pulls/9/reviews/77")
+        self.assertEqual(self.tokens(runner)[-1], "tok-reviewer")
 
     def test_triage_writes_are_orchestrator(self):
         runner, _ = apply_decision(valid("bug"))

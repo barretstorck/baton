@@ -16,10 +16,10 @@ from .config import has_login
 # The one place a verdict is defined. `tasks` is "none" (a `## Tasks` section is
 # refused) or "required"; `round` says whether the verdict counts toward review.max_rounds.
 VERDICTS = {
-    "approve": {"title": "approved", "tasks": "none", "round": False},
-    "changes": {"title": "changes requested", "tasks": "required", "round": True},
-    "blocked": {"title": "blocked", "tasks": "none", "round": False},
-    "replan": {"title": "replan requested", "tasks": "none", "round": True},
+    "approve": {"title": "approved", "tasks": "none", "round": False, "event": "approve"},
+    "changes": {"title": "changes requested", "tasks": "required", "round": True, "event": "request-changes"},
+    "blocked": {"title": "blocked", "tasks": "none", "round": False, "event": "comment"},
+    "replan": {"title": "replan requested", "tasks": "none", "round": True, "event": "request-changes"},
 }
 BLOCKED_CAUSES = ("default-branch", "environment")
 VERIFY_STATES = ("green", "red", "timeout", "missing", "none")
@@ -36,6 +36,7 @@ _REPLY = f"{gate.MARKER}developer:reply -->"
 _REFINE_REPLY = f"{gate.MARKER}refine:reply -->"
 _HUNK = re.compile(r"^@@ [^@]* @@.*$")
 _COMMENT_ID = re.compile(r"#issuecomment-(\d+)$")
+_REVIEW_ID = re.compile(r"#pullrequestreview-(\d+)$")
 
 
 class ReviewError(Exception):
@@ -95,6 +96,36 @@ def history(comments, owner, repliers=None):
               and has_login(item.get("author"), repliers)):
             events.append({"kind": "reply", "url": item.get("url")})
     return events
+
+
+REVIEWS_JQ = (".[] | select(.submitted_at != null) | {id: .node_id, "
+              "author: {login: .user.login, type: .user.type}, body: .body, "
+              "createdAt: .submitted_at, url: .html_url} | @json")
+
+
+def app_reviews(runner, number):
+    """The pull request's submitted reviews written by the reviewer App, as comment-shaped dicts."""
+    text = runner(["gh", "api", "--paginate",
+                   f"repos/{{owner}}/{{repo}}/pulls/{number}/reviews?per_page=100",
+                   "--jq", REVIEWS_JQ])
+    logins = identity.reviewer_logins()
+    found = []
+    for line in (text or "").splitlines():
+        if line.strip():
+            item = json.loads(line)
+            if has_login(item.get("author"), logins):
+                found.append(item)
+    return found
+
+
+def pr_comments(runner, number, comments):
+    """A pull request's comments with author types marked, plus the reviewer App's formal
+    reviews at tier 1 or higher, oldest first."""
+    marked = identity.mark_authors(runner, number, comments)
+    if not identity.reviewer_logins():
+        return marked
+    return sorted(list(marked) + app_reviews(runner, number),
+                  key=lambda item: item.get("createdAt") or "")
 
 
 def json_default(value):
@@ -296,22 +327,27 @@ def review_tasks(pr, owner):
 def tick_review(runner, number, owner, task_id):
     """Tick a task in the latest review. False when it was already ticked."""
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", "comments"]))
-    pr["comments"] = identity.mark_authors(runner, number, pr.get("comments"))
+    pr["comments"] = pr_comments(runner, number, pr.get("comments"))
     item, match = _latest_review(pr.get("comments"), owner)
     if item is None or VERDICTS[match.group(1)]["tasks"] == "none":
         raise ReviewError(f"the latest review on #{number} asks for no changes")
     new, changed = checklist.tick(item["body"], "tasks", task_id)
     if not changed:
         return False
-    found = _COMMENT_ID.search(item.get("url") or "")
+    url = item.get("url") or ""
+    formal_review = _REVIEW_ID.search(url)
+    found = formal_review or _COMMENT_ID.search(url)
     if not found:
         raise ReviewError("cannot tell the review comment's id from its URL")
+    if formal_review:
+        method, target = "PUT", f"repos/{{owner}}/{{repo}}/pulls/{number}/reviews/{found.group(1)}"
+    else:
+        method, target = "PATCH", f"repos/{{owner}}/{{repo}}/issues/comments/{found.group(1)}"
     handle, path = tempfile.mkstemp(suffix=".md")
     try:
         with os.fdopen(handle, "w", newline="") as out:
             out.write(new)
-        identity.write(runner, ["gh", "api", "-X", "PATCH",
-                                f"repos/{{owner}}/{{repo}}/issues/comments/{found.group(1)}",
+        identity.write(runner, ["gh", "api", "-X", method, target,
                                 "-F", f"body=@{path}", "--silent"], "reviewer")
     finally:
         os.unlink(path)
@@ -344,8 +380,8 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, ho
         verify = found["result"] if found else "missing"
     text = compose(verdict, commit, body, verify)
     pr = json.loads(runner(["gh", "pr", "view", str(number), "--json",
-                            "headRefOid,comments,closingIssuesReferences"]))
-    pr["comments"] = identity.mark_authors(runner, number, pr.get("comments"))
+                            "headRefOid,comments,closingIssuesReferences,reviewRequests"]))
+    pr["comments"] = pr_comments(runner, number, pr.get("comments"))
     head = pr["headRefOid"]
     if head != commit:
         raise ReviewError(f"the pull request's head is now {head[:7]}, not {commit[:7]}; "
@@ -388,7 +424,23 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, ho
         if wrong:
             raise ReviewError(f"this is round {round_}: tasks must be open and numbered "
                               f"{round_}.1, {round_}.2 ... (not {', '.join(wrong)})")
+    logins = identity.reviewer_logins()
     try:
-        return comment.publish(cfg, runner, "pr", number, text, terms, role="reviewer")
+        if logins:
+            url = comment.publish_review(cfg, runner, number, text, terms,
+                                         VERDICTS[verdict]["event"], sorted(logins)[0])
+        else:
+            url = comment.publish(cfg, runner, "pr", number, text, terms, role="reviewer")
     except comment.CommentError as error:
         raise ReviewError(str(error)) from error
+    machine = identity.machine_login()
+    if machine and any((req.get("login") or "").lower() == machine.lower()
+                       for req in pr.get("reviewRequests") or []):
+        try:
+            identity.write(runner, ["gh", "api", "-X", "DELETE",
+                                    f"repos/{{owner}}/{{repo}}/pulls/{number}/requested_reviewers",
+                                    "-f", f"reviewers[]={machine}", "--silent"], "reviewer")
+        except run.RunError as error:
+            raise ReviewError(f"the review was posted but the review request for {machine} "
+                              "could not be removed") from error
+    return url

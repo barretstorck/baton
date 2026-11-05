@@ -385,7 +385,7 @@ def _review_state(opts):
     repo = json.loads(run.run(["gh", "repo", "view", "--json", "owner,defaultBranchRef"]))
     pr = json.loads(run.run(["gh", "pr", "view", str(opts.pr), "--json",
                              "number,headRefName,headRefOid,comments"]))
-    pr["comments"] = identity.mark_authors(run.run, opts.pr, pr.get("comments"))
+    pr["comments"] = review.pr_comments(run.run, opts.pr, pr.get("comments"))
     print(json.dumps(review.current(pr, _trusted(cfg), cfg, run.run,
                                     repo["defaultBranchRef"]["name"],
                                     list(_maintainers(cfg)) + sorted(_bots())),
@@ -419,7 +419,7 @@ def cmd_tasks(opts):
         print(json.dumps({**found, **checklist.progress(found["tasks"])}, indent=2))
         return 0
     pr = json.loads(run.run(["gh", "pr", "view", str(opts.number), "--json", "comments"]))
-    pr["comments"] = identity.mark_authors(run.run, opts.number, pr.get("comments"))
+    pr["comments"] = review.pr_comments(run.run, opts.number, pr.get("comments"))
     print(json.dumps(review.review_tasks(pr, _trusted(cfg)), indent=2))
     return 0
 
@@ -644,7 +644,7 @@ def cmd_pr_state(opts):
     pr = json.loads(run.run(["gh", "pr", "view", opts.pr, "--json", sprint.PR_STATE_FIELDS]))
     number = pr.get("number") or (int(opts.pr) if opts.pr.isdigit() else None)
     if number:
-        pr["comments"] = identity.mark_authors(run.run, number, pr.get("comments"))
+        pr["comments"] = review.pr_comments(run.run, number, pr.get("comments"))
     print(json.dumps(sprint.pr_state(pr, cfg, run.run, reviewers=_reviewers()), indent=2))
     return 0
 

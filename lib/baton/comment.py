@@ -40,14 +40,19 @@ def compose(role, kind, body):
     return f"{gate.MARKER}{role}:{kind} -->\n**Baton {role}: {kind}**\n\n{body.strip()}\n"
 
 
-def publish(cfg, runner, target, number, text, terms, role="orchestrator"):
-    """Scan an already stamped comment and post it. Returns the comment's URL."""
-    if target not in TARGETS:
-        raise CommentError(f"unknown target {target!r}; use issue or pr")
+def _scanned(cfg, text, terms):
+    """Refuse text the privacy scan finds something in."""
     findings = scan.scan_text(text, terms, cfg.data["privacy_allow"])
     if findings:
         raise CommentError("comment not posted; privacy scan found: "
                            + "; ".join(scan.describe(findings)))
+
+
+def publish(cfg, runner, target, number, text, terms, role="orchestrator"):
+    """Scan an already stamped comment and post it. Returns the comment's URL."""
+    if target not in TARGETS:
+        raise CommentError(f"unknown target {target!r}; use issue or pr")
+    _scanned(cfg, text, terms)
     handle, path = tempfile.mkstemp(suffix=".md")
     try:
         with os.fdopen(handle, "w") as out:
@@ -56,6 +61,30 @@ def publish(cfg, runner, target, number, text, terms, role="orchestrator"):
                               role).strip()
     finally:
         os.unlink(path)
+
+
+def publish_review(cfg, runner, number, text, terms, event, login):
+    """Scan a stamped verdict and post it as a formal review by the reviewer App.
+
+    `event` is approve, request-changes or comment. `gh pr review` prints no URL, so the
+    newest review by `login` is read back. Returns its URL.
+    """
+    _scanned(cfg, text, terms)
+    handle, path = tempfile.mkstemp(suffix=".md")
+    try:
+        with os.fdopen(handle, "w") as out:
+            out.write(text)
+        identity.write(runner, ["gh", "pr", "review", str(number), f"--{event}",
+                                "--body-file", path], "reviewer")
+    finally:
+        os.unlink(path)
+    out = runner(["gh", "api", "--paginate",
+                  f"repos/{{owner}}/{{repo}}/pulls/{number}/reviews?per_page=100",
+                  "--jq", f'.[] | select(.user.login == "{login}") | .html_url'])
+    urls = [line.strip() for line in out.splitlines() if line.strip()]
+    if not urls:
+        raise CommentError("the review was posted but its URL could not be read")
+    return urls[-1]
 
 
 def post(cfg, runner, target, number, role, kind, body, terms):
