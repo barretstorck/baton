@@ -34,6 +34,30 @@ class DocsMatchGate(unittest.TestCase):
         self.assertEqual(bad, [], "docs name gh commands the gate refuses")
 
 
+class DocsGhStateValues(unittest.TestCase):
+    """Each documented `gh <command> --state <value>` uses a value that command accepts."""
+
+    STATES = {
+        "issue list": {"open", "closed", "all"},
+        "pr list": {"open", "closed", "merged", "all"},
+        "search issues": {"open", "closed"},
+        "search prs": {"open", "closed"},
+    }
+    STATE = re.compile(r"--state[ =](\S+)")
+
+    def test_documented_state_values_are_accepted(self):
+        bad = []
+        for path in doc_files():
+            with open(path, encoding="utf-8") as f:
+                for number, line in enumerate(f, 1):
+                    for span in SPAN.findall(line):
+                        command = " ".join(span.split()[1:3])
+                        for value in self.STATE.findall(span):
+                            if value not in self.STATES.get(command, ()):
+                                bad.append(f"{os.path.relpath(path, ROOT)}:{number}: {span}")
+        self.assertEqual(bad, [], "docs pass a --state value the gh command refuses")
+
+
 class ReferencedPaths(unittest.TestCase):
     PATH = re.compile(
         r"(?:\$\{CLAUDE_PLUGIN_ROOT\}/)?((?:references|templates)/[A-Za-z0-9_.-]+\.md)")
