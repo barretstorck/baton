@@ -608,6 +608,19 @@ class QueueCommandTests(unittest.TestCase):
         self.assertEqual(data["overdue"], 11)
         self.assertEqual(data["stale"], [50])
 
+    def test_maintainer_bug_absent_from_reproduce(self):
+        now = datetime.now(timezone.utc)
+        issues = []
+        for number, login in ((1, "boss"), (2, "x")):
+            data = bug(number, labels=("type:bug", "status:refinement"))
+            data["author"] = {"login": login}
+            data["createdAt"] = (now - timedelta(days=1)).isoformat()
+            issues.append(data)
+        with tempfile.TemporaryDirectory() as home:
+            self.drive(issues, home)
+            _, text = self.drive(issues, home)
+            self.assertEqual(json.loads(text)["reproduce"], [2])
+
     def test_closed_handoff_reduces_reproduce(self):
         issue = bug(2)
         issue["state"] = "OPEN"
