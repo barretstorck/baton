@@ -90,7 +90,9 @@ Brief keys:
   (default 3, 0 turns hand-off off).
 
 After triage, the run hands triaged bugs to the refiner: it posts a `<!-- baton:repro-handoff -->`
-comment on each and starts a refiner, up to `triage.max_reproductions_per_day`. The refiner
+comment on each and starts a refiner, up to `triage.max_reproductions_per_day`. Only a hand-off
+comment posted by a maintainer or a Baton login counts, both for skipping an issue that has one and
+for the daily limit; a comment by anyone else that quotes the marker is ignored. The refiner
 reproduces only in the sandbox (`baton sandbox`). Without a sandbox configured it posts the
 `repro-skipped` notice instead and does not reproduce. An issue from outside still needs a
 maintainer's `/baton ready` comment, and an edit to the body by anyone other than a maintainer or Baton after that comment drops the approval until a maintainer posts `/baton ready` again.
