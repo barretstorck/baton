@@ -91,7 +91,7 @@ def history(comments, owner, repliers=None):
                            "commit": match.group(2), "verify": match.group(3) or "missing",
                            "cause": _cause(body) if match.group(1) == "blocked" else None,
                            "failures": failure_ids(body),
-                           "url": item.get("url")})
+                           "url": item.get("url"), "at": item.get("createdAt")})
         elif ((body.startswith(_REPLY) or body.startswith(_REFINE_REPLY))
               and has_login(item.get("author"), repliers)):
             events.append({"kind": "reply", "url": item.get("url")})

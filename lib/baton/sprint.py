@@ -24,9 +24,9 @@ STALE_MISSING_PATHS = 2  # hold a ready issue whose plan names at least this man
 BEHIND_LIMIT = 15  # default-branch commits behind that count as far behind
 _ON_LINE = re.compile(r"""^["']?on["']?\s*:(.*)$""")
 _PUSH_WORD = re.compile(r"(?<![\w-])push(?![\w-])")
-ISSUE_FIELDS = "number,title,state,labels,body,author,comments"
+ISSUE_FIELDS = "number,title,state,labels,body,author,comments,assignees"
 PR_FIELDS = ("number,headRefName,headRefOid,isDraft,mergeable,closingIssuesReferences,"
-             "statusCheckRollup,comments")
+             "statusCheckRollup,comments,reviewRequests")
 
 
 class SnapshotError(Exception):
@@ -231,7 +231,19 @@ def spikes_first(entries, spike_flags, cap):
             "spikes": spikes[:cap], "left_out": spikes[cap:], "cap": cap}
 
 
-def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
+def _review_requested(pr, runner, machine, maintainers, bots, latest_at):
+    """True when a maintainer's open review request for `machine` is newer than the latest review."""
+    if not issue_fields.has_login({"login": machine},
+                                  [r.get("login") for r in pr.get("reviewRequests") or []]):
+        return False
+    asked = issue_fields.review_request(
+        issue_fields.timeline(runner, pr["number"]) or [], machine)
+    if not issue_fields._assignment_counts(asked, maintainers, bots):
+        return False
+    return not latest_at or (asked.get("at") or "") > latest_at
+
+
+def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None):
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     owner, branch = repo["owner"]["login"], repo["defaultBranchRef"]["name"]
     maintainers = cfg.maintainers(owner)
@@ -347,6 +359,7 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
             return None
         return branch_behind(runner, branch, pr["headRefName"])
 
+    assignments = {}
     for item in sorted(issues, key=lambda entry: entry["number"]):
         number = item["number"]
         labels = {label["name"] for label in item.get("labels") or []}
@@ -355,8 +368,18 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
                 else "stretch" if cfg.label("stretch") in labels else None)
         files = issue_fields.expected_files(item.get("body"))
         repair = repair_label in labels
-        result["issues"].append({"number": number, "title": item["title"], "status": status,
-                                 "tier": tier, "state": item["state"], "repair": repair})
+        entry = {"number": number, "title": item["title"], "status": status,
+                 "tier": tier, "state": item["state"], "repair": repair}
+        if machine:
+            assigned = None
+            if item["state"] == "OPEN" and issue_fields.has_login(
+                    {"login": machine}, [a.get("login") for a in item.get("assignees") or []]):
+                assigned = issue_fields.assignment(
+                    issue_fields.timeline(runner, number) or [], machine)
+            assignments[number] = assigned
+            entry["assigned_to_baton"] = bool(
+                assigned and issue_fields._assignment_counts(assigned, maintainers, bots))
+        result["issues"].append(entry)
         if repair and item["state"] == "OPEN":
             result["repair_issue"] = number
         if cfg.label("needs-maintainer") in labels and status != "status:complete":
@@ -390,19 +413,26 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
             result["in_dev"].append(number)
         elif status == "status:in-review":
             pr = pr_for.get(number)
+            latest_at = None
             if pr and cfg.data["review"]["required"]:
                 found = review.current(pr, trusted, cfg, runner, branch,
                                        list(maintainers) + sorted(bots))
                 review_state, rounds = found["state"], found["rounds"]
+                latest_at = (found.get("review") or {}).get("at")
             else:
                 review_state, rounds = "not-required", 0
-            result["in_review"].append({
+            entry = {
                 "number": number, "pr": pr["number"] if pr else None,
                 "draft": pr["isDraft"] if pr else None,
                 "ci": _pr_ci(pr, cfg, runner) if pr else "none",
                 "mergeable": pr["mergeable"] if pr else None,
                 "review": review_state, "rounds": rounds,
-                "verify": _pr_verify(pr, cfg, runner, owner, reviewers) if pr else "none"})
+                "verify": _pr_verify(pr, cfg, runner, owner, reviewers) if pr else "none"}
+            if machine:
+                entry["review_requested"] = bool(
+                    pr and cfg.data["review"]["required"]
+                    and _review_requested(pr, runner, machine, maintainers, bots, latest_at))
+            result["in_review"].append(entry)
         elif status == "status:verification":
             result["verification"].append(number)
         elif status == "status:refinement" and item["state"] == "OPEN":
@@ -441,7 +471,8 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=()):
         if issue_fields.is_outside(item, maintainers, bots):
             if "edits" not in item:
                 item["edits"] = issue_fields.body_edits(runner, number)
-            problem = issue_fields.approval_problem(item, maintainers, bots)
+            problem = issue_fields.approval_problem(item, maintainers, bots,
+                                                      assigned=assignments.get(number))
         if problem is not None:
             reason = f"outside issue: {problem}"
         elif red and not repair:

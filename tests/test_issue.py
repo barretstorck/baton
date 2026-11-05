@@ -199,6 +199,39 @@ class OutsideTest(unittest.TestCase):
         self.assertFalse(issue.approved(data, OWNER))
         self.assertIn("@ghost edited", issue.approval_problem(data, OWNER))
 
+    ASSIGN = {"by": OWNER, "at": "2026-11-01T10:00:00Z"}
+
+    def test_maintainer_assignment_approves(self):
+        data = self.with_edits([], [])
+        self.assertTrue(issue.approved(data, OWNER, assigned=self.ASSIGN))
+        self.assertFalse(issue.approved(data, OWNER))
+
+    def test_outside_assignment_does_not_approve(self):
+        data = self.with_edits([], [])
+        stranger = {"by": "stranger", "at": "2026-11-01T10:00:00Z"}
+        self.assertEqual(issue.approval_problem(data, OWNER, assigned=stranger),
+                         "it needs a comment '/baton ready' from a maintainer")
+        self.assertEqual(issue.ignored_assignment(stranger, OWNER),
+                         "the assignment to Baton by @stranger was ignored: not a maintainer")
+        self.assertIsNone(issue.ignored_assignment(self.ASSIGN, OWNER))
+        self.assertIsNone(issue.ignored_assignment(None, OWNER))
+
+    def test_baton_login_assignment_does_not_approve(self):
+        data = self.with_edits([], [])
+        bot = {"by": "baton[bot]", "at": "2026-11-01T10:00:00Z"}
+        self.assertFalse(issue.approved(data, [OWNER, "baton[bot]"], {"baton[bot]"}, bot))
+
+    def test_outside_edit_after_assignment_drops_it(self):
+        data = self.with_edits([], [self.edit("mallory", "2026-11-01T11:00:00Z")])
+        text = issue.approval_problem(data, OWNER, assigned=self.ASSIGN)
+        self.assertIn("after the assignment to Baton of 2026-11-01T10:00:00Z", text)
+        self.assertIn("a maintainer must post '/baton ready' again", text)
+
+    def test_newer_comment_restores_after_dropped_assignment(self):
+        again = dict(comment(OWNER, "/baton ready"), createdAt="2026-11-01T12:00:00Z")
+        data = self.with_edits([again], [self.edit("mallory", "2026-11-01T11:00:00Z")])
+        self.assertTrue(issue.approved(data, OWNER, assigned=self.ASSIGN))
+
     def test_missing_edit_history_fails_closed(self):
         text = "the body's edit history could not be read"
         data = self.with_edits([self.READY], None)
@@ -546,6 +579,51 @@ class ReadyCheckEditsTest(unittest.TestCase):
         self.assertFalse([c for c in runner.calls if "graphql" in c])
 
 
+class ReadyCheckAssignmentTest(unittest.TestCase):
+    def check(self, data, runner, machine):
+        import contextlib
+        import io
+        from unittest import mock
+        from baton import cli
+        out = io.StringIO()
+        with mock.patch.object(cli, "_require_config", return_value=cfg()), \
+                mock.patch.object(cli, "_maintainers", return_value=[OWNER]), \
+                mock.patch.object(cli, "_bots", return_value=frozenset()), \
+                mock.patch.object(cli, "_machine", return_value=machine), \
+                mock.patch.object(cli.run, "run", runner), \
+                contextlib.redirect_stdout(out):
+            code = cli.cmd_ready_check(["5"])
+        return code, out.getvalue()
+
+    def runner(self, data, by):
+        return FakeRunner({
+            "gh issue view": __import__("json").dumps(data),
+            "gh api graphql": "",
+            "gh api --paginate repos/{owner}/{repo}/issues/5/timeline":
+                _tsv(("assigned", by, "baton-bot", "2026-11-01T10:00:00Z")),
+        })
+
+    def test_maintainer_assignment_is_ready(self):
+        data = make(author="stranger")
+        code, text = self.check(data, self.runner(data, OWNER), "baton-bot")
+        self.assertEqual(code, 0)
+        self.assertIn("ready (outside issue: ", text)
+        self.assertNotIn("note:", text)
+
+    def test_outside_assignment_is_noted(self):
+        data = make(author="stranger")
+        code, text = self.check(data, self.runner(data, "stranger"), "baton-bot")
+        self.assertEqual(code, 1)
+        self.assertIn("it needs a comment '/baton ready' from a maintainer", text)
+        self.assertIn("note: the assignment to Baton by @stranger was ignored: not a maintainer", text)
+
+    def test_no_machine_makes_no_timeline_call(self):
+        data = make(author="stranger")
+        runner = self.runner(data, OWNER)
+        self.check(data, runner, None)
+        self.assertFalse([c for c in runner.calls if "timeline" in " ".join(c)])
+
+
 def _person(login):
     return {"login": login}
 
@@ -673,3 +751,43 @@ class ReadCommandTests(unittest.TestCase):
         code, _, err = self.run_cmd(["issue", "edit"])
         self.assertEqual(code, 64)
         self.assertNotIn("baton issue read", err)
+
+
+def _tsv(*rows):
+    return "\n".join("\t".join(r) for r in rows) + "\n"
+
+
+class TimelineTest(unittest.TestCase):
+    def test_parses_lines_and_skips_bad_ones(self):
+        out = _tsv(("assigned", "boss", "baton-bot", "2026-01-01T00:00:00Z"))
+        out += "garbage\tline\n"
+        runner = FakeRunner({"gh api --paginate repos/{owner}/{repo}/issues/5/timeline": out})
+        self.assertEqual(issue.timeline(runner, 5), [
+            {"event": "assigned", "by": "boss", "subject": "baton-bot",
+             "at": "2026-01-01T00:00:00Z"}])
+
+    def test_none_when_runner_raises(self):
+        self.assertIsNone(issue.timeline(RaisingRunner(), 5))
+
+    def ev(self, event, by, subject, at):
+        return {"event": event, "by": by, "subject": subject, "at": at}
+
+    def test_assignment_latest_wins(self):
+        events = [self.ev("assigned", "a", "Bot", "1"), self.ev("assigned", "b", "bot", "2")]
+        self.assertEqual(issue.assignment(events, "BOT"), {"by": "b", "at": "2"})
+
+    def test_assignment_none_after_unassigned_or_other_login(self):
+        events = [self.ev("assigned", "a", "bot", "1"), self.ev("unassigned", "a", "bot", "2")]
+        self.assertIsNone(issue.assignment(events, "bot"))
+        self.assertIsNone(issue.assignment([self.ev("assigned", "a", "x", "1")], "bot"))
+        self.assertIsNone(issue.assignment(events, ""))
+        self.assertEqual(issue.assignment(events + [self.ev("assigned", "c", "bot", "3")],
+                                          "bot"), {"by": "c", "at": "3"})
+
+    def test_review_request(self):
+        req = self.ev("review_requested", "a", "bot", "1")
+        self.assertEqual(issue.review_request([req], "Bot"), {"by": "a", "at": "1"})
+        gone = self.ev("review_request_removed", "a", "bot", "2")
+        self.assertIsNone(issue.review_request([req, gone], "bot"))
+        self.assertIsNone(issue.review_request([self.ev("assigned", "a", "bot", "1")], "bot"))
+        self.assertIsNone(issue.review_request([req], ""))

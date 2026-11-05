@@ -158,6 +158,10 @@ def _reviewers():
     return identity.reviewer_logins()
 
 
+def _machine():
+    return identity.machine_login()
+
+
 @cliargs.command("comment")
 def cmd_comment(opts):
     try:
@@ -246,6 +250,10 @@ def _triage_queue():
     closed = json.loads(run.run(["gh", "issue", "list", "--state", "closed",
                                  "--search", "closed:>=" + day_ago, "--limit", "200",
                                  "--json", "number,state,comments,createdAt"]) or "[]")
+    for item in issues + closed:
+        item["comments"] = identity.mark_authors(run.run, item["number"], item.get("comments"))
+    maintainers = _maintainers(cfg)
+    trusted = list(maintainers) + sorted(_bots())
     block = cfg.data["triage"]
     batch, waiting = triage.split_batch(triage.pending(issues, cfg, since), block["max_per_run"])
     late = triage.overdue(waiting, now)
@@ -255,10 +263,10 @@ def _triage_queue():
         "batch": [item["number"] for item in batch],
         "waiting": [item["number"] for item in waiting],
         "overdue": late["number"] if late else None,
-        "stale": triage.stale(issues, cfg, now, block["stale_days"], _maintainers(cfg)),
+        "stale": triage.stale(issues, cfg, now, block["stale_days"], maintainers),
         "reproduce": triage.reproduce_candidates(
-            issues, cfg, now, block["max_reproductions_per_day"], closed=closed,
-            maintainers=_maintainers(cfg), bots=_bots()),
+            issues, cfg, now, block["max_reproductions_per_day"], trusted, closed=closed,
+            maintainers=maintainers, bots=_bots()),
     }, indent=2))
     return 0
 
@@ -567,12 +575,18 @@ def cmd_ready_check(opts):
     maintainers = _maintainers(cfg)
     if issue.is_outside(data, maintainers, _bots()):
         data["edits"] = issue.body_edits(run.run, number)
-    problems = issue.ready_problems(data, cfg, maintainers, run.run, _bots())
+    machine = _machine()
+    assigned = (issue.assignment(issue.timeline(run.run, number) or [], machine)
+                if machine else None)
+    problems = issue.ready_problems(data, cfg, maintainers, run.run, _bots(), assigned=assigned)
     for problem in problems:
         print(f"- {problem}")
     if not problems:
         print("ready (outside issue: the maintainer marks it ready)"
               if issue.is_outside(data, maintainers, _bots()) else "ready")
+    note = issue.ignored_assignment(assigned, maintainers, _bots())
+    if note:
+        print(f"note: {note}")
     return 1 if problems else 0
 
 
@@ -580,7 +594,8 @@ def cmd_ready_check(opts):
 def cmd_sprint_status(opts):
     cfg = _require_config()
     print(json.dumps(sprint.snapshot(cfg, run.run, opts.milestone,
-                                  bots=_bots(), reviewers=_reviewers()), indent=2))
+                                  bots=_bots(), reviewers=_reviewers(),
+                                  machine=_machine()), indent=2))
     return 0
 
 

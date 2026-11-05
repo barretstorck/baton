@@ -55,6 +55,7 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
   no checks yet (`pending`) and needs a new verification record (#49) before it can be approved.
   `merge-pr` keeps refusing cancelled checks; never suggest overriding it. The `approved`
   conditions need `ci` `green` or `none`, so a `cancelled` pull request waits to merge.
+- **`review_requested` is true (tier 2):** a maintainer asked Baton to review. Dispatch a reviewer (see "Dispatching a reviewer" below) whatever the `review` state, including `approved` and `replied`, before merging; the new review clears it.
 - **`review` is `none`, `replied`, `stale` or `blocked` (its cause gone):** dispatch a reviewer
   (see "Dispatching a reviewer" below) once every plan task is ticked
   (`progress.<N>.plan.next` is null) and the pull request is ready (mark it ready just before,

@@ -54,6 +54,11 @@ every state is a label.
 A pass reads the current state and acts on everything it finds. Do the steps in this order, then
 start the next pass when something changes: a developer returns, the maintainer speaks, or CI
 finishes. Begin every pass with a fresh `baton sprint-status`.
+Between passes, while an agent you dispatched has not returned, end your turn after the update
+without calling `SubagentHandback`. The next return (a result or a notification), a maintainer
+message or the parent's resume message starts the next pass. `SubagentHandback` ends your run, so
+call it only at step 9, or when nothing you dispatched is out, nothing can be dispatched and every
+remaining issue waits on the maintainer.
 Each pass also runs `baton notify --rules`, so issues that match the brief's `notify:` rules are mentioned once.
 
 **With `/baton:open-questions` in the same session**, keep making passes as usual. Its refiners
@@ -87,6 +92,7 @@ The states handled for each `in_review` entry:
 - Spike outcomes: `infeasible`, `single`, `multiple`, `partial`.
 - Plan not finished.
 - `review` states: `none`, `replied`, `stale`, `blocked`, `repeated`, `changes`, `replan`, `escalate`, `approved`, `not-required`.
+- `review_requested` (tier 2).
 - `re_refine`.
 - Conflicts, cancelled CI and `merge-pr` refusals.
 
@@ -182,6 +188,7 @@ is running:
    sprint where details are given in the session. Give: what was delivered and what was carried
    over (each with links), the decisions made, what went wrong and its root cause, quota use, the
    spike outcomes and prototypes, the retrospective pull request, the `baton clean` report (how many worktrees and log folders were removed, and each one kept with its reason), and what still needs the maintainer (including any `cannot remove` lines).
+   This full response is the `SubagentHandback` message.
 
 ## Scheduled runs
 

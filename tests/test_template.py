@@ -313,6 +313,19 @@ class TemplateTest(unittest.TestCase):
             self.assertIn(needle, text)
         self.assertNotIn("#248", text)
 
+    def test_orchestrator_waits_for_returns(self):
+        # Issue #326: the orchestrator handed back right after dispatching developers.
+        agent = " ".join((ROOT / "agents/baton-orchestrator.md").read_text().split())
+        self.assertIn("without calling `SubagentHandback`", agent)
+        self.assertIn("has not returned", agent)
+        skill = " ".join((ROOT / "skills/sprint/SKILL.md").read_text().split())
+        self.assertIn("without calling `SubagentHandback`", skill)
+        self.assertIn("has not returned", skill)
+        parent = " ".join((ROOT / "references/sprint-parent.md").read_text().split())
+        for needle in ("hand-back", "task-notification",
+                       "MAINTAINER: an agent you dispatched returned; run baton sprint-status first."):
+            self.assertIn(needle, parent)
+
     def test_sprint_skill_names_orchestrator_role_variable(self):
         text = sprint_text()
         self.assertIn("BATON_ROLE", text)
