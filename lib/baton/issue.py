@@ -188,8 +188,9 @@ def approval_problem(issue, maintainers, bots=(), assigned=None):
 
     The approval is the latest comment by a maintainer (never a Baton login) that is unmarked and
     exactly `/baton ready`. An edit of the body by anyone but a maintainer or a Baton login after
-    it drops it; an unreadable edit history fails closed. `assigned` (an `assignment(...)` result)
-    made by a maintainer counts as an approval too; the newer of the two is the approval used.
+    it, or at the same second (the forge cannot order them), drops it; an unreadable edit history
+    fails closed. `assigned` (an `assignment(...)` result) made by a maintainer counts as an
+    approval too; the newer of the two is the approval used.
     """
     latest = None
     for comment in issue.get("comments") or []:
@@ -215,7 +216,7 @@ def approval_problem(issue, maintainers, bots=(), assigned=None):
         if has_login(editor, maintainers) or has_login(editor, list(bots)):
             continue
         edited = _when(edit.get("editedAt"))
-        if approved_at is not None and edited is not None and edited <= approved_at:
+        if approved_at is not None and edited is not None and edited < approved_at:
             continue
         if newest is None or (edited is not None and (_when(newest.get("editedAt")) or edited) <= edited):
             newest = edit
