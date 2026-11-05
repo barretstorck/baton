@@ -257,7 +257,8 @@ def _triage_queue():
         "overdue": late["number"] if late else None,
         "stale": triage.stale(issues, cfg, now, block["stale_days"], _maintainers(cfg)),
         "reproduce": triage.reproduce_candidates(
-            issues, cfg, now, block["max_reproductions_per_day"], closed=closed),
+            issues, cfg, now, block["max_reproductions_per_day"], closed=closed,
+            maintainers=_maintainers(cfg), bots=_bots()),
     }, indent=2))
     return 0
 
