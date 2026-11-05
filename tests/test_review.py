@@ -446,6 +446,12 @@ class PostGateTest(unittest.TestCase):
             review.post(cfg(), runner, 9, "approve", NEW, "Looks right.", [], OWNER)
         self.assertFalse(any("pr comment" in line for line in runner.lines()))
 
+    def test_tier_0_posts_a_comment_never_a_review(self):
+        runner = pr_runner([reply()])
+        review.post(cfg(), runner, 9, "approve", NEW, "Looks right.", [], OWNER)
+        self.assertTrue(any(line.startswith("gh pr comment 9") for line in runner.lines()))
+        self.assertFalse(any(line.startswith("gh pr review") for line in runner.lines()))
+
     def test_approve_refused_with_open_plan_task(self):
         runner = pr_runner(closing=[4], issue_body=self.PLAN_OPEN)
         with self.assertRaises(review.ReviewError):

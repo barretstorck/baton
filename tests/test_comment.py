@@ -103,6 +103,35 @@ class PostTest(unittest.TestCase):
             comment.post(cfg(), FakeRunner(), "release", 7, "developer", "status", "x", [])
 
 
+class PublishReviewTest(unittest.TestCase):
+    URL = "https://example.com/pull/7#pullrequestreview-5"
+    READ = "gh api --paginate repos/{owner}/{repo}/pulls/7/reviews?per_page=100 --jq .[] | select(.user.login"
+
+    def runner(self, reply=None):
+        return FakeRunner({self.READ: self.URL + "\n" if reply is None else reply})
+
+    def test_each_event_posts_a_review_with_a_body_file(self):
+        for event in ("approve", "request-changes", "comment"):
+            with self.subTest(event=event):
+                runner = self.runner()
+                url = comment.publish_review(cfg(), runner, 7, "text", [], event, "baton-reviewer[bot]")
+                self.assertEqual(url, self.URL)
+                self.assertEqual(runner.calls[0][:5], ["gh", "pr", "review", "7", f"--{event}"])
+                self.assertEqual(runner.calls[0][5], "--body-file")
+                self.assertFalse(any(c[:3] == ["gh", "pr", "comment"] for c in runner.calls))
+
+    def test_private_text_is_refused_before_any_review(self):
+        runner = self.runner()
+        with self.assertRaises(comment.CommentError):
+            comment.publish_review(cfg(), runner, 7, "the Zebrowski set", ["Zebrowski"],
+                                   "approve", "baton-reviewer[bot]")
+        self.assertEqual(runner.calls, [])
+
+    def test_missing_url_is_an_error(self):
+        with self.assertRaises(comment.CommentError):
+            comment.publish_review(cfg(), self.runner(" \n"), 7, "text", [], "comment", "x[bot]")
+
+
 class BodyArgumentTest(unittest.TestCase):
     def test_dash_reads_the_body_from_stdin(self):
         import io

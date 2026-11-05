@@ -16,10 +16,10 @@ from .config import has_login
 # The one place a verdict is defined. `tasks` is "none" (a `## Tasks` section is
 # refused) or "required"; `round` says whether the verdict counts toward review.max_rounds.
 VERDICTS = {
-    "approve": {"title": "approved", "tasks": "none", "round": False},
-    "changes": {"title": "changes requested", "tasks": "required", "round": True},
-    "blocked": {"title": "blocked", "tasks": "none", "round": False},
-    "replan": {"title": "replan requested", "tasks": "none", "round": True},
+    "approve": {"title": "approved", "tasks": "none", "round": False, "event": "approve"},
+    "changes": {"title": "changes requested", "tasks": "required", "round": True, "event": "request-changes"},
+    "blocked": {"title": "blocked", "tasks": "none", "round": False, "event": "comment"},
+    "replan": {"title": "replan requested", "tasks": "none", "round": True, "event": "request-changes"},
 }
 BLOCKED_CAUSES = ("default-branch", "environment")
 VERIFY_STATES = ("green", "red", "timeout", "missing", "none")
@@ -418,7 +418,11 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, ho
         if wrong:
             raise ReviewError(f"this is round {round_}: tasks must be open and numbered "
                               f"{round_}.1, {round_}.2 ... (not {', '.join(wrong)})")
+    logins = identity.reviewer_logins()
     try:
+        if logins:
+            return comment.publish_review(cfg, runner, number, text, terms,
+                                          VERDICTS[verdict]["event"], sorted(logins)[0])
         return comment.publish(cfg, runner, "pr", number, text, terms, role="reviewer")
     except comment.CommentError as error:
         raise ReviewError(str(error)) from error

@@ -29,6 +29,25 @@ class Tier1Test(unittest.TestCase):
     def tokens(self, runner):
         return [e and e["GH_TOKEN"] for e in runner.envs]
 
+    def test_review_post_is_a_formal_review_by_the_reviewer(self):
+        from tests.test_review import NEW, TASKS_NEW
+        read = "gh api --paginate repos/{owner}/{repo}/pulls/9/reviews?per_page=100 --jq .[] | select(.user.login"
+        bodies = {"approve": ("Looks right.", "approve"),
+                  "changes": (TASKS_NEW, "request-changes"),
+                  "replan": ("## Feedback\nThe plan is wrong.", "request-changes"),
+                  "blocked": ("Cause: environment\n\n## Reason\nNo tool.", "comment")}
+        for verdict, (body, event) in bodies.items():
+            with self.subTest(verdict=verdict):
+                runner = pr_runner()
+                runner.replies[read] = "https://x/pull/9#pullrequestreview-8\n"
+                url = review.post(cfg(), runner, 9, verdict, NEW, body, [], OWNER)
+                self.assertEqual(url, "https://x/pull/9#pullrequestreview-8")
+                posted = [i for i, c in enumerate(runner.calls) if c[:4] == ["gh", "pr", "review", "9"]]
+                self.assertEqual(len(posted), 1)
+                self.assertEqual(runner.calls[posted[0]][4], f"--{event}")
+                self.assertEqual(self.tokens(runner)[posted[0]], "tok-reviewer")
+                self.assertFalse(any(c[:3] == ["gh", "pr", "comment"] for c in runner.calls))
+
     def test_comment_post_uses_the_role(self):
         for role, want in (("developer", "tok-baton"), ("reviewer", "tok-reviewer")):
             runner = FakeRunner()
