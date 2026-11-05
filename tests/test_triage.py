@@ -551,6 +551,38 @@ class ReproduceTests(unittest.TestCase):
             [own, outside, relayed], make_cfg(), NOW, 5, maintainers=["Boss"]), [2, 3])
 
 
+class HandoffAuthorTests(unittest.TestCase):
+    def handoff(self, login, quoted=False, bot=False):
+        body = comment.compose("orchestrator", "status", triage.REPRO_MARK + "\nhanded")
+        if quoted:
+            body = "> " + body
+        author = {"login": login}
+        if bot:
+            author["type"] = "Bot"
+        issue = bug(1)
+        issue["comments"] = [{"createdAt": stamp(hours=1), "author": author, "body": body}]
+        return issue
+
+    def test_outside_comment_with_marker_does_not_count(self):
+        issue = self.handoff("mallory")
+        self.assertEqual(triage.handoffs_last_day([issue], NOW, ["Boss"]), 0)
+        self.assertEqual(triage.reproduce_candidates([issue], make_cfg(), NOW, 1, ["Boss"]), [1])
+
+    def test_quoted_marker_does_not_count(self):
+        issue = self.handoff("Boss", quoted=True)
+        self.assertEqual(triage.handoffs_last_day([issue], NOW, ["Boss"]), 0)
+
+    def test_maintainer_handoff_counts(self):
+        issue = self.handoff("boss")
+        self.assertEqual(triage.handoffs_last_day([issue], NOW, ["Boss"]), 1)
+        self.assertEqual(triage.reproduce_candidates([issue, bug(2)], make_cfg(), NOW, 5, ["Boss"]),
+                         [2])
+
+    def test_app_handoff_counts(self):
+        issue = self.handoff("baton-orchestrator", bot=True)
+        self.assertEqual(triage.handoffs_last_day([issue], NOW, ["baton-orchestrator[bot]"]), 1)
+
+
 class QueueCommandTests(unittest.TestCase):
     def drive(self, issues, home, args=("triage", "queue"), since="", closed=(), cap=3):
         import io
