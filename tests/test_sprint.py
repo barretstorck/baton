@@ -866,6 +866,38 @@ class DefaultBranchStateTest(unittest.TestCase):
         self.assertNotIn("assigned_to_baton", result["issues"][0])
         self.assertFalse([c for c in runner.calls if "timeline" in " ".join(c)])
 
+    def _requested(self, by, at, machine="baton-bot", requests=("baton-bot",), mach=True):
+        head = "f" * 40
+        approved = dict(comment(OWNER, review.compose("approve", head, "ok"), 1),
+                        createdAt="2026-11-01T10:00:00Z")
+        prs = [{"number": 30, "headRefName": "issue-1-x", "isDraft": False,
+                "mergeable": "MERGEABLE", "headRefOid": head, "comments": [approved],
+                "closingIssuesReferences": [{"number": 1}], "statusCheckRollup": [],
+                "reviewRequests": [{"login": n} for n in requests]}]
+        line = f"review_requested\t{by}\t{machine}\t{at}\n"
+        runner = FakeRunner(replies(
+            [issue(1, "in-review", "deliverable")], prs=prs,
+            extra={"gh api --paginate repos/{owner}/{repo}/issues/30/timeline": line}))
+        result = sprint.snapshot(cfg(), runner, machine="baton-bot" if mach else None)
+        return result["in_review"][0], runner
+
+    def test_maintainer_review_request_after_a_review_is_flagged(self):
+        entry, _ = self._requested(OWNER, "2026-11-02T10:00:00Z")
+        self.assertTrue(entry["review_requested"])
+
+    def test_old_or_outside_review_request_is_not_flagged(self):
+        entry, _ = self._requested(OWNER, "2026-10-31T10:00:00Z")
+        self.assertFalse(entry["review_requested"])
+        entry, _ = self._requested("stranger", "2026-11-02T10:00:00Z")
+        self.assertFalse(entry["review_requested"])
+        entry, _ = self._requested(OWNER, "2026-11-02T10:00:00Z", requests=())
+        self.assertFalse(entry["review_requested"])
+
+    def test_no_machine_adds_no_review_requested_and_reads_no_timeline(self):
+        entry, runner = self._requested(OWNER, "2026-11-02T10:00:00Z", mach=False)
+        self.assertNotIn("review_requested", entry)
+        self.assertFalse([c for c in runner.calls if "timeline" in " ".join(c)])
+
     def test_issue_by_a_baton_login_is_not_outside(self):
         item = issue(5, "ready", "deliverable", author="app/baton")
         held = sprint.snapshot(cfg(), FakeRunner(replies([item])))

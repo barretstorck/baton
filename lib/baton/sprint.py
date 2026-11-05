@@ -231,6 +231,18 @@ def spikes_first(entries, spike_flags, cap):
             "spikes": spikes[:cap], "left_out": spikes[cap:], "cap": cap}
 
 
+def _review_requested(pr, runner, machine, maintainers, bots, latest_at):
+    """True when a maintainer's open review request for `machine` is newer than the latest review."""
+    if not issue_fields.has_login({"login": machine},
+                                  [r.get("login") for r in pr.get("reviewRequests") or []]):
+        return False
+    asked = issue_fields.review_request(
+        issue_fields.timeline(runner, pr["number"]) or [], machine)
+    if not issue_fields._assignment_counts(asked, maintainers, bots):
+        return False
+    return not latest_at or (asked.get("at") or "") > latest_at
+
+
 def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None):
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     owner, branch = repo["owner"]["login"], repo["defaultBranchRef"]["name"]
@@ -399,19 +411,26 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None):
             result["in_dev"].append(number)
         elif status == "status:in-review":
             pr = pr_for.get(number)
+            latest_at = None
             if pr and cfg.data["review"]["required"]:
                 found = review.current(pr, trusted, cfg, runner, branch,
                                        list(maintainers) + sorted(bots))
                 review_state, rounds = found["state"], found["rounds"]
+                latest_at = (found.get("review") or {}).get("at")
             else:
                 review_state, rounds = "not-required", 0
-            result["in_review"].append({
+            entry = {
                 "number": number, "pr": pr["number"] if pr else None,
                 "draft": pr["isDraft"] if pr else None,
                 "ci": _pr_ci(pr, cfg, runner) if pr else "none",
                 "mergeable": pr["mergeable"] if pr else None,
                 "review": review_state, "rounds": rounds,
-                "verify": _pr_verify(pr, cfg, runner, owner, reviewers) if pr else "none"})
+                "verify": _pr_verify(pr, cfg, runner, owner, reviewers) if pr else "none"}
+            if machine:
+                entry["review_requested"] = bool(
+                    pr and cfg.data["review"]["required"]
+                    and _review_requested(pr, runner, machine, maintainers, bots, latest_at))
+            result["in_review"].append(entry)
         elif status == "status:verification":
             result["verification"].append(number)
         elif status == "status:refinement" and item["state"] == "OPEN":
