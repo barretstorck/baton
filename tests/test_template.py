@@ -300,6 +300,13 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("Spike for:", tmpl)
         self.assertIn("Origin: outside", tmpl)
 
+    def test_refine_skill_sets_outcome_of_created_spikes(self):
+        text = " ".join((ROOT / "skills/refine/SKILL.md").read_text().split())
+        self.assertTrue("run `baton ready-check <spike>` and set its outcome as in step 7" in text)
+        self.assertTrue("each spike you created and its status" in text)
+        agent = " ".join((ROOT / "agents/baton-refiner.md").read_text().split())
+        self.assertTrue("each spike you created and its status" in agent)
+
     def test_sprint_skill_reconnects_orchestrator(self):
         text = " ".join((ROOT / "references/sprint-parent.md").read_text().split())
         for needle in ("baton orchestrator-agent", "SendMessage", "partial"):
