@@ -20,10 +20,10 @@ For each entry in `in_review`. Its task progress is `progress.<N>` in `sprint-st
 
      It takes no developer slot. Then close the spike.
   3. `multiple`: file the follow-ups the findings propose that are worth having (`skills/sprint/SKILL.md`, step 6, Follow-ups), each
-     with the spike's `Spike for:` and `Origin: outside` lines under its Pointers and "see #<S>" in
+     with the spike's `Spike for:` and `Origin: outside (@<login>)` lines under its Pointers and "see #<S>" in
      its Context. Post a `status` comment on `<O>` linking them, then close the spike.
   4. `partial`: file a follow-up spike for the open questions (title `[SPIKE] ...`, label
-     `type:spike`, `status:refinement`, the same `Spike for:` and `Origin: outside` lines, its
+     `type:spike`, `status:refinement`, the same `Spike for:` and `Origin: outside (@<login>)` lines, its
      Context listing the open questions). Replace `Blocked by: #<S>` on `<O>` with
      `Blocked by: #<new spike>`. Judge from the findings which of 1 to 3 the answered questions
      amount to and apply it to them. Then close the spike.

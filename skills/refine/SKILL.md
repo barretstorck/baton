@@ -93,7 +93,7 @@ issue body, written by `baton plan set`.
      spike for them, whose acceptance criteria are the questions to answer. Create it with
      `gh issue create --title "[SPIKE] <title>" --label type:spike --body-file <file>` from the issue template, in
      `status:refinement`. Put `Spike for: #<original>` in the spike's Pointers. If the original's
-     description has a line starting `Origin: outside`, copy that line into the spike's Pointers
+     description has an `Origin: outside (@<login>)` line, copy that line into the spike's Pointers
      unchanged. Then add `Blocked by: #<spike>` to the original's Pointers (append to an existing
      `Blocked by:` line) and keep the original in `status:refinement` until the spike is done.
      For a spike, read `spike` from `baton config`. For each part (`tokens`, `minutes`) that has a
