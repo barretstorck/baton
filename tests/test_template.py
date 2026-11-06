@@ -123,6 +123,16 @@ class TemplateTest(unittest.TestCase):
                        "Token budget reached", "baton budget"):
             self.assertIn(needle, text)
 
+    def test_research_findings_are_posted_from_a_file(self):
+        text = " ".join((ROOT / "skills" / "research" / "SKILL.md").read_text().split())
+        self.assertIn("baton comment issue <N> researcher findings .baton-scratch/comment.txt",
+                      text)
+        self.assertIn("`git fetch origin refs/spikes/<N>`", text)
+        self.assertNotIn("no file is needed", text)
+        for path in ("references/github.md", "references/develop-cases.md"):
+            body = " ".join((ROOT / path).read_text().split())
+            self.assertIn("names a `git` command", body, path)
+
     def test_refine_skill_sets_timebox(self):
         text = " ".join((ROOT / "skills" / "refine" / "SKILL.md").read_text().split())
         for needle in ("Timebox: <tokens> tokens, <minutes> min", "spike.tokens",
