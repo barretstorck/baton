@@ -45,6 +45,14 @@ class TemplateTest(unittest.TestCase):
         self.assertLess(text.index("  - Provides:"), text.index("  - Provides (as built):"))
         self.assertLess(text.index("  - Provides (as built):"), text.index("  - Check:"))
 
+    def test_plan_has_result_line_for_measurement_tasks(self):
+        text = (ROOT / "templates" / "plan.md").read_text()
+        self.assertLess(text.index("  - Port from:"), text.index("  - Result:"))
+        self.assertLess(text.index("  - Result:"), text.index("  - Check:"))
+        refine = " ".join((ROOT / "skills" / "refine" / "SKILL.md").read_text().split())
+        self.assertIn("- Result:", refine)
+        self.assertIn("changes no code", refine)
+
     def test_issue_template_has_no_plan_line_or_checkbox_criteria(self):
         text = (ROOT / "templates" / "issue.md").read_text()
         self.assertNotIn("Plan:", text)
@@ -63,6 +71,12 @@ class TemplateTest(unittest.TestCase):
         text = " ".join(develop_text().split())
         self.assertIn("cannot be declined as \"outgrows the issue\"", text)
         self.assertIn("name the evidence", text)
+
+    def test_develop_skill_writes_result_line(self):
+        text = " ".join(develop_text().split())
+        self.assertIn("Result: none | <where it was written>", text)
+        self.assertIn("gh pr edit <P> --body-file", text)
+        self.assertIn("Port from, Result and Check", text)
 
     def test_develop_skill_has_scratch_file_rule(self):
         text = develop_text()
@@ -122,6 +136,16 @@ class TemplateTest(unittest.TestCase):
         for needle in ("Timebox reached", "Started:", "Timebox:",
                        "Token budget reached", "baton budget"):
             self.assertIn(needle, text)
+
+    def test_research_findings_are_posted_from_a_file(self):
+        text = " ".join((ROOT / "skills" / "research" / "SKILL.md").read_text().split())
+        self.assertIn("baton comment issue <N> researcher findings .baton-scratch/comment.txt",
+                      text)
+        self.assertIn("`git fetch origin refs/spikes/<N>`", text)
+        self.assertNotIn("no file is needed", text)
+        for path in ("references/github.md", "references/develop-cases.md"):
+            body = " ".join((ROOT / path).read_text().split())
+            self.assertIn("names a `git` command", body, path)
 
     def test_refine_skill_sets_timebox(self):
         text = " ".join((ROOT / "skills" / "refine" / "SKILL.md").read_text().split())

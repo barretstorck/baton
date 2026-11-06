@@ -59,6 +59,9 @@ filters, send long output to a file, chain related commands, wait for a long run
    - `partial`: the time or token limit was reached with questions open, or some questions could
      not be answered; the findings list what was answered and what is still open. A spike that
      ends with "Timebox reached" always has `partial`.
+
+   The findings always go through a file: write them with the Write tool to `.baton-scratch/comment.txt`, then run
+   `baton comment issue <N> researcher findings .baton-scratch/comment.txt`. The `Prototype:` line names a `git` command, and Claude Code refuses a command line that names `git` inside a heredoc.
 6. Delete the remote branch with `git push origin --delete issue-<N>-<slug>` (a spike without
    prototype code has no branch), then `baton set-status <N> status:in-review`.
 7. Return `DONE` with the findings comment URL and the prototype ref, if any.
@@ -86,11 +89,14 @@ A spike may carry a limit in tokens, minutes or both.
 
 ## Posting a comment
 
-Pass the body on standard input with an inline heredoc; no file is needed:
+Pass the body on standard input with an inline heredoc:
 
     baton comment issue <N> researcher <kind> - <<'EOF'
     <the body>
     EOF
+
+A body that names a `git` command (the findings always do) is written to `.baton-scratch/comment.txt` and passed as that path in place of `-`.
+Claude Code's worktree isolation refuses a command line that names `git` inside a heredoc.
 
 `baton comment` scans the text, adds the Baton marker and prints the comment's URL. If it
 refuses because of a privacy finding, replace the detail with a placeholder and post again.

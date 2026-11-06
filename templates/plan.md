@@ -23,6 +23,7 @@ Choices and reasons that do not belong in the issue.
   - Provides: the exact signatures later tasks rely on
   - Provides (as built): (optional; the developer adds it under Provides only when the code differs from it, and keeps the original line)
   - Port from: `path:first-last` (when porting; leave out otherwise)
+  - Result: where a task that changes no code (a measurement or a by-eye check) writes its result: "pull request body, section ### <heading>" or "status comment on the issue"; leave out otherwise
   - Check: the test or subset that proves this task done, a build, or "none"
 
   </details>
