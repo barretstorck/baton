@@ -364,6 +364,12 @@ class DeveloperPlanReadyTest(unittest.TestCase):
     def test_developer_plan_is_ready(self):
         self.assertEqual(self.problems(DEV_HEAD + DEV_PLAN), [])
 
+    def test_line_number_pointer_is_not_ready(self):
+        body = DEV_HEAD + DEV_PLAN.replace("`src/cli.py`", "`src/cli.py:40`")
+        found = self.problems(body)
+        self.assertEqual(len(found), 1)
+        self.assertIn("task 1", found[0])
+
     def test_old_form_task_line_is_not_ready(self):
         body = DEV_HEAD + DEV_PLAN.replace("Task 1: Add the flag", "**1. Add the flag**")
         self.assertTrue(any("task 1" in p.lower() for p in self.problems(body)))

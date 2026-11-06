@@ -45,6 +45,20 @@ class TemplateTest(unittest.TestCase):
         self.assertLess(text.index("  - Provides:"), text.index("  - Provides (as built):"))
         self.assertLess(text.index("  - Provides (as built):"), text.index("  - Check:"))
 
+    def test_plans_anchor_on_symbols_not_lines(self):
+        plan = (ROOT / "templates" / "plan.md").read_text()
+        self.assertNotIn("file:line", plan)
+        self.assertNotIn("path:first-last", plan)
+        self.assertIn("path::", plan)
+        self.assertIn("never by line number", plan)
+        refine = (ROOT / "skills" / "refine" / "SKILL.md").read_text()
+        self.assertNotIn("(`path:line`)", refine)
+        self.assertNotIn("path:first-last", refine)
+        self.assertIn("never line numbers", refine)
+        self.assertIn("re-locate anchors", refine)
+        agent = (ROOT / "agents" / "baton-refiner.md").read_text()
+        self.assertIn("never line numbers", agent)
+
     def test_plan_has_result_line_for_measurement_tasks(self):
         text = (ROOT / "templates" / "plan.md").read_text()
         self.assertLess(text.index("  - Port from:"), text.index("  - Result:"))

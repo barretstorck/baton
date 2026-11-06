@@ -189,6 +189,36 @@ def layout_problems(body):
     return problems
 
 
+_BACKTICKED = re.compile(r"`([^`]+)`")
+_LINE_WORDS = re.compile(r"\blines?\s+\d+(?:\s*-\s*\d+)?", re.I)
+_POSITIONAL = re.compile(r"^[A-Za-z_][\w.]*\[\d+\]$")
+
+
+def line_anchor_problems(body):
+    """Messages for line-number pointers in the open tasks of a body `## Developer Plan`."""
+    text = body or ""
+    if not any(name == "developer plan" for _, name, _, _ in _headings(text)):
+        return []
+    where = span(text, "developer plan")
+    problems = []
+    for block in _blocks(text[where[0]:where[1]])[1]:
+        if block["done"]:
+            continue
+        found = []
+        for line in block["lines"][1:]:
+            for token in _BACKTICKED.findall(line):
+                token = token.strip()
+                if "//" in token:
+                    continue
+                if _LINE_SUFFIX.search(token) or _POSITIONAL.match(token):
+                    found.append(token)
+            found.extend(match.group(0) for match in _LINE_WORDS.finditer(line))
+        for match in found:
+            problems.append(f"task {block['id']}: points at code by line number or index "
+                            f"('{match}'); name the module, function, class or test instead")
+    return problems
+
+
 _PATH_LINE = re.compile(r"^\s*[-*]?\s*(?:Files|Uses|Port from):", re.I)
 _TICKED = re.compile(r"`([^`]+)`(\s*\(new\b)?")
 _PATH_EXT = (".py", ".md", ".rs", ".toml", ".yml", ".yaml", ".json", ".sh", ".js", ".ts")
