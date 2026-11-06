@@ -59,6 +59,14 @@ class TemplateTest(unittest.TestCase):
         agent = (ROOT / "agents" / "baton-refiner.md").read_text()
         self.assertIn("never line numbers", agent)
 
+    def test_plan_has_result_line_for_measurement_tasks(self):
+        text = (ROOT / "templates" / "plan.md").read_text()
+        self.assertLess(text.index("  - Port from:"), text.index("  - Result:"))
+        self.assertLess(text.index("  - Result:"), text.index("  - Check:"))
+        refine = " ".join((ROOT / "skills" / "refine" / "SKILL.md").read_text().split())
+        self.assertIn("- Result:", refine)
+        self.assertIn("changes no code", refine)
+
     def test_issue_template_has_no_plan_line_or_checkbox_criteria(self):
         text = (ROOT / "templates" / "issue.md").read_text()
         self.assertNotIn("Plan:", text)
@@ -77,6 +85,12 @@ class TemplateTest(unittest.TestCase):
         text = " ".join(develop_text().split())
         self.assertIn("cannot be declined as \"outgrows the issue\"", text)
         self.assertIn("name the evidence", text)
+
+    def test_develop_skill_writes_result_line(self):
+        text = " ".join(develop_text().split())
+        self.assertIn("Result: none | <where it was written>", text)
+        self.assertIn("gh pr edit <P> --body-file", text)
+        self.assertIn("Port from, Result and Check", text)
 
     def test_develop_skill_has_scratch_file_rule(self):
         text = develop_text()

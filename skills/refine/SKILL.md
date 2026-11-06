@@ -125,12 +125,17 @@ issue body, written by `baton plan set`.
            - Uses: `<exact signature>` (`path`)
            - Provides: `<exact signature>`
            - Port from: `path::<function or class>` (when porting)
+           - Result: <pull request body section, or status comment on the issue> (a task with no code change)
            - Check: `<the test, a filtered subset or a build that proves it done>`, or none
 
            </details>
 
    - The check is only what proves that task done, to save time when the full suite is long. Put
      the full Verification command in its own last task when it is long; CI covers the rest.
+   - A task that changes no code (a measurement or a by-eye check) has a `Result:` line naming
+     where its result is written, by default a section of the pull request body. Without it the
+     developer returns the result only in its final message and the reviewer asks for it in a fix
+     round.
    - A task is risky when its Files line marks a path `(deleted)` or `(moved to <path>)`, or when
      it adds a public name to a package `__init__`. Its `Check:` is the brief's `verify.command`
      written out in full. If that command contains `{worktree}`, write it as is and say in the
