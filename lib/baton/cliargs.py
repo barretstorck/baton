@@ -446,11 +446,14 @@ def _declare_triage(subs):
 
 def _declare_git_hook(subs):
     usage = ("usage: baton git-hook pre-commit | commit-msg <message-file> | "
-             "pre-push")
+             "pre-push [<remote> [<url>]]")
     actions = _nested(subs, "git-hook", usage)
     _leaf(actions, "pre-commit", usage)
     _leaf(actions, "commit-msg", usage).add_argument("message_file")
-    _leaf(actions, "pre-push", usage)
+    # git passes the remote's name and URL; the refs to scan arrive on stdin.
+    pre_push = _leaf(actions, "pre-push", usage)
+    pre_push.add_argument("remote", nargs="?")
+    pre_push.add_argument("url", nargs="?")
 
 
 def positive_days(text: str):

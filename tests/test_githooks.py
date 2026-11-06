@@ -382,6 +382,38 @@ class CommitMsgDispatchTest(unittest.TestCase):
         self.assertIn("Baton blocked this commit", out)
 
 
+class PrePushDispatchTest(unittest.TestCase):
+    """git runs pre-push with the remote's name and URL as arguments."""
+
+    def test_dispatch_accepts_remote_name_and_url(self):
+        from baton import cli
+        repo = make_repo()
+        old = os.getcwd()
+        os.chdir(repo)
+        try:
+            with mock.patch.object(cli.scan, "load_terms", return_value=TERMS), \
+                    mock.patch("sys.stdin") as stdin:
+                stdin.read.return_value = ""
+                code = cli.cmd_git_hook(["pre-push", "origin", "https://example.com/o/r.git"])
+        finally:
+            os.chdir(old)
+        self.assertEqual(code, 0)
+
+    def test_push_through_installed_hook_succeeds(self):
+        repo = make_repo()
+        remote = tempfile.mkdtemp()
+        git(remote, "init", "-q", "--bare")
+        git(repo, "remote", "add", "origin", remote)
+        baton_bin = str(pathlib.Path(__file__).resolve().parents[1] / "bin" / "baton")
+        githooks.install(repo, baton_bin)
+        # An empty plugin cache, so the hook runs this checkout's baton, not an installed one.
+        env = dict(os.environ, CLAUDE_CODE_PLUGIN_CACHE_DIR=tempfile.mkdtemp())
+        result = subprocess.run(["git", "-C", repo, "push", "-q", "origin", "main"],
+                                capture_output=True, text=True, env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(git(remote, "rev-parse", "main"), git(repo, "rev-parse", "HEAD"))
+
+
 class InstallTest(unittest.TestCase):
     def setUp(self):
         self.cache = tempfile.mkdtemp()
