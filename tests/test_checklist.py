@@ -939,6 +939,50 @@ def _section(n=2, extra=""):
             + "".join(_dev_task(i, f"T{i}") for i in range(1, n + 1)) + extra)
 
 
+
+class LineAnchorProblemsTest(unittest.TestCase):
+    HEAD = f"## Developer Plan\n\nWritten against: {SHA}\n\n### Verification\n`make`\n\n"
+
+    def body(self, *tasks):
+        return self.HEAD + "".join(tasks) + "\n## Decisions\n- kept\n"
+
+    def problems(self, uses, ticked=False):
+        task = _dev_task(1, "One", uses)
+        if ticked:
+            task = task.replace("[ ]", "[x]", 1)
+        return checklist.line_anchor_problems(self.body(task))
+
+    def test_correct_plan(self):
+        self.assertEqual(checklist.line_anchor_problems(self.body(_dev_task(1, "One"))), [])
+
+    def test_line_suffix(self):
+        problems = self.problems("  - Uses: `f(x)` (`lib/a.py:12`)\n")
+        self.assertEqual(len(problems), 1)
+        self.assertIn("task 1", problems[0])
+        self.assertIn("lib/a.py:12", problems[0])
+
+    def test_line_range(self):
+        self.assertEqual(len(self.problems("  - Port from: `lib/a.py:10-20`\n")), 1)
+
+    def test_line_words(self):
+        self.assertEqual(len(self.problems("  - Uses: see lines 40-60\n")), 1)
+
+    def test_positional_index(self):
+        self.assertEqual(len(self.problems("  - Uses: `shots[1]`\n")), 1)
+
+    def test_symbol_anchor_is_fine(self):
+        self.assertEqual(self.problems("  - Uses: `lib/a.py::helper`\n"), [])
+
+    def test_url_with_port_is_fine(self):
+        self.assertEqual(self.problems("  - Uses: `https://host:8080/x`\n"), [])
+
+    def test_ticked_task_is_skipped(self):
+        self.assertEqual(self.problems("  - Uses: `lib/a.py:12`\n", ticked=True), [])
+
+    def test_no_developer_plan(self):
+        self.assertEqual(checklist.line_anchor_problems("## Plan\n- [ ] **1. a.py:3**\n"), [])
+        self.assertEqual(checklist.line_anchor_problems(""), [])
+
 class SetPlanTest(unittest.TestCase):
     def test_replaces_section_and_keeps_surroundings(self):
         body = "## Context\nx\n\n## Developer Plan\nold\n\n## Decisions\n- kept\n"
