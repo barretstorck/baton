@@ -327,6 +327,7 @@ def ready_problems(issue, cfg, owner, runner=None, bots=(), assigned=None):
         else:
             if not link:
                 problems.extend(checklist.layout_problems(plan_text))
+                problems.extend(checklist.line_anchor_problems(plan_text))
             if not found["written_against"]:
                 problems.append("the plan needs a 'Written against: <full commit sha>' line")
             ids = [task["id"] for task in found["tasks"]]
