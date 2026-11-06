@@ -92,11 +92,14 @@ merged, missing access, a failing default branch.
 
 ## Posting a comment
 
-Pass the body on standard input with an inline heredoc; no file is needed:
+Pass the body on standard input with an inline heredoc:
 
     baton comment issue <N> developer <kind> - <<'EOF'
     <the body>
     EOF
+
+A body that names a `git` command is written to `.baton-scratch/comment.txt` and passed as that path in place of `-`.
+Claude Code's worktree isolation refuses a command line that names `git` inside a heredoc.
 
 `baton comment` scans the text, adds the Baton marker and prints the comment's URL. If it
 refuses because of a privacy finding, replace the detail with a placeholder and post again.

@@ -43,6 +43,8 @@ only with `baton task done`. `baton merge-pr` merges in one pass; the plan lives
 Where a row says "write ... to a file", an inline heredoc works too and needs no file; with `gh` pass it as `--body`:
 `--body "$(cat <<'EOF'` on one line, the text, then `EOF` and `)"` on the last two lines.
 
+A body that names a `git` command must be a file, because Claude Code's worktree isolation refuses a command line that names `git` inside a heredoc.
+
 ## Rules the publish gate enforces
 
 The gate is a text scanner. It checks commands that talk to a forge (`gh`, `glab`, `tea`, `fj`,
