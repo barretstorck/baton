@@ -29,6 +29,8 @@ Choices and reasons that do not belong in the issue.
 
 (Optional, on its own line in a task's details: `Allows: forbid_added "<glob>"` lets that task add lines the brief's `forbid_added` rule for `<glob>` otherwise refuses. A task that is risky, or whose check is slow, says so in a note in its details.)
 
+(Name code by function, class and test, written `path::name`, never by line number or positional index.)
+
 (A task whose Files line marks a path `(deleted)` or `(moved to <path>)`, or that adds a public name to a package `__init__`, uses the whole-suite check described in the refine skill as its `Check:`.)
 
 (Not for spikes. This section is written into the issue body by `baton plan set`. A brief holds no heading of level 1 or 2. Tasks run in order, one developer each. No code here; the developer writes it.)

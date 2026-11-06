@@ -50,6 +50,7 @@ class TemplateTest(unittest.TestCase):
         self.assertNotIn("file:line", plan)
         self.assertNotIn("path:first-last", plan)
         self.assertIn("path::", plan)
+        self.assertIn("never by line number", plan)
         refine = (ROOT / "skills" / "refine" / "SKILL.md").read_text()
         self.assertNotIn("(`path:line`)", refine)
         self.assertNotIn("path:first-last", refine)
