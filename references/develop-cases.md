@@ -66,7 +66,7 @@ is missing, a task is in the wrong order), propose new tasks instead of improvis
 
 - Write them in the plan's task form (`- [ ] Task <n>: <title>` followed by an indented
   `<details>` block whose summary is "Click to see plan details" and whose two-space bullets are
-  Files, Uses, Provides, Port from and Check), numbered from the task you were given, replacing it and every open
+  Files, Uses, Provides, Port from, Result and Check), numbered from the task you were given, replacing it and every open
   task after it.
 - Say why in one paragraph, and whether the new tasks stay inside the issue's acceptance
   criteria. If they would change what the issue promises, say so plainly.

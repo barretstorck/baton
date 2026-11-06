@@ -72,6 +72,12 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("cannot be declined as \"outgrows the issue\"", text)
         self.assertIn("name the evidence", text)
 
+    def test_develop_skill_writes_result_line(self):
+        text = " ".join(develop_text().split())
+        self.assertIn("Result: none | <where it was written>", text)
+        self.assertIn("gh pr edit <P> --body-file", text)
+        self.assertIn("Port from, Result and Check", text)
+
     def test_develop_skill_has_scratch_file_rule(self):
         text = develop_text()
         self.assertIn("\n## Scratch files\n", text)
