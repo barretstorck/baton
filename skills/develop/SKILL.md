@@ -52,7 +52,7 @@ filters, send long output to a file, chain related commands, wait for a long run
      `baton answers <N>`.
    - Both briefs and the agent rules, and `baton config`.
    - Not the other tasks' briefs, and not the whole codebase: the brief names your files,
-     signatures and line ranges.
+     signatures, functions and tests; find them with `rg -n`.
 
 2. **Check the plan still fits.**
    `git fetch --quiet origin <default> && git diff --stat <written-against> origin/<default> -- <your task's files>`.

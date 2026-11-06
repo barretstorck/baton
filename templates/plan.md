@@ -19,10 +19,10 @@ Choices and reasons that do not belong in the issue.
   <summary>Click to see plan details</summary>
 
   - Files: `path/one` (new), `path/two`, `path/old` (deleted), `path/moved` (moved to `path/new`)
-  - Uses: the exact signatures this task relies on, with `file:line`
+  - Uses: the exact signatures this task relies on, with the file and function or class (`path::name`)
   - Provides: the exact signatures later tasks rely on
   - Provides (as built): (optional; the developer adds it under Provides only when the code differs from it, and keeps the original line)
-  - Port from: `path:first-last` (when porting; leave out otherwise)
+  - Port from: `path::<function or class>` (when porting; leave out otherwise)
   - Check: the test or subset that proves this task done, a build, or "none"
 
   </details>

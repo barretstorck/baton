@@ -11,7 +11,8 @@ skills:
 
 You refine the issues you were given, one after another, following the preloaded `refine` skill
 step by step. Read code with filters (`rg -n`, `sed -n`, line ranges), not whole files, so your
-conversation stays small across several issues.
+conversation stays small across several issues. Task briefs name code by stable anchors (module,
+function or class, and test name), never line numbers or positional indices.
 
 You do not implement anything, open pull requests or start other agents. You work in your own
 worktree and may build the project, run tests and try things out there. The only thing you

@@ -48,7 +48,7 @@ handled by "Re-refining after a spike" below, then step 4 onward.
 | Verification | present, not empty (in the plan's Verification sub-section; in the issue for a spike) | A command that actually exists in the repository |
 | Type label | one `type:` label | Correct type |
 | Size | none | One outcome; a developer can finish it in one pull request |
-| `## Developer Plan` (not for spikes) | in the body: `Written against:`, Verification sub-section and tasks numbered 1, 2, 3 in the details layout | Each task is one unit of work with its own check (a task that deletes or moves a module, or adds a public name to a package `__init__`, checks with the whole `verify` command); the briefs name exact files, signatures and line ranges; tasks run in order |
+| `## Developer Plan` (not for spikes) | in the body: `Written against:`, Verification sub-section and tasks numbered 1, 2, 3 in the details layout | Each task is one unit of work with its own check (a task that deletes or moves a module, or adds a public name to a package `__init__`, checks with the whole `verify` command); the briefs name exact files, signatures, functions, classes and tests, never line numbers or positional indices; tasks run in order |
 
 The issue template is `${CLAUDE_PLUGIN_ROOT}/templates/issue.md`; the plan template is
 `${CLAUDE_PLUGIN_ROOT}/templates/plan.md`. The plan is the `## Developer Plan` section of the
@@ -122,9 +122,9 @@ issue body, written by `baton plan set`.
            <summary>Click to see plan details</summary>
 
            - Files: `path/one` (new), `path/two`
-           - Uses: `<exact signature>` (`path:line`)
+           - Uses: `<exact signature>` (`path`)
            - Provides: `<exact signature>`
-           - Port from: `path:first-last` (when porting)
+           - Port from: `path::<function or class>` (when porting)
            - Check: `<the test, a filtered subset or a build that proves it done>`, or none
 
            </details>
@@ -147,8 +147,15 @@ issue body, written by `baton plan set`.
    - Before a risky task, the plan updates the modules and tests that still import the deleted or
      moved name, in an earlier task or the same one. Find them with `rg -n` and name them in
      Files, so the check can pass.
-   - No code in the plan: the developer writes it. Exact names, signatures and line ranges are
-     what keep the developer from searching.
+   - No code in the plan: the developer writes it. Exact names and signatures keep the developer
+     from searching. Briefs name code by stable anchors (module, function or class, and the
+     test's name, written `path::name`), never line numbers or positional indices such as
+     `shots[1]`, because earlier pull requests in the same sprint move lines; `baton ready-check`
+     reports them.
+   - When another open issue names one of this issue's expected files (find them with
+     `gh issue list --state open --search "\"<path>\" in:body" --json number,title`, then
+     `baton issue read <M> | rg -n "^Expected files:"`), add a `### Design notes` line
+     "re-locate anchors after merging `<default>`; files also changed by #M".
    - Someone who has not read the issue's discussion must be able to do each task from its brief,
      the issue's Context, Acceptance criteria and Decisions alone.
 
@@ -281,15 +288,15 @@ branch as it stands. Work in your own worktree and do these in order:
    the plan from the `## Developer Plan` section of the body and `baton tasks issue <N>`.
 2. **Check out the branch head and investigate.** `git fetch origin <branch>` and
    `git checkout --detach origin/<branch>`, then note `git rev-parse HEAD` (the full sha). Look
-   at the code as the branch stands: what the ticked tasks did, and which files and line ranges
-   the open tasks name have moved. Run tests there if useful.
+   at the code as the branch stands: what the ticked tasks did, and which files, functions and tests
+   the open tasks name have moved or changed. Run tests there if useful.
 3. **Decide.** When the acceptance criteria cannot be met or are wrong, ask the maintainer as
    under "Questions", run `baton notify <N> stuck <file | ->` and stop; the plan stays untouched. Criteria change
    only after the maintainer agrees on the issue, recorded under `## Decisions`. Otherwise go on.
 4. **Rewrite the open tasks.** Keep every ticked task. Write the new open tasks to a file in the
    plan's task form (checkbox line plus details block) and run `baton plan replace <N> <first-open-task> <file>` (add
    `baton plan insert` for a task before an open one when `baton plan` lists it). Briefs name the
-   branch's current files, signatures and line ranges; mark `(new)` only files absent from the
+   branch's current files, signatures, functions and tests; mark `(new)` only files absent from the
    branch. Add tasks that undo work already on the branch when the review needs it (name the
    files or `Task <n>:` commits to revert). At least one open task must remain; if the review's
    concern needs none, ask the maintainer instead of marking ready.
