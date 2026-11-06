@@ -45,6 +45,14 @@ class TemplateTest(unittest.TestCase):
         self.assertLess(text.index("  - Provides:"), text.index("  - Provides (as built):"))
         self.assertLess(text.index("  - Provides (as built):"), text.index("  - Check:"))
 
+    def test_plan_has_result_line_for_measurement_tasks(self):
+        text = (ROOT / "templates" / "plan.md").read_text()
+        self.assertLess(text.index("  - Port from:"), text.index("  - Result:"))
+        self.assertLess(text.index("  - Result:"), text.index("  - Check:"))
+        refine = " ".join((ROOT / "skills" / "refine" / "SKILL.md").read_text().split())
+        self.assertIn("- Result:", refine)
+        self.assertIn("changes no code", refine)
+
     def test_issue_template_has_no_plan_line_or_checkbox_criteria(self):
         text = (ROOT / "templates" / "issue.md").read_text()
         self.assertNotIn("Plan:", text)
