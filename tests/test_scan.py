@@ -28,7 +28,9 @@ class ScanTest(unittest.TestCase):
     def test_mdns_host_still_flagged(self):
         for line in (f"ping {MDNS_HOST}", f'host = "{MDNS_HOST}"',
                      f"http://{MDNS_HOST}:8080", f"see {LOCAL_MODULE} for details",
-                     f"import {MDNS_HOST.replace('.', '-')}.local"):
+                     f"import {MDNS_HOST.replace('.', '-')}.local",
+                     f"import os  # host {MDNS_HOST}",
+                     f"from a import b; ping {MDNS_HOST}"):
             with self.subTest(line=line):
                 self.assertEqual(kinds(line), ["internal-domain"])
 

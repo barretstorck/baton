@@ -73,7 +73,9 @@ def load_terms(path=None, warn=True):
 
 
 _IDENT = re.compile(r"[A-Za-z_]\w*\Z")
-_IMPORT_LINE = re.compile(r"\s*(?:from|import)\s")
+_IMPORT_OPERAND = re.compile(
+    r"\s*(?:from\s+\.*|import\s+(?:[\w.]+\s*,\s*)*)\Z")
+_OPERAND_END = re.compile(r"(?:\s|,|\Z)")
 
 
 def _python_module_path(line, match):
@@ -81,9 +83,9 @@ def _python_module_path(line, match):
     parts = match.group(0).split(".")
     if parts[-1] != "local" or not all(_IDENT.match(part) for part in parts):
         return False
-    if _IMPORT_LINE.match(line):
-        return True
     start, end = match.span()
+    if _IMPORT_OPERAND.match(line[:start]) and _OPERAND_END.match(line, end):
+        return True
     return (len(parts) >= 3 and start > 0 and end < len(line)
             and line[start - 1] in "'\"" and line[end] == line[start - 1])
 
