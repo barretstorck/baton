@@ -410,7 +410,7 @@ class SnapshotTest(unittest.TestCase):
                           "stale": {"missing_paths": None, "ambiguous_paths": None,
                                     "path_check_skipped": "the default branch listing is empty",
                                     "plan_behind": 2},
-                          "branch_behind": 2, "merge_first": False, "in_flight": None})
+                          "branch_behind": 2, "merge_first": False, "in_flight": None, "bumps": []})
         self.assertEqual(found["progress"]["5"]["plan"], None)
         self.assertIsNone(found["progress"]["5"]["stale"])
         self.assertTrue(found["progress"]["5"]["unplanned"])
@@ -1386,3 +1386,33 @@ class InFlightTest(unittest.TestCase):
     def test_ready_issue_with_stale_record_is_dispatchable(self):
         found = self.snap("ready", [self.record(180)])
         self.assertEqual(found["dispatchable"], [7])
+
+
+class BumpConflictTest(unittest.TestCase):
+    def _snap(self, specs, milestones=None):
+        items = []
+        for number, status, bumps, state in specs:
+            item = issue(number, status, "deliverable", state=state)
+            item["body"] += ("## Developer Plan\nWritten against: " + "c" * 40
+                             + "\n\n- [ ] Task 1: A\n  <details>\n\n  - Files: `lib/keep.py`\n"
+                             + (f"  - Bumps: {bumps}\n" if bumps else "") + "\n  </details>\n")
+            items.append(item)
+        extra = {"git ls-tree": "lib/keep.py\n", "git rev-list": "0\n"}
+        return sprint.snapshot(cfg(), FakeRunner(replies(items, milestones=milestones, extra=extra)))
+
+    def test_two_open_issues_bumping_one_name_conflict(self):
+        result = self._snap([(7, "in-dev", "`schema`", "OPEN"), (8, "ready", "`schema`", "OPEN")])
+        self.assertEqual(result["bump_conflicts"], [{"name": "schema", "issues": [7, 8]}])
+        self.assertEqual(result["progress"]["7"]["bumps"], ["schema"])
+
+    def test_closed_issue_does_not_conflict(self):
+        result = self._snap([(7, "in-dev", "`schema`", "OPEN"), (8, "ready", "`schema`", "CLOSED")])
+        self.assertEqual(result["bump_conflicts"], [])
+
+    def test_different_names_do_not_conflict(self):
+        result = self._snap([(7, "in-dev", "`schema`", "OPEN"), (8, "ready", "`format`", "OPEN")])
+        self.assertEqual(result["bump_conflicts"], [])
+        self.assertEqual(result["progress"]["8"]["bumps"], ["format"])
+
+    def test_no_open_milestone_has_empty_list(self):
+        self.assertEqual(self._snap([], milestones=[])["bump_conflicts"], [])

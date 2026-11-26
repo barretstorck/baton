@@ -260,7 +260,7 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None, n
         "repair_issue": None, "parallel": 0, "free_slots": 0, "in_dev": [], "in_review": [],
         "verification": [], "re_refine": [], "answered": [], "waiting_on_maintainer": [],
         "dispatchable": [], "held": [], "finished": False, "issues": [], "progress": {},
-        "waiting_links": {}, "in_flight": [],
+        "waiting_links": {}, "in_flight": [], "bump_conflicts": [],
     }
     if chosen is None:
         return result
@@ -436,6 +436,7 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None, n
                 "branch_behind": behind,
                 "merge_first": behind is not None and behind >= BEHIND_LIMIT,
                 "in_flight": flight,
+                "bumps": checklist.bumps(text),
             }
         if status == "status:in-dev":
             result["in_dev"].append(number)
@@ -476,6 +477,13 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None, n
                 waiting.add(number)
         elif status == "status:ready" and item["state"] == "OPEN":
             ready.append((item, tier, files, repair))
+
+    bumped = {}
+    for key, entry in result["progress"].items():
+        for name in entry["bumps"]:
+            bumped.setdefault(name, []).append(int(key))
+    result["bump_conflicts"] = [{"name": name, "issues": sorted(numbers)}
+                                for name, numbers in sorted(bumped.items()) if len(numbers) > 1]
 
     def rank(entry):
         item, tier, _, repair = entry
