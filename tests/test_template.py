@@ -570,6 +570,16 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("in the background", text)
         self.assertNotIn("in the foreground", text)
 
+    def test_sprint_skill_verifies_merge_first(self):
+        text = " ".join(sprint_text().split())
+        for phrase in (
+            "git merge-base --is-ancestor <reported default sha> origin/<default>",
+            "git merge-base --is-ancestor <reported default sha> <sha>",
+            "git rev-list --count <sha>..origin/<default>",
+            "the branch did not contain origin/<default>",
+        ):
+            self.assertIn(phrase, text)
+
     def test_readme_documents_hand_checks(self):
         text = (ROOT / "README.md").read_text()
         self.assertIn("### Hand checks", text)
