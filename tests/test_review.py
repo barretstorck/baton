@@ -667,7 +667,18 @@ def failing(*ids, verdict="changes"):
             "body": review.compose(verdict, NEW, f"Round.\n\n## Failures\n{lines}\n\n## Checked\n- x: y")}
 
 
+def env_failing(*ids, rerun="passed", outcome="environment"):
+    lines = "\n".join(f"- {i}: {outcome} (rerun {rerun})" for i in ids)
+    return {"author": {"login": OWNER}, "url": "u/env",
+            "body": review.compose("changes", NEW,
+                                   f"Round.\n\n## Failures\n{lines}\n\n## Checked\n- x: y")}
+
+
 class RepeatedTest(unittest.TestCase):
+    def test_environment_passed_on_rerun_twice_is_changes(self):
+        found = review.state([env_failing("t.flaky"), reply(), env_failing("t.flaky")], OWNER, 5)
+        self.assertEqual((found["state"], found["rounds"]), ("changes", 2))
+
     def test_failure_ids_parse(self):
         body = ("## Findings\n- not_a_failure: caused\n\n## Failures\n"
                 "- tests.test_a.A.test_x: caused\n- lint: flaky\n\n## Checked\n- other: caused\n")
