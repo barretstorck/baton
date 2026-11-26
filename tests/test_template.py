@@ -320,6 +320,16 @@ class TemplateTest(unittest.TestCase):
         text = (ROOT / "templates" / "brief.local.md").read_text()
         self.assertIn("## Sandbox", text)
 
+    def test_local_brief_template_has_hand_checks_section(self):
+        text = (ROOT / "templates" / "brief.local.md").read_text()
+        self.assertIn("## Hand checks", text)
+
+    def test_develop_skill_handles_hand_checks(self):
+        text = " ".join(develop_text().split())
+        for phrase in ("Hand check: pass on <full sha>: <one line> | none",
+                       "## Hand checks", "never `DONE`"):
+            self.assertIn(phrase, text)
+
     def test_brief_template_has_responsibilities_section(self):
         text = " ".join((ROOT / "templates" / "brief.md").read_text().split())
         self.assertIn("## Responsibilities", text)
