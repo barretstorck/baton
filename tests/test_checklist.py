@@ -393,7 +393,31 @@ def issue_runner(body=BODY):
     return FakeRunner({"gh issue view 7 --json body": json.dumps({"body": body})})
 
 
+def _forge_comment(kind, body, author="maint", url="https://x/c/1"):
+    return {"author": {"login": author}, "url": url,
+            "body": f"<!-- baton:{kind} -->\n{body}"}
+
+
+def comments_runner(comments):
+    runner = issue_runner()
+    runner.replies["gh issue view 7 --json comments"] = json.dumps({"comments": comments})
+    return runner
+
+
 class IssueForgeTest(unittest.TestCase):
+    def test_tick_issue_refuses_after_replan(self):
+        runner = comments_runner([_forge_comment("developer:status", "REPLAN from task 2\nwhy")])
+        with self.assertRaises(checklist.TaskError) as caught:
+            checklist.tick_issue(runner, 7, "2", trusted=["maint"])
+        self.assertIn("open REPLAN from task 2 (https://x/c/1)", str(caught.exception))
+        self.assertFalse(any("issue edit" in l for l in runner.lines()))
+
+    def test_tick_issue_ticks_after_decision(self):
+        runner = comments_runner([_forge_comment("developer:status", "REPLAN from task 2"),
+                                  _forge_comment("orchestrator:decision", "replaced")])
+        self.assertTrue(checklist.tick_issue(runner, 7, "2", trusted=["maint"]))
+        self.assertEqual(sum("issue edit" in l for l in runner.lines()), 1)
+
     def test_tick_issue_writes_the_whole_body(self):
         runner = issue_runner()
         written = {}

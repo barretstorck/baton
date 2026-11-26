@@ -490,7 +490,7 @@ def _linked(runner, number, docs_dir=None):
 
 
 def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None,
-               terms=None, allow=()):
+               terms=None, allow=(), trusted=None):
     """Tick a plan task. False when it was already ticked (nothing is written).
 
     A plan file on a branch is ticked in
@@ -503,6 +503,15 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None,
             raise TaskError("plan not changed; privacy scan found: "
                             + "; ".join(scan.describe(findings)))
     body, link = _linked(runner, number, docs_dir)
+    if trusted is not None:
+        data = json.loads(runner(["gh", "issue", "view", str(number), "--json", "comments"])
+                          or "{}")
+        pending = replan_pending(data.get("comments") or [], task_id, trusted)
+        if pending:
+            raise TaskError(
+                f"task {task_id} has an open REPLAN from task {pending['from']} "
+                f"({pending['url']}); replace the plan with 'baton plan replace' and post an "
+                "orchestrator decision comment first")
     if link is None:
         new, changed = tick(body, "plan", str(task_id))
         if changed:
