@@ -667,7 +667,47 @@ def failing(*ids, verdict="changes"):
             "body": review.compose(verdict, NEW, f"Round.\n\n## Failures\n{lines}\n\n## Checked\n- x: y")}
 
 
+def env_failing(*ids, rerun="passed", outcome="environment"):
+    lines = "\n".join(f"- {i}: {outcome} (rerun {rerun})" for i in ids)
+    return {"author": {"login": OWNER}, "url": "u/env",
+            "body": review.compose("changes", NEW,
+                                   f"Round.\n\n## Failures\n{lines}\n\n## Checked\n- x: y")}
+
+
 class RepeatedTest(unittest.TestCase):
+    def test_environment_passed_on_rerun_twice_is_changes(self):
+        found = review.state([env_failing("t.flaky"), reply(), env_failing("t.flaky")], OWNER, 5)
+        self.assertEqual((found["state"], found["rounds"]), ("changes", 2))
+
+    def test_failure_entries_parse(self):
+        body = ("## Failures\n- a: environment (rerun passed)\n- b: environment (rerun failed)\n"
+                "- c: caused\n\n## Checked\n- x: y")
+        self.assertEqual(review.failure_entries(body), {
+            "a": ("environment", "passed"), "b": ("environment", "failed"), "c": ("caused", None)})
+
+    def test_environment_rerun_failed_is_repeated(self):
+        found = review.state([env_failing("t", rerun="failed"), reply(),
+                              env_failing("t", rerun="failed")], OWNER, 5)
+        self.assertEqual(found["state"], "repeated")
+
+    def test_environment_without_rerun_is_repeated(self):
+        old = {"author": {"login": OWNER}, "url": "u/old",
+               "body": review.compose("changes", NEW, "R.\n\n## Failures\n- t: environment\n\n## Checked\n- x: y")}
+        found = review.state([old, reply(), old], OWNER, 5)
+        self.assertEqual(found["state"], "repeated")
+
+    def test_environment_passed_in_one_review_only_is_repeated(self):
+        found = review.state([env_failing("t"), reply(), failing("t")], OWNER, 5)
+        self.assertEqual(found["state"], "repeated")
+
+    def test_other_shared_id_still_repeated(self):
+        def both(*, env, caused):
+            lines = f"- {env}: environment (rerun passed)\n- {caused}: caused"
+            return {"author": {"login": OWNER}, "url": "u/both",
+                    "body": review.compose("changes", NEW, f"R.\n\n## Failures\n{lines}\n\n## Checked\n- x: y")}
+        found = review.state([both(env="e", caused="c"), reply(), both(env="e", caused="c")], OWNER, 5)
+        self.assertEqual(found["state"], "repeated")
+
     def test_failure_ids_parse(self):
         body = ("## Findings\n- not_a_failure: caused\n\n## Failures\n"
                 "- tests.test_a.A.test_x: caused\n- lint: flaky\n\n## Checked\n- other: caused\n")

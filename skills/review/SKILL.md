@@ -141,7 +141,9 @@ condition is every task of the plan, including the tasks the refiner added, and 
    - otherwise `caused`: a fix task with `Problem`, `Fix` and a `Check` that runs the failing test.
 
    List every failure under `## Failures` as `- <id>: <outcome>`, where `<id>` is the test id or job
-   name with no spaces. On a `timeout` record, propose under `## Follow-up issues` exactly one `important` issue
+   name with no spaces. Append ` (rerun passed)` or ` (rerun failed)` for each failure you re-ran. A
+   failure classified `environment` that passed on rerun in two reviews in a row does not count
+   toward `repeated`. On a `timeout` record, propose under `## Follow-up issues` exactly one `important` issue
    titled `Test suite exceeds its verification time budget`, after checking that
    `gh issue list --state open --search "verification time budget in:title"` prints nothing. You file
    no issues; the orchestrator files the proposal.
@@ -241,7 +243,7 @@ Cause: <default-branch | environment>   (a blocked review only)
   </details>
 
 ## Failures
-- <test id or job name>: <caused | default-branch | flaky | environment>
+- <test id or job name>: <caused | default-branch | flaky | environment> [(rerun passed | rerun failed)]
 
 ## Follow-up issues
 - **[critical|important]** <title>: <two lines>
