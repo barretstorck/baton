@@ -1079,3 +1079,38 @@ class BodyPlanTest(unittest.TestCase):
     def test_issue_plan_error_names_developer_plan(self):
         with self.assertRaisesRegex(checklist.TaskError, "## Developer Plan"):
             checklist.issue_plan(issue_runner("## Context\nx\n"), 7)
+
+
+def _comment(first, extra="", login="maintainer", url="u"):
+    return {"author": {"login": login}, "url": url, "body": f"{first}\n{extra}"}
+
+
+REPLAN_C = "<!-- baton:developer:status -->"
+DECISION_C = "<!-- baton:orchestrator:decision -->"
+
+
+class ReplanPendingTest(unittest.TestCase):
+    trusted = ["maintainer"]
+
+    def test_refuses_the_task_and_later_ones(self):
+        comments = [_comment(REPLAN_C, "REPLAN from task 3\n", url="u1")]
+        self.assertEqual(checklist.replan_pending(comments, "3", self.trusted),
+                         {"from": "3", "url": "u1"})
+        self.assertEqual(checklist.replan_pending(comments, "4", self.trusted)["from"], "3")
+        self.assertIsNone(checklist.replan_pending(comments, "2", self.trusted))
+
+    def test_later_decision_clears(self):
+        comments = [_comment(REPLAN_C, "REPLAN from task 3"), _comment(DECISION_C, "ok")]
+        self.assertIsNone(checklist.replan_pending(comments, "3", self.trusted))
+
+    def test_untrusted_replan_is_ignored(self):
+        comments = [_comment(REPLAN_C, "REPLAN from task 3", login="stranger")]
+        self.assertIsNone(checklist.replan_pending(comments, "3", self.trusted))
+
+    def test_older_decision_does_not_clear(self):
+        comments = [_comment(DECISION_C, "old"), _comment(REPLAN_C, "REPLAN from task 3")]
+        self.assertIsNotNone(checklist.replan_pending(comments, "3", self.trusted))
+
+    def test_no_comments(self):
+        self.assertIsNone(checklist.replan_pending([], "1", self.trusted))
+        self.assertIsNone(checklist.replan_pending(None, "1", self.trusted))
