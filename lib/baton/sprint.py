@@ -13,7 +13,7 @@ import re
 import time
 from datetime import datetime, timezone
 
-from . import checklist, comment, config, identity, issue as issue_fields, merge, review
+from . import checklist, comment, config, identity, inflight, issue as issue_fields, merge, review
 from .run import RunError
 
 _FAILED = {"failure", "timed_out", "startup_failure", "action_required"}
@@ -243,7 +243,8 @@ def _review_requested(pr, runner, machine, maintainers, bots, latest_at):
     return not latest_at or (asked.get("at") or "") > latest_at
 
 
-def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None):
+def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None, now=None):
+    now = now or datetime.now(timezone.utc)
     repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
     owner, branch = repo["owner"]["login"], repo["defaultBranchRef"]["name"]
     maintainers = cfg.maintainers(owner)
@@ -259,7 +260,7 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None):
         "repair_issue": None, "parallel": 0, "free_slots": 0, "in_dev": [], "in_review": [],
         "verification": [], "re_refine": [], "answered": [], "waiting_on_maintainer": [],
         "dispatchable": [], "held": [], "finished": False, "issues": [], "progress": {},
-        "waiting_links": {},
+        "waiting_links": {}, "in_flight": [],
     }
     if chosen is None:
         return result
@@ -359,6 +360,27 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None):
             return None
         return branch_behind(runner, branch, pr["headRefName"])
 
+    def in_flight(item, found, pr):
+        """The issue's open in-flight record with its `stale` flag, or None."""
+        record = inflight.current(item.get("comments"), (found or {}).get("tasks"),
+                                  list(maintainers) + sorted(bots))
+        if record is None:
+            return None
+        limit = cfg.data["developer"]["in_flight_minutes"]
+        try:
+            stale = inflight.is_stale(record, None, now, limit)
+            if stale and pr and pr.get("headRefOid"):
+                try:
+                    head = json.loads(runner(["gh", "api", f"repos/{owner}/{repo['name']}"
+                                              f"/commits/{pr['headRefOid']}"]))
+                    pushed = head["commit"]["committer"]["date"]
+                except (RunError, ValueError, KeyError, TypeError):
+                    pushed = None
+                stale = inflight.is_stale(record, pushed, now, limit)
+        except (ValueError, AttributeError):
+            stale = True
+        return {**record, "stale": stale}
+
     assignments = {}
     for item in sorted(issues, key=lambda entry: entry["number"]):
         number = item["number"]
@@ -396,6 +418,11 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None):
             fixes = review.review_tasks(pr, trusted) if pr else None
             spike = cfg.label("type:spike") in labels
             behind = behind_default(pr) if status in ("status:in-dev", "status:in-review") else None
+            flight = in_flight(item, found, pr)
+            if flight:
+                result["in_flight"].append({"number": number, "task": flight["task"],
+                                            "since": flight["since"], "stale": flight["stale"],
+                                            "url": flight["url"]})
             result["progress"][str(number)] = {
                 "pr": pr["number"] if pr else None,
                 "spike": spike,
@@ -408,6 +435,7 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None):
                 "stale": staleness(text, found, item),
                 "branch_behind": behind,
                 "merge_first": behind is not None and behind >= BEHIND_LIMIT,
+                "in_flight": flight,
             }
         if status == "status:in-dev":
             result["in_dev"].append(number)
@@ -482,6 +510,9 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None):
             ambiguous = (result["progress"][str(number)]["stale"].get("ambiguous_paths") or {})
             for name in sorted(ambiguous):
                 reason += f"; {name} matches {', '.join(ambiguous[name])}"
+        elif ((result["progress"].get(str(number)) or {}).get("in_flight") or {}).get("stale") is False:
+            flight = result["progress"][str(number)]["in_flight"]
+            reason = f"task {flight['task']} in flight since {flight['since']}"
         elif open_blockers:
             reason = "blocked by " + ", ".join(f"#{n}" for n in open_blockers)
         elif len(result["dispatchable"]) >= slots:
