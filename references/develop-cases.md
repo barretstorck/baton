@@ -9,6 +9,15 @@ least 15 commits behind `origin/<default>` (`git rev-list --count HEAD..origin/<
 begin the task by merging the default branch in and resolving the conflicts, as its own
 commit, before the task's own work; push it with the task's push.
 
+Record the default branch's sha before merging (`git rev-parse origin/<default>`) and report it
+on the `Merged:` line of your return: the merge commit with that sha, or "not needed (branch
+already contains origin/<default> at <sha>)" when the branch already contains it. `not asked` is
+only for a prompt without the merge line and a branch fewer than 15 commits behind.
+
+A re-dispatch for the same task (the box already ticked, a `Task <n>:` commit on the branch)
+merges the same way, re-runs the task's `Check:` on the merged head, pushes, and returns `DONE`
+with the new head.
+
 ## Interrupted tasks
 
 - If the branch already has a `Task <n>:` commit for your task, an interrupted developer did it:

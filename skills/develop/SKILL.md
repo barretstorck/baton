@@ -61,7 +61,8 @@ filters, send long output to a file, chain related commands, wait for a long run
    Where an earlier task's `Provides (as built):` line sits under its `Provides:`, read your
    `Uses:` against that line, not the original.
    If your prompt says to merge the default branch first, or the branch is far behind, see
-   `${CLAUDE_PLUGIN_ROOT}/references/develop-cases.md`, Stale branches.
+   `${CLAUDE_PLUGIN_ROOT}/references/develop-cases.md`, Stale branches. When the prompt has the
+   merge line, the `Merged:` line of your return is required.
 
 3. **Get the branch.** The branch `issue-<N>-<short-slug>` is made by task 1 from the default
    branch.
@@ -179,6 +180,7 @@ A plan task:
 ```
 DONE <full sha>
 Issue: #<N>, task <n>
+Merged: <full sha of the merge commit> (origin/<default> at <full sha>) | not needed (branch already contains origin/<default> at <full sha>) | not asked
 Check: <command> → <summary line> | none
 Result: none | <where it was written>
 Hand check: pass on <full sha>: <one line> | none

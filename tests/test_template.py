@@ -99,6 +99,15 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("gh pr edit <P> --body-file", text)
         self.assertIn("Port from, Result and Check", text)
 
+    def test_develop_skill_reports_merge_first(self):
+        text = " ".join(develop_text().split())
+        self.assertIn(
+            "Merged: <full sha of the merge commit> (origin/<default> at <full sha>) | "
+            "not needed (branch already contains origin/<default> at <full sha>) | not asked",
+            text,
+        )
+        self.assertIn("git rev-parse origin/<default>", text)
+
     def test_develop_skill_has_scratch_file_rule(self):
         text = develop_text()
         self.assertIn("\n## Scratch files\n", text)
