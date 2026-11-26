@@ -1,6 +1,6 @@
 # Dispatch special cases
 
-Read this when `sprint-status` reports `in_flight`, `blockers_outside`, a `stale` plan, a `held` issue, `path_check_skipped` or `merge_first`, for an issue with an older plan, when an issue in development has no plan or every task ticked, and when resuming a session.
+Read this when `sprint-status` reports `in_flight`, `blockers_outside`, a `stale` plan, a `held` issue, `path_check_skipped`, `merge_first` or `bump_conflicts`, for an issue with an older plan, when an issue in development has no plan or every task ticked, and when resuming a session.
 
 **Issue in development with no plan (`unplanned`).**
    - `progress.<N>.unplanned` is true (work started before Baton 0.3, with no plan): dispatch
@@ -45,6 +45,18 @@ lacks (null without a pull request), and `progress.<N>.merge_first` is true when
 
   The developer must report a `Merged:` line in its return; the return is checked as
   `references/sprint-returns.md` describes.
+
+**Shared version bumps.** `bump_conflicts` lists each name that two or more open sprint issues
+bump (`progress.<N>.bumps` gives each issue's names). Merge one of them first (the first to reach
+an approved review); do not dispatch a reviewer for the others while it is open. In the pass in
+which it merges, for each other issue of that entry set `status:in-dev` and dispatch a developer
+with `Update pull request <P> (issue <N>).` (or, with no pull request yet, its next task) and one
+extra line after the repository line (an allowed exception to the exact-prompt rule, as for
+`merge_first`):
+
+    Then bump <name> again: #<M> bumped it first.
+
+Its review runs after that developer returns.
 
 **Older issues.** An issue whose plan is on `refs/plans/<N>` (a `Plan:` first line), in a file
 on its branch, or in a `## Plan` section is an older issue. Before you dispatch its first task,

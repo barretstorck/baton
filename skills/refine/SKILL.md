@@ -141,6 +141,10 @@ issue body, written by `baton plan set`.
 
            </details>
 
+   - A task that bumps a named version (a schema, file format or protocol version) writes
+     `Bumps: <name>` on its own line in its details, naming the constant or file that holds the
+     version (for example `SCHEMA_VERSION` in `src/artifact.rs`) so two plans use the same name;
+     `sprint-status` flags two open issues that bump the same name.
    - The check is only what proves that task done, to save time when the full suite is long. Put
      the full Verification command in its own last task when it is long; CI covers the rest.
    - A task that changes no code (a measurement or a by-eye check) has a `Result:` line naming

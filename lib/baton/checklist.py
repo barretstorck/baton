@@ -326,6 +326,27 @@ def named_paths(text):
                   if "/" in p or not any(f.endswith("/" + p) for f in full))
 
 
+_BUMPS_LINE = re.compile(r"^\s*[-*]?\s*Bumps:(.*)$", re.I)
+
+
+def bumps(text):
+    """Sorted, unique names on the `Bumps:` lines of any task in the plan, ticked or not."""
+    where = span(text, "plan")
+    if where is None:
+        return []
+    found = set()
+    for block in _blocks(text[where[0]:where[1]])[1]:
+        for line in block["lines"][1:]:
+            match = _BUMPS_LINE.match(line.rstrip("\r\n"))
+            if not match:
+                continue
+            for name in match.group(1).split(","):
+                name = name.strip().strip("`").strip()
+                if name and "<" not in name:
+                    found.add(name)
+    return sorted(found)
+
+
 def _title(block):
     match = _match(block["lines"][0])
     return match.group(3) if match else ""

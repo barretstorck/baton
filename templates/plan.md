@@ -29,7 +29,7 @@ Choices and reasons that do not belong in the issue.
 
   </details>
 
-(Optional, on its own line in a task's details: `Allows: forbid_added "<glob>"` lets that task add lines the brief's `forbid_added` rule for `<glob>` otherwise refuses. A task that is risky, or whose check is slow, says so in a note in its details.)
+(Optional, on its own line in a task's details: `Allows: forbid_added "<glob>"` lets that task add lines the brief's `forbid_added` rule for `<glob>` otherwise refuses. A task that is risky, or whose check is slow, says so in a note in its details. A task that bumps a named version writes `Bumps: <name>` on its own line in its details.)
 
 (Name code by function, class and test, written `path::name`, never by line number or positional index.)
 
