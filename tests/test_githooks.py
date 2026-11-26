@@ -89,6 +89,23 @@ class PreCommitTest(unittest.TestCase):
         git(repo, "add", "-A")
         self.assertTrue(any("private-term" in p for p in githooks.pre_commit(repo, TERMS)))
 
+    def _allow_repo(self, allowed, used):
+        repo = make_repo()
+        write(repo, ".baton/brief.md",
+              '---\nfixtures_paths: ["tests/fixtures/"]\nprivacy_allow: ["%s"]\n---\n' % allowed)
+        write(repo, "notes.txt", "connect to %s today\n" % used)
+        git(repo, "add", "-A")
+        return repo
+
+    def test_privacy_allow_entry_in_the_staged_brief_passes(self):
+        host = "nas" + "." + "local"
+        repo = self._allow_repo(host, host)
+        self.assertEqual(githooks.pre_commit(repo, TERMS), [])
+
+    def test_host_not_in_privacy_allow_still_blocks(self):
+        repo = self._allow_repo("nas" + "." + "local", "printer" + "." + "local")
+        self.assertTrue(any("internal-domain" in p for p in githooks.pre_commit(repo, TERMS)))
+
     def test_removing_private_text_passes(self):
         repo = make_repo()
         write(repo, "a.txt", "hello\nhost 192.168.7.7\n")
