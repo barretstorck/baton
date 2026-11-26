@@ -393,7 +393,31 @@ def issue_runner(body=BODY):
     return FakeRunner({"gh issue view 7 --json body": json.dumps({"body": body})})
 
 
+def _forge_comment(kind, body, author="maint", url="https://x/c/1"):
+    return {"author": {"login": author}, "url": url,
+            "body": f"<!-- baton:{kind} -->\n{body}"}
+
+
+def comments_runner(comments):
+    runner = issue_runner()
+    runner.replies["gh issue view 7 --json comments"] = json.dumps({"comments": comments})
+    return runner
+
+
 class IssueForgeTest(unittest.TestCase):
+    def test_tick_issue_refuses_after_replan(self):
+        runner = comments_runner([_forge_comment("developer:status", "REPLAN from task 2\nwhy")])
+        with self.assertRaises(checklist.TaskError) as caught:
+            checklist.tick_issue(runner, 7, "2", trusted=["maint"])
+        self.assertIn("open REPLAN from task 2 (https://x/c/1)", str(caught.exception))
+        self.assertFalse(any("issue edit" in l for l in runner.lines()))
+
+    def test_tick_issue_ticks_after_decision(self):
+        runner = comments_runner([_forge_comment("developer:status", "REPLAN from task 2"),
+                                  _forge_comment("orchestrator:decision", "replaced")])
+        self.assertTrue(checklist.tick_issue(runner, 7, "2", trusted=["maint"]))
+        self.assertEqual(sum("issue edit" in l for l in runner.lines()), 1)
+
     def test_tick_issue_writes_the_whole_body(self):
         runner = issue_runner()
         written = {}
@@ -1084,6 +1108,41 @@ class BodyPlanTest(unittest.TestCase):
     def test_issue_plan_error_names_developer_plan(self):
         with self.assertRaisesRegex(checklist.TaskError, "## Developer Plan"):
             checklist.issue_plan(issue_runner("## Context\nx\n"), 7)
+
+
+def _comment(first, extra="", login="maintainer", url="u"):
+    return {"author": {"login": login}, "url": url, "body": f"{first}\n{extra}"}
+
+
+REPLAN_C = "<!-- baton:developer:status -->"
+DECISION_C = "<!-- baton:orchestrator:decision -->"
+
+
+class ReplanPendingTest(unittest.TestCase):
+    trusted = ["maintainer"]
+
+    def test_refuses_the_task_and_later_ones(self):
+        comments = [_comment(REPLAN_C, "REPLAN from task 3\n", url="u1")]
+        self.assertEqual(checklist.replan_pending(comments, "3", self.trusted),
+                         {"from": "3", "url": "u1"})
+        self.assertEqual(checklist.replan_pending(comments, "4", self.trusted)["from"], "3")
+        self.assertIsNone(checklist.replan_pending(comments, "2", self.trusted))
+
+    def test_later_decision_clears(self):
+        comments = [_comment(REPLAN_C, "REPLAN from task 3"), _comment(DECISION_C, "ok")]
+        self.assertIsNone(checklist.replan_pending(comments, "3", self.trusted))
+
+    def test_untrusted_replan_is_ignored(self):
+        comments = [_comment(REPLAN_C, "REPLAN from task 3", login="stranger")]
+        self.assertIsNone(checklist.replan_pending(comments, "3", self.trusted))
+
+    def test_older_decision_does_not_clear(self):
+        comments = [_comment(DECISION_C, "old"), _comment(REPLAN_C, "REPLAN from task 3")]
+        self.assertIsNotNone(checklist.replan_pending(comments, "3", self.trusted))
+
+    def test_no_comments(self):
+        self.assertIsNone(checklist.replan_pending([], "1", self.trusted))
+        self.assertIsNone(checklist.replan_pending(None, "1", self.trusted))
 
 
 class HandCheckTest(unittest.TestCase):

@@ -9,7 +9,8 @@ import re
 import shutil
 import tempfile
 
-from . import scan
+from . import gate, scan
+from .config import has_login
 
 _HEADING = re.compile(r"(#{1,6})\s+(.+?)\s*$")
 _TASK = re.compile(r"^[-*] \[([ xX])\] \*\*(\d+(?:\.\d+)?)\.?\s+(.+?)\*\*\s*$")
@@ -538,7 +539,7 @@ def _linked(runner, number, docs_dir=None):
 
 
 def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None,
-               terms=None, allow=()):
+               terms=None, allow=(), trusted=None):
     """Tick a plan task. False when it was already ticked (nothing is written).
 
     A plan file on a branch is ticked in
@@ -551,6 +552,15 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None,
             raise TaskError("plan not changed; privacy scan found: "
                             + "; ".join(scan.describe(findings)))
     body, link = _linked(runner, number, docs_dir)
+    if trusted is not None:
+        data = json.loads(runner(["gh", "issue", "view", str(number), "--json", "comments"])
+                          or "{}")
+        pending = replan_pending(data.get("comments") or [], task_id, trusted)
+        if pending:
+            raise TaskError(
+                f"task {task_id} has an open REPLAN from task {pending['from']} "
+                f"({pending['url']}); replace the plan with 'baton plan replace' and post an "
+                "orchestrator decision comment first")
     if link is None:
         new, changed = tick(body, "plan", str(task_id))
         if changed:
@@ -717,3 +727,35 @@ def set_issue_plan(cfg, runner, number, section_text, terms):
     new = set_plan(body, section_text)
     _save_issue(runner, number, new)
     return plan(new)
+
+
+_REPLAN_LINE = re.compile(r"^\s*REPLAN from task (\d+(?:\.\d+)?)\s*$", re.M)
+
+
+def _task_key(task_id):
+    return tuple(int(part) for part in str(task_id).split("."))
+
+
+def replan_pending(comments, task_id, trusted):
+    """The open REPLAN that refuses ticking `task_id`, or None.
+
+    Among comments by `trusted` logins, the newest one that is a developer status comment
+    holding a `REPLAN from task <m>` line or an orchestrator decision comment decides: a
+    REPLAN refuses task `m` and later ones, a decision clears it."""
+    replan = f"{gate.MARKER}developer:status -->"
+    decision = f"{gate.MARKER}orchestrator:decision -->"
+    trusted = list(trusted)
+    for item in reversed(list(comments or [])):
+        if not has_login(item.get("author"), trusted):
+            continue
+        body = item.get("body") or ""
+        first = body.lstrip().split("\n", 1)[0].strip()
+        if first == decision:
+            return None
+        if first == replan:
+            found = _REPLAN_LINE.search(body)
+            if found:
+                if _task_key(task_id) >= _task_key(found.group(1)):
+                    return {"from": found.group(1), "url": item.get("url")}
+                return None
+    return None

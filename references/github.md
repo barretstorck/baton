@@ -35,7 +35,7 @@ These commands are the rule, not only what the gate checks. Write with `gh` for 
 | Open a draft pull request | `gh pr create --draft --title "<title>" --body-file <file>` (from a detached checkout the gate adds the pushed branch at HEAD as `--head`) with `Closes #<N>` on its own line in the body |
 | Start a task | `baton task start issue <N> <task>` (developer: posts the in-flight status comment and prints the run) |
 | Release a task | `baton task release issue <N> <task> <run>` (developer: ends the in-flight record for a non-`DONE` return) |
-| Tick a task | `baton task done issue <N> <task> [--as-built <text>]` (developer: ticks the task in the issue body, re-reading the body just before writing; `--as-built` adds the `Provides (as built):` line); `baton task done pr <P> <r.n>` (orchestrator only, review tasks; from a linked worktree set `BATON_ROLE=orchestrator` or it warns) |
+| Tick a task | `baton task done issue <N> <task> [--as-built <text>]` (developer: ticks the task in the issue body, re-reading the body just before writing; refuses a task with an open REPLAN on the issue; `--as-built` adds the `Provides (as built):` line); `baton task done pr <P> <r.n>` (orchestrator only, review tasks; from a linked worktree set `BATON_ROLE=orchestrator` or it warns) |
 
 Roles: `orchestrator`, `developer`, `refine`, `reviewer`. Kinds: `question`, `status`,
 `decision`, `plan`, `review`, `findings`, `reply`. Reviews are posted only with

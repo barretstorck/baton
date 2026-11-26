@@ -449,6 +449,7 @@ class CliTest(unittest.TestCase):
         cfg = mock.Mock(data={"docs": {"dir": "docs/baton"}, "privacy_allow": []})
         with mock.patch.object(cli.run, "run", runner), \
                 mock.patch.object(cli, "_require_config", return_value=cfg), \
+                mock.patch.object(cli, "_issue_trusted", return_value=["maint"]), \
                 mock.patch("sys.stdin", io.StringIO(stdin)), \
                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             code = cli.main(argv)
@@ -539,6 +540,17 @@ class CliTest(unittest.TestCase):
             ["task", "release", "issue", "5", "1", "abcd1234"], False)
         self.assertEqual(code, 0)
         self.assertTrue(posted[0][6].startswith("Released: task 1 (run abcd1234)"))
+
+    def test_task_done_refuses_after_replan(self):
+        comment = {"author": {"login": "maint"}, "url": "https://x/c/9",
+                   "body": "<!-- baton:developer:status -->\nREPLAN from task 1\n"}
+        runner = CliRunner(replies={"gh issue view 5 --json comments":
+                                    json.dumps({"comments": [comment]})},
+                           body="## Developer Plan\n\n- [ ] Task 1: a\n")
+        code, _, err = self.call(runner, ["task", "done", "issue", "5", "1"])
+        self.assertNotEqual(code, 0)
+        self.assertIn("open REPLAN from task 1", err)
+        self.assertFalse(any("issue edit" in l for l in runner.lines()))
 
     def test_bad_argument_counts_exit_64(self):
         for argv in (["plan", "commit", "x", PATH, "-"],
