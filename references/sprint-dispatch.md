@@ -43,6 +43,9 @@ lacks (null without a pull request), and `progress.<N>.merge_first` is true when
 
       Start by merging origin/<default>: the branch is <n> commits behind.
 
+  The developer must report a `Merged:` line in its return; the return is checked as
+  `references/sprint-returns.md` describes.
+
 **Older issues.** An issue whose plan is on `refs/plans/<N>` (a `Plan:` first line), in a file
 on its branch, or in a `## Plan` section is an older issue. Before you dispatch its first task,
 while it is not yet in development, run `baton plan migrate <N>`; it converts the plan into the

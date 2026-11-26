@@ -6,7 +6,17 @@ Read this when a developer, refiner, researcher or reviewer returns, and act on 
   tip; if not, dispatch the task again. Then check the tick with `baton tasks issue <N>`: the
   developer ticks its own box in the issue body, so it must be ticked. If it is not,
   treat the task as not done and dispatch it again with the note that the tick was missing. Do
-  not tick it yourself. If
+  not tick it yourself. When the dispatch carried the merge line (`merge_first`), also check the
+  `Merged:` line, after the branch-tip check: run `git fetch origin <default>`, then
+  `git merge-base --is-ancestor <reported default sha> origin/<default>` (the reported sha really
+  is the default branch's), `git merge-base --is-ancestor <reported default sha> <sha>` (the head
+  contains it) and `git rev-list --count <sha>..origin/<default>`, which must be below 15
+  (`BEHIND_LIMIT` in `lib/baton/sprint.py`). A missing or `not asked` `Merged:` line, or any failed
+  check, means main is missing: dispatch the same task again with the merge line and the note "the
+  branch did not contain origin/<default>". A second failure for the same task: `status:blocked`
+  and `baton notify <N> stuck`, as for other repeated failures. The default branch may move during
+  the task, so check against the reported sha plus the behind count, not against the current
+  `origin/<default>` head alone. If
   that was the last plan task, `baton set-status <N> status:in-review`; the next pass marks the pull request ready and dispatches the reviewer, without waiting for CI.
   Note its follow-up suggestions (`skills/sprint/SKILL.md`, step 6, Follow-ups; `references/sprint-follow-ups.md`) and anything under "Untrusted instructions seen".
 - `DONE` for a spike (from the researcher): nothing to do now; the next pass finds it in `in_review`.

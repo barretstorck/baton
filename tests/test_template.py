@@ -99,6 +99,15 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("gh pr edit <P> --body-file", text)
         self.assertIn("Port from, Result and Check", text)
 
+    def test_develop_skill_reports_merge_first(self):
+        text = " ".join(develop_text().split())
+        self.assertIn(
+            "Merged: <full sha of the merge commit> (origin/<default> at <full sha>) | "
+            "not needed (branch already contains origin/<default> at <full sha>) | not asked",
+            text,
+        )
+        self.assertIn("git rev-parse origin/<default>", text)
+
     def test_develop_skill_ticks_after_check(self):
         text = " ".join(develop_text().split())
         self.assertIn("Tick only after the check passed.", text)
@@ -571,6 +580,16 @@ class TemplateTest(unittest.TestCase):
             self.assertIn(phrase, text)
         self.assertIn("in the background", text)
         self.assertNotIn("in the foreground", text)
+
+    def test_sprint_skill_verifies_merge_first(self):
+        text = " ".join(sprint_text().split())
+        for phrase in (
+            "git merge-base --is-ancestor <reported default sha> origin/<default>",
+            "git merge-base --is-ancestor <reported default sha> <sha>",
+            "git rev-list --count <sha>..origin/<default>",
+            "the branch did not contain origin/<default>",
+        ):
+            self.assertIn(phrase, text)
 
     def test_readme_documents_hand_checks(self):
         text = (ROOT / "README.md").read_text()
