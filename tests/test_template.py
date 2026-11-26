@@ -560,3 +560,8 @@ class TemplateTest(unittest.TestCase):
             self.assertIn(phrase, text)
         self.assertIn("in the background", text)
         self.assertNotIn("in the foreground", text)
+
+    def test_readme_documents_hand_checks(self):
+        text = (ROOT / "README.md").read_text()
+        self.assertIn("### Hand checks", text)
+        self.assertIn("## Hand checks", text)
