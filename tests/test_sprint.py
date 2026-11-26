@@ -214,6 +214,23 @@ class SnapshotTest(unittest.TestCase):
         self.assertIn("#1", skipped[3])
         self.assertFalse(any("overlap" in r for r in skipped.values()))
 
+    def test_open_blocker_outside_the_milestone_is_flagged(self):
+        result = snap([issue(3, "ready", "deliverable", files="b.py", blocked="#9")],
+                      extra={"gh issue view 9": json.dumps({"state": "OPEN"})})
+        self.assertEqual(result["blockers_outside"], [{"number": 3, "blockers": [9]}])
+
+    def test_closed_or_sprint_blocker_is_not_flagged(self):
+        result = snap([issue(1, "ready", "deliverable", files="a.py"),
+                       issue(2, "ready", "deliverable", files="b.py", blocked="#9"),
+                       issue(3, "ready", "deliverable", files="c.py", blocked="#1")],
+                      extra={"gh issue view 9": json.dumps({"state": "CLOSED"})})
+        self.assertEqual(result["blockers_outside"], [])
+
+    def test_complete_issue_is_not_flagged(self):
+        result = snap([issue(3, "complete", "deliverable", files="b.py", blocked="#9")],
+                      extra={"gh issue view 9": json.dumps({"state": "OPEN"})})
+        self.assertEqual(result["blockers_outside"], [])
+
     def test_overlapping_issues_fill_every_slot(self):
         result = snap([issue(1, "in-dev", "deliverable", files="a.py"),
                        issue(2, "ready", "deliverable", files="a.py"),
