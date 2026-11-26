@@ -841,6 +841,26 @@ class WrittenAgainstTest(unittest.TestCase):
         self.assertFalse(any(l.startswith("git push") for l in runner.lines()))
 
 
+class BumpsTest(unittest.TestCase):
+    def _plan(self, *tasks):
+        return "## Plan\nWritten against: " + SHA + "\n\n" + "\n".join(tasks) + "\n"
+
+    def test_ticked_and_open_tasks(self):
+        text = self._plan("- [x] **1. A**", "  - Bumps: `schema`",
+                          "- [ ] **2. B**", "  - Bumps: schema, `format`")
+        self.assertEqual(checklist.bumps(text), ["format", "schema"])
+
+    def test_outside_plan_section(self):
+        self.assertEqual(checklist.bumps("## Context\n- Bumps: `schema`\n"), [])
+
+    def test_no_plan(self):
+        self.assertEqual(checklist.bumps("nothing"), [])
+
+    def test_placeholder(self):
+        text = self._plan("- [ ] **1. A**", "  - Bumps: `<name>`")
+        self.assertEqual(checklist.bumps(text), [])
+
+
 class NamedPathsTest(unittest.TestCase):
     def test_open_tasks_only_and_filtering(self):
         text = f"""## Plan
