@@ -6,12 +6,32 @@ import unittest
 from unittest import mock
 from baton import scan
 
+LOCAL_MODULE = ".".join(["pkg", "adapters", "local"])
+RELATIVE_MODULE = "adapters" + "." + "local"
+MDNS_HOST = "nas" + "." + "local"
+
 
 def kinds(text, terms=(), allow=()):
     return [f.kind for f in scan.scan_text(text, list(terms), list(allow))]
 
 
 class ScanTest(unittest.TestCase):
+    def test_python_module_path_ending_in_local_passes(self):
+        for line in (f"from {LOCAL_MODULE} import Adapter",
+                     f"import {LOCAL_MODULE} as adapter",
+                     f"    from ..{RELATIVE_MODULE} import Adapter",
+                     f'name = "{LOCAL_MODULE}"',
+                     f"monkeypatch.setitem(sys.modules, '{LOCAL_MODULE}', fake)"):
+            with self.subTest(line=line):
+                self.assertEqual(kinds(line), [])
+
+    def test_mdns_host_still_flagged(self):
+        for line in (f"ping {MDNS_HOST}", f'host = "{MDNS_HOST}"',
+                     f"http://{MDNS_HOST}:8080", f"see {LOCAL_MODULE} for details",
+                     f"import {MDNS_HOST.replace('.', '-')}.local"):
+            with self.subTest(line=line):
+                self.assertEqual(kinds(line), ["internal-domain"])
+
     def test_clean_text_passes(self):
         self.assertEqual(kinds("Refactor the resample loop.\nCloses #12"), [])
 
