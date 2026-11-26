@@ -508,6 +508,39 @@ class CliTest(unittest.TestCase):
             self.assertFalse(any(l.startswith(("git fetch", "git push", "git commit-tree",
                                                "git ls-remote")) for l in runner.lines()))
 
+    def _task_call(self, argv, done):
+        posted = []
+
+        def post(*args):
+            posted.append(args)
+            return "https://example.test/c/1"
+        plan = {"tasks": [{"id": "1", "done": done}]}
+        with mock.patch.object(cli.comment, "post", post), \
+                mock.patch.object(cli.checklist, "issue_plan", return_value=plan), \
+                mock.patch.object(cli.scan, "load_terms", return_value=[]):
+            code, out, err = self.call(CliRunner(), argv)
+        return code, out, err, posted
+
+    def test_task_start_posts_an_in_flight_status(self):
+        code, out, _, posted = self._task_call(["task", "start", "issue", "5", "1"], False)
+        self.assertEqual(code, 0)
+        self.assertTrue(out.startswith("run "))
+        self.assertIn("https://example.test/c/1", out)
+        self.assertEqual(len(posted), 1)
+        self.assertEqual(posted[0][2:6], ("issue", 5, "developer", "status"))
+        self.assertTrue(posted[0][6].startswith("In flight: task 1 (run "))
+
+    def test_task_start_on_a_ticked_task_exits_1_and_posts_nothing(self):
+        code, _, err, posted = self._task_call(["task", "start", "issue", "5", "1"], True)
+        self.assertEqual((code, posted), (1, []))
+        self.assertIn("already ticked", err)
+
+    def test_task_release_posts_a_released_status(self):
+        code, out, _, posted = self._task_call(
+            ["task", "release", "issue", "5", "1", "abcd1234"], False)
+        self.assertEqual(code, 0)
+        self.assertTrue(posted[0][6].startswith("Released: task 1 (run abcd1234)"))
+
     def test_task_done_refuses_after_replan(self):
         comment = {"author": {"login": "maint"}, "url": "https://x/c/9",
                    "body": "<!-- baton:developer:status -->\nREPLAN from task 1\n"}
@@ -524,7 +557,9 @@ class CliTest(unittest.TestCase):
                      ["plan", "pin"],
                      ["task", "done", "issue", "5", "1", "--as-built"],
                      ["task", "done", "pr", "5", "1.1", "--as-built", "x"],
-                     ["task", "done", "issue", "5"]):
+                     ["task", "done", "issue", "5"],
+                     ["task", "start", "issue", "5"],
+                     ["task", "release", "issue", "5", "1"]):
             code, _, err = self.call(CliRunner(), argv)
             self.assertEqual(code, 64, argv)
             self.assertIn("usage:", err)

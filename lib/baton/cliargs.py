@@ -380,14 +380,22 @@ def _declare_tasks(subs):
 
 
 def _declare_task(subs):
-    usage = ("usage: baton task done <issue|pr> <number> <task> "
-             "[--as-built <text>]")
+    usage = ("usage: baton task done <issue|pr> <number> <task> [--as-built <text>]\n"
+             "       baton task start issue <number> <task>\n"
+             "       baton task release issue <number> <task> <run>")
     actions = _nested(subs, "task", usage)
     p = _leaf(actions, "done", usage)
     p.add_argument("--as-built", dest="as_built")
     p.add_argument("target", choices=["issue", "pr"])
     p.add_argument("number", type=digits)
     p.add_argument("task")
+    for name, extra in (("start", ()), ("release", ("run",))):
+        p = _leaf(actions, name, usage)
+        p.add_argument("target", choices=["issue"])
+        p.add_argument("number", type=digits)
+        p.add_argument("task")
+        for arg in extra:
+            p.add_argument(arg)
 
 
 _PLAN_USAGE = (

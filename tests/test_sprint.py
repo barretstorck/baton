@@ -427,7 +427,7 @@ class SnapshotTest(unittest.TestCase):
                           "stale": {"missing_paths": None, "ambiguous_paths": None,
                                     "path_check_skipped": "the default branch listing is empty",
                                     "plan_behind": 2},
-                          "branch_behind": 2, "merge_first": False})
+                          "branch_behind": 2, "merge_first": False, "in_flight": None})
         self.assertEqual(found["progress"]["5"]["plan"], None)
         self.assertIsNone(found["progress"]["5"]["stale"])
         self.assertTrue(found["progress"]["5"]["unplanned"])
@@ -1341,3 +1341,65 @@ class SprintCapacityCommandTest(unittest.TestCase):
         code, out, _ = self.call(["10"])
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)["note"], "no past retros")
+
+
+class InFlightTest(unittest.TestCase):
+    NOW = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
+    PLAN = ("## Developer Plan\n\nWritten against: " + "a" * 40 + "\n\n"
+            "- [x] Task 1: a\n- [ ] Task 2: b\n")
+    HEAD = "d" * 40
+
+    def stamp(self, minutes_old):
+        when = self.NOW.timestamp() - minutes_old * 60
+        return datetime.fromtimestamp(when, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def record(self, minutes_old, kind="In flight", run_id="abcd1234"):
+        body = (f"<!-- baton:developer:status -->\n**Baton developer: status**\n\n"
+                f"{kind}: task 2 (run {run_id})")
+        return {"author": {"login": OWNER}, "body": body, "createdAt": self.stamp(minutes_old),
+                "url": "https://example.com/c/1"}
+
+    def snap(self, status, comments, pr_age=None):
+        item = issue(7, status, "deliverable", comments=comments)
+        item["body"] += self.PLAN
+        prs, extra = [], {}
+        if pr_age is not None:
+            prs = [{"number": 70, "headRefName": "issue-7-x", "headRefOid": self.HEAD,
+                    "isDraft": True, "mergeable": "MERGEABLE", "statusCheckRollup": [],
+                    "closingIssuesReferences": [{"number": 7}], "comments": []}]
+            extra[f"gh api repos/octo/proj/commits/{self.HEAD}"] = commit_reply(
+                self.stamp(pr_age), self.HEAD)
+        runner = FakeRunner(replies([item], prs=prs, extra=extra))
+        return sprint.snapshot(cfg(), runner, now=self.NOW)
+
+    def test_fresh_record_is_reported(self):
+        found = self.snap("in-dev", [self.record(10)])
+        flight = found["progress"]["7"]["in_flight"]
+        self.assertEqual((flight["task"], flight["run"], flight["stale"]), ("2", "abcd1234", False))
+        self.assertEqual([(e["number"], e["task"], e["stale"]) for e in found["in_flight"]],
+                         [(7, "2", False)])
+
+    def test_old_record_without_pull_request_is_stale(self):
+        found = self.snap("in-dev", [self.record(180)])
+        self.assertTrue(found["progress"]["7"]["in_flight"]["stale"])
+        self.assertTrue(found["in_flight"][0]["stale"])
+
+    def test_recent_push_keeps_old_record_fresh(self):
+        found = self.snap("in-dev", [self.record(180)], pr_age=5)
+        self.assertFalse(found["progress"]["7"]["in_flight"]["stale"])
+
+    def test_released_record_is_none(self):
+        found = self.snap("in-dev", [self.record(30), self.record(5, "Released")])
+        self.assertIsNone(found["progress"]["7"]["in_flight"])
+        self.assertEqual(found["in_flight"], [])
+
+    def test_ready_issue_with_fresh_record_is_held(self):
+        record = self.record(10)
+        found = self.snap("ready", [record])
+        self.assertEqual(found["held"], [{"number": 7, "reason":
+                                          f"task 2 in flight since {record['createdAt']}"}])
+        self.assertEqual(found["dispatchable"], [])
+
+    def test_ready_issue_with_stale_record_is_dispatchable(self):
+        found = self.snap("ready", [self.record(180)])
+        self.assertEqual(found["dispatchable"], [7])

@@ -12,6 +12,7 @@ developer:
   model: sonnet
   max_parallel: 1
   effort: medium
+  in_flight_minutes: 120      # minutes without a push before a started task counts as stale
 reviewer:
   model: opus
   effort: medium
