@@ -465,6 +465,11 @@ class IssueForgeTest(unittest.TestCase):
             checklist.replace_issue_plan(cfg(), runner, 7, "1", "- [ ] **1. X**\n", [])
         self.assertFalse(any("issue edit" in line for line in runner.lines()))
 
+    def test_issue_plan_lists_hand_checks(self):
+        body = DEV_BODY.replace("  - Provides: `g()`\n", "  - Provides: `g()`\n  - Hand check: run it by hand\n")
+        found = checklist.issue_plan(issue_runner(body), 7)
+        self.assertEqual(found["hand_checks"], {"2": "run it by hand"})
+
     def test_issue_plan_without_plan(self):
         with self.assertRaises(checklist.TaskError):
             checklist.issue_plan(issue_runner("## Context\nx\n"), 7)
@@ -1138,3 +1143,39 @@ class ReplanPendingTest(unittest.TestCase):
     def test_no_comments(self):
         self.assertIsNone(checklist.replan_pending([], "1", self.trusted))
         self.assertIsNone(checklist.replan_pending(None, "1", self.trusted))
+
+
+class HandCheckTest(unittest.TestCase):
+    HEAD = f"## Developer Plan\n\nWritten against: {SHA}\n\n### Verification\n`make`\n\n"
+    CHECK = "  - Hand check: run it on the box; expect ok\n"
+    RESULT = "  - Result: PR body section\n"
+
+    def body(self, *tasks):
+        return self.HEAD + "".join(tasks) + "\n## Decisions\n- kept\n"
+
+    def test_map_has_one_entry(self):
+        body = self.body(_dev_task(1, "One"), _dev_task(2, "Two", self.CHECK))
+        self.assertEqual(checklist.hand_checks(body), {"2": "run it on the box; expect ok"})
+
+    def test_with_result_has_no_problems(self):
+        body = self.body(_dev_task(1, "One", self.CHECK + self.RESULT))
+        self.assertEqual(checklist.hand_check_problems(body), [])
+
+    def test_without_result_is_one_problem(self):
+        problems = checklist.hand_check_problems(self.body(_dev_task(1, "One", self.CHECK)))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("task 1", problems[0])
+        self.assertIn("needs a Result line", problems[0])
+
+    def test_empty_hand_check(self):
+        problems = checklist.hand_check_problems(
+            self.body(_dev_task(1, "One", "  - Hand check:\n" + self.RESULT)))
+        self.assertEqual(problems, ["task 1: the Hand check line is empty"])
+
+    def test_ticked_task_is_not_checked(self):
+        task = _dev_task(1, "One", self.CHECK).replace("[ ]", "[x]", 1)
+        self.assertEqual(checklist.hand_check_problems(self.body(task)), [])
+
+    def test_no_plan(self):
+        self.assertEqual(checklist.hand_checks("## Context\nx\n"), {})
+        self.assertEqual(checklist.hand_check_problems("## Context\nx\n"), [])

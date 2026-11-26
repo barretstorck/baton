@@ -220,6 +220,54 @@ def line_anchor_problems(body):
     return problems
 
 
+_HAND_CHECK = re.compile(r"^\s*[-*]\s*Hand check:(.*)$", re.I)
+_RESULT_LINE = re.compile(r"^\s*[-*]\s*Result:", re.I)
+
+
+def _hand_check_text(block):
+    """The stripped text of the block's `- Hand check:` line, or None when it has none."""
+    for line in block["lines"][1:]:
+        match = _HAND_CHECK.match(line.rstrip("\r\n"))
+        if match:
+            return match.group(1).strip()
+    return None
+
+
+def hand_checks(text):
+    """Task id to the text of its `- Hand check:` line, for the plan section of `text`."""
+    text = text or ""
+    where = span(text, "plan")
+    if not where:
+        return {}
+    found = {}
+    for block in _blocks(text[where[0]:where[1]])[1]:
+        check = _hand_check_text(block)
+        if check is not None:
+            found[block["id"]] = check
+    return found
+
+
+def hand_check_problems(body):
+    """Messages for open tasks of a body `## Developer Plan` whose Hand check is unusable."""
+    text = body or ""
+    if not any(name == "developer plan" for _, name, _, _ in _headings(text)):
+        return []
+    where = span(text, "developer plan")
+    problems = []
+    for block in _blocks(text[where[0]:where[1]])[1]:
+        if block["done"]:
+            continue
+        check = _hand_check_text(block)
+        if check is None:
+            continue
+        if not check:
+            problems.append(f"task {block['id']}: the Hand check line is empty")
+        if not any(_RESULT_LINE.match(line) for line in block["lines"][1:]):
+            problems.append(f"task {block['id']}: a task with a Hand check needs a Result line "
+                            "naming where its result is written")
+    return problems
+
+
 _PATH_LINE = re.compile(r"^\s*[-*]?\s*(?:Files|Uses|Port from):", re.I)
 _TICKED = re.compile(r"`([^`]+)`(\s*\(new\b)?")
 _PATH_EXT = (".py", ".md", ".rs", ".toml", ".yml", ".yaml", ".json", ".sh", ".js", ".ts")
@@ -453,6 +501,7 @@ def issue_plan(runner, number, docs_dir=None):
         raise TaskError(f"issue #{number} has no '## Developer Plan' section"
                         + (f" in {link['path']}" if link else ""))
     found["source"] = "file" if link else "body"
+    found["hand_checks"] = hand_checks(text)
     if link:
         found["ref"], found["path"] = link["ref"], link["path"]
     return found

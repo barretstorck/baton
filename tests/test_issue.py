@@ -370,6 +370,15 @@ class DeveloperPlanReadyTest(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertIn("task 1", found[0])
 
+    def test_hand_check_without_result_is_not_ready(self):
+        hand = "  - Files: `src/cli.py`\n  - Hand check: run it by hand; expect ok\n"
+        body = DEV_HEAD + DEV_PLAN.replace("  - Files: `src/cli.py`\n", hand)
+        found = self.problems(body)
+        self.assertEqual(len(found), 1)
+        self.assertIn("task 1", found[0])
+        fixed = body.replace("  - Check:", "  - Result: a pull request body section\n  - Check:")
+        self.assertEqual(self.problems(fixed), [])
+
     def test_old_form_task_line_is_not_ready(self):
         body = DEV_HEAD + DEV_PLAN.replace("Task 1: Add the flag", "**1. Add the flag**")
         self.assertTrue(any("task 1" in p.lower() for p in self.problems(body)))

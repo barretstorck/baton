@@ -16,6 +16,12 @@ by its absolute path from any worktree. Nothing from it may appear in anything t
 <!-- One `NAME: /absolute/path` per line: data agents may read in place, read-only, never copy.
      Examples: test footage, reference images. -->
 
+## Hand checks
+
+<!-- Optional. How agents reach the machine where hand checks run (a name from `## Hosts`), what a
+     check may change there (for example a test catalogue), and how to restore it afterwards.
+     A task with a `Hand check:` line is run as described here, and is `BLOCKED` without it. -->
+
 ## Sandbox
 
 <!-- Optional. One line `Command: <template>` that runs a command in a sandbox.

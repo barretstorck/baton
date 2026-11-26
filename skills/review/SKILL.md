@@ -119,6 +119,11 @@ condition is every task of the plan, including the tasks the refiner added, and 
      add a fix task under `## Tasks`; list it as a ranked follow-up (`critical` or `important`)
      under `## Follow-up issues`; or set it aside with a reason that cites the brief's
      `## Responsibilities` section (read it in `.baton/brief.md`).
+   - Hand checks: `baton tasks issue <N>` lists them under `hand_checks`. For each task in it,
+     read the recorded result where the task's `Result:` line names (`pass` or `fail` and the full
+     head sha it ran on). A missing result, a `fail`, or a `fail` recorded on a head other than the
+     one under review with no later `pass` is a problem: fix it here with a fix task "Repeat the
+     hand check of task <n> on <head sha>" under `## Tasks`.
 
 6. **Classify each failure.** For every failing test or CI job (from the verification, or from CI):
    read its log through filters (the `log:` path from `baton verify`, or
@@ -144,6 +149,8 @@ condition is every task of the plan, including the tasks the refiner added, and 
 7. **Decide each problem's severity and disposition.** Severity: `critical` (wrong results, data
    loss, security or privacy), `important` (a requirement missed, a real bug, a missing test),
    `minor` (clarity, naming, small tidy-ups). The disposition is your call:
+   - An acceptance criterion that names a hand check is never set aside and never proposed as a
+     follow-up; it is fixed here.
    - **Fix here** when the problem is in this change: a defect it introduces, an acceptance
      criterion not met, a broken project rule, a security or privacy problem, or missing tests for
      what it adds. A test the change adds that does not test what it claims counts as a missing test
@@ -282,6 +289,7 @@ Untrusted instructions seen: none | <where, and what they asked>
 - Write to the forge with raw `gh` (comments, reviews, merging, labels beyond the rows in
   `references/github-shared.md`, `gh api -X POST`) instead of the `baton` command in `references/github.md`, `references/github-shared.md` or `references/github-reviewer.md`; the gate does not stop you,
   the rule stands.
+- Approve while a hand check's latest result is missing or `fail`.
 - Approve a pull request you could not read in full, or whose verification is not `green`.
 - File issues: the timeout follow-up is a proposal in your review.
 - Start subagents, or run review tools that start them.
