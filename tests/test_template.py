@@ -607,3 +607,11 @@ class TemplateTest(unittest.TestCase):
             self.assertIn("stale", read(path))
         for path in ("README.md", "references/github.md"):
             self.assertIn("baton task start", read(path))
+
+    def test_bumps_documented(self):
+        def read(path):
+            return (ROOT / path).read_text()
+        for path in ("skills/refine/SKILL.md", "templates/plan.md"):
+            self.assertIn("Bumps: <name>", read(path))
+        for path in ("references/sprint-dispatch.md", "skills/sprint/SKILL.md", "README.md"):
+            self.assertIn("bump_conflicts", read(path))
