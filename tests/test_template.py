@@ -450,6 +450,13 @@ class TemplateTest(unittest.TestCase):
         text = (ROOT / "skills/review/SKILL.md").read_text()
         self.assertIn("baton pr-state", text)
 
+    def test_review_skill_never_sets_aside_hand_checks(self):
+        text = " ".join(
+            (ROOT / "skills" / "review" / "SKILL.md").read_text().split()
+        )
+        self.assertIn("Repeat the hand check of task <n> on <head sha>", text)
+        self.assertIn("names a hand check is never set aside", text)
+
     def test_review_skill_fixes_goal_gaps_here(self):
         text = " ".join((ROOT / "skills/review/SKILL.md").read_text().split())
         self.assertIn("defeats the issue's goal", text)
