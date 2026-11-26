@@ -29,7 +29,7 @@ _REVIEW = re.compile(
     r"(?: verify=(green|red|timeout|missing|none))? -->")
 _CAUSE = re.compile(r"^Cause: (default-branch|environment)[ \t]*$", re.M)
 _FAILURES = re.compile(r"^## Failures[ \t]*$")
-_FAILURE_LINE = re.compile(r"^- (\S+?): *\S")
+_FAILURE_LINE = re.compile(r"^- (\S+?): *(\S+)(?: +\(rerun (passed|failed)\))?")
 _REASON = re.compile(r"^## Reason[ \t]*$", re.M)
 _TASKS = re.compile(r"^## Tasks[ \t]*$", re.M)
 _REPLY = f"{gate.MARKER}developer:reply -->"
@@ -62,9 +62,10 @@ def _cause(body):
     return found.group(1) if found else None
 
 
-def failure_ids(body):
-    """The ids listed under a `## Failures` heading, one `- <id>: <outcome>` line each."""
-    ids = set()
+def failure_entries(body):
+    """The `## Failures` lines of a review as `{id: (outcome, rerun)}`: `outcome` the first word after
+    the colon, `rerun` "passed", "failed" or None (no `(rerun ...)` suffix, an older review)."""
+    entries = {}
     in_section = False
     for line in (body or "").splitlines():
         if line.startswith("## "):
@@ -73,8 +74,13 @@ def failure_ids(body):
         if in_section:
             found = _FAILURE_LINE.match(line)
             if found:
-                ids.add(found.group(1))
-    return ids
+                entries[found.group(1)] = (found.group(2), found.group(3))
+    return entries
+
+
+def failure_ids(body):
+    """The ids listed under a `## Failures` heading, one `- <id>: <outcome>` line each."""
+    return set(failure_entries(body))
 
 
 def history(comments, owner, repliers=None):
@@ -91,6 +97,8 @@ def history(comments, owner, repliers=None):
                            "commit": match.group(2), "verify": match.group(3) or "missing",
                            "cause": _cause(body) if match.group(1) == "blocked" else None,
                            "failures": failure_ids(body),
+                           "environment_passed": {i for i, e in failure_entries(body).items()
+                                                  if e == ("environment", "passed")},
                            "url": item.get("url"), "at": item.get("createdAt")})
         elif ((body.startswith(_REPLY) or body.startswith(_REFINE_REPLY))
               and has_login(item.get("author"), repliers)):
@@ -156,7 +164,7 @@ def state(comments, owner, max_rounds, repliers=None):
     that went stale starts the count again. A blocked review is no round and
     does not end the count. `repeated` is the last two requests for changes (blocked
     reviews skipped) sharing a failure id; it is checked on the failure lists alone
-    and outranks `escalate`. A `replan` review is a round, and outranks `escalate` too, unless the
+    and outranks `escalate`; an id both reviews list as `environment (rerun passed)` is left out. A `replan` review is a round, and outranks `escalate` too, unless the
     review before it (blocked ones skipped) was also `replan`. A re-refinement changes the plan, so
     the count compared with `max_rounds` restarts: only round reviews after the last `replan` count.
     """
@@ -183,7 +191,8 @@ def state(comments, owner, max_rounds, repliers=None):
     replan_twice = (last["verdict"] == "replan" and bool(earlier)
                     and earlier[-1]["verdict"] == "replan")
     repeated = (len(changes) >= 2 and last["verdict"] == "changes"
-                and bool(changes[0]["failures"] & changes[1]["failures"]))
+                and bool((changes[0]["failures"] & changes[1]["failures"])
+                         - (changes[0]["environment_passed"] & changes[1]["environment_passed"])))
     if events[-1]["kind"] == "reply":
         name = "replied"
     elif last["verdict"] == "approve":
