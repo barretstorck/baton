@@ -138,6 +138,7 @@ both read it; nothing else goes in but the repository and the sprint goal:
     Repository: <owner>/<repo>. Sprint goal: <goal>.
 
 1. **Issues already in development** (`in_dev`) with no developer running, in this order:
+   - `progress.<N>.in_flight` is set and not `stale`: a developer is running, perhaps from an earlier session. Dispatch nothing for the issue; wait for the task to be ticked or released. A `stale` one is dispatched again as usual and said in the sprint status.
    - `progress.<N>.unplanned` is true (work started before Baton 0.3, with no plan): refine it first (see `${CLAUDE_PLUGIN_ROOT}/references/sprint-dispatch.md`).
    - `progress.<N>.review.next` is set: `Do review task <r.n> of pull request <P> (issue <N>).`
    - otherwise `progress.<N>.plan.next` is set: `Do task <n> of issue <N>.`
@@ -153,7 +154,7 @@ both read it; nothing else goes in but the repository and the sprint goal:
 
 Do not paste the issue text, the task brief, your notes or other issues into the prompt.
 
-Read `${CLAUDE_PLUGIN_ROOT}/references/sprint-dispatch.md` when `sprint-status` reports a `stale` plan, a `held` issue, `path_check_skipped` or `merge_first`, for an issue with an older plan, and when resuming a session.
+Read `${CLAUDE_PLUGIN_ROOT}/references/sprint-dispatch.md` when `sprint-status` reports `in_flight`, a `stale` plan, a `held` issue, `path_check_skipped` or `merge_first`, for an issue with an older plan, and when resuming a session.
 
 ### 8. When a developer or reviewer returns
 

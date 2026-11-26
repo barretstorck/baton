@@ -18,7 +18,7 @@ Other roles also read `${CLAUDE_PLUGIN_ROOT}/references/github-shared.md` and th
 | An issue with its comments | `baton issue read <N>`: text by non-maintainers is withheld as `[untrusted text from @<author> withheld; see Triage summary]`; never use `gh issue view` for issue text. Output: a header (`#<N> <title>`, `State:`, `Author:`, `Labels:`), a line `--- body ---`, the body, a line `--- comments ---`, then per comment `--- comment by @<login> ---` and its text |
 | The latest agent question and the maintainer's replies | `baton answers <N>` (at tier 1 the Baton logins' marker comments count, but their replies never count as answers; `/baton ready` and `/baton approve` also work only from maintainers) |
 | Open pull requests | `gh pr list --state open --json number,title,headRefName,isDraft,closingIssuesReferences` |
-| An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`, `hand_checks`); reads the `## Developer Plan` section of the issue body |
+| An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`, `hand_checks`, `in_flight`); reads the `## Developer Plan` section of the issue body |
 | An issue's plan | the `## Developer Plan` section of the issue body: `baton issue read <N> | sed -n '/^## Developer Plan/,/^--- comments ---$/p'`. The body is limited to 65536 characters; a longer one is refused and the issue must be split. Older issues: a plan still on `refs/plans/<N>` or on a branch is moved into the body by `baton plan migrate <N>`. |
 | A review's tasks | `baton tasks pr <N>` (the latest review's `## Tasks`; none after an approval) |
 
@@ -33,6 +33,8 @@ These commands are the rule, not only what the gate checks. Write with `gh` for 
 | Set an issue's status | `baton set-status <N> status:<name>` (removes the previous status) |
 | Post a comment | `baton comment <issue\|pr> <N> <role> <kind> -` with the body as an inline heredoc on standard input, or a file path in place of `-`. It scans the text, adds the Baton marker and prints the comment URL. |
 | Open a draft pull request | `gh pr create --draft --title "<title>" --body-file <file>` (from a detached checkout the gate adds the pushed branch at HEAD as `--head`) with `Closes #<N>` on its own line in the body |
+| Start a task | `baton task start issue <N> <task>` (developer: posts the in-flight status comment and prints the run) |
+| Release a task | `baton task release issue <N> <task> <run>` (developer: ends the in-flight record for a non-`DONE` return) |
 | Tick a task | `baton task done issue <N> <task> [--as-built <text>]` (developer: ticks the task in the issue body, re-reading the body just before writing; `--as-built` adds the `Provides (as built):` line); `baton task done pr <P> <r.n>` (orchestrator only, review tasks; from a linked worktree set `BATON_ROLE=orchestrator` or it warns) |
 
 Roles: `orchestrator`, `developer`, `refine`, `reviewer`. Kinds: `question`, `status`,

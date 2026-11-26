@@ -565,3 +565,15 @@ class TemplateTest(unittest.TestCase):
         text = (ROOT / "README.md").read_text()
         self.assertIn("### Hand checks", text)
         self.assertIn("## Hand checks", text)
+
+    def test_in_flight_documented(self):
+        def read(p):
+            return (ROOT / p).read_text()
+        develop = read("skills/develop/SKILL.md")
+        self.assertIn("baton task start issue", develop)
+        self.assertIn("baton task release issue", develop)
+        for path in ("skills/sprint/SKILL.md", "references/sprint-dispatch.md"):
+            self.assertIn("in_flight", read(path))
+            self.assertIn("stale", read(path))
+        for path in ("README.md", "references/github.md"):
+            self.assertIn("baton task start", read(path))

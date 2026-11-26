@@ -1,6 +1,6 @@
 # Dispatch special cases
 
-Read this when `sprint-status` reports a `stale` plan, a `held` issue, `path_check_skipped` or `merge_first`, for an issue with an older plan, when an issue in development has no plan or every task ticked, and when resuming a session.
+Read this when `sprint-status` reports `in_flight`, a `stale` plan, a `held` issue, `path_check_skipped` or `merge_first`, for an issue with an older plan, when an issue in development has no plan or every task ticked, and when resuming a session.
 
 **Issue in development with no plan (`unplanned`).**
    - `progress.<N>.unplanned` is true (work started before Baton 0.3, with no plan): dispatch
@@ -58,7 +58,8 @@ empty and ask on that issue: `baton comment issue <N> orchestrator question <fil
 run `baton notify <N> stuck <file | ->`, and list the issue under `Needs you`. This holds whether the slot came from a raised parallel limit or from
 a finished developer.
 
-**Resuming.** A new session cannot tell from its own memory which developers are still running.
+**Resuming.** `in_flight` lists tasks a developer marked as started (`baton task start`) with no tick or release yet. A fresh one is adopted: no second developer for that task or issue; wait for its tick or release in a later pass. A `stale` one (older than `developer.in_flight_minutes` with no push) is reported in the sprint status and dispatched again; the old developer, if still running, stops itself when it sees the new run. The comparison below stays for tasks with no record.
+A new session cannot tell from its own memory which developers are still running.
 For each `in_dev` issue, compare `git log --oneline origin/<default>..origin/<branch>` with the
 ticked boxes (`baton tasks issue <N>` reads them from the issue body). A `Task <n>:` commit whose box is not ticked was done by a developer
 that was interrupted before it finished: run that task's `Check:` on that commit in a scratch

@@ -63,6 +63,9 @@ filters, send long output to a file, chain related commands, wait for a long run
    If your prompt says to merge the default branch first, or the branch is far behind, see
    `${CLAUDE_PLUGIN_ROOT}/references/develop-cases.md`, Stale branches.
 
+   Before any change, run `baton task start issue <N> <n>` and keep the run it prints: it marks
+   the task as in flight, so the orchestrator does not dispatch a second developer for it.
+
 3. **Get the branch.** The branch `issue-<N>-<short-slug>` is made by task 1 from the default
    branch.
    - *Task 1:* `baton set-status <N> status:in-dev`; create `issue-<N>-<short-slug>` from
@@ -92,6 +95,9 @@ filters, send long output to a file, chain related commands, wait for a long run
      `.baton-scratch/comment.txt` and run
      `baton comment issue <N> developer status .baton-scratch/comment.txt`. With no code to commit,
      tick the task as usual and return `DONE` with the branch head's full sha.
+   - Before ticking, run `baton tasks issue <N>`: if `in_flight` names your task with another run,
+     another developer took the task over; return `BLOCKED: task <n> was taken over by run <other>`
+     without ticking or pushing.
    - Tick your task: `baton task done issue <N> <n>` ticks its box in the issue body (it re-reads
      the body just before writing). If what you built differs from your task's `Provides:` (a
      changed signature or name), add `--as-built "<what exists now>"`: it adds a
@@ -173,6 +179,9 @@ cannot delete them.
 Your final message starts with exactly one result line: `DONE <full sha>`, `FIXED <full sha>`,
 `DECLINED <reason>`, `REPLAN`, `QUESTION:` or `BLOCKED:`. A one-word or placeholder report, or a
 summary without a result line, is not a result. Your final message is exactly one of these.
+
+Before returning `REPLAN`, `QUESTION:` or `BLOCKED:` for a plan task you started (except the
+taken-over case), run `baton task release issue <N> <n> <run>` to end the in-flight record.
 
 A plan task:
 
