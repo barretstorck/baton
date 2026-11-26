@@ -441,6 +441,11 @@ class IssueForgeTest(unittest.TestCase):
             checklist.replace_issue_plan(cfg(), runner, 7, "1", "- [ ] **1. X**\n", [])
         self.assertFalse(any("issue edit" in line for line in runner.lines()))
 
+    def test_issue_plan_lists_hand_checks(self):
+        body = DEV_BODY.replace("  - Provides: `g()`\n", "  - Provides: `g()`\n  - Hand check: run it by hand\n")
+        found = checklist.issue_plan(issue_runner(body), 7)
+        self.assertEqual(found["hand_checks"], {"2": "run it by hand"})
+
     def test_issue_plan_without_plan(self):
         with self.assertRaises(checklist.TaskError):
             checklist.issue_plan(issue_runner("## Context\nx\n"), 7)

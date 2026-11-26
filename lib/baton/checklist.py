@@ -500,6 +500,7 @@ def issue_plan(runner, number, docs_dir=None):
         raise TaskError(f"issue #{number} has no '## Developer Plan' section"
                         + (f" in {link['path']}" if link else ""))
     found["source"] = "file" if link else "body"
+    found["hand_checks"] = hand_checks(text)
     if link:
         found["ref"], found["path"] = link["ref"], link["path"]
     return found
