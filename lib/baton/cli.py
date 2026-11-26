@@ -5,7 +5,7 @@ import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import branches, cliargs, budget, checklist, clean, comment, compact, config, doctor, gate, githooks, identity, issue, labels, merge, orchestrator, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
+from . import branches, cliargs, budget, checklist, clean, comment, compact, config, doctor, gate, githooks, identity, inflight, issue, labels, merge, orchestrator, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
 
 
 @cliargs.command("config")
@@ -416,12 +416,24 @@ def cmd_tasks(opts):
     cfg = _require_config()
     if opts.target == "issue":
         found = checklist.issue_plan(run.run, opts.number, cfg.data["docs"]["dir"])
-        print(json.dumps({**found, **checklist.progress(found["tasks"])}, indent=2))
+        flight = _in_flight(cfg, opts.number, found["tasks"])
+        print(json.dumps({**found, **checklist.progress(found["tasks"]), "in_flight": flight},
+                         indent=2))
         return 0
     pr = json.loads(run.run(["gh", "pr", "view", str(opts.number), "--json", "comments"]))
     pr["comments"] = review.pr_comments(run.run, opts.number, pr.get("comments"))
     print(json.dumps(review.review_tasks(pr, _trusted(cfg)), indent=2))
     return 0
+
+
+def _in_flight(cfg, number, tasks):
+    """The issue's open in-flight record, or None when the comments cannot be read."""
+    try:
+        data = json.loads(run.run(["gh", "issue", "view", str(number), "--json", "comments"]))
+        comments = identity.mark_authors(run.run, number, data.get("comments"))
+        return inflight.current(comments, tasks, list(_maintainers(cfg)) + sorted(_bots()))
+    except (run.RunError, ValueError, KeyError):
+        return None
 
 
 def _repo_name():
@@ -446,9 +458,39 @@ def cmd_orchestrator_agent(opts):
     return 0
 
 
+def _task_post(opts, cfg, body, prefix=""):
+    try:
+        url = comment.post(cfg, run.run, "issue", opts.number, "developer", "status", body,
+                           scan.load_terms())
+        print(prefix + url)
+    except comment.CommentError as error:
+        print(f"baton: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _task_start(opts, cfg):
+    found = checklist.issue_plan(run.run, opts.number, cfg.data["docs"]["dir"])
+    task = next((t for t in found["tasks"] if str(t.get("id")) == opts.task), None)
+    if task is None or task.get("done"):
+        why = "does not exist" if task is None else "is already ticked"
+        print(f"baton: task {opts.task} of #{opts.number} {why}", file=sys.stderr)
+        return 1
+    token = inflight.new_run()
+    return _task_post(opts, cfg, inflight.start_body(opts.task, token), f"run {token}\n")
+
+
+def _task_release(opts, cfg):
+    return _task_post(opts, cfg, inflight.release_body(opts.task, opts.run))
+
+
 @cliargs.command("task")
 def cmd_task(opts):
     cfg = _require_config()
+    if opts.action == "start":
+        return _task_start(opts, cfg)
+    if opts.action == "release":
+        return _task_release(opts, cfg)
     if opts.target == "issue":
         as_built = opts.as_built
         changed = checklist.tick_issue(run.run, opts.number, opts.task, cwd=os.getcwd(),
