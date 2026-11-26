@@ -144,6 +144,10 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.DEFAULTS["developer"]["max_parallel"], 1)
         self.assertEqual(config.load(str(make_repo("# none\n"))).data["developer"]["max_parallel"], 1)
 
+    def test_developer_in_flight_minutes_default(self):
+        self.assertEqual(config.DEFAULTS["developer"]["in_flight_minutes"], 120)
+        self.assertEqual(config.load(str(make_repo("# none\n"))).data["developer"]["in_flight_minutes"], 120)
+
     def test_developer_effort_default_override_and_rejection(self):
         self.assertEqual(config.load(str(make_repo("# none\n"))).data["developer"]["effort"], "medium")
         cfg = config.load(str(make_repo("---\ndeveloper:\n  effort: high\n---\n")))
