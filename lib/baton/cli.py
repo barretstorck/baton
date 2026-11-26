@@ -154,6 +154,11 @@ def _bots():
     return identity.bot_logins()
 
 
+def _issue_trusted(cfg):
+    """Logins whose REPLAN and decision comments count when ticking a task."""
+    return list(_maintainers(cfg)) + sorted(_bots())
+
+
 def _reviewers():
     return identity.reviewer_logins()
 
@@ -454,7 +459,8 @@ def cmd_task(opts):
         changed = checklist.tick_issue(run.run, opts.number, opts.task, cwd=os.getcwd(),
                                        docs_dir=cfg.data["docs"]["dir"], as_built=as_built,
                                        terms=scan.load_terms() if as_built else None,
-                                       allow=cfg.data["privacy_allow"])
+                                       allow=cfg.data["privacy_allow"],
+                                       trusted=_issue_trusted(cfg))
     elif opts.as_built:
         return cliargs.fail("task")
     else:
