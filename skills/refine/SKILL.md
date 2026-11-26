@@ -126,6 +126,7 @@ issue body, written by `baton plan set`.
            - Provides: `<exact signature>`
            - Port from: `path::<function or class>` (when porting)
            - Result: <pull request body section, or status comment on the issue> (a task with no code change)
+           - Hand check: <what to run, on which machine, and the expected result> (optional)
            - Check: `<the test, a filtered subset or a build that proves it done>`, or none
 
            </details>
@@ -136,6 +137,10 @@ issue body, written by `baton plan set`.
      where its result is written, by default a section of the pull request body. Without it the
      developer returns the result only in its final message and the reviewer asks for it in a fix
      round.
+   - When an acceptance criterion can only be checked by hand (for example in another program on
+     a test machine), the task that proves it carries a `Hand check:` line and a `Result:` line,
+     and the issue's criterion names that hand check. `baton ready-check` reports a hand-check
+     task without a `Result:` line.
    - A task is risky when its Files line marks a path `(deleted)` or `(moved to <path>)`, or when
      it adds a public name to a package `__init__`. Its `Check:` is the brief's `verify.command`
      written out in full. If that command contains `{worktree}`, write it as is and say in the

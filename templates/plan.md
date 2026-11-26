@@ -24,6 +24,7 @@ Choices and reasons that do not belong in the issue.
   - Provides (as built): (optional; the developer adds it under Provides only when the code differs from it, and keeps the original line)
   - Port from: `path::<function or class>` (when porting; leave out otherwise)
   - Result: where a task that changes no code (a measurement or a by-eye check) writes its result: "pull request body, section ### <heading>" or "status comment on the issue"; leave out otherwise
+  - Hand check: (optional) a manual check this task needs: what to run, on which machine as the local brief's "## Hand checks" section names it, and the expected result; a task with one also has a Result line
   - Check: the test or subset that proves this task done, a build, or "none"
 
   </details>

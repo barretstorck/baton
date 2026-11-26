@@ -86,6 +86,13 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("cannot be declined as \"outgrows the issue\"", text)
         self.assertIn("name the evidence", text)
 
+    def test_plan_template_and_refine_skill_describe_hand_check(self):
+        plan = (ROOT / "templates" / "plan.md").read_text()
+        self.assertIn("- Hand check:", plan)
+        refine = " ".join((ROOT / "skills" / "refine" / "SKILL.md").read_text().split())
+        self.assertIn("- Hand check:", refine)
+        self.assertIn("carries a `Hand check:` line and a `Result:` line", refine)
+
     def test_develop_skill_writes_result_line(self):
         text = " ".join(develop_text().split())
         self.assertIn("Result: none | <where it was written>", text)
