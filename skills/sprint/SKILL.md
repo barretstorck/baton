@@ -153,7 +153,7 @@ both read it; nothing else goes in but the repository and the sprint goal:
 
 Do not paste the issue text, the task brief, your notes or other issues into the prompt.
 
-Read `${CLAUDE_PLUGIN_ROOT}/references/sprint-dispatch.md` when `sprint-status` reports a `stale` plan, a `held` issue, `path_check_skipped` or `merge_first`, for an issue with an older plan, and when resuming a session.
+Read `${CLAUDE_PLUGIN_ROOT}/references/sprint-dispatch.md` when `sprint-status` reports a `stale` plan, a `held` issue, `blockers_outside`, `path_check_skipped` or `merge_first`, for an issue with an older plan, and when resuming a session.
 
 ### 8. When a developer or reviewer returns
 
