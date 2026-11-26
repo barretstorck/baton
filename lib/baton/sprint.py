@@ -259,7 +259,7 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None, n
         "default_branch": {"name": branch, "state": state, "grace_ends_in_seconds": grace_left},
         "repair_issue": None, "parallel": 0, "free_slots": 0, "in_dev": [], "in_review": [],
         "verification": [], "re_refine": [], "answered": [], "waiting_on_maintainer": [],
-        "dispatchable": [], "held": [], "finished": False, "issues": [], "progress": {},
+        "dispatchable": [], "held": [], "blockers_outside": [], "finished": False, "issues": [], "progress": {},
         "waiting_links": {}, "in_flight": [],
     }
     if chosen is None:
@@ -521,6 +521,15 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None, n
             result["dispatchable"].append(number)
             continue
         result["held"].append({"number": number, "reason": reason})
+
+    for item in sorted(issues, key=lambda entry: entry["number"]):
+        labels = {label["name"] for label in item.get("labels") or []}
+        if item["state"] != "OPEN" or cfg.label("status:complete") in labels:
+            continue
+        outside = [n for n in issue_fields.blocked_by(item.get("body"))
+                   if n not in by_number and _blocker_open(n, by_number, runner)]
+        if outside:
+            result["blockers_outside"].append({"number": item["number"], "blockers": outside})
 
     result["waiting_on_maintainer"] = sorted(waiting)
     for number in result["waiting_on_maintainer"]:
