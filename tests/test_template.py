@@ -67,6 +67,15 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("- Result:", refine)
         self.assertIn("changes no code", refine)
 
+    def test_plan_has_facts_line_for_documentation_tasks(self):
+        text = (ROOT / "templates" / "plan.md").read_text()
+        self.assertLess(text.index("  - Result:"), text.index("  - Facts:"))
+        self.assertLess(text.index("  - Facts:"), text.index("  - Check:"))
+        refine = " ".join((ROOT / "skills" / "refine" / "SKILL.md").read_text().split())
+        self.assertIn("- Facts:", refine)
+        self.assertIn("documentation", refine)
+        self.assertIn("where in the code", refine)
+
     def test_issue_template_has_no_plan_line_or_checkbox_criteria(self):
         text = (ROOT / "templates" / "issue.md").read_text()
         self.assertNotIn("Plan:", text)

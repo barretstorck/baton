@@ -136,6 +136,7 @@ issue body, written by `baton plan set`.
            - Provides: `<exact signature>`
            - Port from: `path::<function or class>` (when porting)
            - Result: <pull request body section, or status comment on the issue> (a task with no code change)
+           - Facts: <fact> (`path::name`); ... (a documentation task)
            - Hand check: <what to run, on which machine, and the expected result> (optional)
            - Check: `<the test, a filtered subset or a build that proves it done>`, or none
 
@@ -147,6 +148,12 @@ issue body, written by `baton plan set`.
      where its result is written, by default a section of the pull request body. Without it the
      developer returns the result only in its final message and the reviewer asks for it in a fix
      round.
+   - A task that writes or changes documentation (a skill, a reference, the README, a docstring or
+     a doc comment) lists on its `Facts:` line each fact the text states (commands, flags,
+     defaults, file names), each with the `path::name` where in the code it is verified. Find them
+     during step 2's investigation, not from the plan or the issue. Its `Check:` includes, for
+     each fact, a command whose output shows the fact in the code (an `rg -n` that must print a
+     match, or `baton <command> --help`), so the developer checks the text against that output.
    - When an acceptance criterion can only be checked by hand (for example in another program on
      a test machine), the task that proves it carries a `Hand check:` line and a `Result:` line,
      and the issue's criterion names that hand check. `baton ready-check` reports a hand-check
