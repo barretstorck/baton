@@ -81,6 +81,10 @@ is missing, a task is in the wrong order), propose new tasks instead of improvis
   criteria. If they would change what the issue promises, say so plainly.
 - Push nothing half-done that the new plan does not use.
 
+Before returning, post the REPLAN block as a developer `status` comment whose first body line is
+exactly `REPLAN from task <n>` (see "Posting a comment" below). `baton task done issue` then
+refuses that task and every later one until the orchestrator replaces the plan.
+
 The orchestrator replaces the open tasks and records the change on the issue, or asks the
 maintainer when the promise would change.
 
