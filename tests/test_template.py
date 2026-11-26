@@ -92,6 +92,17 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("gh pr edit <P> --body-file", text)
         self.assertIn("Port from, Result and Check", text)
 
+    def test_develop_skill_ticks_after_check(self):
+        text = " ".join(develop_text().split())
+        self.assertIn("Tick only after the check passed.", text)
+        self.assertIn("Check: <command> → pass: <one-line summary> | none", text)
+        self.assertIn("REPLAN from task <n>", text)
+        skill = " ".join((ROOT / "skills/develop/SKILL.md").read_text().split())
+        self.assertGreater(
+            skill.index("baton task done issue <N> <n>"),
+            skill.index("**Run the task's `Check:`**"),
+        )
+
     def test_develop_skill_has_scratch_file_rule(self):
         text = develop_text()
         self.assertIn("\n## Scratch files\n", text)

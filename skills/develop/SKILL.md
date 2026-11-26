@@ -91,7 +91,15 @@ filters, send long output to a file, chain related commands, wait for a long run
      `gh pr edit <P> --body-file <file>`. For a status comment: write it to
      `.baton-scratch/comment.txt` and run
      `baton comment issue <N> developer status .baton-scratch/comment.txt`. With no code to commit,
-     tick the task as usual and return `DONE` with the branch head's full sha.
+     tick the task as usual (step 5) and return `DONE` with the branch head's full sha.
+
+5. **Run the task's `Check:`**, and nothing more unless the brief says so. "none" means none. Send
+   long output to a file and read the summary; it must pass. Never run the repository's full verification
+   suite (the brief's `verify.command`) yourself: the reviewer runs it with `baton verify`.
+   - A tool that is not installed is not a reason to skip the check: look for a repository script
+     that provides it (one that brings its own toolchain counts as available), else return
+     `BLOCKED: <what is missing>`, never `DONE`.
+   - Tick only after the check passed.
    - Tick your task: `baton task done issue <N> <n>` ticks its box in the issue body (it re-reads
      the body just before writing). If what you built differs from your task's `Provides:` (a
      changed signature or name), add `--as-built "<what exists now>"`: it adds a
@@ -101,10 +109,6 @@ filters, send long output to a file, chain related commands, wait for a long run
        before you push the code in step 6.
      - *Review task:* you never run `baton task done pr`. You return `FIXED <sha>` or
        `DECLINED <reason>`; the orchestrator checks the sha is on the branch and ticks.
-
-5. **Run the task's `Check:`**, and nothing more unless the brief says so. "none" means none. Send
-   long output to a file and read the summary; it must pass. Never run the repository's full verification
-   suite (the brief's `verify.command`) yourself: the reviewer runs it with `baton verify`.
 
 6. **Commit and push.** If the hook refuses the commit, see `${CLAUDE_PLUGIN_ROOT}/references/develop-cases.md`, Hook refusals. Stage the code, `git commit -m "Task <n>: <title>"`, then push the branch
    with `baton push HEAD:refs/heads/<branch>` (a plain push at tier 0, the `baton` App's token at tier 1). Your checkout is detached, so
@@ -168,7 +172,7 @@ A plan task:
 ```
 DONE <full sha>
 Issue: #<N>, task <n>
-Check: <command> → <summary line> | none
+Check: <command> → pass: <one-line summary> | none
 Result: none | <where it was written>
 Conflicts with other open pull requests: none | #<PR> in <files>   (last task only)
 Follow-up suggestions: none | - <title>: <one line>
