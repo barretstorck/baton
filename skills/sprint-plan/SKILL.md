@@ -41,6 +41,14 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_R
      and severity never override dependencies or the goal. An issue without a priority label
      ranks after every ranked one; one without a severity label ranks after every one with a
      severity (a non-bug never has one).
+   - Blockers join too: for each chosen issue, read its `Blocked by:` line
+     (`baton issue read <N>`). Every blocker that is still open joins the proposal, ordered
+     before its dependent and with the same `deliverable` or `stretch` mark. A blocker in
+     `status:refinement` is refined first (as the bullet on refining below offers:
+     `/baton:refine` or `baton:baton-refiner` agents). A blocker that cannot become ready (not
+     ready after refining, an outside issue without the maintainer's `/baton ready`, or over
+     capacity) leaves its dependent out; the "left out" list then says "blocked by #<M>, which
+     cannot join". Repeat for the blockers' own blockers.
    - Spikes first: run `baton sprint-order <N>...` with the chosen issues and use its `order`
      (spikes lead, as the handbook schedules spikes at the start of an iteration). When
      `left_out` is not empty, say in the proposal that `spike.max_per_sprint` kept only
@@ -71,7 +79,8 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_R
 
 5. **Propose.** Show the maintainer a table: order, issue, title, priority, severity,
    deliverable or stretch, plan tasks, blockers, overlaps (show `-` where a priority or
-   severity is unset). Under it list what you left out and why. After that, add a separate list
+   severity is unset); the `blockers` column names each open blocker. Under it, one line
+   "Added as blockers: #<M> (for #<N>), ..." and the list of what you left out and why. After that, add a separate list
    titled "Urgent or high priority, not in this sprint": every open `priority:1` and
    `priority:2` issue that matches no goal of this sprint, each with the reason it is left out
    (not serving the goal, not ready, blocked by an open issue, written by someone else, and so on).
@@ -93,7 +102,7 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_R
 
    - Create the milestone with its due date
      (`baton milestone create --title "<title>" --description "<text>" --due-on <ISO date>`).
-   - Add each issue to it and set its `deliverable` or `stretch` label
+   - Add each issue to it, the added blockers included, and set its `deliverable` or `stretch` label
      (`gh issue edit <N> --milestone "<title>" --add-label deliverable`).
    - Post one `plan` comment on the first issue listing the sprint, so there is a record:
      `baton comment issue <N> orchestrator plan <file>`.
