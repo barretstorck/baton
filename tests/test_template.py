@@ -86,6 +86,13 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("cannot be declined as \"outgrows the issue\"", text)
         self.assertIn("name the evidence", text)
 
+    def test_plan_template_and_refine_skill_describe_hand_check(self):
+        plan = (ROOT / "templates" / "plan.md").read_text()
+        self.assertIn("- Hand check:", plan)
+        refine = " ".join((ROOT / "skills" / "refine" / "SKILL.md").read_text().split())
+        self.assertIn("- Hand check:", refine)
+        self.assertIn("carries a `Hand check:` line and a `Result:` line", refine)
+
     def test_develop_skill_writes_result_line(self):
         text = " ".join(develop_text().split())
         self.assertIn("Result: none | <where it was written>", text)
@@ -313,6 +320,16 @@ class TemplateTest(unittest.TestCase):
         text = (ROOT / "templates" / "brief.local.md").read_text()
         self.assertIn("## Sandbox", text)
 
+    def test_local_brief_template_has_hand_checks_section(self):
+        text = (ROOT / "templates" / "brief.local.md").read_text()
+        self.assertIn("## Hand checks", text)
+
+    def test_develop_skill_handles_hand_checks(self):
+        text = " ".join(develop_text().split())
+        for phrase in ("Hand check: pass on <full sha>: <one line> | none",
+                       "## Hand checks", "never `DONE`"):
+            self.assertIn(phrase, text)
+
     def test_brief_template_has_responsibilities_section(self):
         text = " ".join((ROOT / "templates" / "brief.md").read_text().split())
         self.assertIn("## Responsibilities", text)
@@ -433,6 +450,13 @@ class TemplateTest(unittest.TestCase):
         text = (ROOT / "skills/review/SKILL.md").read_text()
         self.assertIn("baton pr-state", text)
 
+    def test_review_skill_never_sets_aside_hand_checks(self):
+        text = " ".join(
+            (ROOT / "skills" / "review" / "SKILL.md").read_text().split()
+        )
+        self.assertIn("Repeat the hand check of task <n> on <head sha>", text)
+        self.assertIn("names a hand check is never set aside", text)
+
     def test_review_skill_fixes_goal_gaps_here(self):
         text = " ".join((ROOT / "skills/review/SKILL.md").read_text().split())
         self.assertIn("defeats the issue's goal", text)
@@ -536,3 +560,8 @@ class TemplateTest(unittest.TestCase):
             self.assertIn(phrase, text)
         self.assertIn("in the background", text)
         self.assertNotIn("in the foreground", text)
+
+    def test_readme_documents_hand_checks(self):
+        text = (ROOT / "README.md").read_text()
+        self.assertIn("### Hand checks", text)
+        self.assertIn("## Hand checks", text)

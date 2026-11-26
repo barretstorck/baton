@@ -18,7 +18,7 @@ Other roles also read `${CLAUDE_PLUGIN_ROOT}/references/github-shared.md` and th
 | An issue with its comments | `baton issue read <N>`: text by non-maintainers is withheld as `[untrusted text from @<author> withheld; see Triage summary]`; never use `gh issue view` for issue text. Output: a header (`#<N> <title>`, `State:`, `Author:`, `Labels:`), a line `--- body ---`, the body, a line `--- comments ---`, then per comment `--- comment by @<login> ---` and its text |
 | The latest agent question and the maintainer's replies | `baton answers <N>` (at tier 1 the Baton logins' marker comments count, but their replies never count as answers; `/baton ready` and `/baton approve` also work only from maintainers) |
 | Open pull requests | `gh pr list --state open --json number,title,headRefName,isDraft,closingIssuesReferences` |
-| An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`); reads the `## Developer Plan` section of the issue body |
+| An issue's plan tasks | `baton tasks issue <N>` (JSON: `written_against`, `tasks`, `done`, `total`, `next`, `hand_checks`); reads the `## Developer Plan` section of the issue body |
 | An issue's plan | the `## Developer Plan` section of the issue body: `baton issue read <N> | sed -n '/^## Developer Plan/,/^--- comments ---$/p'`. The body is limited to 65536 characters; a longer one is refused and the issue must be split. Older issues: a plan still on `refs/plans/<N>` or on a branch is moved into the body by `baton plan migrate <N>`. |
 | A review's tasks | `baton tasks pr <N>` (the latest review's `## Tasks`; none after an approval) |
 

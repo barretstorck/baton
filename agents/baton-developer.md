@@ -28,3 +28,5 @@ For a review task you never run `baton task done pr`; the orchestrator ticks.
 The `tools:` list above is deliberate: the `develop` skill needs file, search and shell work (`gh`, `git` and `baton` run through Bash). If a run shows a tool is missing, add it to the list and write the reason here.
 
 Never copy or link `.env` or any other secret file into your worktree. Reach local data only by the absolute paths under `## Local data` in the local brief, and return `QUESTION` if what you need is not listed.
+
+A task with a hand check is `DONE` only after the check ran and passed and its result is written; when it cannot run here, return `BLOCKED`.

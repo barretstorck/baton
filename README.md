@@ -144,6 +144,23 @@ whole issue grows large and expensive: in the second sprint, single developers r
 - `baton usage` measures the result per issue and role from the local transcripts, and the
   retrospective includes its table. Transcripts record output tokens while streaming, so `baton usage` undercounts output: its `Output>=` column and the JSON `output_lower_bound` are lower bounds. Spike budgets (`baton budget`) therefore rest on input and cache tokens.
 
+### Hand checks
+
+A hand check is a manual check a task needs that no test can do, such as running a build on a
+particular machine. The task carries a `Hand check:` line (what to run, on which machine, and the
+expected result) and a `Result:` line.
+
+A repository describes its hand-check machine in the local brief's `## Hand checks` section
+(`~/.baton/<owner>-<repo>/brief.local.md`), never in the committed brief.
+
+Baton enforces it:
+
+- `baton ready-check` refuses a hand-check task without a `Result:` line, and `baton tasks issue`
+  lists hand-check tasks.
+- The developer runs the hand check on the pushed head, returns `BLOCKED` when it cannot run it,
+  and restores the machine before reporting.
+- The reviewer never sets aside a hand-check criterion and asks for a repeat on the reviewed head.
+
 ## How a pull request gets merged
 
 1. Developer agents do the issue's plan, one task each, pushing to the branch; the pull request
