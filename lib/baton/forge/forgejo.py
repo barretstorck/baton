@@ -87,6 +87,69 @@ class Forgejo:
                 return items
             page += 1
 
+    def _labels(self):
+        items = list(self._paged(f"/repos/{self.owner}/{self.repo}/labels"))
+        try:
+            items += self._paged(f"/orgs/{self.owner}/labels")
+        except ForgejoError as err:
+            if "HTTP 404" not in str(err):
+                raise
+        return items
+
+    def label_names(self):
+        return {item["name"] for item in self._labels()}
+
+    def label_create(self, name, color, description, role=None):
+        self._request("POST", f"/repos/{self.owner}/{self.repo}/labels",
+                      body={"name": name, "color": "#" + color, "description": description})
+        return ""
+
+    def _label_ids(self, names):
+        known = {item["name"]: item["id"] for item in self._labels()}
+        ids = []
+        for name in names:
+            if name not in known:
+                raise ForgejoError(f"Forgejo label not found: {name}")
+            ids.append(known[name])
+        return ids
+
+    @staticmethod
+    def _milestone_shape(item):
+        return {"number": item["id"], "title": item.get("title"),
+                "description": item.get("description", ""), "state": item.get("state"),
+                "due_on": item.get("due_on")}
+
+    def _milestone_list(self, state):
+        items = self._paged(f"/repos/{self.owner}/{self.repo}/milestones", {"state": state})
+        return [self._milestone_shape(item) for item in items]
+
+    def milestones(self):
+        return self._milestone_list("all")
+
+    def milestones_text(self, owner, repo, state):
+        items = self._paged(f"/repos/{owner}/{repo}/milestones", {"state": state})
+        return json.dumps([self._milestone_shape(item) for item in items])
+
+    def milestone_create(self, title, description=None, due_on=None, role=None):
+        body = {"title": title}
+        if description:
+            body["description"] = description
+        if due_on:
+            body["due_on"] = due_on
+        self._request("POST", f"/repos/{self.owner}/{self.repo}/milestones", body=body)
+        return ""
+
+    def milestone_edit(self, number, changes, role=None):
+        self._request("PATCH", f"/repos/{self.owner}/{self.repo}/milestones/{number}",
+                      body=dict(changes))
+        return ""
+
+    def _milestone_id(self, title):
+        for item in self._milestone_list("all"):
+            if item["title"] == title:
+                return item["number"]
+        raise ForgejoError(f"Forgejo milestone not found: {title}")
+
     def issue_lock(self, number, reason=None, role=None):
         raise Unsupported("issue lock")
 

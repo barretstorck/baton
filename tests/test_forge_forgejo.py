@@ -1,3 +1,4 @@
+import json
 import os
 import pathlib
 import unittest
@@ -78,6 +79,57 @@ class TransportTest(unittest.TestCase):
     def test_issue_body_edits_none(self):
         forge, _ = make()
         self.assertIsNone(forge.issue_body_edits(1))
+
+
+class LabelMilestoneTest(unittest.TestCase):
+    def labels(self, org=(200, [{"id": 2, "name": "org-l"}])):
+        return make({"GET /api/v1/repos/o/r/labels": (200, [{"id": 1, "name": "repo-l"}]),
+                     "GET /api/v1/orgs/o/labels": org})
+
+    def test_names_merged(self):
+        forge, _ = self.labels()
+        self.assertEqual(forge.label_names(), {"repo-l", "org-l"})
+
+    def test_org_404_ok(self):
+        forge, _ = self.labels(org=(404, {"message": "no org"}))
+        self.assertEqual(forge.label_names(), {"repo-l"})
+
+    def test_label_create_color(self):
+        forge, t = make({"POST /api/v1/repos/o/r/labels": (201, {})})
+        forge.label_create("n", "ff0000", "d")
+        self.assertEqual(json.loads(t.calls[0][3]),
+                         {"name": "n", "color": "#ff0000", "description": "d"})
+
+    def test_label_ids(self):
+        forge, _ = self.labels()
+        self.assertEqual(forge._label_ids(["org-l", "repo-l"]), [2, 1])
+        with self.assertRaises(ForgejoError) as ctx:
+            forge._label_ids(["nope"])
+        self.assertIn("nope", str(ctx.exception))
+
+    def test_milestones_shape(self):
+        forge, t = make({"GET /api/v1/repos/o/r/milestones": (200, [
+            {"id": 9, "title": "M", "description": "d", "state": "open",
+             "due_on": "2026-01-01T00:00:00Z"}])})
+        self.assertEqual(forge.milestones(), [{"number": 9, "title": "M", "description": "d",
+                                               "state": "open", "due_on": "2026-01-01T00:00:00Z"}])
+        self.assertIn("state=all", t.lines()[0])
+        self.assertEqual(json.loads(forge.milestones_text("o", "r", "open"))[0]["number"], 9)
+        self.assertEqual(forge._milestone_id("M"), 9)
+        with self.assertRaises(ForgejoError):
+            forge._milestone_id("X")
+
+    def test_milestone_create_due_on_only_when_given(self):
+        forge, t = make({"POST /api/v1/repos/o/r/milestones": (201, {})})
+        forge.milestone_create("A")
+        forge.milestone_create("B", due_on="2026-02-01T00:00:00Z")
+        self.assertEqual(json.loads(t.calls[0][3]), {"title": "A"})
+        self.assertIn("due_on", json.loads(t.calls[1][3]))
+
+    def test_milestone_edit(self):
+        forge, t = make({"PATCH /api/v1/repos/o/r/milestones/4": (200, {})})
+        forge.milestone_edit(4, [("state", "closed")])
+        self.assertEqual(json.loads(t.calls[0][3]), {"state": "closed"})
 
 
 if __name__ == "__main__":
