@@ -431,6 +431,14 @@ class MergeRequestTest(unittest.TestCase):
         self.assertEqual(self.view("mergeable", has_conflicts=True)[0]["mergeable"], "CONFLICTING")
         self.assertEqual(self.view("mergeable", detailed_merge_status="checking")[0]["mergeable"],
                          "UNKNOWN")
+        self.assertEqual(self.view("mergeable", detailed_merge_status="conflict")[0]["mergeable"],
+                         "CONFLICTING")
+        self.assertEqual(
+            self.view("mergeable", detailed_merge_status="discussions_not_resolved")[0]["mergeable"],
+            "discussions_not_resolved")
+        self.assertEqual(self.view("mergeable", detailed_merge_status="mergeable")[0]["mergeable"],
+                         "MERGEABLE")
+        self.assertEqual(self.view("mergeable")[0]["mergeable"], "MERGEABLE")
 
     def test_missing_draft_reads_as_draft(self):
         mr = {k: v for k, v in self.MR.items() if k != "draft"}

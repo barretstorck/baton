@@ -344,11 +344,14 @@ class GitLab:
 
     @classmethod
     def _mr_mergeable(cls, item):
-        if item.get("has_conflicts"):
+        status = item.get("detailed_merge_status")
+        if item.get("has_conflicts") or status == "conflict":
             return "CONFLICTING"
-        if item.get("detailed_merge_status") in cls._UNKNOWN_MERGE:
+        if status in cls._UNKNOWN_MERGE:
             return "UNKNOWN"
-        return "MERGEABLE"
+        if status is None or status == "mergeable":
+            return "MERGEABLE"
+        return status
 
     @staticmethod
     def _is_cross_repository(item):
