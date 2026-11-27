@@ -61,7 +61,8 @@ def publish(cfg, runner, target, number, text, terms, role="orchestrator"):
         os.unlink(path)
 
 
-def publish_review(cfg, runner, number, text, terms, event, login):
+def publish_review(cfg, runner, number, text, terms, event, login,
+                   commit=None):
     """Scan a stamped verdict and post it as a formal review by the reviewer App.
 
     `event` is approve, request-changes or comment. `gh pr review` prints no URL, so the
@@ -72,7 +73,8 @@ def publish_review(cfg, runner, number, text, terms, event, login):
     try:
         with os.fdopen(handle, "w") as out:
             out.write(text)
-        forge.for_repo(runner=runner).pr_review(number, event, path, "reviewer")
+        forge.for_repo(runner=runner).pr_review(
+            number, event, path, "reviewer", commit=commit)
     finally:
         os.unlink(path)
     urls = forge.for_repo(runner=runner).review_urls(number, login)

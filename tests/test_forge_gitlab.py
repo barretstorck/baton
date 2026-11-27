@@ -47,6 +47,7 @@ class TransportTest(unittest.TestCase):
         self.assertIn("not found", str(ctx.exception))
         self.assertNotIn(TOKEN, str(ctx.exception))
         self.assertNotIn("secret", str(ctx.exception))
+        self.assertEqual(ctx.exception.status, 404)
 
     def test_error_field_is_used(self):
         forge, _ = make({"GET /api/v4/x": (401, {"error": "invalid_token"})})
@@ -84,7 +85,6 @@ class TransportTest(unittest.TestCase):
     def test_unsupported_methods(self):
         forge, t = make()
         for call in (lambda: forge.review_edit_body(1, 2, "p"),
-                     lambda: forge.comment_edit_body("3", "p"),
                      lambda: forge.workflow_entries_text("o", "r"),
                      lambda: forge.workflow_file_text("o", "r", "f"),
                      lambda: forge.actions_permissions_text("o", "r")):
@@ -731,6 +731,19 @@ class MergeRequestWriteTest(unittest.TestCase):
         forge.pr_ready(3)
         self.assertEqual(t.lines(), [f"GET {PROJ}/merge_requests/3"])
 
+    def test_comment_edit_body_puts_the_note(self):
+        forge, t = make({f"PUT {PROJ}/merge_requests/4/notes/7": (200, {})})
+        self.assertEqual(forge.comment_edit_body("7", self.body, role="reviewer", number=4), "")
+        self.assertEqual(t.lines(), [f"PUT {PROJ}/merge_requests/4/notes/7"])
+        self.assertEqual(self.sent(t, 0), {"body": "the body"})
+
+    def test_comment_edit_body_without_number_raises(self):
+        forge, t = make()
+        with self.assertRaises(GitLabError) as ctx:
+            forge.comment_edit_body("7", self.body)
+        self.assertIn("merge request number", str(ctx.exception))
+        self.assertEqual(t.calls, [])
+
     def test_pr_merge_sends_sha(self):
         forge, t = make({f"PUT {PROJ}/merge_requests/4/merge": (200, {})})
         forge.pr_merge(4, "abc")
@@ -755,16 +768,25 @@ class MergeRequestWriteTest(unittest.TestCase):
         self.assertIn("HTTP 405", str(ctx.exception))
         self.assertNotIn("detailed_merge_status", str(ctx.exception))
 
-    def test_approve_posts_note_then_approves_head_sha(self):
+    def test_approve_sends_the_reviewed_commit(self):
+        forge, t = make({f"POST {PROJ}/merge_requests/4/notes": (201, {"id": 1}),
+                         f"POST {PROJ}/merge_requests/4/approve": (201, {})})
+        forge.pr_review(4, "approve", self.body, commit="abc1234")
+        self.assertEqual(t.lines(), [f"POST {PROJ}/merge_requests/4/approve",
+                                     f"POST {PROJ}/merge_requests/4/notes"])
+        self.assertEqual(self.sent(t, 0), {"sha": "abc1234"})
+        self.assertEqual(self.sent(t, 1), {"body": "the body"})
+
+    def test_approve_without_commit_reads_head_sha(self):
         forge, t = make({f"POST {PROJ}/merge_requests/4/notes": (201, {"id": 1}),
                          f"GET {PROJ}/merge_requests/4": (200, {"sha": "head1"}),
                          f"POST {PROJ}/merge_requests/4/approve": (201, {})})
         forge.pr_review(4, "approve", self.body)
-        self.assertEqual(t.lines(), [f"POST {PROJ}/merge_requests/4/notes",
-                                     f"GET {PROJ}/merge_requests/4",
-                                     f"POST {PROJ}/merge_requests/4/approve"])
-        self.assertEqual(self.sent(t, 0), {"body": "the body"})
-        self.assertEqual(self.sent(t, 2), {"sha": "head1"})
+        self.assertEqual(t.lines(), [f"GET {PROJ}/merge_requests/4",
+                                     f"POST {PROJ}/merge_requests/4/approve",
+                                     f"POST {PROJ}/merge_requests/4/notes"])
+        self.assertEqual(self.sent(t, 1), {"sha": "head1"})
+        self.assertEqual(self.sent(t, 2), {"body": "the body"})
 
     def test_comment_only_posts_note_and_unknown_event_raises(self):
         forge, t = make({f"POST {PROJ}/merge_requests/4/notes": (201, {"id": 1})})
@@ -775,10 +797,13 @@ class MergeRequestWriteTest(unittest.TestCase):
 
     def test_approve_conflict_raises(self):
         forge, t = make({f"POST {PROJ}/merge_requests/4/notes": (201, {"id": 1}),
-                         f"GET {PROJ}/merge_requests/4": (200, {"sha": "h"}),
                          f"POST {PROJ}/merge_requests/4/approve": (409, {"message": "sha"})})
-        with self.assertRaises(GitLabError):
-            forge.pr_review(4, "approve", self.body)
+        with self.assertRaises(GitLabError) as ctx:
+            forge.pr_review(4, "approve", self.body, commit="abcdef123")
+        self.assertIn("stale", str(ctx.exception))
+        self.assertIn("refused", str(ctx.exception))
+        self.assertIn("abcdef1", str(ctx.exception))
+        self.assertNotIn(f"POST {PROJ}/merge_requests/4/notes", t.lines())
 
     def test_review_reads_are_empty(self):
         forge, t = make()
@@ -921,8 +946,8 @@ class RoleTokenTest(unittest.TestCase):
         t = self.send(lambda f: f.pr_review(7, "approve", self.body, role="reviewer"),
                       replies={"POST": (201, {}), "GET": (200, {"sha": "abc"})})
         self.assertEqual([(m, h["PRIVATE-TOKEN"]) for m, _, h, _ in t.calls],
-                         [("POST", "tok-reviewer"), ("GET", TOKEN), ("POST", "tok-reviewer")])
-        self.assertTrue(t.lines()[2].endswith("/approve"))
+                         [("GET", TOKEN), ("POST", "tok-reviewer"), ("POST", "tok-reviewer")])
+        self.assertTrue(t.lines()[1].endswith("/approve"))
 
     def test_no_sudo_header(self):
         forge, t = make({"POST": (201, {"id": 1}), "PUT": (200, {}), "GET": (200, [])})

@@ -2,8 +2,11 @@ import copy
 import json
 import pathlib
 import unittest
+from unittest import mock
+
 from baton import config, identity, review, run
-from tests.fakes import FakeRunner
+from baton.forge.gitlab import GitLab
+from tests.fakes import FakeRunner, FakeTransport
 
 OWNER = "octo"
 OLD = "a" * 40
@@ -390,6 +393,22 @@ class ReviewTasksTest(unittest.TestCase):
         self.assertTrue(review.tick_review(runner, 9, OWNER, "1.1"))
         patch = [c for c in runner.calls if c[:4] == ["gh", "api", "-X", "PATCH"]]
         self.assertEqual(patch[0][4], "repos/{owner}/{repo}/issues/comments/55")
+
+    def test_tick_review_edits_a_gitlab_note(self):
+        mr = "GET /api/v4/projects/o%2Fr/merge_requests/9"
+        transport = FakeTransport({
+            mr: (200, {"iid": 9, "web_url": "https://g.example/o/r/-/merge_requests/9",
+                       "sha": NEW}),
+            mr + "/notes": (200, [{"id": 77, "body": review.compose("changes", NEW, TASKS),
+                                   "author": {"username": OWNER}, "system": False}]),
+            "PUT /api/v4/projects/o%2Fr/merge_requests/9/notes/77": (200, {}),
+        })
+        backend = GitLab("https://g.example/", "o", "r", token="t", transport=transport)
+        with mock.patch("baton.forge.for_repo", return_value=backend):
+            self.assertTrue(review.tick_review(FakeRunner({}), 9, OWNER, "1.1"))
+        puts = [c for c in transport.calls if c[0] == "PUT"]
+        self.assertEqual(len(puts), 1)
+        self.assertIn("[x]", json.loads(puts[0][3])["body"])
 
     def test_tick_review_already_ticked(self):
         runner = pr_runner([changes_with_tasks(ticked=True)])

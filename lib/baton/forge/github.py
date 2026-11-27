@@ -136,7 +136,7 @@ class GitHub:
         return self._write(["gh", "label", "create", name, "--color", color,
                             "--description", description], role)
 
-    def pr_review(self, number, event, path, role=None):
+    def pr_review(self, number, event, path, role=None, commit=None):
         return self._write(["gh", "pr", "review", str(number), f"--{event}",
                             "--body-file", path], role)
 
