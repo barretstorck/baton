@@ -603,7 +603,22 @@ class GitLab:
         raise Unsupported("GitHub Actions permission reads")
 
     def issue_body_edits(self, number):
-        return None
+        try:
+            notes = self._paged(f"{self._project()}/issues/{number}/notes",
+                                {"sort": "desc", "order_by": "created_at"})
+        except GitLabError:
+            return None
+        edits = []
+        for note in notes:
+            if not note.get("system") or not (note.get("body") or "").startswith(
+                    "changed the description"):
+                continue
+            author = note.get("author")
+            created = note.get("created_at") or ""
+            edits.append({"editedAt": max(note.get("updated_at") or "", created),
+                          "editor": ({"login": author.get("username", ""), "__typename": "User"}
+                                     if author else None)})
+        return edits
 
     def issue_timeline(self, number):
         return None
