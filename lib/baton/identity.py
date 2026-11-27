@@ -17,7 +17,7 @@ from . import verify
 
 NAMES = ("baton", "reviewer")
 MACHINE = "machine"
-TOKEN_KINDS = ("forgejo",)
+TOKEN_KINDS = ("forgejo", "gitlab")
 DEFAULT_LOGINS = {"baton": "baton[bot]", "reviewer": "baton-reviewer[bot]"}
 
 

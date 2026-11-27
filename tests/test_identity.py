@@ -157,6 +157,26 @@ class ForgeTokenTest(unittest.TestCase):
         self.table()
         self.assertIsNone(identity.load("o", "r", home=self.tmp.name))
 
+    def test_gitlab_three_sources_in_order(self):
+        def tok(environ):
+            return identity.forge_token("gitlab", "o", "r", home=self.tmp.name, environ=environ)
+        (self.dir / "gitlab-token").write_text("bare\n")
+        self.assertEqual(tok({}), "bare")
+        self.tokfile.write_text("file\n")
+        (self.dir / "identity.toml").write_text(f'[gitlab]\ntoken_path = "{self.tokfile}"\n')
+        self.assertEqual(tok({}), "file")
+        self.assertEqual(tok({"GITLAB_TOKEN": " env "}), "env")
+
+    def test_load_only_gitlab_is_none(self):
+        (self.dir / "identity.toml").write_text('[gitlab]\ntoken_path = "x"\n')
+        self.assertIsNone(identity.load("o", "r", home=self.tmp.name))
+
+    def test_gitlab_nested_owner_folder(self):
+        folder = self.root / "a-b-p"
+        folder.mkdir()
+        (folder / "gitlab-token").write_text("nested\n")
+        self.assertEqual(identity.forge_token("gitlab", "a/b", "p", home=self.tmp.name, environ={}), "nested")
+
     def test_load_rejects_bad_table(self):
         for text in ('[forgejo]\ntoken_path = "x"\nother = 1\n', '[forgejo]\ntoken_path = ""\n'):
             (self.dir / "identity.toml").write_text(text)
