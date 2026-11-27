@@ -123,6 +123,70 @@ class GitLab:
         with open(path, encoding="utf-8") as handle:
             return handle.read()
 
+    # --- labels and milestones ---
+
+    def label_names(self):
+        items = self._paged(f"{self._project()}/labels", {"include_ancestor_groups": "true"})
+        return {item["name"] for item in items}
+
+    def label_create(self, name, color, description, role=None):
+        self._request("POST", f"{self._project()}/labels",
+                      body={"name": name, "color": "#" + color, "description": description})
+        return ""
+
+    @staticmethod
+    def _milestone_shape(item):
+        due = item.get("due_date")
+        state = item.get("state")
+        return {"number": item["id"], "title": item.get("title"),
+                "description": item.get("description") or "",
+                "state": "open" if state == "active" else state,
+                "due_on": f"{due}T00:00:00Z" if due else None}
+
+    def _milestone_items(self, owner, repo, state):
+        params = {"include_ancestors": "true"}
+        wanted = {"open": "active", "active": "active", "closed": "closed"}.get(state)
+        if wanted:
+            params["state"] = wanted
+        return [self._milestone_shape(item)
+                for item in self._paged(f"{self._project(owner, repo)}/milestones", params)]
+
+    def _milestone_list(self, state):
+        return self._milestone_items(None, None, state)
+
+    def milestones(self):
+        return self._milestone_list("all")
+
+    def milestones_text(self, owner, repo, state):
+        return json.dumps(self._milestone_items(owner, repo, state))
+
+    def milestone_create(self, title, description=None, due_on=None, role=None):
+        body = {"title": title}
+        if description:
+            body["description"] = description
+        if due_on:
+            body["due_date"] = due_on[:10]
+        self._request("POST", f"{self._project()}/milestones", body=body)
+        return ""
+
+    def milestone_edit(self, number, changes, role=None):
+        body = {}
+        for key in ("title", "description"):
+            if key in changes:
+                body[key] = changes[key]
+        if "due_on" in changes:
+            body["due_date"] = (changes["due_on"] or "")[:10]
+        if "state" in changes:
+            body["state_event"] = "close" if changes["state"] == "closed" else "activate"
+        self._request("PUT", f"{self._project()}/milestones/{number}", body=body)
+        return ""
+
+    def _milestone_id(self, title):
+        for item in self._milestone_list("all"):
+            if item["title"] == title:
+                return item["number"]
+        raise GitLabError(f"GitLab milestone not found: {title}")
+
     # --- not supported yet ---
 
     def review_edit_body(self, number, review_id, path, role=None):

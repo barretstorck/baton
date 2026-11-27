@@ -1,3 +1,4 @@
+import json
 import os
 import pathlib
 import unittest
@@ -146,6 +147,56 @@ class RedirectTest(unittest.TestCase):
             urllib_transport("GET", "http://127.0.0.1:1/p?secret=1", {}, None)
         self.assertIn("GitLab GET http://127.0.0.1:1/p", str(ctx.exception))
         self.assertNotIn("secret", str(ctx.exception))
+
+
+class LabelMilestoneTest(unittest.TestCase):
+    P = "/api/v4/projects/o%2Fr"
+
+    def test_labels_include_group_labels(self):
+        forge, t = make({f"GET {self.P}/labels": (200, [{"name": "bug"}, {"name": "grp"}])})
+        self.assertEqual(forge.label_names(), {"bug", "grp"})
+        self.assertIn("include_ancestor_groups=true", t.lines()[0])
+
+    def test_label_color_gets_hash(self):
+        forge, t = make({f"POST {self.P}/labels": (201, {})})
+        self.assertEqual(forge.label_create("x", "ff0000", "d"), "")
+        self.assertEqual(json.loads(t.calls[0][3]),
+                         {"name": "x", "color": "#ff0000", "description": "d"})
+
+    def test_milestones_ancestors_and_due(self):
+        forge, t = make({f"GET {self.P}/milestones": (200, [
+            {"id": 5, "title": "g", "description": None, "state": "active",
+             "due_date": "2026-12-01"}])})
+        got = forge.milestones()
+        self.assertEqual(got, [{"number": 5, "title": "g", "description": "",
+                                "state": "open", "due_on": "2026-12-01T00:00:00Z"}])
+        self.assertIn("include_ancestors=true", t.lines()[0])
+        self.assertNotIn("state=", t.lines()[0])
+        forge.milestones_text("o", "r", "open")
+        self.assertIn("state=active", t.lines()[1])
+
+    def test_create_sends_due_date_only_when_given(self):
+        forge, t = make({f"POST {self.P}/milestones": (201, {})})
+        forge.milestone_create("a")
+        forge.milestone_create("b", "d", "2026-12-01T00:00:00Z")
+        self.assertEqual(json.loads(t.calls[0][3]), {"title": "a"})
+        self.assertEqual(json.loads(t.calls[1][3]),
+                         {"title": "b", "description": "d", "due_date": "2026-12-01"})
+
+    def test_edit_maps_state(self):
+        forge, t = make({f"PUT {self.P}/milestones/5": (200, {})})
+        forge.milestone_edit(5, {"state": "closed"})
+        forge.milestone_edit(5, {"state": "open"})
+        self.assertEqual(json.loads(t.calls[0][3]), {"state_event": "close"})
+        self.assertEqual(json.loads(t.calls[1][3]), {"state_event": "activate"})
+
+    def test_milestone_id(self):
+        forge, _ = make({f"GET {self.P}/milestones": (200, [
+            {"id": 9, "title": "m", "state": "active"}])})
+        self.assertEqual(forge._milestone_id("m"), 9)
+        with self.assertRaises(GitLabError) as ctx:
+            forge._milestone_id("nope")
+        self.assertIn("nope", str(ctx.exception))
 
 
 if __name__ == "__main__":
