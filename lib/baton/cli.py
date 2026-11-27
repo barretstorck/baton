@@ -839,6 +839,8 @@ def cmd_clean(opts):
 
 @cliargs.command("identity")
 def cmd_identity(opts):
+    if opts.action == "rotate":
+        return _identity_rotate(opts)
     if identity.bot_logins():
         try:
             cfg = config.load(os.getcwd())
@@ -866,6 +868,33 @@ def cmd_identity(opts):
     run.run(["git", "config", "--worktree", "user.email", email], cwd=cwd)
     print(f"commits in this worktree are by {name} {email}")
     return 0
+
+
+def _identity_rotate(opts):
+    try:
+        found = _detect_forge(config.load(os.getcwd()))
+    except (run.RunError, identity.ForgeError, config.ConfigError) as e:
+        print(f"baton: {e}", file=sys.stderr)
+        return 1
+    if found["kind"] in ("github", "forgejo"):
+        name = "GitHub" if found["kind"] == "github" else "Forgejo"
+        print(f"baton: identity rotate is not supported on {name}", file=sys.stderr)
+        return 2
+    try:
+        if not identity.role_token_paths("gitlab", found["owner"], found["repo"]):
+            print("nothing to rotate: no [gitlab.baton] or [gitlab.reviewer] table in identity.toml")
+            return 0
+        backend = forge.for_repo()
+        expires = (datetime.now(timezone.utc) + timedelta(days=365)).date()
+        lines, ok = identity.rotate_role_tokens(
+            "gitlab", found["owner"], found["repo"],
+            lambda token: backend.rotate_self_token(token, expires))
+    except (identity.IdentityError, forge.ForgejoError) as e:
+        print(f"baton: {e}", file=sys.stderr)
+        return 1
+    for line in lines:
+        print(line, file=sys.stdout if line.startswith("rotated") else sys.stderr)
+    return 0 if ok else 1
 
 
 @cliargs.command("push")

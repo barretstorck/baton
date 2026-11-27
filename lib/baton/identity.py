@@ -240,6 +240,33 @@ def replace_token_file(path, produce):
                 pass
 
 
+def rotate_role_tokens(kind, owner, repo, rotate, home=None):
+    """Rotate each role table's token file; returns (lines, all_ok).
+
+    `rotate(token)` returns (token_kind, secret, expires_at). A failure on one table is
+    reported (error text only, never a token) and the next table is still tried.
+    """
+    lines = []
+    all_ok = True
+    for name, path in role_token_paths(kind, owner, repo, home).items():
+        got = []
+
+        def produce(path=path, name=name):
+            token = _read_token(path, f"[{kind}.{name}] token_path")
+            got.append(rotate(token))
+            return got[0][1]
+
+        try:
+            replace_token_file(path, produce)
+        except Exception as e:
+            all_ok = False
+            lines.append(f"[{kind}.{name}]: {e}")
+            continue
+        token_kind, _secret, expires = got[0]
+        lines.append(f"rotated [{kind}.{name}] ({token_kind} access token), expires {expires}")
+    return lines, all_ok
+
+
 def load(owner, repo, home=None):
     path = verify.repo_dir(owner, repo, home) / "identity.toml"
     try:
