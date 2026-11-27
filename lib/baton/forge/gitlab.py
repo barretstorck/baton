@@ -331,7 +331,7 @@ class GitLab:
     _PR_FIELDS = ("number", "title", "body", "state", "isDraft", "mergeable", "headRefName",
                   "headRefOid", "baseRefName", "isCrossRepository", "changedFiles", "author",
                   "url", "reviewRequests", "comments", "files", "commits",
-                  "closingIssuesReferences")
+                  "closingIssuesReferences", "statusCheckRollup")
 
     _UNKNOWN_MERGE = ("checking", "unchecked", "preparing", "approvals_syncing")
 
@@ -391,6 +391,27 @@ class GitLab:
             issues = self._request("GET", path) or []
         return [{"number": issue["iid"]} for issue in issues]
 
+    _JOB_CONCLUSIONS = {"success": "SUCCESS", "failed": "FAILURE", "canceled": "CANCELLED",
+                        "skipped": "SKIPPED", "manual": "ACTION_REQUIRED"}
+
+    @classmethod
+    def _job_shape(cls, job):
+        conclusion = cls._JOB_CONCLUSIONS.get(job.get("status"))
+        if conclusion == "FAILURE" and job.get("allow_failure"):
+            conclusion = "NEUTRAL"
+        return {"__typename": "CheckRun", "name": job.get("name"),
+                "workflowName": job.get("stage"),
+                "status": "COMPLETED" if conclusion else "IN_PROGRESS",
+                "conclusion": conclusion or "",
+                "detailsUrl": job.get("web_url"), "startedAt": job.get("started_at")}
+
+    def _mr_rollup(self, item):
+        pipeline = item.get("head_pipeline") or {}
+        if not pipeline.get("id") or pipeline.get("sha") != item.get("sha"):
+            return []
+        jobs = self._paged(f"{self._project()}/pipelines/{pipeline['id']}/jobs")
+        return [self._job_shape(job) for job in jobs]
+
     def _mr_shape(self, item, names):
         iid = item["iid"]
         shapes = {
@@ -412,6 +433,7 @@ class GitLab:
             "files": lambda: self._mr_files(iid),
             "commits": lambda: self._mr_commits(iid),
             "closingIssuesReferences": lambda: self._closes_issues(iid),
+            "statusCheckRollup": lambda: self._mr_rollup(item),
         }
         return {name: shapes[name]() for name in names}
 
@@ -441,6 +463,61 @@ class GitLab:
         return "".join(out)
 
     # --- not supported yet ---
+
+    # --- pipelines and branches ---
+
+    _RUN_FIELDS = ("databaseId", "status", "conclusion", "headSha", "headBranch",
+                   "workflowName", "event", "url")
+    _DONE = ("success", "failed", "canceled", "skipped", "manual")
+
+    def _run_shape(self, item, names):
+        state = item.get("status") or ""
+        if state in self._DONE:
+            status = "completed"
+        elif state == "running":
+            status = "in_progress"
+        else:
+            status = "queued"
+        shapes = {"databaseId": lambda: item["id"],
+                  "status": lambda: status,
+                  "conclusion": lambda: state if status == "completed" else "",
+                  "headSha": lambda: item.get("sha"),
+                  "headBranch": lambda: item.get("ref"),
+                  "workflowName": lambda: "pipeline",
+                  "event": lambda: item.get("source"),
+                  "url": lambda: item.get("web_url")}
+        return {name: shapes[name]() for name in names}
+
+    def run_view(self, run_id, fields):
+        names = self._field_names(fields, self._RUN_FIELDS)
+        item = self._request("GET", f"{self._project()}/pipelines/{run_id}")
+        return self._run_shape(item, names)
+
+    def run_list_text(self, branch, sha, event, limit, fields):
+        names = self._field_names(fields, self._RUN_FIELDS)
+        items = self._request("GET", f"{self._project()}/pipelines",
+                              params={"ref": branch, "sha": sha, "per_page": limit}) or []
+        return json.dumps([self._run_shape(item, names) for item in items])
+
+    def branch_head(self, owner, repo, branch):
+        found = self._request(
+            "GET", f"{self._project(owner, repo)}/repository/branches/"
+                   f"{urllib.parse.quote(branch, safe='')}")
+        commit = found.get("commit") or {}
+        return {"sha": commit.get("id"),
+                "commit": {"committer": {"date": commit.get("committed_date")}}}
+
+    def last_push(self, owner, repo, branch):
+        found = self._request("GET", f"{self._project(owner, repo)}/events",
+                              params={"action": "pushed"}) or []
+        newest = None
+        for entry in found:
+            if (entry.get("push_data") or {}).get("ref") != branch:
+                continue
+            created = entry.get("created_at")
+            if created and (newest is None or created > newest):
+                newest = created
+        return newest
 
     def review_edit_body(self, number, review_id, path, role=None):
         raise Unsupported("editing a review body")

@@ -475,5 +475,78 @@ class MergeRequestTest(unittest.TestCase):
                 self.diff([{"old_path": "a", "new_path": "a", "diff": "", flag: True}])
 
 
+class CiTest(unittest.TestCase):
+    def rollup(self, jobs, pipeline=None, sha="abc"):
+        mr = {**MergeRequestTest.MR, "sha": sha}
+        if pipeline is not None:
+            mr["head_pipeline"] = pipeline
+        forge, t = make({
+            f"GET {PROJ}/pipelines/9/jobs": (200, jobs),
+            f"GET {PROJ}/merge_requests/7": (200, mr)})
+        return forge.pr_view(7, "statusCheckRollup")["statusCheckRollup"], t
+
+    def test_job_statuses(self):
+        def job(status, **more):
+            return {"name": "n", "stage": "test", "status": status, "web_url": "u",
+                    "started_at": "t", **more}
+        cases = [(job("success"), "COMPLETED", "SUCCESS"),
+                 (job("failed"), "COMPLETED", "FAILURE"),
+                 (job("failed", allow_failure=True), "COMPLETED", "NEUTRAL"),
+                 (job("canceled"), "COMPLETED", "CANCELLED"),
+                 (job("skipped"), "COMPLETED", "SKIPPED"),
+                 (job("manual"), "COMPLETED", "ACTION_REQUIRED"),
+                 (job("running"), "IN_PROGRESS", ""),
+                 (job("pending"), "IN_PROGRESS", "")]
+        rollup, _ = self.rollup([c[0] for c in cases], {"id": 9, "sha": "abc"})
+        for entry, (_, status, conclusion) in zip(rollup, cases):
+            self.assertEqual((entry["status"], entry["conclusion"]), (status, conclusion))
+        self.assertEqual(rollup[0], {
+            "__typename": "CheckRun", "name": "n", "workflowName": "test",
+            "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "u",
+            "startedAt": "t"})
+
+    def test_other_sha_or_no_pipeline_is_empty(self):
+        rollup, t = self.rollup([{"status": "success"}], {"id": 9, "sha": "old"})
+        self.assertEqual(rollup, [])
+        self.assertFalse([line for line in t.lines() if "/jobs" in line])
+        self.assertEqual(self.rollup([{"status": "success"}])[0], [])
+
+    def test_run_shape_and_list(self):
+        pipe = {"id": 9, "status": "success", "sha": "abc", "ref": "feat",
+                "source": "push", "web_url": "u"}
+        forge, t = make({f"GET {PROJ}/pipelines/9": (200, pipe),
+                         f"GET {PROJ}/pipelines?": (200, [pipe, {**pipe, "id": 10,
+                                                                  "status": "running"}])})
+        fields = ",".join(GitLab._RUN_FIELDS)
+        self.assertEqual(forge.run_view(9, fields), {
+            "databaseId": 9, "status": "completed", "conclusion": "success",
+            "headSha": "abc", "headBranch": "feat", "workflowName": "pipeline",
+            "event": "push", "url": "u"})
+        listed = json.loads(forge.run_list_text("feat", "abc", "push", 5, fields))
+        self.assertEqual([r["status"] for r in listed], ["completed", "in_progress"])
+        self.assertEqual(listed[1]["conclusion"], "")
+        line = t.lines()[-1]
+        self.assertIn("ref=feat", line)
+        self.assertIn("sha=abc", line)
+        self.assertIn("per_page=5", line)
+        self.assertNotIn("event", line)
+
+    def test_branch_head_with_slash(self):
+        forge, t = make({f"GET {PROJ}/repository/branches/issue-1%2Ffoo": (200, {
+            "commit": {"id": "c1", "committed_date": "d"}})})
+        self.assertEqual(forge.branch_head("o", "r", "issue-1/foo"),
+                         {"sha": "c1", "commit": {"committer": {"date": "d"}}})
+
+    def test_last_push_picks_matching_branch(self):
+        forge, t = make({f"GET {PROJ}/events": (200, [
+            {"created_at": "2026-01-03", "push_data": {"ref": "other"}},
+            {"created_at": "2026-01-02", "push_data": {"ref": "feat"}},
+            {"created_at": "2026-01-01", "push_data": {"ref": "feat"}},
+            {"created_at": "2026-01-04"}])})
+        self.assertEqual(forge.last_push("o", "r", "feat"), "2026-01-02")
+        self.assertIn("action=pushed", t.lines()[0])
+        self.assertIsNone(forge.last_push("o", "r", "none"))
+
+
 if __name__ == "__main__":
     unittest.main()
