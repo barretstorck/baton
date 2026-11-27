@@ -105,7 +105,7 @@ class TemplateTest(unittest.TestCase):
     def test_develop_skill_writes_result_line(self):
         text = " ".join(develop_text().split())
         self.assertIn("Result: none | <where it was written>", text)
-        self.assertIn("gh pr edit <P> --body-file", text)
+        self.assertIn("baton pr edit <P> --body-file", text)
         self.assertIn("Port from, Result and Check", text)
 
     def test_develop_skill_handles_hand_check_prompt(self):

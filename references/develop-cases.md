@@ -24,7 +24,7 @@ with the new head.
   check it against the brief and that its commit ticks the task (`baton tasks issue <N>`),
   finish it if needed, and continue from step 5.
 - Whatever the task number, if the branch exists but no pull request closes the issue
-  (`gh pr list --head <branch>`), open the draft pull request now, as task 1 would.
+  (`baton pr list --head <branch>`), open the draft pull request now, as task 1 would.
 
 ## Hook refusals
 
@@ -36,7 +36,7 @@ without it, return `QUESTION`.
 ## Opening the draft pull request
 
 After the push in step 6, open a **draft** pull request from the detached checkout with
-`gh pr create --draft --title "<title>" --body-file <file>`; the gate uses the pushed `issue-<N>-*` branch as
+`baton pr create --draft --title "<title>" <file>`; it uses the pushed `issue-<N>-*` branch as
 the head (or takes `--head <branch>`), so do not create a local branch. The body has
 `Closes #<N>` on its own line and a short summary of the plan. Drafts may not run CI, which
 saves minutes.
