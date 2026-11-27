@@ -51,7 +51,7 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/commands.md`, `${CLAUDE_PLUGIN
 5. Go back to step 3 with the next entry.
 6. **Refine.** From the freshly answered issues, choose those that are not `status:ready` and not
    in development. Leave out an issue that is `status:blocked` and has plan progress
-   (`baton tasks issue <N>`) or a pull request (`gh pr list --head <branch>`): the sprint's
+   (`baton tasks issue <N>`) or a pull request (`baton pr list --head <branch>`): the sprint's
    "Answers" step records the decision and resumes it. Dispatch `baton:baton-refiner` agents for
    the rest with `Refine issues <N>, <M>.`, **at most three issues per agent**, all agents in
    parallel. Send an update while they run (see below). When they return, run
