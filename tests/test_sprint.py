@@ -1166,6 +1166,39 @@ class DefaultBranchStateTest(unittest.TestCase):
             self.assertFalse(sprint.triggers_on_push(text), text)
 
 
+class GitLabDefaultBranchTest(unittest.TestCase):
+    PROJ = "/api/v4/projects/octo%2Fproj"
+
+    def status(self, date, pipelines=()):
+        from unittest import mock
+        from baton import forge as forge_module
+        from baton.forge.gitlab import GitLab
+        from tests.fakes import FakeTransport
+        transport = FakeTransport({
+            f"GET {self.PROJ}/repository/branches/main":
+                (200, {"commit": {"id": "aaa", "committed_date": date}}),
+            f"GET {self.PROJ}/pipelines": (200, list(pipelines))})
+        backend = GitLab("https://g.example/", "octo", "proj", token="t", transport=transport)
+        with mock.patch.object(forge_module, "for_repo", lambda **kwargs: backend):
+            result = sprint.default_branch_status(FakeRunner({}), "octo", "proj", "main", now=NOW)
+        return result, transport
+
+    def test_recent_head_without_pipeline_is_pending(self):
+        result, transport = self.status("2026-10-22T11:59:00Z")
+        self.assertEqual(result, ("pending", 240))
+        for line in transport.lines():
+            self.assertNotIn("workflows", line)
+            self.assertNotIn("actions", line)
+
+    def test_old_head_without_pipeline_is_none(self):
+        self.assertEqual(self.status("2026-10-22T10:00:00Z")[0], ("none", None))
+
+    def test_push_pipeline_decides(self):
+        result, _ = self.status("2026-10-22T11:59:00Z", [
+            {"id": 1, "status": "success", "source": "push", "sha": "aaa", "ref": "main"}])
+        self.assertEqual(result, ("green", None))
+
+
 class SprintMetricsTest(unittest.TestCase):
     TITLE = "Sprint 2026-10-01-1"
 
