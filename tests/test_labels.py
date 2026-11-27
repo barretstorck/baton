@@ -2,8 +2,10 @@ import copy
 import json
 import pathlib
 import unittest
+from unittest import mock
 from baton import config, labels
-from tests.fakes import FakeRunner
+from baton.forge.forgejo import Forgejo
+from tests.fakes import FakeRunner, FakeTransport
 
 
 def make_config(overrides=None):
@@ -167,3 +169,30 @@ class SetGroupCliTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("bugs only", err)
         self.assertFalse(any(c[:3] == ["gh", "issue", "edit"] for c in runner.calls))
+
+
+class ForgejoLabelsTest(unittest.TestCase):
+    def setUp(self):
+        self.cfg = make_config()
+        names = [self.cfg.label(name) for name in labels._STYLE]
+        self.in_org, self.nowhere = names[0], names[1]
+        on_repo = [{"name": name} for name in names[2:]]
+        self.transport = FakeTransport({
+            "GET /api/v1/repos/o/r/labels": (200, on_repo),
+            "GET /api/v1/orgs/o/labels": (200, [{"name": self.in_org}]),
+            "POST /api/v1/repos/o/r/labels": (201, {}),
+        })
+        self.backend = Forgejo("https://f.example", "o", "r", token="t", transport=self.transport)
+
+    def test_org_label_is_not_missing(self):
+        with mock.patch("baton.forge.for_repo", return_value=self.backend):
+            self.assertEqual(labels.missing(self.cfg, FakeRunner()), [self.nowhere])
+
+    def test_ensure_creates_at_repository_level(self):
+        with mock.patch("baton.forge.for_repo", return_value=self.backend):
+            created, still = labels.ensure(self.cfg, FakeRunner(), create=True)
+        self.assertEqual((created, still), ([self.nowhere], []))
+        posts = [line for line in self.transport.lines() if line.startswith("POST")]
+        self.assertEqual(posts, ["POST /api/v1/repos/o/r/labels"])
+        writes = [line for line in self.transport.lines() if not line.startswith("GET")]
+        self.assertFalse(any("/orgs/" in line for line in writes))
