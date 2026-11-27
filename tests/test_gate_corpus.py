@@ -36,6 +36,8 @@ ALLOWED = {
         "python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['git', 'log'])\nprint('git log')\nEOF",
         "docker run img git status",
         "ssh host 'gh issue view 5'",
+        "rg -n 'a|tea|b' notes.md",
+        "grep -E 'x|gh|y' notes.md",
         "xargs -n1 echo",
         'bash -c "git log"',
         "env FOO=1 ls",

@@ -740,6 +740,25 @@ class BriefListsTest(unittest.TestCase):
         self.assertFalse(gate.forge_facing("glab mr list", ("gh",)))
 
 
+class QuotedNameAndDescriptionFileTest(unittest.TestCase):
+    def test_description_file_is_scanned_by_default(self):
+        for root in (make_repo(), make_repo(brief=None)):
+            pathlib.Path(root, "notes.md").write_text(f"see {IP}\n")
+            problems = gate.decide("tea pr create --title t --description-file notes.md", root, TERMS)
+            self.assertTrue(any(p.startswith("privacy:") for p in problems), problems)
+
+    def test_cli_name_inside_a_regex_alternation_is_not_forge_facing(self):
+        root = make_repo()
+        for cmd in ("rg -n 'a|tea|b' x.py", "rg 'gh|tea' x", "grep -E 'x|gh|y' -F missing.txt"):
+            with self.subTest(cmd=cmd):
+                self.assertFalse(gate.forge_facing(cmd))
+                self.assertEqual(gate.decide(cmd, root, TERMS), [])
+        for cmd in ("bash -c 'echo x | gh issue create --body hi'", 'bash -c "gh pr create --body x"',
+                    "gh issue view 5", "x | tea pr list"):
+            with self.subTest(cmd=cmd):
+                self.assertTrue(gate.forge_facing(cmd))
+
+
 class DetachedPrCreateTest(unittest.TestCase):
     OK = "claude-code_2-1-290_agent"
 
