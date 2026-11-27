@@ -106,6 +106,72 @@ class LoadTest(unittest.TestCase):
             self.load('[baton]\napp_id = 1\ninstallation_id = 2\nkey_path = "k"\nlogin = "baton"\n')
 
 
+class ForgeTokenTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = pathlib.Path(self.tmp.name)
+        self.dir = self.root / "o-r"
+        self.dir.mkdir()
+        self.tokfile = self.root / "tok"
+
+    def token(self, environ=None):
+        return identity.forge_token("forgejo", "o", "r", home=self.tmp.name,
+                                    environ={} if environ is None else environ)
+
+    def table(self, extra=""):
+        (self.dir / "identity.toml").write_text(f'[forgejo]\ntoken_path = "{self.tokfile}"\n' + extra)
+
+    def test_environment_wins(self):
+        self.table()
+        self.tokfile.write_text("file\n")
+        (self.dir / "forgejo-token").write_text("bare\n")
+        self.assertEqual(self.token({"FORGEJO_TOKEN": " env "}), "env")
+
+    def test_token_path_beats_bare_file(self):
+        self.table()
+        self.tokfile.write_text("file\n")
+        (self.dir / "forgejo-token").write_text("bare\n")
+        self.assertEqual(self.token(), "file")
+
+    def test_bare_file_last(self):
+        (self.dir / "forgejo-token").write_text("bare\n")
+        self.assertEqual(self.token(), "bare")
+
+    def test_empty_environment_skipped(self):
+        (self.dir / "forgejo-token").write_text("bare\n")
+        self.assertEqual(self.token({"FORGEJO_TOKEN": "  "}), "bare")
+
+    def test_none_raises_naming_places(self):
+        with self.assertRaises(identity.IdentityError) as cm:
+            self.token()
+        for name in ("FORGEJO_TOKEN", "token_path", "forgejo-token"):
+            self.assertIn(name, str(cm.exception))
+
+    def test_unreadable_token_path_raises(self):
+        self.table()
+        with self.assertRaisesRegex(identity.IdentityError, "cannot read"):
+            self.token()
+
+    def test_load_only_forgejo_is_none(self):
+        self.table()
+        self.assertIsNone(identity.load("o", "r", home=self.tmp.name))
+
+    def test_load_rejects_bad_table(self):
+        for text in ('[forgejo]\ntoken_path = "x"\nother = 1\n', '[forgejo]\ntoken_path = ""\n'):
+            (self.dir / "identity.toml").write_text(text)
+            with self.assertRaises(identity.IdentityError):
+                identity.load("o", "r", home=self.tmp.name)
+
+    def test_load_with_baton_unchanged(self):
+        (self.dir / "identity.toml").write_text(VALID)
+        plain = identity.load("o", "r", home=self.tmp.name)
+        self.table()
+        with open(self.dir / "identity.toml", "a") as f:
+            f.write(VALID)
+        self.assertEqual(identity.load("o", "r", home=self.tmp.name), plain)
+
+
 class DetectForgeTest(unittest.TestCase):
     SETTING = {"kind": "forgejo", "url": "https://git.example.org/"}
 
