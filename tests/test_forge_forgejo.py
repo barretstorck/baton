@@ -259,7 +259,7 @@ class PullRequestTest(unittest.TestCase):
 
     def test_pr_view_all_fields(self):
         from baton.merge import PR_FIELDS
-        fields = ",".join(f for f in PR_FIELDS.split(",") if f != "closingIssuesReferences")
+        fields = PR_FIELDS
         forge, _ = make({
             "GET /api/v1/repos/o/r/pulls/3/files": (200, [
                 {"filename": "a.py", "additions": 2, "deletions": 1}]),
@@ -279,6 +279,7 @@ class PullRequestTest(unittest.TestCase):
                                            "messageBody": "body"}])
         self.assertEqual(got["statusCheckRollup"], [{"__typename": "StatusContext",
                          "context": "ci", "state": "SUCCESS", "targetUrl": "u"}])
+        self.assertEqual(got["closingIssuesReferences"], [])
 
     def shape(self, **changes):
         forge, _ = make()
@@ -323,11 +324,16 @@ class PullRequestTest(unittest.TestCase):
         forge, _ = make()
         self.assertTrue(forge._pr_shape(no_draft, ["isDraft"])["isDraft"])
 
-    def test_closing_references_unsupported(self):
-        forge, t = make()
-        with self.assertRaises(Unsupported):
-            forge.pr_view(1, "closingIssuesReferences")
-        self.assertEqual(t.calls, [])
+    def test_closing_references_from_body_and_commits(self):
+        forge, _ = make({"GET /api/v1/repos/o/r/pulls/3/commits": (200, [
+            {"sha": "a", "commit": {"message": "Add x\n\nCloses: #7"}},
+            {"sha": "b", "commit": {"message": "see #9"}}])})
+        got = forge._pr_shape({**self.PR, "body": "Fixes #4"}, ["closingIssuesReferences"])
+        self.assertEqual(got["closingIssuesReferences"], [{"number": 4}, {"number": 7}])
+        forge, _ = make({"GET /api/v1/repos/o/r/pulls/3/commits": (200, [
+            {"sha": "b", "commit": {"message": "see #9"}}])})
+        got = forge._pr_shape({**self.PR, "body": "no keyword"}, ["closingIssuesReferences"])
+        self.assertEqual(got["closingIssuesReferences"], [])
 
     def test_pr_merge(self):
         forge, t = make({"POST /api/v1/repos/o/r/pulls/3/merge": (200, "")})

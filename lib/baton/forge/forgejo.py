@@ -1,9 +1,12 @@
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
 
 from .. import identity, run
+
+CLOSING = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s+#(\d+)", re.I)
 
 
 class ForgejoError(run.RunError):
@@ -350,7 +353,8 @@ class Forgejo:
 
     _PR_FIELDS = ("number", "title", "body", "state", "isDraft", "mergeable", "headRefName",
                   "headRefOid", "baseRefName", "isCrossRepository", "changedFiles", "author",
-                  "url", "reviewRequests", "comments", "files", "commits", "statusCheckRollup")
+                  "url", "reviewRequests", "comments", "files", "commits", "statusCheckRollup",
+                  "closingIssuesReferences")
 
     @staticmethod
     def _pr_state(item):
@@ -370,6 +374,13 @@ class Forgejo:
             out.append({"oid": item["sha"], "messageHeadline": head,
                         "messageBody": rest.lstrip("\n")})
         return out
+
+    def _closing_refs(self, item):
+        texts = [item.get("body") or ""]
+        for commit in self._pr_commits(item["number"]):
+            texts += [commit["messageHeadline"], commit["messageBody"]]
+        found = {int(n) for text in texts for n in CLOSING.findall(text)}
+        return [{"number": n} for n in sorted(found)]
 
     def _pr_rollup(self, sha):
         path = f"{self._repo_path()}/commits/{sha}/status"
@@ -438,6 +449,7 @@ class Forgejo:
             "files": lambda: self._pr_files(number),
             "commits": lambda: self._pr_commits(number),
             "statusCheckRollup": lambda: self._pr_rollup(head.get("sha")),
+            "closingIssuesReferences": lambda: self._closing_refs(item),
         }
         return {name: shapes[name]() for name in names}
 
