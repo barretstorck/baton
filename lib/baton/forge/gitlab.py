@@ -661,7 +661,7 @@ class GitLab:
         else:
             new = self._DRAFT.sub("", title, count=1)
         if new != title:
-            self._request("PUT", path, body={"title": new})
+            self._request("PUT", path, body={"title": new}, role=role)
         return ""
 
     def workflow_entries_text(self, *args, **kwargs):

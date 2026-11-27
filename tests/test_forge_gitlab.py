@@ -871,6 +871,12 @@ class RoleTokenTest(unittest.TestCase):
             t = self.send(lambda f: f.issue_edit_labels(5, ["a"], role=role))
             self.assertEqual(self.tokens(t), ["tok-baton"])
 
+    def test_pr_ready_uses_role_token(self):
+        t = self.send(lambda f: f.pr_ready(7, role="reviewer"),
+                      replies={"GET": (200, {"title": "Draft: x"}), "PUT": (200, {})})
+        self.assertEqual([(m, tok) for (m, _, h, _), tok in zip(t.calls, self.tokens(t))],
+                         [("GET", TOKEN), ("PUT", "tok-reviewer")])
+
     def test_no_role_uses_maintainer(self):
         t = self.send(lambda f: f.comment("issue", 5, self.body))
         self.assertEqual(self.tokens(t), [TOKEN])
