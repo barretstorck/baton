@@ -773,6 +773,14 @@ def cmd_clean(opts):
 
 @cliargs.command("identity")
 def cmd_identity(opts):
+    if identity.bot_logins():
+        try:
+            cfg = config.load(os.getcwd())
+        except config.ConfigError:
+            cfg = None
+        if _forge_kind(cfg) == "forgejo":
+            print("baton: " + identity.APP_TIER_UNSUPPORTED_FORGEJO, file=sys.stderr)
+            return 1
     who = identity.commit_identity(run.run)
     if who is None:
         print("tier 0: commits keep your git identity")
