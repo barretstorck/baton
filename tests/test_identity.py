@@ -184,6 +184,31 @@ class DetectForgeTest(unittest.TestCase):
                 got = identity.detect_forge(url, self.SETTING)
                 self.assertEqual(got, {"kind": kind, "url": base, "owner": "o", "repo": "r"}, url)
 
+    def test_gitlab_nested(self):
+        setting = {"kind": "gitlab", "url": "https://gl.example"}
+        for url, owner, repo in (("https://gl.example/a/b/c/proj.git", "a/b/c", "proj"),
+                                 ("https://gl.example:8443/a/proj", "a", "proj"),
+                                 (f"ssh://g{AT}gl.example:2222/a/b/proj.git", "a/b", "proj"),
+                                 (f"g{AT}gl.example:a/b/proj.git", "a/b", "proj"),
+                                 ("gl.example:a/proj", "a", "proj")):
+            self.assertEqual(identity.detect_forge(url, setting),
+                             {"kind": "gitlab", "url": "https://gl.example", "owner": owner, "repo": repo}, url)
+
+    def test_gitlab_com(self):
+        self.assertEqual(identity.detect_forge("https://gitlab.com/g/sub/p.git", None),
+                         {"kind": "gitlab", "url": "https://gitlab.com", "owner": "g/sub", "repo": "p"})
+
+    def test_nested_refused_elsewhere(self):
+        for url in ("https://github.com/a/b/c", "https://git.example.org/a/b/c"):
+            with self.assertRaises(identity.ForgeError) as cm:
+                identity.detect_forge(url, self.SETTING)
+            self.assertEqual(str(cm.exception), identity.NESTED_REFUSAL)
+            self.assertNotIn("example.org", str(cm.exception))
+
+    def test_nested_dot_segments(self):
+        for url in ("https://gl.example/a/../b/p", "https://gl.example/./a/p"):
+            self.assertIsNone(identity.remote_parts(url), url)
+
     def test_host_lowercased(self):
         self.assertEqual(identity.remote_parts("https://GIT.Example.org/o/r"), ("git.example.org", "o", "r"))
 
@@ -196,7 +221,7 @@ class DetectForgeTest(unittest.TestCase):
 
     def test_unparseable(self):
         for url in ("./o/r", "file://host/o/r", "http://git.example.org/o/r",
-                    "https://git.example.org/o", "https://git.example.org/a/b/c", "", None,
+                    "https://git.example.org/o", "", None,
                     "https://git.example.org/../repo", "https://git.example.org/owner/..",
                     "https://git.example.org/owner/...git", "https://git.example.org/./r",
                     "https://git.example.org/owner/repo%2Fx", "https://git.example.org/owner/repo?x=1",

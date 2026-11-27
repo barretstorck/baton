@@ -490,14 +490,20 @@ FORGE_REFUSAL = ("origin is not on github.com or on the host in forge.url; set f
                  "in .baton/brief.md or in the local brief's ## Hosts section")
 
 
+NESTED_REFUSAL = "origin has a nested group path, which only GitLab supports; " + FORGE_REFUSAL
+
+
 def remote_parts(url):
-    """(host, owner, repo) of an https, ssh:// or scp-style remote URL; None for anything else."""
+    """(host, owner, repo) of an https, ssh:// or scp-style remote URL; None for anything else.
+
+    The owner may hold several `/`-separated segments (a GitLab group path)."""
     url = (url or "").strip()
-    path = r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?"
+    seg = r"[A-Za-z0-9_.-]+"
+    path = r"(" + seg + r"(?:/" + seg + r")*)/(" + seg + r"?)(?:\.git)?/?"
     m = (re.fullmatch(r"https://(?:[^/@\s]*@)?([^/@:\s]+)(?::\d+)?/" + path, url)
          or re.fullmatch(r"ssh://(?:[^/@\s]*@)?([^/@:\s]+)(?::\d+)?/" + path, url)
          or re.fullmatch(r"(?:[^/@:\s]+@)?([^/@:\s]+):" + path, url))
-    if not m or {m.group(2), m.group(3)} & {".", ".."}:
+    if not m or (set(m.group(2).split("/")) | {m.group(3)}) & {".", ".."}:
         return None
     return m.group(1).lower(), m.group(2), m.group(3)
 
@@ -513,12 +519,18 @@ def detect_forge(url, setting):
     if parts is None:
         raise ForgeError("origin is not an https, ssh:// or scp-style remote; " + FORGE_REFUSAL)
     host, owner, repo = parts
-    if host == "github.com":
-        return {"kind": "github", "url": "https://github.com", "owner": owner, "repo": repo}
     setting = setting or {}
-    if _host(setting.get("url")) == host:
-        return {"kind": setting["kind"], "url": setting["url"].rstrip("/"), "owner": owner, "repo": repo}
-    raise ForgeError(FORGE_REFUSAL)
+    if host == "github.com":
+        found = {"kind": "github", "url": "https://github.com", "owner": owner, "repo": repo}
+    elif _host(setting.get("url")) == host:
+        found = {"kind": setting["kind"], "url": setting["url"].rstrip("/"), "owner": owner, "repo": repo}
+    elif host == "gitlab.com":
+        found = {"kind": "gitlab", "url": "https://gitlab.com", "owner": owner, "repo": repo}
+    else:
+        raise ForgeError(FORGE_REFUSAL)
+    if "/" in owner and found["kind"] != "gitlab":
+        raise ForgeError(NESTED_REFUSAL)
+    return found
 
 
 def origin_problem(url, repo):
