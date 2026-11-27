@@ -473,6 +473,9 @@ class GitLab:
     _RUN_FIELDS = ("databaseId", "status", "conclusion", "headSha", "headBranch",
                    "workflowName", "event", "url")
     _DONE = ("success", "failed", "canceled", "skipped", "manual")
+    # lower case, as `sprint` compares; any other completed state fails closed
+    _RUN_CONCLUSIONS = {"success": "success", "failed": "failure", "canceled": "cancelled",
+                        "skipped": "skipped", "manual": "action_required"}
 
     def _run_shape(self, item, names):
         state = item.get("status") or ""
@@ -484,7 +487,8 @@ class GitLab:
             status = "queued"
         shapes = {"databaseId": lambda: item["id"],
                   "status": lambda: status,
-                  "conclusion": lambda: state if status == "completed" else "",
+                  "conclusion": lambda: (self._RUN_CONCLUSIONS.get(state, "failure")
+                                       if status == "completed" else ""),
                   "headSha": lambda: item.get("sha"),
                   "headBranch": lambda: item.get("ref"),
                   "workflowName": lambda: "pipeline",
@@ -501,6 +505,8 @@ class GitLab:
         names = self._field_names(fields, self._RUN_FIELDS)
         items = self._request("GET", f"{self._project()}/pipelines",
                               params={"ref": branch, "sha": sha, "per_page": limit}) or []
+        if event:  # GitLab's pipeline `source` plays the part of the workflow event
+            items = [item for item in items if item.get("source") == event]
         return json.dumps([self._run_shape(item, names) for item in items])
 
     def branch_head(self, owner, repo, branch):

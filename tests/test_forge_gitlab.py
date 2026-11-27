@@ -539,6 +539,21 @@ class CiTest(unittest.TestCase):
         self.assertIn("per_page=5", line)
         self.assertNotIn("event", line)
 
+    def test_failed_pipeline_reads_red(self):
+        from baton import sprint
+        pipes = [{"id": i, "status": st, "sha": "abc", "ref": "main", "source": src}
+                 for i, (st, src) in enumerate([("failed", "push"), ("canceled", "push"),
+                                                ("manual", "push"), ("success", "schedule")])]
+        forge, _ = make({f"GET {PROJ}/pipelines?": (200, pipes)})
+        fields = "conclusion,status,headSha,event"
+        runs = json.loads(forge.run_list_text("main", "abc", "", 5, fields))
+        self.assertEqual([r["conclusion"] for r in runs],
+                         ["failure", "cancelled", "action_required", "success"])
+        self.assertEqual(sprint.branch_state(runs[:1]), "red")
+        self.assertEqual(sprint.branch_state(runs[2:3]), "red")
+        only = json.loads(forge.run_list_text("main", "abc", "push", 5, fields))
+        self.assertEqual([r["event"] for r in only], ["push"] * 3)
+
     def test_branch_head_with_slash(self):
         forge, t = make({f"GET {PROJ}/repository/branches/issue-1%2Ffoo": (200, {
             "commit": {"id": "c1", "committed_date": "d"}})})
