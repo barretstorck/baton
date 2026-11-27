@@ -52,6 +52,23 @@ class SelectTest(unittest.TestCase):
         self.assertEqual(sum("get-url" in c for c in calls), 1)
 
 
+class CheckUrlTest(unittest.TestCase):
+    def test_refused(self):
+        for url, origin in [("http://f.example", "https://f.example/o/r"),
+                            ("http://f.example", "git@f.example:o/r.git"),
+                            ("https://f.example:8443", "https://f.example/o/r"),
+                            ("https://f.example", "https://f.example:8443/o/r"),
+                            ("http://f.example:81", "http://f.example/o/r")]:
+            with self.assertRaises(forge.ForgejoError, msg=url + origin):
+                forge.check_url(url, origin)
+
+    def test_allowed(self):
+        forge.check_url("https://f.example", "https://f.example/o/r")
+        forge.check_url("https://f.example", "git@f.example:o/r.git")
+        forge.check_url("https://f.example:8443", "ssh://git@f.example/o/r")
+        forge.check_url("http://f.example:3000", "http://f.example:3000/o/r")
+
+
 class ForTest(unittest.TestCase):
     def test_for_repo_holds_runner(self):
         runner = FakeRunner({})

@@ -395,3 +395,43 @@ class CiTest(unittest.TestCase):
         forge, _ = make({"GET /api/v1/repos/o/r/activities/feeds": (200, feed)})
         self.assertEqual(forge.last_push("o", "r", "feat"), "t1")
         self.assertIsNone(forge.last_push("o", "r", "none"))
+
+
+class RedirectTest(unittest.TestCase):
+    def test_redirect_never_carries_token(self):
+        import http.server
+        import threading
+        from baton.forge.forgejo import urllib_transport
+        seen = []
+
+        class Target(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append(self.headers.get("Authorization"))
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        target = http.server.HTTPServer(("127.0.0.1", 0), Target)
+        port = target.server_address[1]
+
+        class Source(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{port}/x")
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        source = http.server.HTTPServer(("127.0.0.1", 0), Source)
+        for srv in (target, source):
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            self.addCleanup(srv.server_close)
+            self.addCleanup(srv.shutdown)
+        status, _, _ = urllib_transport(
+            "GET", f"http://127.0.0.1:{source.server_address[1]}/a",
+            {"Authorization": f"token {TOKEN}"}, None)
+        self.assertEqual(status, 302)
+        self.assertEqual(seen, [])

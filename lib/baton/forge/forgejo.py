@@ -15,10 +15,20 @@ class Unsupported(ForgejoError):
         super().__init__(f"not supported on Forgejo: {what}")
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse every redirect, so the token never reaches another URL."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_opener = urllib.request.build_opener(_NoRedirect)
+
+
 def urllib_transport(method, url, headers, data):
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=30) as reply:
+        with _opener.open(request, timeout=30) as reply:
             return reply.status, dict(reply.headers), reply.read()
     except urllib.error.HTTPError as err:
         return err.code, dict(err.headers or {}), err.read()
