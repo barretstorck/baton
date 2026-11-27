@@ -135,6 +135,56 @@ class WriteTest(unittest.TestCase):
         self._check(lambda b, r: b.label_create("n", "ffffff", "d e", role=r),
                     "gh label create n --color ffffff --description d e")
 
+    def test_pr_review(self):
+        self._check(lambda b, r: b.pr_review(3, "approve", "f.md", role=r),
+                    "gh pr review 3 --approve --body-file f.md")
+
+
+def _boom(argv, **kw):
+    raise run.RunError("x")
+
+
+class ReadTest(unittest.TestCase):
+    def test_review_urls(self):
+        runner = FakeRunner({"gh api": "u1\n\n  u2 \n"})
+        self.assertEqual(GitHub(runner).review_urls(5, "bot"), ["u1", "u2"])
+        self.assertEqual(runner.lines(), [
+            "gh api --paginate repos/{owner}/{repo}/pulls/5/reviews?per_page=100 "
+            "--jq .[] | select(.user.login == \"bot\") | .html_url"])
+
+    def test_user(self):
+        runner = FakeRunner({"gh api": '{"id": 7}'})
+        self.assertEqual(GitHub(runner).user("b"), {"id": 7})
+        self.assertEqual(runner.lines(), ["gh api users/b"])
+        with self.assertRaises(ValueError):
+            GitHub(FakeRunner()).user("b")
+
+    def test_comment_author_types(self):
+        runner = FakeRunner({"gh api": "n1\tBot\nbad\n"})
+        self.assertEqual(GitHub(runner).comment_author_types(8), {"n1": "Bot"})
+        self.assertEqual(runner.lines(), [
+            "gh api --paginate repos/{owner}/{repo}/issues/8/comments?per_page=100 "
+            "--jq .[] | [.node_id, .user.type] | @tsv"])
+        with self.assertRaises(run.RunError):
+            GitHub(_boom).comment_author_types(8)
+
+    def test_issue_body_edits(self):
+        runner = FakeRunner({"gh api graphql": "2026-01-01\tbob\tUser\n2026-01-02\t\t\nbad\n"})
+        self.assertEqual(GitHub(runner).issue_body_edits(4), [
+            {"editedAt": "2026-01-01", "editor": {"login": "bob", "__typename": "User"}},
+            {"editedAt": "2026-01-02", "editor": None}])
+        self.assertTrue(runner.lines()[0].startswith(
+            "gh api graphql --paginate -F owner={owner} -F repo={repo} -F number=4 -f query="))
+        self.assertIsNone(GitHub(_boom).issue_body_edits(4))
+
+    def test_issue_timeline(self):
+        runner = FakeRunner({"gh api": "assigned\ta\tb\t2026-01-01\nshort\n"})
+        self.assertEqual(GitHub(runner).issue_timeline(6), [
+            {"event": "assigned", "by": "a", "subject": "b", "at": "2026-01-01"}])
+        self.assertTrue(runner.lines()[0].startswith(
+            "gh api --paginate repos/{owner}/{repo}/issues/6/timeline?per_page=100 --jq "))
+        self.assertIsNone(GitHub(_boom).issue_timeline(6))
+
 
 if __name__ == "__main__":
     unittest.main()
