@@ -1,6 +1,7 @@
 import json
 import os
 import pathlib
+import tempfile
 import unittest
 from unittest import mock
 
@@ -134,3 +135,108 @@ class LabelMilestoneTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IssueTest(unittest.TestCase):
+    ISSUE = {"number": 7, "title": "T", "body": None, "state": "open",
+             "user": {"login": "u"}, "labels": [{"name": "a", "id": 1}],
+             "created_at": "2026-01-01T00:00:00Z", "assignees": [{"login": "v"}]}
+    LABELS = {"GET /api/v1/repos/o/r/labels": (200, [{"name": "a", "id": 4}]),
+              "GET /api/v1/orgs/o/labels": (404, {"message": "no"}),
+              "GET /api/v1/repos/o/r/milestones": (200, [{"id": 9, "title": "M"}])}
+
+    def body(self, text="hello"):
+        handle = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False)
+        handle.write(text)
+        handle.close()
+        self.addCleanup(os.unlink, handle.name)
+        return handle.name
+
+    def test_issue_view_shape(self):
+        forge, t = make({"GET /api/v1/repos/o/r/issues/7/comments": (200, [
+            {"id": 5, "user": {"login": "c"}, "body": "b", "created_at": "x",
+             "html_url": "https://f/o/r/issues/7#issuecomment-5"}]),
+            "GET /api/v1/repos/o/r/issues/7": (200, self.ISSUE)})
+        got = forge.issue_view(7, "number,title,state,author,labels,body,comments")
+        self.assertEqual(got["state"], "OPEN")
+        self.assertEqual(got["body"], "")
+        self.assertEqual(got["author"], {"login": "u"})
+        self.assertEqual(got["labels"], [{"name": "a"}])
+        self.assertEqual(got["comments"][0]["id"], "5")
+        forge, t = make({"GET /api/v1/repos/o/r/issues/7": (200, self.ISSUE)})
+        forge.issue_view(7, "number,title")
+        self.assertEqual(t.lines(), ["GET /api/v1/repos/o/r/issues/7"])
+
+    def test_unknown_field_before_request(self):
+        forge, t = make()
+        with self.assertRaises(Unsupported):
+            forge.issue_view(7, "number,bogus")
+        self.assertEqual(t.calls, [])
+
+    def test_issue_list(self):
+        forge, t = make({"GET /api/v1/repos/o/r/issues": (200, [self.ISSUE])})
+        got = forge.issue_list("number", "open", 10, milestone="M", label="a")
+        self.assertEqual(got, [{"number": 7}])
+        line = t.lines()[0]
+        for part in ("type=issues", "state=open", "labels=a", "milestones=M"):
+            self.assertIn(part, line)
+        with self.assertRaises(Unsupported):
+            forge.issue_list("number", "open", 10, search="x")
+        full = [dict(self.ISSUE, number=n) for n in range(50)]
+        forge, t = make({"GET /api/v1/repos/o/r/issues?": (200, full)})
+        self.assertEqual(len(forge.issue_list("number", "all", 20)), 20)
+        self.assertEqual(len(t.calls), 1)
+
+    def test_issue_edit_labels(self):
+        forge, t = make({"POST /api/v1/repos/o/r/issues/1/labels": (200, []),
+                         "DELETE /api/v1/repos/o/r/issues/1/labels/": (204, "")})
+        forge.issue_edit_labels(1, ["x"], ["a b"])
+        self.assertEqual(t.lines(), ["POST /api/v1/repos/o/r/issues/1/labels",
+                                     "DELETE /api/v1/repos/o/r/issues/1/labels/a%20b"])
+        self.assertEqual(t.calls[0][3], b'{"labels": ["x"]}')
+
+    def test_comment_returns_url(self):
+        forge, t = make({"POST /api/v1/repos/o/r/issues/2/comments":
+                         (201, {"html_url": "https://f/o/r/issues/2#issuecomment-8"})})
+        self.assertEqual(forge.comment("issue", 2, self.body()),
+                         "https://f/o/r/issues/2#issuecomment-8\n")
+
+    def test_change_state_pr(self):
+        forge, t = make({"PATCH /api/v1/repos/o/r/pulls/3": (201, {})})
+        forge.change_state("pr", "close", 3)
+        self.assertEqual(t.lines(), ["PATCH /api/v1/repos/o/r/pulls/3"])
+        self.assertEqual(t.calls[0][3], b'{"state": "closed"}')
+
+    def test_issue_create_resolves_ids(self):
+        forge, t = make({**self.LABELS, "POST /api/v1/repos/o/r/issues":
+                         (201, {"html_url": "https://f/o/r/issues/9"})})
+        out = forge.issue_create("T", self.body(), labels=["a"], milestone="M")
+        self.assertEqual(out, "https://f/o/r/issues/9\n")
+        sent = json.loads(t.calls[-1][3])
+        self.assertEqual((sent["labels"], sent["milestone"], sent["body"]), ([4], 9, "hello"))
+
+    def test_item_edit_remove_milestone(self):
+        forge, t = make({"PATCH /api/v1/repos/o/r/issues/4": (201, {})})
+        forge.item_edit("issue", 4, remove_milestone=True)
+        self.assertEqual(json.loads(t.calls[0][3]), {"milestone": 0})
+
+    def test_timeline(self):
+        forge, _ = make({"GET /api/v1/repos/o/r/issues/1/timeline": (200, [
+            {"type": "assignees", "removed_assignee": False, "user": {"login": "a"},
+             "assignee": {"login": "b"}, "created_at": "t1"},
+            {"type": "assignees", "removed_assignee": True, "user": {"login": "a"},
+             "assignee": {"login": "b"}, "created_at": "t2"},
+            {"type": "comment", "created_at": "t3"}])})
+        got = forge.issue_timeline(1)
+        self.assertEqual([e["event"] for e in got], ["assigned", "unassigned"])
+        self.assertEqual(got[0], {"event": "assigned", "by": "a", "subject": "b", "at": "t1"})
+        bad, _ = make({"GET /api/v1/repos/o/r/issues/1/timeline": (500, "")})
+        self.assertIsNone(bad.issue_timeline(1))
+
+    def test_repo_view(self):
+        forge, _ = make({"GET /api/v1/repos/o/r": (200, {
+            "name": "r", "full_name": "o/r", "default_branch": "main",
+            "owner": {"login": "o"}})})
+        self.assertEqual(forge.repo_view("owner,name,nameWithOwner,defaultBranchRef"),
+                         {"owner": {"login": "o"}, "name": "r", "nameWithOwner": "o/r",
+                          "defaultBranchRef": {"name": "main"}})
