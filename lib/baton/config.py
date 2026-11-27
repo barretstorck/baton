@@ -50,7 +50,7 @@ DEFAULTS = {
     "fixtures_paths": [],
     "privacy_allow": [],
     "forge_clis": ["gh", "glab", "tea", "fj", "curl", "wget", "http", "https", "xh"],
-    "body_file_flags": ["-F", "--body-file", "--input"],
+    "body_file_flags": ["-F", "--body-file", "--input", "--description-file"],
     "forbid_added": {},
     "budgets": {},
     "work_mix": {},

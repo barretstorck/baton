@@ -351,7 +351,7 @@ then is that rule skipped. Inline `# noqa` comments are not judged.
 `forge_clis` in `.baton/brief.md` lists the programs the publish gate treats as talking to the forge
 (default `gh`, `glab`, `tea`, `fj`, `curl`, `wget`, `http`, `https`, `xh`), and `body_file_flags`
 lists the flags that name a file holding the text to publish (default `-F`, `--body-file`,
-`--input`). A list in the brief replaces the default; it does not extend it. `baton config` shows both.
+`--input`, `--description-file`). A list in the brief replaces the default; it does not extend it. `baton config` shows both.
 
 ## Work mix
 

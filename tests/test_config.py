@@ -310,7 +310,7 @@ class ForgeKeysTest(unittest.TestCase):
     def test_defaults(self):
         data = config.load(str(make_repo("x\n"))).data
         self.assertEqual(data["forge_clis"], ["gh", "glab", "tea", "fj", "curl", "wget", "http", "https", "xh"])
-        self.assertEqual(data["body_file_flags"], ["-F", "--body-file", "--input"])
+        self.assertEqual(data["body_file_flags"], ["-F", "--body-file", "--input", "--description-file"])
         import json
         dumped = json.dumps(data)
         self.assertIn("forge_clis", dumped)
