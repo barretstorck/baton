@@ -4,7 +4,6 @@ Adapted from the acceptance rules in the design spec, section 6, and the
 prototype sprint's lesson: never merge until CI has concluded SUCCESS on
 the head commit.
 """
-import json
 import os
 import re
 import shutil
