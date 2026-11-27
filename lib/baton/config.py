@@ -267,6 +267,37 @@ def _check_forge_setting(data):
         raise ConfigError(".baton/brief.md: " + problem)
 
 
+def parse_local_forge(text):
+    """The `forge: <kind> <url>` line under `## Hosts` of the local brief, or None."""
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    in_section = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            in_section = line[3:].strip().lower() == "hosts"
+            continue
+        if in_section:
+            m = re.fullmatch(r"\s*forge:\s+(\S+)\s+(\S+)\s*", line)
+            if m:
+                return {"kind": m.group(1), "url": m.group(2)}
+    return None
+
+
+def effective_forge(committed, local):
+    """Combine the committed forge setting with the local brief's, or raise ConfigError."""
+    if local is None:
+        return committed
+    problem = forge_problem(local)
+    if problem:
+        raise ConfigError("local brief: " + problem)
+    if not committed["kind"]:
+        return local
+    if (committed["kind"] != local["kind"]
+            or committed["url"].rstrip("/") != local["url"].rstrip("/")):
+        raise ConfigError("forge: is set differently in .baton/brief.md and the local brief; "
+                          "keep one")
+    return committed
+
+
 def repo_root(path):
     try:
         out = run.run(["git", "-C", path, "rev-parse", "--show-toplevel"])
