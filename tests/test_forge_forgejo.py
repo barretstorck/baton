@@ -71,8 +71,7 @@ class TransportTest(unittest.TestCase):
     def test_unsupported_methods(self):
         forge, t = make()
         for call in (lambda: forge.issue_lock(1),
-                     lambda: forge.review_edit_body(1, 2, "p"),
-                     lambda: forge.pr_ready(1)):
+                     lambda: forge.review_edit_body(1, 2, "p")):
             with self.assertRaises(Unsupported) as ctx:
                 call()
             self.assertIn("not supported on Forgejo", str(ctx.exception))
@@ -396,8 +395,29 @@ class PullRequestTest(unittest.TestCase):
         self.assertEqual(seen, [["git", "rev-parse", "--abbrev-ref", "HEAD"]])
         sent = json.loads(transport.calls[-1][3])
         self.assertEqual((sent["head"], sent["base"], sent["body"]), ("feat", "main", "hello"))
-        with self.assertRaises(Unsupported):
-            forge.pr_create("T", self.body(), draft=True)
+        forge.pr_create("T", self.body(), draft=True)
+        self.assertEqual(json.loads(transport.calls[-1][3])["title"], "WIP: T")
+
+    def ready(self, title, **kw):
+        forge, t = make({"GET /api/v1/repos/o/r/pulls/3": (200, {"title": title}),
+                         "PATCH /api/v1/repos/o/r/pulls/3": (201, {})})
+        self.assertEqual(forge.pr_ready(3, **kw), "")
+        return [json.loads(c[3]) for c in t.calls if c[0] == "PATCH"]
+
+    def test_pr_ready_strips_prefix(self):
+        self.assertEqual(self.ready("wip: T"), [{"title": "T"}])
+
+    def test_pr_ready_undo_adds_prefix(self):
+        self.assertEqual(self.ready("T", undo=True), [{"title": "WIP: T"}])
+
+    def test_pr_ready_unchanged_sends_nothing(self):
+        self.assertEqual(self.ready("T"), [])
+        self.assertEqual(self.ready("WIP: T", undo=True), [])
+
+    def test_draft_custom_prefix(self):
+        forge = Forgejo("https://f.example", "o", "r", token=TOKEN,
+                        transport=FakeTransport(), draft_prefix="[draft]")
+        self.assertTrue(forge._pr_shape(dict(self.PR, title="[Draft] x"), ["isDraft"])["isDraft"])
 
     def test_pr_review_approve(self):
         forge, t = make({"POST /api/v1/repos/o/r/pulls/3/reviews": (200, {})})

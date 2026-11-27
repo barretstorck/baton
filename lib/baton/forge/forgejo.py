@@ -186,7 +186,17 @@ class Forgejo:
         raise Unsupported("editing a review body")
 
     def pr_ready(self, number, undo=False, role=None):
-        raise Unsupported("marking a pull request ready")
+        path = f"{self._repo_path()}/pulls/{number}"
+        title = self._request("GET", path).get("title") or ""
+        prefix = self.draft_prefix
+        starts = title.lower().startswith(prefix.lower())
+        if undo:
+            new = title if starts else f"{prefix} {title}"
+        else:
+            new = title[len(prefix):].lstrip() if starts else title
+        if new != title:
+            self._request("PATCH", path, body={"title": new}, role=role)
+        return ""
 
     def issue_body_edits(self, number):
         return None
@@ -449,12 +459,11 @@ class Forgejo:
                                 "state": "PENDING", "targetUrl": None})
         return out
 
-    @staticmethod
-    def _is_draft(item):
+    def _is_draft(self, item):
         if item.get("draft") is not False:
             return True
         title = (item.get("title") or "").strip().lower()
-        return title.startswith(("wip:", "[wip]"))
+        return title.startswith(("wip:", "[wip]", self.draft_prefix.lower()))
 
     @staticmethod
     def _is_cross_repository(item):
@@ -510,7 +519,7 @@ class Forgejo:
 
     def pr_create(self, title, path, head=None, draft=False, role=None):
         if draft:
-            raise Unsupported("creating a draft pull request")
+            title = f"{self.draft_prefix} {title}"
         if not head:
             head = self.runner(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip()
         base = self._request("GET", self._repo_path())["default_branch"]
