@@ -310,6 +310,37 @@ class OutsideTest(unittest.TestCase):
         self.assertFalse(issue.approved(data, OWNER))
 
 
+class BodyHashTest(unittest.TestCase):
+    BODY = ("## Context\nOld text\n\n- [ ] Task 1: Do it\n  - Check: `make`\n"
+            "  - Provides: x\n")
+
+    def test_shape(self):
+        h = issue.body_hash(self.BODY)
+        self.assertRegex(h, r"^[0-9a-f]{16}$")
+        self.assertEqual(h, issue.body_hash(self.BODY))
+        self.assertEqual(issue.body_hash(None), issue.body_hash(""))
+
+    def test_formatting_is_ignored(self):
+        h = issue.body_hash(self.BODY)
+        self.assertEqual(h, issue.body_hash(self.BODY.replace("\n", "\r\n")))
+        self.assertEqual(h, issue.body_hash(self.BODY.replace("Old text", "Old text  ")))
+        self.assertEqual(h, issue.body_hash("\n" + self.BODY + "\n\n"))
+
+    def test_baton_edits_are_ignored(self):
+        h = issue.body_hash(self.BODY)
+        ticked = self.BODY.replace("- [ ] Task 1", "- [x] Task 1")
+        self.assertEqual(h, issue.body_hash(ticked))
+        built = ticked.replace("  - Provides: x\n",
+                               "  - Provides: x\n  - Provides (as built): y\n")
+        self.assertEqual(h, issue.body_hash(built))
+
+    def test_content_changes_are_seen(self):
+        h = issue.body_hash(self.BODY)
+        for old, new in (("Old text", "New text"), ("Do it", "Do that"),
+                         ("`make`", "`true`")):
+            self.assertNotEqual(h, issue.body_hash(self.BODY.replace(old, new)))
+
+
 class PlanReadyTest(unittest.TestCase):
     def problems(self, body, labels=("type:feature",)):
         return issue.ready_problems(make(body=body, labels=labels), cfg(), OWNER)

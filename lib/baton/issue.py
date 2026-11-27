@@ -3,6 +3,7 @@
 The description is the single source of truth (design spec, section 4):
 headed sections, an `Expected files:` line and `Blocked by:` lines.
 """
+import hashlib
 import re
 from datetime import datetime
 
@@ -19,6 +20,22 @@ _ORIGIN_OUTSIDE = re.compile(r"^\s*Origin:\s*outside\s*\(@[\w-]+\)\s*$", re.M | 
 _ORIGIN_LINE = re.compile(r"^\s*Origin:.*$", re.M | re.I)
 APPROVAL = "/baton ready"
 _LIST_ITEM = re.compile(r"^\s*(?:[-*]|\d+\.)\s+\S", re.M)
+HASH_LENGTH = 16
+_TICKED_TASK = re.compile(r"^(\s*- )\[[xX]\]( Task \d+:)")
+
+
+def body_hash(body):
+    """A short hash of a description that ignores Baton's own later edits: task
+    ticks and `Provides (as built):` lines, line-end and outer-blank differences."""
+    text = (body or "").replace("\r\n", "\n").replace("\r", "\n")
+    lines = []
+    for line in text.split("\n"):
+        line = line.rstrip()
+        if line.lstrip().startswith("- Provides (as built):"):
+            continue
+        lines.append(_TICKED_TASK.sub(r"\1[ ]\2", line))
+    norm = "\n".join(lines).strip("\n")
+    return hashlib.sha256(norm.encode("utf-8")).hexdigest()[:HASH_LENGTH]
 
 
 def body_edits(runner, number):
