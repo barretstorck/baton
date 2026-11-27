@@ -5,6 +5,8 @@ ACTIONS = {"close": "closed", "reopen": "reopened"}
 REASONS = ("spam", "duplicate", "support", "wont-do", "completed")
 _NATIVE = {"spam": "not planned", "support": "not planned", "wont-do": "not planned",
            "duplicate": "duplicate", "completed": "completed"}
+LOCK_UNSUPPORTED_FORGEJO = ("the issue lock (--lock) is not supported on Forgejo; "
+                            "close without --lock")
 
 
 def change(cfg, runner, action, target, number, role, reason, terms,

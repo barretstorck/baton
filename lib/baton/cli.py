@@ -365,9 +365,13 @@ def _change_state(action, opts):
              "duplicate_of": getattr(opts, "duplicate_of", None),
              "lock": getattr(opts, "lock", False)}
     flags = {k: v for k, v in flags.items() if v}
+    cfg = _require_config()
+    if "lock" in flags and _forge_kind(cfg) == "forgejo":
+        print(f"baton: {state.LOCK_UNSUPPORTED_FORGEJO}", file=sys.stderr)
+        return 1
     try:
         reason = comment.read_body(opts.reason_file, sys.stdin)
-        print(state.change(_require_config(), run.run, action, opts.target, opts.number,
+        print(state.change(cfg, run.run, action, opts.target, opts.number,
                            opts.role, reason, scan.load_terms(), **flags))
     except comment.CommentError as error:
         print(f"baton: {error}", file=sys.stderr)
@@ -832,6 +836,14 @@ def _detect_forge(cfg):
             local = config.parse_local_forge(path.read_text())
     committed = cfg.data["forge"] if cfg is not None else config.DEFAULTS["forge"]
     return identity.detect_forge(url, config.effective_forge(committed, local))
+
+
+def _forge_kind(cfg):
+    """The detected forge kind, or "" when detection fails."""
+    try:
+        return _detect_forge(cfg)["kind"]
+    except (run.RunError, identity.ForgeError, config.ConfigError):
+        return ""
 
 
 @cliargs.command("doctor")
