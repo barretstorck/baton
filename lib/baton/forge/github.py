@@ -1,4 +1,5 @@
 import json
+import urllib.parse
 
 from .. import identity, run
 
@@ -253,6 +254,15 @@ class GitHub:
 
     def branch_head(self, owner, repo, branch):
         return self._read(["gh", "api", f"repos/{owner}/{repo}/commits/{branch}"])
+
+    def last_push(self, owner, repo, branch):
+        ref = urllib.parse.quote(branch, safe="/")
+        entries = self._read(["gh", "api",
+                              f"repos/{owner}/{repo}/activity?ref=refs/heads/{ref}&per_page=10"])
+        for entry in entries:
+            if entry.get("activity_type") in ("push", "force_push", "branch_creation"):
+                return entry.get("timestamp")
+        return None
 
     def run_list_text(self, branch, sha, event, limit, fields):
         return self.runner(["gh", "run", "list", "--branch", branch, "--commit", sha,

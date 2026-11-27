@@ -1359,7 +1359,7 @@ class InFlightTest(unittest.TestCase):
         return {"author": {"login": OWNER}, "body": body, "createdAt": self.stamp(minutes_old),
                 "url": "https://example.com/c/1"}
 
-    def snap(self, status, comments, pr_age=None):
+    def snap(self, status, comments, pr_age=None, push_age=None, activity=None):
         item = issue(7, status, "deliverable", comments=comments)
         item["body"] += self.PLAN
         prs, extra = [], {}
@@ -1369,6 +1369,12 @@ class InFlightTest(unittest.TestCase):
                     "closingIssuesReferences": [{"number": 7}], "comments": []}]
             extra[f"gh api repos/octo/proj/commits/{self.HEAD}"] = commit_reply(
                 self.stamp(pr_age), self.HEAD)
+            if push_age is not None:
+                activity = [{"activity_type": "branch_deletion", "timestamp": self.stamp(1)},
+                            {"activity_type": "push", "timestamp": self.stamp(push_age)}]
+            if activity is not None:
+                extra["gh api repos/octo/proj/activity?ref=refs/heads/issue-7-x"] = \
+                    json.dumps(activity)
         runner = FakeRunner(replies([item], prs=prs, extra=extra))
         return sprint.snapshot(cfg(), runner, now=self.NOW)
 
@@ -1385,7 +1391,23 @@ class InFlightTest(unittest.TestCase):
         self.assertTrue(found["in_flight"][0]["stale"])
 
     def test_recent_push_keeps_old_record_fresh(self):
-        found = self.snap("in-dev", [self.record(180)], pr_age=5)
+        found = self.snap("in-dev", [self.record(180)], pr_age=180, push_age=5)
+        self.assertFalse(found["progress"]["7"]["in_flight"]["stale"])
+
+    def test_future_committer_date_with_old_push_is_stale(self):
+        found = self.snap("in-dev", [self.record(180)], pr_age=-24 * 60, push_age=180)
+        self.assertTrue(found["progress"]["7"]["in_flight"]["stale"])
+
+    def test_no_push_activity_is_stale(self):
+        found = self.snap("in-dev", [self.record(180)], pr_age=5, activity=[])
+        self.assertTrue(found["progress"]["7"]["in_flight"]["stale"])
+
+    def test_future_committer_date_does_not_keep_old_record_fresh(self):
+        found = self.snap("in-dev", [self.record(180)], pr_age=-24 * 60)
+        self.assertTrue(found["progress"]["7"]["in_flight"]["stale"])
+
+    def test_past_committer_date_does_not_make_fresh_record_stale(self):
+        found = self.snap("in-dev", [self.record(10)], pr_age=7 * 24 * 60)
         self.assertFalse(found["progress"]["7"]["in_flight"]["stale"])
 
     def test_released_record_is_none(self):
