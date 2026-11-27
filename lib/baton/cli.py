@@ -822,10 +822,34 @@ def cmd_push(opts):
     return 0
 
 
+def _detect_forge(cfg):
+    url = run.run(["git", "remote", "get-url", "origin"]).strip()
+    parts = identity.remote_parts(url)
+    local = None
+    if parts:
+        path = sandbox.brief_path(parts[1], parts[2])
+        if path.is_file():
+            local = config.parse_local_forge(path.read_text())
+    committed = cfg.data["forge"] if cfg is not None else config.DEFAULTS["forge"]
+    return identity.detect_forge(url, config.effective_forge(committed, local))
+
+
 @cliargs.command("doctor")
 def cmd_doctor(opts):
     cfg = config.load(os.getcwd())
-    return doctor.main(_repo_name(), spike=cfg.data["spike"] if cfg is not None else None)
+    spike = cfg.data["spike"] if cfg is not None else None
+    try:
+        found = _detect_forge(cfg)
+    except run.RunError:
+        found = None
+    except (identity.ForgeError, config.ConfigError) as e:
+        print(f"forge: FAIL: {e}")
+        return 1
+    if found is not None and found["kind"] == "forgejo":
+        lines, ok = doctor.forgejo_lines(found["url"])
+        print("\n".join(lines + doctor.spike_lines(spike)))
+        return 0 if ok else 1
+    return doctor.main(_repo_name(), spike=spike)
 
 
 COMMANDS = {

@@ -254,7 +254,7 @@ Where agents keep scratch files is described in [docs/scratch-files.md](docs/scr
 | `baton identity worktree` | At tier 1, set this linked worktree's commit author to `baton[bot]` (worktree-local git config); no-op at tier 0 |
 | `baton exec [--role <role>] gh <args...>` | Run `gh` with the role's App token in the child's environment only (tier 1), or unchanged (tier 0) |
 | `baton push <source>:refs/heads/<branch>` | Push to `origin` (tier 0) or over HTTPS with the `baton` App token (tier 1). Refuses (exit 1) a destination outside `refs/heads/`, the default branch, a leading `-` or `+`, an empty source, or a refspec containing `*`, `^`, `?`, `[`, `\` or whitespace; the destination must pass `git check-ref-format`, and at tier 0 `origin` must be the repository `gh repo view` resolves |
-| `baton doctor` | Print the identity tier and check each App (login, token, repository access); also warns when the brief gives spikes no `tokens` or `minutes` range (the warning does not change the exit code); exits 1 on a failure |
+| `baton doctor` | Print the identity tier and check each App (login, token, repository access); also warns when the brief gives spikes no `tokens` or `minutes` range (the warning does not change the exit code); on a Forgejo repository it checks `forge.url` with `GET /api/forgejo/v1/version` instead, and it refuses an origin on an unknown host; exits 1 on a failure |
 | `baton labels [--create]` | Check or create the labels Baton uses |
 | `baton set-status <issue> <status:name>` | Switch an issue's status label |
 | `baton install-hooks` | Install the `pre-commit` and `pre-push` privacy hooks. The hooks find the current install through `installed_plugins.json`, so a plugin update needs no re-install; run it again only when the gate or a hook says the hooks are missing |
@@ -345,6 +345,10 @@ commit or push that adds a line matching the expression in a file matching the g
 line; `baton merge-pr` repeats the check over the whole pull request diff. A plan that needs such a
 line says so with `Allows: forbid_added "<glob>"` (the glob as written in `forbid_added`); only
 then is that rule skipped. Inline `# noqa` comments are not judged.
+
+## Forge
+
+`forge:` says which forge hosts the repository. In `.baton/brief.md` it is `kind:` (`github` or `forgejo`) and `url:` (`https://<host>`); in the local brief a `forge: <kind> <url>` line under `## Hosts` does the same for a private host. If both are set and differ, the command refuses. Without the key, the `origin` URL (https, `ssh://` or scp-style) decides: `github.com` is GitHub, a host equal to the host of `forge.url` is that forge, and any other host is refused with a message to set `forge:`. Baton never guesses. `baton doctor` confirms a Forgejo host with `GET /api/forgejo/v1/version` (Gitea does not serve it) and prints `forge: FAIL: ...` and exits 1 when it does not answer or the host is refused.
 
 ## Publish gate programs
 

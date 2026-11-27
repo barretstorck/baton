@@ -149,3 +149,72 @@ class DoctorTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ForgejoProbeTest(unittest.TestCase):
+    def test_ok(self):
+        seen = []
+
+        def get(url, headers):
+            seen.append(url)
+            return {"version": "13.0.5+gitea-1.22.0"}
+        lines, ok = doctor.forgejo_lines("https://f.example/", get)
+        self.assertTrue(ok)
+        self.assertEqual(lines, ["forge: ok (Forgejo 13.0.5+gitea-1.22.0)"])
+        self.assertEqual(seen, ["https://f.example/api/forgejo/v1/version"])
+
+    def test_http_404(self):
+        def get(url, headers):
+            raise identity.IdentityError("request failed: HTTP 404")
+        lines, ok = doctor.forgejo_lines("https://f.example", get)
+        self.assertFalse(ok)
+        self.assertIn("forge: FAIL: forge.url does not answer /api/forgejo/v1/version", lines[0])
+        self.assertIn("HTTP 404", lines[0])
+
+    def test_missing_version(self):
+        lines, ok = doctor.forgejo_lines("https://f.example", lambda u, h: {"x": 1})
+        self.assertFalse(ok)
+        self.assertTrue(lines[0].startswith("forge: FAIL: "))
+
+
+class CmdDoctorForgeTest(unittest.TestCase):
+    def run_doctor(self, origin, local=None):
+        from baton import cli
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        brief = pathlib.Path(tmp.name) / "brief.local.md"
+        if local:
+            brief.write_text(local)
+        out = io.StringIO()
+        with mock.patch.object(cli.run, "run", return_value=origin + "\n") as run_, \
+                mock.patch.object(cli.config, "load", return_value=None), \
+                mock.patch.object(cli.sandbox, "brief_path", return_value=brief), \
+                mock.patch.object(cli.doctor, "forgejo_lines",
+                                  return_value=(["forge: ok (Forgejo 1)"], True)) as fl, \
+                mock.patch.object(cli.doctor, "main", return_value=0) as main, \
+                mock.patch.object(cli, "_repo_name", return_value="o/r"), \
+                contextlib.redirect_stdout(out):
+            code = cli.cmd_doctor([])
+        return code, out.getvalue(), run_, fl, main
+
+    def test_forgejo_origin(self):
+        code, out, run_, fl, main = self.run_doctor(
+            "https://f.example/o/r.git", "## Hosts\n\nforge: forgejo https://f.example\n")
+        self.assertEqual(code, 0)
+        self.assertIn("forge: ok (Forgejo 1)", out)
+        fl.assert_called_once_with("https://f.example")
+        main.assert_not_called()
+        for call in run_.call_args_list:
+            self.assertNotEqual(call.args[0][0], "gh")
+
+    def test_unknown_host(self):
+        code, out, _, fl, main = self.run_doctor("https://other.example/o/r")
+        self.assertEqual(code, 1)
+        self.assertTrue(out.startswith("forge: FAIL: "))
+        main.assert_not_called()
+
+    def test_github(self):
+        code, _, _, fl, main = self.run_doctor("git@github.com:o/r.git")
+        self.assertEqual(code, 0)
+        main.assert_called_once()
+        fl.assert_not_called()
