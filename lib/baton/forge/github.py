@@ -52,6 +52,9 @@ class GitHub:
     def issue_view(self, number, fields, empty=None):
         return self._read(["gh", "issue", "view", str(number), "--json", fields], empty)
 
+    def issue_view_text(self, number, fields):
+        return self.runner(["gh", "issue", "view", str(number), "--json", fields])
+
     def pr_view(self, number, fields, empty=None):
         return self._read(["gh", "pr", "view", str(number), "--json", fields], empty)
 

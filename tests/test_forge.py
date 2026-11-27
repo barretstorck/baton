@@ -67,6 +67,12 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(GitHub(FakeRunner()).pr_view(3, "state", empty={}), {})
         self.assertEqual(runner.lines(), ["gh pr view 3 --json state"])
 
+    def test_issue_view_text(self):
+        runner = FakeRunner({"gh issue view 5": '{"number": 5}'})
+        self.assertEqual(GitHub(runner).issue_view_text(5, "number,state"), '{"number": 5}')
+        self.assertEqual(runner.lines(), ["gh issue view 5 --json number,state"])
+        self.assertEqual(GitHub(FakeRunner()).issue_view_text(6, "number"), "")
+
     def test_issue_exists(self):
         runner = FakeRunner({"gh issue view 5": '{"number": 5}'})
         self.assertTrue(GitHub(runner).issue_exists(5))
@@ -275,7 +281,7 @@ class MergeMethodsTest(unittest.TestCase):
 GH_ARGV = re.compile(r'\[\s*"gh"\s*,')
 LIB = Path(__file__).resolve().parent.parent / "lib" / "baton"
 # #374 and #375 empty this set as they move the remaining call sites.
-NOT_YET_MIGRATED = {"cli.py", "sprint.py", "triage.py"}
+NOT_YET_MIGRATED = {"cli.py", "sprint.py"}
 # The forge_clis default list is not a call.
 PERMANENT = {"config.py"}
 

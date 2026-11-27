@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pathlib
 
 from . import comment as commentmod
+from . import forge
 from . import gate
 from . import identity
 from . import issue as issuemod
@@ -172,8 +173,8 @@ CLOSING = ("spam", "duplicate", "support")
 def load_issue(runner, number):
     """The issue as the forge reports it, or TriageError when it does not exist."""
     try:
-        reply = runner(["gh", "issue", "view", str(number), "--json",
-                        "number,author,body,labels,state"])
+        reply = forge.for_repo(runner=runner).issue_view_text(
+            number, "number,author,body,labels,state")
     except runmod.RunError as err:
         raise TriageError(f"issue #{number} could not be read: {err}")
     if not reply or not reply.strip():
@@ -188,11 +189,7 @@ def load_issue(runner, number):
 
 
 def _exists(runner, number):
-    try:
-        reply = runner(["gh", "issue", "view", str(number), "--json", "number"])
-    except runmod.RunError:
-        return False
-    return bool(reply and reply.strip())
+    return forge.for_repo(runner=runner).issue_exists(number)
 
 
 def check(cfg, runner, number, decision, issue, maintainers, terms, owner, repo):
@@ -249,8 +246,8 @@ def apply(cfg, runner, number, decision, maintainers, terms, owner, repo):
     if category == "unclear":
         commentmod.post(cfg, runner, "issue", number, "orchestrator", "status",
                         decision["comment"], terms)
-        identity.write(runner, ["gh", "issue", "edit", str(number), "--add-label",
-                                cfg.label("awaiting-feedback")], "orchestrator")
+        forge.for_repo(runner=runner).issue_edit_labels(
+            number, [cfg.label("awaiting-feedback")], role="orchestrator")
         return f"commented on #{number} and marked it awaiting-feedback"
     if category == "unsure":
         url = commentmod.notify(cfg, runner, number, "triage-unsure",
@@ -272,18 +269,18 @@ def _apply_real(cfg, runner, number, decision, issue, maintainers):
     try:
         with os.fdopen(handle, "w") as out:
             out.write(body)
-        identity.write(runner, ["gh", "issue", "edit", str(number), "--body-file", path],
-                       "orchestrator")
+        forge.for_repo(runner=runner).issue_edit_body(number, path, role="orchestrator")
     finally:
         os.unlink(path)
     present = {item["name"] for item in issue.get("labels") or []}
     target = cfg.label(f"type:{category}")
-    argv = ["gh", "issue", "edit", str(number), "--add-label", target]
+    removed = []
     for other in REAL:
         name = cfg.label(f"type:{other}")
         if name != target and name in present:
-            argv += ["--remove-label", name]
-    identity.write(runner, argv, "orchestrator")
+            removed.append(name)
+    forge.for_repo(runner=runner).issue_edit_labels(number, [target], removed,
+                                                    role="orchestrator")
     if decision.get("priority") is not None:
         labels.set_group(cfg, runner, number, "priority", decision["priority"])
     if decision.get("severity") is not None:
