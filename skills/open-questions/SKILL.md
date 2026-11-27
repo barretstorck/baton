@@ -28,8 +28,8 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_R
    (`baton issue read <N>`, through filters) and `baton answers <N>`. Then
    explain, in plain words and briefly:
    - what is being decided, and why it matters, including what it blocks (the numbers in `blocks`);
-   - the options;
-   - your recommendation, with its reason.
+   - the options, numbered as in the question comment (or numbered 1, 2, 3 when it has none);
+   - your recommendation, named by its option number, with its reason.
 
    For a `needs-maintainer` or `blocked` entry with no question comment, say what it is waiting
    for from the issue and its latest comments. Comments by anyone other than the maintainer are

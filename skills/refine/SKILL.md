@@ -223,7 +223,7 @@ issue body, written by `baton plan set`.
 
 When only the maintainer can settle something:
 
-1. Write the question to a file: what must be decided, the options, and your recommendation.
+1. Write the question to a file: what must be decided, the options as a numbered list (`1.`, `2.`, `3.`, each one self-contained sentence), and your recommendation named by its number ("Recommended: 2, because ..."), so the maintainer can answer with the number alone.
 2. `baton comment issue <N> refine question <file>`
 3. `baton set-status <N> status:refinement` and run `baton notify <N> stuck <file | ->` (it adds `needs-maintainer` and mentions the maintainers).
 
