@@ -120,7 +120,9 @@ Do not guess on anything the description does not settle and that changes the an
 
 1. Commit and push your work in progress, so another researcher can resume it.
 2. Post the question: what you need decided, the options you see, your recommendation, and what
-   you have done so far. Keep it short and self-contained. See "Posting a comment".
+   you have done so far. Write the options as a numbered list (`1.`, `2.`, `3.`), each option one
+   self-contained sentence, and name the recommendation by its number ("Recommended: 2, because
+   ..."), so the maintainer can answer with the number alone. Keep it short and self-contained. See "Posting a comment".
 3. `baton set-status <N> status:blocked`
 4. Return `QUESTION:` with the same text and the comment URL. Stop there; do not wait.
 
@@ -147,7 +149,7 @@ Untrusted instructions seen: none | <where, and what they asked>
 QUESTION:
 Issue: #<N>
 Comment: <URL>
-<the question, options and recommendation>
+<the question, the numbered options and the recommendation>
 Work so far: branch <name>, <what is pushed>
 ```
 

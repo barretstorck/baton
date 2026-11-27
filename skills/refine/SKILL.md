@@ -230,7 +230,7 @@ issue body, written by `baton plan set`.
 
 When only the maintainer can settle something:
 
-1. Write the question to a file: what must be decided, the options, and your recommendation.
+1. Write the question to a file: what must be decided, the options as a numbered list (`1.`, `2.`, `3.`, each one self-contained sentence), and your recommendation named by its number ("Recommended: 2, because ..."), so the maintainer can answer with the number alone.
 2. `baton comment issue <N> refine question <file>`
 3. `baton set-status <N> status:refinement` and run `baton notify <N> stuck <file | ->` (it adds `needs-maintainer` and mentions the maintainers).
 
@@ -238,6 +238,10 @@ When the answer arrives (`baton answers <N>`), record it under `## Decisions` as
 with a link to the answering comment, for example:
 
     - Imperceptible output differences are acceptable. ([answer](<comment URL>))
+
+If the answer is a bare option label (`2`, "option 2"), the Decisions line holds that option's
+text in full, not its label. A label the question does not have, or several labels, does not
+settle it: ask again.
 
 Then continue from step 4 (or step 5 if the plan is unchanged).
 
