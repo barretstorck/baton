@@ -343,7 +343,7 @@ class SprintMethodsTest(unittest.TestCase):
 GH_ARGV = re.compile(r'\[\s*"gh"\s*,')
 LIB = Path(__file__).resolve().parent.parent / "lib" / "baton"
 # #374 and #375 empty this set as they move the remaining call sites.
-NOT_YET_MIGRATED = {"cli.py"}
+NOT_YET_MIGRATED = set()
 # The forge_clis default list is not a call.
 PERMANENT = {"config.py"}
 

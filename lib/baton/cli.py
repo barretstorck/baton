@@ -5,7 +5,7 @@ import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import branches, cliargs, budget, checklist, clean, comment, compact, config, doctor, gate, githooks, identity, inflight, issue, labels, merge, orchestrator, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
+from . import branches, cliargs, budget, checklist, clean, comment, compact, config, doctor, forge, gate, githooks, identity, inflight, issue, labels, merge, orchestrator, planfile, publish, questions, review, run, sandbox, scan, sprint, state, triage, usage, verify
 
 
 @cliargs.command("config")
@@ -138,7 +138,7 @@ def cmd_merge_pr(opts):
 
 
 def _owner():
-    return json.loads(run.run(["gh", "repo", "view", "--json", "owner"]))["owner"]["login"]
+    return forge.for_repo().repo_view("owner")["owner"]["login"]
 
 
 def _maintainers(cfg):
@@ -249,12 +249,11 @@ def _triage_queue():
     owner, _, repo = _repo_name().partition("/")
     now = datetime.now(timezone.utc)
     since, first_run = triage.resolve_since(cfg, owner, repo, now)
-    issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "1000",
-                                 "--json", "number,title,state,labels,body,author,createdAt,comments"]))
+    issues = forge.for_repo().issue_list("number,title,state,labels,body,author,createdAt,comments",
+                                         "open", 1000)
     day_ago = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-    closed = json.loads(run.run(["gh", "issue", "list", "--state", "closed",
-                                 "--search", "closed:>=" + day_ago, "--limit", "200",
-                                 "--json", "number,state,comments,createdAt"]) or "[]")
+    closed = forge.for_repo().issue_list("number,state,comments,createdAt", "closed", 200,
+                                       search="closed:>=" + day_ago, empty=[])
     for item in issues + closed:
         item["comments"] = identity.mark_authors(run.run, item["number"], item.get("comments"))
     maintainers = _maintainers(cfg)
@@ -313,8 +312,7 @@ def _issue_missed(opts):
 def _issue_read(opts):
     cfg = _require_config()
     number = str(opts.number)
-    data = json.loads(run.run(["gh", "issue", "view", number, "--json",
-                               "number,title,state,author,labels,body,comments"]))
+    data = forge.for_repo().issue_view(number, "number,title,state,author,labels,body,comments")
     data["comments"] = identity.mark_authors(run.run, opts.number, data.get("comments"))
     print(issue.render(data, _maintainers(cfg), _bots()))
     return 0
@@ -387,9 +385,8 @@ def cmd_reopen(opts):
 
 def _review_state(opts):
     cfg = _require_config()
-    repo = json.loads(run.run(["gh", "repo", "view", "--json", "owner,defaultBranchRef"]))
-    pr = json.loads(run.run(["gh", "pr", "view", str(opts.pr), "--json",
-                             "number,headRefName,headRefOid,comments"]))
+    repo = forge.for_repo().repo_view("owner,defaultBranchRef")
+    pr = forge.for_repo().pr_view(opts.pr, "number,headRefName,headRefOid,comments")
     pr["comments"] = review.pr_comments(run.run, opts.pr, pr.get("comments"))
     print(json.dumps(review.current(pr, _trusted(cfg), cfg, run.run,
                                     repo["defaultBranchRef"]["name"],
@@ -425,7 +422,7 @@ def cmd_tasks(opts):
         print(json.dumps({**found, **checklist.progress(found["tasks"]), "in_flight": flight},
                          indent=2))
         return 0
-    pr = json.loads(run.run(["gh", "pr", "view", str(opts.number), "--json", "comments"]))
+    pr = forge.for_repo().pr_view(opts.number, "comments")
     pr["comments"] = review.pr_comments(run.run, opts.number, pr.get("comments"))
     print(json.dumps(review.review_tasks(pr, _trusted(cfg)), indent=2))
     return 0
@@ -434,7 +431,7 @@ def cmd_tasks(opts):
 def _in_flight(cfg, number, tasks):
     """The issue's open in-flight record, or None when the comments cannot be read."""
     try:
-        data = json.loads(run.run(["gh", "issue", "view", str(number), "--json", "comments"]))
+        data = forge.for_repo().issue_view(number, "comments")
         comments = identity.mark_authors(run.run, number, data.get("comments"))
         return inflight.current(comments, tasks, list(_maintainers(cfg)) + sorted(_bots()))
     except (run.RunError, ValueError, KeyError):
@@ -442,7 +439,7 @@ def _in_flight(cfg, number, tasks):
 
 
 def _repo_name():
-    return json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
+    return forge.for_repo().repo_view("nameWithOwner")["nameWithOwner"]
 
 
 def _tick_pr(opts, cfg):
@@ -559,7 +556,7 @@ def cmd_usage(opts):
 @cliargs.command("answers")
 def cmd_answers(opts):
     cfg = _require_config()
-    data = json.loads(run.run(["gh", "issue", "view", str(opts.issue), "--json", "comments"]))
+    data = forge.for_repo().issue_view(opts.issue, "comments")
     data["comments"] = identity.mark_authors(run.run, opts.issue, data.get("comments"))
     print(json.dumps(comment.pending_answers(data, _maintainers(cfg), _bots()), indent=2))
     return 0
@@ -568,8 +565,8 @@ def cmd_answers(opts):
 @cliargs.command("open-questions")
 def cmd_open_questions(opts):
     cfg = _require_config()
-    issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "300",
-                                 "--json", "number,title,state,labels,body,author,comments"]))
+    issues = forge.for_repo().issue_list("number,title,state,labels,body,author,comments",
+                                         "open", 300)
     for item in issues:
         item["comments"] = identity.mark_authors(run.run, item["number"], item.get("comments"))
     found = questions.open_questions(issues, cfg, _maintainers(cfg), datetime.now(timezone.utc),
@@ -580,8 +577,8 @@ def cmd_open_questions(opts):
 
 def _notify_rules():
     cfg = _require_config()
-    issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "300",
-                                 "--json", "number,title,state,labels,body,author,comments"]))
+    issues = forge.for_repo().issue_list("number,title,state,labels,body,author,comments",
+                                         "open", 300)
     try:
         for number in questions.notify_matches(issues, cfg):
             url = comment.notify(cfg, run.run, number, "rule",
@@ -618,7 +615,7 @@ def cmd_notify(opts):
 def cmd_ready_check(opts):
     cfg = _require_config()
     number = opts.issue
-    data = json.loads(run.run(["gh", "issue", "view", str(number), "--json", "author,body,labels,comments"]))
+    data = forge.for_repo().issue_view(number, "author,body,labels,comments")
     data["comments"] = identity.mark_authors(run.run, number, data.get("comments"))
     maintainers = _maintainers(cfg)
     if issue.is_outside(data, maintainers, _bots()):
@@ -650,8 +647,7 @@ def cmd_sprint_status(opts):
 @cliargs.command("sprint-order")
 def cmd_sprint_order(opts):
     cfg = _require_config()
-    issues = json.loads(run.run(["gh", "issue", "list", "--state", "open", "--limit", "300",
-                                 "--json", "number,labels"]))
+    issues = forge.for_repo().issue_list("number,labels", "open", 300)
     spike = cfg.label("type:spike")
     flags = {i["number"]: any(l.get("name") == spike for l in i.get("labels", []))
              for i in issues}
@@ -676,7 +672,7 @@ def cmd_sprint_capacity(opts):
 def cmd_sprint_metrics(opts):
     cfg = _require_config()
     try:
-        repo = json.loads(run.run(["gh", "repo", "view", "--json", "owner,name"]))
+        repo = forge.for_repo().repo_view("owner,name")
         found = usage.report(opts.dir, opts.since, f"{repo['owner']['login']}/{repo['name']}")
         metrics = sprint.sprint_metrics(cfg, run.run, opts.milestone, usage.total_weighted(found))
     except sprint.SnapshotError as error:
@@ -689,7 +685,7 @@ def cmd_sprint_metrics(opts):
 @cliargs.command("pr-state")
 def cmd_pr_state(opts):
     cfg = _require_config()
-    pr = json.loads(run.run(["gh", "pr", "view", opts.pr, "--json", sprint.PR_STATE_FIELDS]))
+    pr = forge.for_repo().pr_view(opts.pr, sprint.PR_STATE_FIELDS)
     number = pr.get("number") or (int(opts.pr) if opts.pr.isdigit() else None)
     if number:
         pr["comments"] = review.pr_comments(run.run, number, pr.get("comments"))
@@ -718,7 +714,7 @@ def cmd_sandbox(opts):
     if opts.action == "run" and not opts.words:
         return cliargs.fail("sandbox")
     cfg = _require_config()
-    repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
+    repo = forge.for_repo().repo_view("nameWithOwner,defaultBranchRef")
     owner, name = repo["nameWithOwner"].split("/", 1)
     if opts.action == "check":
         state = sandbox.check(owner, name)
@@ -755,7 +751,7 @@ def cmd_lock(opts):
 @cliargs.command("clean")
 def cmd_clean(opts):
     _require_config()
-    repo = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
+    repo = forge.for_repo().repo_view("nameWithOwner,defaultBranchRef")
     owner, name = repo["nameWithOwner"].split("/", 1)
     logs_root = verify.logs_dir(owner, name, 0).parent
 
@@ -792,7 +788,7 @@ def cmd_identity(opts):
 
 @cliargs.command("push")
 def cmd_push(opts):
-    info = json.loads(run.run(["gh", "repo", "view", "--json", "nameWithOwner,defaultBranchRef"]))
+    info = forge.for_repo().repo_view("nameWithOwner,defaultBranchRef")
     default = (info.get("defaultBranchRef") or {}).get("name", "")
     problem = identity.refspec_problem(opts.refspec, default, identity.ref_format_ok)
     if problem:
