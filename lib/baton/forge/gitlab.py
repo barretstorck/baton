@@ -1,4 +1,5 @@
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -41,6 +42,7 @@ def urllib_transport(method, url, headers, data):
 
 class GitLab:
     kind = "gitlab"
+    _DRAFT = re.compile(r"^\s*(?:draft:|\[draft\]|\(draft\))\s*", re.I)
 
     def __init__(self, url, owner, repo, token=None, runner=None, transport=None, sleep=None):
         self.url = url.rstrip("/")
@@ -247,16 +249,38 @@ class GitLab:
 
     def issue_list(self, fields, state, limit, milestone=None, label=None, search=None,
                    empty=None):
+        words = []
         if search is not None:
-            raise Unsupported("issue search")
+            raw = search.split()
+            if any(re.match(r"^[A-Za-z][\w-]*:", word) for word in raw):
+                raise Unsupported("issue search qualifiers")
+            for word in raw:
+                if word.lower() not in words:
+                    words.append(word.lower())
         names = self._field_names(fields, self._ISSUE_FIELDS)
         params = {"state": {"open": "opened"}.get(state, state)}
         if label is not None:
             params["labels"] = label
         if milestone is not None:
             params["milestone"] = milestone
-        items = self._paged(f"{self._project()}/issues", params, limit)
+        if search is not None:
+            merged = {}
+            for word in words:
+                found = self._paged(f"{self._project()}/issues",
+                                    {**params, "search": word, "in": "title"}, 100)
+                for item in found:
+                    merged.setdefault(item["iid"], item)
+            items = self._search_rank(list(merged.values()), words)[:limit]
+        else:
+            items = self._paged(f"{self._project()}/issues", params, limit)
         return [self._issue_shape(item, names) for item in items]
+
+    @staticmethod
+    def _search_rank(items, words):
+        def hits(item):
+            title = (item.get("title") or "").lower()
+            return sum(1 for word in words if word in title)
+        return sorted(items, key=lambda item: (hits(item), item["iid"]), reverse=True)
 
     def issue_list_text(self, fields, state, limit, milestone=None, label=None, search=None):
         return json.dumps(self.issue_list(fields, state, limit, milestone, label, search))
@@ -561,7 +585,7 @@ class GitLab:
 
     def pr_create(self, title, path, head=None, draft=False, role=None):
         if draft:
-            raise Unsupported("creating a draft merge request")
+            title = f"Draft: {title}"
         if not head:
             head = self.runner(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip()
         base = self._request("GET", self._project())["default_branch"]
@@ -617,7 +641,15 @@ class GitLab:
         raise Unsupported("editing a note")
 
     def pr_ready(self, number, undo=False, role=None):
-        raise Unsupported("marking a merge request ready")
+        path = f"{self._project()}/merge_requests/{number}"
+        title = (self._request("GET", path) or {}).get("title") or ""
+        if undo:
+            new = title if self._DRAFT.match(title) else f"Draft: {title}"
+        else:
+            new = self._DRAFT.sub("", title, count=1)
+        if new != title:
+            self._request("PUT", path, body={"title": new})
+        return ""
 
     def workflow_entries_text(self, *args, **kwargs):
         raise Unsupported("GitHub Actions workflow reads")
