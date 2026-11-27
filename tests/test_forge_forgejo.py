@@ -240,3 +240,95 @@ class IssueTest(unittest.TestCase):
         self.assertEqual(forge.repo_view("owner,name,nameWithOwner,defaultBranchRef"),
                          {"owner": {"login": "o"}, "name": "r", "nameWithOwner": "o/r",
                           "defaultBranchRef": {"name": "main"}})
+
+
+class PullRequestTest(unittest.TestCase):
+    PR = {"number": 3, "title": "T", "body": None, "state": "closed", "merged": True,
+          "draft": False, "mergeable": True, "changed_files": 1,
+          "html_url": "https://f/o/r/pulls/3", "user": {"login": "u"},
+          "requested_reviewers": [{"login": "rv"}],
+          "head": {"ref": "br", "sha": "abc", "repo": {"full_name": "o/r"}},
+          "base": {"ref": "main", "repo": {"full_name": "o/r"}}}
+
+    def body(self, text="hello"):
+        handle = tempfile.NamedTemporaryFile("w", delete=False)
+        handle.write(text)
+        handle.close()
+        self.addCleanup(os.unlink, handle.name)
+        return handle.name
+
+    def test_pr_view_all_fields(self):
+        from baton.merge import PR_FIELDS
+        fields = ",".join(f for f in PR_FIELDS.split(",") if f != "closingIssuesReferences")
+        forge, _ = make({
+            "GET /api/v1/repos/o/r/pulls/3/files": (200, [
+                {"filename": "a.py", "additions": 2, "deletions": 1}]),
+            "GET /api/v1/repos/o/r/pulls/3/commits": (200, [
+                {"sha": "abc", "commit": {"message": "head\n\nbody"}}]),
+            "GET /api/v1/repos/o/r/commits/abc/status": (200, {"statuses": [
+                {"context": "ci", "status": "success", "target_url": "u"}]}),
+            "GET /api/v1/repos/o/r/issues/3/comments": (200, []),
+            "GET /api/v1/repos/o/r/pulls/3": (200, self.PR)})
+        got = forge.pr_view(3, fields)
+        self.assertEqual(set(got), set(fields.split(",")))
+        self.assertEqual(got["state"], "MERGED")
+        self.assertEqual(got["mergeable"], "MERGEABLE")
+        self.assertFalse(got["isCrossRepository"])
+        self.assertEqual(got["files"], [{"path": "a.py", "additions": 2, "deletions": 1}])
+        self.assertEqual(got["commits"], [{"oid": "abc", "messageHeadline": "head",
+                                           "messageBody": "body"}])
+        self.assertEqual(got["statusCheckRollup"], [{"__typename": "StatusContext",
+                         "context": "ci", "state": "SUCCESS", "targetUrl": "u"}])
+
+    def test_closing_references_unsupported(self):
+        forge, t = make()
+        with self.assertRaises(Unsupported):
+            forge.pr_view(1, "closingIssuesReferences")
+        self.assertEqual(t.calls, [])
+
+    def test_pr_merge(self):
+        forge, t = make({"POST /api/v1/repos/o/r/pulls/3/merge": (200, "")})
+        forge.pr_merge(3, "abc")
+        self.assertEqual(json.loads(t.calls[0][3]), {"Do": "merge", "head_commit_id": "abc"})
+        bad, _ = make({"POST /api/v1/repos/o/r/pulls/3/merge": (405, {"message": "no"})})
+        with self.assertRaises(ForgejoError) as ctx:
+            bad.pr_merge(3, "abc")
+        self.assertIn("405", str(ctx.exception))
+
+    def test_pr_create(self):
+        transport = FakeTransport({
+            "GET /api/v1/repos/o/r": (200, {"default_branch": "main"}),
+            "POST /api/v1/repos/o/r/pulls": (201, {"html_url": "https://f/o/r/pulls/5"})})
+        seen = []
+        forge = Forgejo("https://f.example", "o", "r", token=TOKEN, transport=transport,
+                        runner=lambda argv: seen.append(argv) or "feat\n")
+        self.assertEqual(forge.pr_create("T", self.body()), "https://f/o/r/pulls/5\n")
+        self.assertEqual(seen, [["git", "rev-parse", "--abbrev-ref", "HEAD"]])
+        sent = json.loads(transport.calls[-1][3])
+        self.assertEqual((sent["head"], sent["base"], sent["body"]), ("feat", "main", "hello"))
+        with self.assertRaises(Unsupported):
+            forge.pr_create("T", self.body(), draft=True)
+
+    def test_pr_review_approve(self):
+        forge, t = make({"POST /api/v1/repos/o/r/pulls/3/reviews": (200, {})})
+        forge.pr_review(3, "approve", self.body())
+        self.assertEqual(json.loads(t.calls[0][3]), {"event": "APPROVED", "body": "hello"})
+
+    def test_review_items(self):
+        forge, _ = make({"GET /api/v1/repos/o/r/pulls/3/reviews": (200, [
+            {"id": 1, "user": {"login": "a"}, "body": "x", "submitted_at": "t2", "html_url": "u2"},
+            {"id": 2, "user": {"login": "a"}, "body": "y", "submitted_at": "t1", "html_url": "u1"},
+            {"id": 3, "user": {"login": "a"}, "body": "z", "html_url": "u3"}])})
+        got = forge.pr_review_items(3)
+        self.assertEqual([i["id"] for i in got], ["1", "2"])
+        self.assertEqual(got[0], {"id": "1", "author": {"login": "a", "type": "User"},
+                                  "body": "x", "createdAt": "t2", "url": "u2"})
+        self.assertEqual(forge.review_urls(3, "a"), ["u1", "u2"])
+
+    def test_pr_list_and_reviewer_remove(self):
+        forge, t = make({"GET /api/v1/repos/o/r/pulls": (200, [self.PR]),
+                         "DELETE /api/v1/repos/o/r/pulls/3/requested_reviewers": (204, "")})
+        self.assertEqual(json.loads(forge.pr_list_text("number,state", "open", 5)),
+                         [{"number": 3, "state": "MERGED"}])
+        forge.review_request_remove(3, "rv")
+        self.assertEqual(json.loads(t.calls[-1][3]), {"reviewers": ["rv"]})

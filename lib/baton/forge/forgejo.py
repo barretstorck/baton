@@ -335,3 +335,124 @@ class Forgejo:
                            "subject": (item.get("assignee") or {}).get("login", ""),
                            "at": item.get("created_at")})
         return events
+
+    # --- pull requests, reviews and merge ---
+
+    _PR_FIELDS = ("number", "title", "body", "state", "isDraft", "mergeable", "headRefName",
+                  "headRefOid", "baseRefName", "isCrossRepository", "changedFiles", "author",
+                  "url", "reviewRequests", "comments", "files", "commits", "statusCheckRollup")
+
+    @staticmethod
+    def _pr_state(item):
+        if item.get("merged"):
+            return "MERGED"
+        return "OPEN" if item.get("state") == "open" else "CLOSED"
+
+    def _pr_files(self, number):
+        return [{"path": item["filename"], "additions": item.get("additions", 0),
+                 "deletions": item.get("deletions", 0)}
+                for item in self._paged(f"{self._repo_path()}/pulls/{number}/files")]
+
+    def _pr_commits(self, number):
+        out = []
+        for item in self._paged(f"{self._repo_path()}/pulls/{number}/commits"):
+            head, _, rest = ((item.get("commit") or {}).get("message") or "").partition("\n")
+            out.append({"oid": item["sha"], "messageHeadline": head,
+                        "messageBody": rest.lstrip("\n")})
+        return out
+
+    def _pr_rollup(self, sha):
+        found = self._request("GET", f"{self._repo_path()}/commits/{sha}/status") or {}
+        return [{"__typename": "StatusContext", "context": status.get("context"),
+                 "state": (status.get("status") or "").upper(),
+                 "targetUrl": status.get("target_url")}
+                for status in found.get("statuses") or []]
+
+    def _pr_shape(self, item, names):
+        head = item.get("head") or {}
+        base = item.get("base") or {}
+        number = item["number"]
+        shapes = {
+            "number": lambda: number,
+            "title": lambda: item["title"],
+            "body": lambda: item.get("body") or "",
+            "state": lambda: self._pr_state(item),
+            "isDraft": lambda: bool(item.get("draft")),
+            "mergeable": lambda: "MERGEABLE" if item.get("mergeable") else "CONFLICTING",
+            "headRefName": lambda: head.get("ref"),
+            "headRefOid": lambda: head.get("sha"),
+            "baseRefName": lambda: base.get("ref"),
+            "isCrossRepository": lambda: (head.get("repo") or {}).get("full_name")
+            != (base.get("repo") or {}).get("full_name"),
+            "changedFiles": lambda: item.get("changed_files"),
+            "author": lambda: self._login(item.get("user")),
+            "url": lambda: item.get("html_url"),
+            "reviewRequests": lambda: [self._login(user)
+                                       for user in item.get("requested_reviewers") or []],
+            "comments": lambda: self._comments(number),
+            "files": lambda: self._pr_files(number),
+            "commits": lambda: self._pr_commits(number),
+            "statusCheckRollup": lambda: self._pr_rollup(head.get("sha")),
+        }
+        return {name: shapes[name]() for name in names}
+
+    def pr_view(self, number, fields, empty=None):
+        names = self._field_names(fields, self._PR_FIELDS)
+        item = self._request("GET", f"{self._repo_path()}/pulls/{number}")
+        return self._pr_shape(item, names)
+
+    def pr_list_text(self, fields, state, limit):
+        names = self._field_names(fields, self._PR_FIELDS)
+        items = self._paged(f"{self._repo_path()}/pulls", {"state": state}, limit)
+        return json.dumps([self._pr_shape(item, names) for item in items])
+
+    def pr_create(self, title, path, head=None, draft=False, role=None):
+        if draft:
+            raise Unsupported("creating a draft pull request")
+        if not head:
+            head = self.runner(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip()
+        base = self._request("GET", self._repo_path())["default_branch"]
+        found = self._request("POST", f"{self._repo_path()}/pulls",
+                              body={"title": title, "body": self._read_file(path),
+                                    "head": head, "base": base})
+        return found["html_url"] + "\n"
+
+    def pr_diff(self, number):
+        return self._request("GET", f"{self._repo_path()}/pulls/{number}.diff", raw=True)
+
+    def pr_merge(self, number, head_oid, role=None):
+        self._request("POST", f"{self._repo_path()}/pulls/{number}/merge",
+                      body={"Do": "merge", "head_commit_id": head_oid})
+        return ""
+
+    _REVIEW_EVENTS = {"approve": "APPROVED", "request-changes": "REQUEST_CHANGES",
+                      "comment": "COMMENT"}
+
+    def pr_review(self, number, event, path, role=None):
+        if event not in self._REVIEW_EVENTS:
+            raise Unsupported(f"the review event {event}")
+        self._request("POST", f"{self._repo_path()}/pulls/{number}/reviews",
+                      body={"event": self._REVIEW_EVENTS[event], "body": self._read_file(path)})
+        return ""
+
+    def _reviews(self, number):
+        return self._paged(f"{self._repo_path()}/pulls/{number}/reviews")
+
+    def review_urls(self, number, login):
+        items = [item for item in self._reviews(number) if item.get("submitted_at")
+                 and (item.get("user") or {}).get("login") == login]
+        items.sort(key=lambda item: item.get("submitted_at") or "")
+        return [item["html_url"] for item in items if item.get("html_url")]
+
+    def pr_review_items(self, number):
+        return [{"id": str(item["id"]),
+                 "author": {"login": (item.get("user") or {}).get("login", ""),
+                            "type": "User"},
+                 "body": item.get("body") or "", "createdAt": item["submitted_at"],
+                 "url": item.get("html_url")}
+                for item in self._reviews(number) if item.get("submitted_at")]
+
+    def review_request_remove(self, number, login, role=None):
+        self._request("DELETE", f"{self._repo_path()}/pulls/{number}/requested_reviewers",
+                      body={"reviewers": [login]})
+        return ""
