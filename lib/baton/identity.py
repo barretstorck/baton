@@ -83,16 +83,39 @@ def _machine(table):
     return login
 
 
+ROLE_TABLES = ("baton", "reviewer")
+
+
 def _token_table(kind, table):
+    """Validate a `[<kind>]` token table: (top-level token_path or None, {role table: path})."""
     if not isinstance(table, dict):
         raise IdentityError(f"identity.toml [{kind}] must be a table")
-    extra = sorted(set(table) - {"token_path"})
+    extra = sorted(set(table) - {"token_path", *ROLE_TABLES})
     if extra:
         raise IdentityError(f"identity.toml [{kind}] has unknown keys: {', '.join(extra)}")
-    path = table.get("token_path")
-    if not isinstance(path, str) or not path:
-        raise IdentityError(f"identity.toml [{kind}] token_path must be a non-empty string")
-    return path
+    path = None
+    if "token_path" in table:
+        path = table["token_path"]
+        if not isinstance(path, str) or not path:
+            raise IdentityError(f"identity.toml [{kind}] token_path must be a non-empty string")
+    roles = {}
+    for name in ROLE_TABLES:
+        if name not in table:
+            continue
+        sub = table[name]
+        where = f"[{kind}.{name}]"
+        if not isinstance(sub, dict):
+            raise IdentityError(f"identity.toml {where} must be a table")
+        extra = sorted(set(sub) - {"token_path"})
+        if extra:
+            raise IdentityError(f"identity.toml {where} has unknown keys: {', '.join(extra)}")
+        value = sub.get("token_path")
+        if not isinstance(value, str) or not value:
+            raise IdentityError(f"identity.toml {where} token_path must be a non-empty string")
+        roles[name] = value
+    if path is None and not roles:
+        raise IdentityError(f"identity.toml [{kind}] needs token_path or a role table")
+    return path, roles
 
 
 def _read_token(path, what):
@@ -120,10 +143,11 @@ def forge_token(kind, owner, repo, home=None, environ=None):
         except tomllib.TOMLDecodeError as e:
             raise IdentityError(f"identity.toml is not valid TOML: {e}")
         if kind in data:
-            path = _token_table(kind, data[kind])
-            value = _read_token(os.path.expanduser(path), "token_path file")
-            if value:
-                return value
+            path, _roles = _token_table(kind, data[kind])
+            if path is not None:
+                value = _read_token(os.path.expanduser(path), "token_path file")
+                if value:
+                    return value
     bare = folder / f"{kind}-token"
     try:
         value = bare.read_text().strip()
@@ -135,6 +159,32 @@ def forge_token(kind, owner, repo, home=None, environ=None):
         return value
     raise IdentityError(f"no {kind} token: set {env_name}, or token_path in the [{kind}] table of {ident}, "
                         f"or put the token in {bare}")
+
+
+def forge_role_token(kind, owner, repo, role, home=None):
+    """The token of the role table `route(role)` names, or None when no role table is configured."""
+    ident = verify.repo_dir(owner, repo, home) / "identity.toml"
+    try:
+        text = ident.read_text()
+    except FileNotFoundError:
+        return None
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        raise IdentityError(f"identity.toml is not valid TOML: {e}")
+    if kind not in data:
+        return None
+    _path, roles = _token_table(kind, data[kind])
+    if not roles:
+        return None
+    name = route(role)
+    if name not in roles:
+        raise IdentityError(f"identity.toml has no [{kind}.{name}] table for role {role}")
+    path = os.path.expanduser(roles[name])
+    value = _read_token(path, f"[{kind}.{name}] token_path file")
+    if not value:
+        raise IdentityError(f"[{kind}.{name}] token_path file {path} is empty")
+    return value
 
 
 def load(owner, repo, home=None):

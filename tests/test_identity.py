@@ -2,6 +2,7 @@ import base64
 import calendar
 import io
 import json
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -178,10 +179,21 @@ class ForgeTokenTest(unittest.TestCase):
         self.assertEqual(identity.forge_token("gitlab", "a/b", "p", home=self.tmp.name, environ={}), "nested")
 
     def test_load_rejects_bad_table(self):
-        for text in ('[forgejo]\ntoken_path = "x"\nother = 1\n', '[forgejo]\ntoken_path = ""\n'):
+        for text in ('[forgejo]\ntoken_path = "x"\nother = 1\n', '[forgejo]\ntoken_path = ""\n',
+                     '[forgejo.baton]\ntoken_path = "x"\nother = 1\n', '[forgejo]\nbaton = "x"\n',
+                     '[forgejo]\n', '[forgejo.reviewer]\n', '[forgejo.baton]\ntoken_path = ""\n'):
             (self.dir / "identity.toml").write_text(text)
             with self.assertRaises(identity.IdentityError):
                 identity.load("o", "r", home=self.tmp.name)
+
+    def test_bare_file_when_only_role_tables(self):
+        (self.dir / "identity.toml").write_text('[forgejo.baton]\ntoken_path = "x"\n')
+        (self.dir / "forgejo-token").write_text("bare\n")
+        self.assertEqual(self.token(), "bare")
+
+    def test_load_only_role_tables_is_none(self):
+        (self.dir / "identity.toml").write_text('[forgejo.baton]\ntoken_path = "x"\n[forgejo.reviewer]\ntoken_path = "y"\n')
+        self.assertIsNone(identity.load("o", "r", home=self.tmp.name))
 
     def test_load_with_baton_unchanged(self):
         (self.dir / "identity.toml").write_text(VALID)
@@ -190,6 +202,71 @@ class ForgeTokenTest(unittest.TestCase):
         with open(self.dir / "identity.toml", "a") as f:
             f.write(VALID)
         self.assertEqual(identity.load("o", "r", home=self.tmp.name), plain)
+
+
+class ForgeRoleTokenTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = pathlib.Path(self.tmp.name)
+        self.dir = self.root / "o-r"
+        self.dir.mkdir()
+        self.bat = self.root / "bat"
+        self.rev = self.root / "rev"
+
+    def write(self, text):
+        (self.dir / "identity.toml").write_text(text)
+
+    def both(self):
+        self.bat.write_text("tok-baton\n")
+        self.rev.write_text("tok-reviewer\n")
+        self.write(f'[forgejo]\ntoken_path = "x"\n[forgejo.baton]\ntoken_path = "{self.bat}"\n'
+                   f'[forgejo.reviewer]\ntoken_path = "{self.rev}"\n')
+
+    def tok(self, role):
+        return identity.forge_role_token("forgejo", "o", "r", role, home=self.tmp.name)
+
+    def test_routing(self):
+        self.both()
+        self.assertEqual(self.tok("reviewer"), "tok-reviewer")
+        for role in ("developer", "refine", "orchestrator"):
+            self.assertEqual(self.tok(role), "tok-baton")
+
+    def test_none_without_sub_tables(self):
+        self.write('[forgejo]\ntoken_path = "x"\n')
+        self.assertIsNone(self.tok("reviewer"))
+
+    def test_none_without_forgejo_table(self):
+        self.write(VALID)
+        self.assertIsNone(self.tok("developer"))
+
+    def test_none_without_file(self):
+        self.assertIsNone(self.tok("developer"))
+
+    def test_missing_routed_table_raises(self):
+        self.bat.write_text("tok-baton\n")
+        self.write(f'[forgejo.baton]\ntoken_path = "{self.bat}"\n')
+        with self.assertRaisesRegex(identity.IdentityError, r"no \[forgejo.reviewer\] table for role reviewer"):
+            self.tok("reviewer")
+        self.assertEqual(self.tok("developer"), "tok-baton")
+
+    def test_unreadable_file_raises_with_path(self):
+        self.write(f'[forgejo.baton]\ntoken_path = "{self.bat}"\n')
+        with self.assertRaises(identity.IdentityError) as cm:
+            self.tok("developer")
+        self.assertIn(str(self.bat), str(cm.exception))
+
+    def test_empty_file_raises_with_path(self):
+        self.bat.write_text("  \n")
+        self.write(f'[forgejo.baton]\ntoken_path = "{self.bat}"\n')
+        with self.assertRaises(identity.IdentityError) as cm:
+            self.tok("developer")
+        self.assertIn(str(self.bat), str(cm.exception))
+
+    def test_environment_ignored(self):
+        self.both()
+        with mock.patch.dict(os.environ, {"FORGEJO_TOKEN": "env"}):
+            self.assertEqual(self.tok("reviewer"), "tok-reviewer")
 
 
 class DetectForgeTest(unittest.TestCase):
