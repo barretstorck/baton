@@ -39,7 +39,15 @@ Then, for both variants:
 
 The reviewer account must differ from the account that opens merge requests, so that it can approve them.
 
-Tokens expire. Renewal by `baton identity rotate` comes in #429; until then renew each token by hand and replace the file's contents.
+## Renewal
+
+Tokens expire. `baton identity rotate` renews them: for each role table (`[gitlab.baton]` and `[gitlab.reviewer]`) it reads the token file and rotates the token on the endpoint for its kind (`/personal_access_tokens/self/rotate` for a personal access token, the project's `access_tokens/self/rotate` for a project token), asking for an expiry 365 days ahead. It then rewrites the file atomically and keeps its permissions. The maintainer's token (the `[gitlab]` `token_path`) is never rotated; renew it by hand. A failure on one table is reported and does not stop the others.
+
+The role tokens need the `api` or `self_rotate` scope, or GitLab refuses to rotate them.
+
+`baton doctor` warns when a role token expires within 30 days and suggests running the command. A token that has already expired cannot rotate itself; renew it by hand and replace the file's contents.
+
+Who runs it: the maintainer, by hand, or the orchestrator at the start of a sprint (see the sprint skill, "Start").
 
 ## Behaviour
 

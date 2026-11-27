@@ -1,5 +1,6 @@
 import base64
 import calendar
+import datetime
 import io
 import json
 import os
@@ -481,6 +482,87 @@ class CliMarkingTest(unittest.TestCase):
             self.assertFalse(any(line.startswith("gh api") for line in runner.lines()))
 
 
+class RoleTokenPathsTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = pathlib.Path(self.tmp.name) / "o-r"
+        self.dir.mkdir()
+
+    def paths(self):
+        return identity.role_token_paths("gitlab", "o", "r", home=self.tmp.name)
+
+    def write(self, text):
+        (self.dir / "identity.toml").write_text(text)
+
+    def test_both_tables_in_order(self):
+        self.write('[gitlab.reviewer]\ntoken_path = "/r"\n[gitlab.baton]\ntoken_path = "/b"\n')
+        self.assertEqual(list(self.paths().items()), [("baton", "/b"), ("reviewer", "/r")])
+
+    def test_one_table(self):
+        self.write('[gitlab.reviewer]\ntoken_path = "/r"\n')
+        self.assertEqual(self.paths(), {"reviewer": "/r"})
+
+    def test_no_file(self):
+        self.assertEqual(self.paths(), {})
+
+    def test_no_kind_table(self):
+        self.write(VALID)
+        self.assertEqual(self.paths(), {})
+
+    def test_only_token_path(self):
+        self.write('[gitlab]\ntoken_path = "/x"\n')
+        self.assertEqual(self.paths(), {})
+
+    def test_tilde_expanded(self):
+        self.write('[gitlab.baton]\ntoken_path = "~/tok"\n')
+        self.assertEqual(self.paths(), {"baton": os.path.expanduser("~/tok")})
+
+    def test_invalid_toml_and_table(self):
+        self.write("[gitlab")
+        with self.assertRaisesRegex(identity.IdentityError, "not valid TOML"):
+            self.paths()
+        self.write('[gitlab.baton]\nnope = 1\n')
+        with self.assertRaisesRegex(identity.IdentityError, "unknown keys"):
+            self.paths()
+
+
+class ReplaceTokenFileTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = pathlib.Path(self.tmp.name)
+        self.path = self.dir / "tok"
+        self.path.write_text("old\n")
+        os.chmod(self.path, 0o600)
+
+    def test_replaces_keeping_mode(self):
+        got = identity.replace_token_file(str(self.path), lambda: "new")
+        self.assertEqual(got, "new")
+        self.assertEqual(self.path.read_text(), "new\n")
+        self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o600)
+        self.assertEqual(os.listdir(self.dir), ["tok"])
+
+    def test_produce_raising_leaves_file(self):
+        def boom():
+            raise RuntimeError("x")
+        with self.assertRaises(RuntimeError):
+            identity.replace_token_file(str(self.path), boom)
+        self.assertEqual(self.path.read_text(), "old\n")
+        self.assertEqual(os.listdir(self.dir), ["tok"])
+
+    def test_unwritable_folder(self):
+        produce = mock.Mock(return_value="new")
+        os.chmod(self.dir, 0o500)
+        self.addCleanup(os.chmod, self.dir, 0o700)
+        if os.access(self.dir, os.W_OK):
+            self.skipTest("folder permissions not enforced")
+        with self.assertRaisesRegex(identity.IdentityError, "cannot write in"):
+            identity.replace_token_file(str(self.path), produce)
+        produce.assert_not_called()
+        self.assertEqual(self.path.read_text(), "old\n")
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -911,3 +993,115 @@ class CmdIdentityForgeTest(unittest.TestCase):
     def test_app_tier_on_github_unchanged(self):
         _, _, _, commit, _ = self.run_identity(["baton[bot]"], self.GITHUB)
         commit.assert_called()
+
+
+class _RotateFiles:
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.paths = {}
+        for name in ("baton", "reviewer"):
+            p = os.path.join(self.tmp.name, f"{name}.token")
+            with open(p, "w") as f:
+                f.write(f"old-{name}\n")
+            os.chmod(p, 0o600)
+            self.paths[name] = p
+
+    def read(self, name):
+        with open(self.paths[name]) as f:
+            return f.read().strip()
+
+
+class RotateRoleTokensTest(_RotateFiles, unittest.TestCase):
+    DAY = datetime.date(2027, 11, 27)
+
+    def rotate_with(self, rotate):
+        with mock.patch.object(identity, "role_token_paths", return_value=self.paths):
+            return identity.rotate_role_tokens("gitlab", "o", "r", rotate)
+
+    def test_both_rewritten_mode_kept(self):
+        lines, ok = self.rotate_with(lambda t: ("project", "new-" + t, self.DAY))
+        self.assertTrue(ok)
+        self.assertEqual(self.read("baton"), "new-old-baton")
+        self.assertEqual(self.read("reviewer"), "new-old-reviewer")
+        for p in self.paths.values():
+            self.assertEqual(os.stat(p).st_mode & 0o777, 0o600)
+        self.assertEqual(lines[0], "rotated [gitlab.baton] (project access token), expires 2027-11-27")
+        self.assertEqual(len(lines), 2)
+
+    def test_one_failure_leaves_file_and_continues(self):
+        from baton.forge.gitlab import GitLabError
+
+        def rotate(token):
+            if token == "old-baton":
+                raise GitLabError("POST /x failed: HTTP 403", status=403)
+            return ("personal", "new-secret", self.DAY)
+
+        lines, ok = self.rotate_with(rotate)
+        self.assertFalse(ok)
+        self.assertEqual(self.read("baton"), "old-baton")
+        self.assertEqual(self.read("reviewer"), "new-secret")
+        self.assertTrue(lines[0].startswith("[gitlab.baton]: "))
+        text = "\n".join(lines)
+        for secret in ("old-baton", "old-reviewer", "new-secret"):
+            self.assertNotIn(secret, text)
+
+    def test_rotated_but_file_not_written_says_so(self):
+        def rotate(token):
+            return ("personal", "new-secret", self.DAY)
+
+        with mock.patch("os.replace", side_effect=OSError("No space left on device")):
+            lines, ok = self.rotate_with(rotate)
+        self.assertFalse(ok)
+        self.assertEqual(self.read("baton"), "old-baton")
+        self.assertEqual(self.read("reviewer"), "old-reviewer")
+        self.assertEqual(len(lines), 2)
+        for line in lines:
+            self.assertIn("rotated but", line)
+            self.assertNotIn("new-secret", line)
+
+
+class CmdIdentityRotateTest(_RotateFiles, unittest.TestCase):
+    def found(self, kind):
+        return {"kind": kind, "url": "https://g.example", "owner": "o", "repo": "r"}
+
+    def run_rotate(self, kind, paths=None, replies=None):
+        from baton import cli
+        from baton.forge.gitlab import GitLab
+        from tests.fakes import FakeTransport
+        backend = GitLab("https://g.example/", "o", "r", token="x", transport=FakeTransport(replies or {}))
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cli.config, "load", return_value=None), \
+                mock.patch.object(cli, "_detect_forge", return_value=self.found(kind)), \
+                mock.patch.object(cli.identity, "role_token_paths",
+                                  return_value=self.paths if paths is None else paths), \
+                mock.patch.object(cli.forge, "for_repo", return_value=backend), \
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+            code = cli.main(["identity", "rotate"])
+        return code, out.getvalue(), err.getvalue()
+
+    def test_github_and_forgejo_not_supported(self):
+        for kind, name in (("github", "GitHub"), ("forgejo", "Forgejo")):
+            code, _, err = self.run_rotate(kind)
+            self.assertEqual(code, 2)
+            self.assertIn(f"not supported on {name}", err)
+
+    def test_gitlab_without_tables(self):
+        code, out, _ = self.run_rotate("gitlab", paths={})
+        self.assertEqual(code, 0)
+        self.assertIn("nothing to rotate", out)
+
+    def test_gitlab_rotates_files(self):
+        code, out, _ = self.run_rotate(
+            "gitlab", replies={"POST /api/v4/personal_access_tokens/self/rotate": (200, {"token": "glpat-new"})})
+        self.assertEqual(code, 0)
+        self.assertEqual(self.read("baton"), "glpat-new")
+        self.assertEqual(self.read("reviewer"), "glpat-new")
+        self.assertIn("rotated [gitlab.baton]", out)
+
+    def test_gitlab_403_exits_1(self):
+        code, _, err = self.run_rotate(
+            "gitlab", replies={"POST": (403, {"message": "insufficient_scope"})})
+        self.assertEqual(code, 1)
+        self.assertIn("[gitlab.baton]", err)
+        self.assertEqual(self.read("baton"), "old-baton")

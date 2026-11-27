@@ -228,8 +228,8 @@ def _declare_clean(subs):
 
 
 def _declare_identity(subs):
-    p = _add(subs, "identity", "usage: baton identity worktree")
-    p.add_argument("action", choices=["worktree"])
+    p = _add(subs, "identity", "usage: baton identity worktree|rotate")
+    p.add_argument("action", choices=["worktree", "rotate"])
 
 
 def _declare_push(subs):
