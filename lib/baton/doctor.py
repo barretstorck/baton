@@ -1,5 +1,9 @@
 """`baton doctor`: print the identity tier, check each configured GitHub App and, at tier 2, the machine user, and warn about unlimited spikes."""
+import json
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 
 from . import identity
 from . import run as _run
@@ -75,6 +79,62 @@ def forgejo_lines(url, get=identity._get):
         return ([f"forge: FAIL: forge.url does not answer {FORGEJO_VERSION_PATH} ({e}), "
                  "so it is not Forgejo (Gitea does not serve this path)"], False)
     return [f"forge: ok (Forgejo {version})"], True
+
+
+GITLAB_VERSION_PATH = "/api/v4/version"
+GITLAB_MIN_VERSION = (17, 0)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse every redirect, so a token header never reaches another URL."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_opener = urllib.request.build_opener(_NoRedirect)
+
+
+def http_get(url, headers):
+    """GET url; (status, headers with lower-cased names, body bytes); (None, {}, b"") when unreachable."""
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with _opener.open(req, timeout=30) as r:
+            return r.status, {k.lower(): v for k, v in r.headers.items()}, r.read()
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read()
+        except OSError:
+            body = b""
+        return e.code, {k.lower(): v for k, v in (e.headers or {}).items()}, body
+    except (urllib.error.URLError, OSError):
+        return None, {}, b""
+
+
+def gitlab_lines(url, token, get=http_get):
+    """Probe a GitLab host by its X-Gitlab-Meta header, then its version; (lines, ok)."""
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["PRIVATE-TOKEN"] = token
+    status, reply_headers, body = get(url.rstrip("/") + GITLAB_VERSION_PATH, headers)
+    if "x-gitlab-meta" not in (reply_headers or {}):
+        return [f"forge: FAIL: forge.url does not send the X-Gitlab-Meta header on {GITLAB_VERSION_PATH}, "
+                "so it is not GitLab"], False
+    if not token:
+        host = urllib.parse.urlsplit(url).netloc or url
+        return [f"forge: WARN: GitLab {host}; version not checked: no token configured"], True
+    if status != 200:
+        return [f"forge: FAIL: GitLab refused the token on {GITLAB_VERSION_PATH} (HTTP {status})"], False
+    try:
+        data = json.loads(body)
+        version = data.get("version") if isinstance(data, dict) else None
+        major, minor = (int(x) for x in version.split(".")[:2])
+    except (ValueError, TypeError, AttributeError):
+        return [f"forge: FAIL: {GITLAB_VERSION_PATH} gave no readable version"], False
+    if (major, minor) < GITLAB_MIN_VERSION:
+        floor = ".".join(str(x) for x in GITLAB_MIN_VERSION)
+        return [f"forge: FAIL: GitLab {version} is below the minimum {floor}"], False
+    return [f"forge: ok (GitLab {version}, plan {data.get('plan') or 'unknown'})"], True
 
 
 def main(repo, runner=_run.run, get=identity._get, post=identity._post, now=None, home=None,

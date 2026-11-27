@@ -177,9 +177,102 @@ class ForgejoProbeTest(unittest.TestCase):
         self.assertTrue(lines[0].startswith("forge: FAIL: "))
 
 
+class HttpGetRedirectTest(unittest.TestCase):
+    def test_redirect_not_followed_and_token_not_resent(self):
+        import http.server
+        import threading
+        seen = []
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append((self.server.server_port, self.path, self.headers.get("PRIVATE-TOKEN")))
+                if self.path == "/start":
+                    self.send_response(302)
+                    self.send_header("Location", f"http://127.0.0.1:{other.server_port}/second")
+                    self.end_headers()
+                else:
+                    self.send_response(200)
+                    self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        other = http.server.HTTPServer(("127.0.0.1", 0), H)
+        for s in (srv, other):
+            threading.Thread(target=s.serve_forever, daemon=True).start()
+            self.addCleanup(s.server_close)
+            self.addCleanup(s.shutdown)
+        status, headers, _ = doctor.http_get(
+            f"http://127.0.0.1:{srv.server_port}/start", {"PRIVATE-TOKEN": "sekret"})
+        self.assertEqual(status, 302)
+        self.assertIn("location", headers)
+        self.assertEqual(seen, [(srv.server_port, "/start", "sekret")])
+
+
+class GitLabProbeTest(unittest.TestCase):
+    def fake(self, status=200, headers=None, body=b""):
+        self.seen = []
+
+        def get(url, h):
+            self.seen.append((url, dict(h)))
+            return status, {"x-gitlab-meta": "{}"} if headers is None else headers, body
+        return get
+
+    def test_no_header_fails(self):
+        lines, ok = doctor.gitlab_lines("https://g.example", "tok", self.fake(headers={}))
+        self.assertFalse(ok)
+        self.assertIn("X-Gitlab-Meta", lines[0])
+        self.assertNotIn("tok", lines[0])
+
+    def test_no_reply_fails(self):
+        lines, ok = doctor.gitlab_lines("https://g.example", None, lambda u, h: (None, {}, b""))
+        self.assertFalse(ok)
+
+    def test_no_token_warns(self):
+        lines, ok = doctor.gitlab_lines("https://g.example/", None, self.fake(status=401))
+        self.assertTrue(ok)
+        self.assertEqual(lines, ["forge: WARN: GitLab g.example; version not checked: no token configured"])
+        self.assertEqual(self.seen[0][0], "https://g.example/api/v4/version")
+        self.assertNotIn("PRIVATE-TOKEN", self.seen[0][1])
+
+    def test_ok_with_plan(self):
+        lines, ok = doctor.gitlab_lines("https://g.example", "sekret",
+                                        self.fake(body=b'{"version": "19.6.2", "plan": "free"}'))
+        self.assertTrue(ok)
+        self.assertEqual(lines, ["forge: ok (GitLab 19.6.2, plan free)"])
+        self.assertEqual(self.seen[0][1]["PRIVATE-TOKEN"], "sekret")
+        self.assertEqual(self.seen[0][1]["Accept"], "application/json")
+
+    def test_floor_is_ok(self):
+        lines, ok = doctor.gitlab_lines("https://g.example", "t", self.fake(body=b'{"version": "17.0.0"}'))
+        self.assertTrue(ok)
+        self.assertIn("plan unknown", lines[0])
+
+    def test_below_minimum(self):
+        lines, ok = doctor.gitlab_lines("https://g.example", "t", self.fake(body=b'{"version": "16.11.3"}'))
+        self.assertFalse(ok)
+        self.assertIn("below the minimum 17.0", lines[0])
+
+    def test_unparseable_version(self):
+        for body in (b"nope", b'{"x": 1}', b'{"version": "abc"}'):
+            lines, ok = doctor.gitlab_lines("https://g.example", "t", self.fake(body=body))
+            self.assertFalse(ok)
+            self.assertTrue(lines[0].startswith("forge: FAIL: "))
+
+    def test_401_with_token_fails_without_leaking(self):
+        lines, ok = doctor.gitlab_lines("https://g.example", "sekret", self.fake(status=401))
+        self.assertFalse(ok)
+        self.assertIn("HTTP 401", lines[0])
+        self.assertNotIn("sekret", "".join(lines))
+
+
 class CmdDoctorForgeTest(unittest.TestCase):
-    def run_doctor(self, origin, local=None):
+    def run_doctor(self, origin, local=None, gl_ok=True, token="tok", token_error=False):
         from baton import cli
+        from baton import identity
+        token_kw = ({"side_effect": identity.IdentityError("none")} if token_error
+                    else {"return_value": token})
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         brief = pathlib.Path(tmp.name) / "brief.local.md"
@@ -191,6 +284,9 @@ class CmdDoctorForgeTest(unittest.TestCase):
                 mock.patch.object(cli.sandbox, "brief_path", return_value=brief), \
                 mock.patch.object(cli.doctor, "forgejo_lines",
                                   return_value=(["forge: ok (Forgejo 1)"], True)) as fl, \
+                mock.patch.object(cli.doctor, "gitlab_lines",
+                                  return_value=(["forge: ok (GitLab 17.0)"], gl_ok)) as self.gl, \
+                mock.patch.object(cli.identity, "forge_token", **token_kw) as self.ft, \
                 mock.patch.object(cli.doctor, "main", return_value=0) as main, \
                 mock.patch.object(cli, "_repo_name", return_value="o/r"), \
                 contextlib.redirect_stdout(out):
@@ -213,6 +309,45 @@ class CmdDoctorForgeTest(unittest.TestCase):
         self.assertEqual(code, 0)
         for line in doctor.GITHUB_ONLY_SKIPS:
             self.assertIn(line, out)
+
+    def test_gitlab_origin(self):
+        code, out, run_, fl, main = self.run_doctor(
+            "https://gl.example/a/b/proj.git", "## Hosts\n\nforge: gitlab https://gl.example\n")
+        self.assertEqual(code, 0)
+        self.assertIn("forge: ok (GitLab 17.0)", out)
+        self.gl.assert_called_once_with("https://gl.example", "tok")
+        self.ft.assert_called_once_with("gitlab", "a/b", "proj")
+        for line in doctor.GITHUB_ONLY_SKIPS:
+            self.assertIn(line, out)
+        main.assert_not_called()
+        fl.assert_not_called()
+        for call in run_.call_args_list:
+            self.assertNotEqual(call.args[0][0], "gh")
+
+    def test_gitlab_com(self):
+        code, _, _, _, _ = self.run_doctor("https://gitlab.com/g/p.git")
+        self.assertEqual(code, 0)
+        self.gl.assert_called_once_with("https://gitlab.com", "tok")
+
+    def test_gitlab_no_token(self):
+        code, _, _, _, _ = self.run_doctor("https://gitlab.com/g/p.git", token_error=True)
+        self.assertEqual(code, 0)
+        self.gl.assert_called_once_with("https://gitlab.com", None)
+
+    def test_gitlab_failing_probe(self):
+        code, _, _, _, main = self.run_doctor("https://gitlab.com/g/p.git", gl_ok=False)
+        self.assertEqual(code, 1)
+        main.assert_not_called()
+
+    def test_gitlab_url_with_other_port_or_scheme_fails(self):
+        for url in ("http://gl.example", "https://gl.example:8443"):
+            code, out, _, _, main = self.run_doctor(
+                "https://gl.example/a/p.git", f"## Hosts\n\nforge: gitlab {url}\n")
+            self.assertEqual(code, 1)
+            self.assertTrue(out.startswith("forge: FAIL: "), out)
+            self.gl.assert_not_called()
+            self.ft.assert_not_called()
+            main.assert_not_called()
 
     def test_github_prints_no_skip_lines(self):
         code, out, _, _, _ = self.run_doctor("git@github.com:o/r.git")

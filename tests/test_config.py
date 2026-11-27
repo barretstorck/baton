@@ -355,8 +355,17 @@ class ForgeSettingTest(unittest.TestCase):
             self.assertEqual(self._load("forgejo", url).data["forge"]["kind"], "forgejo")
         self.assertEqual(self._load("github", "https://github.com").data["forge"]["kind"], "github")
 
+    def test_gitlab_loads(self):
+        self.assertEqual(self._load("gitlab", "https://gl.example").data["forge"],
+                         {"kind": "gitlab", "url": "https://gl.example"})
+
+    def test_gitlab_needs_url(self):
+        with self.assertRaisesRegex(config.ConfigError,
+                                    "forge.url is required when forge.kind is gitlab"):
+            self._load("gitlab", "")
+
     def test_problems_raise(self):
-        cases = [("gitlab", ""), ("forgejo", "http://git.example.org"),
+        cases = [("gitlab", ""), ("gitlab", "http://gl.example"), ("forgejo", "http://git.example.org"),
                  ("forgejo", "https://git.example.org/x"), ("", "https://git.example.org"),
                  ("forgejo", ""), ("github", "https://git.example.org")]
         for kind, url in cases:
@@ -377,6 +386,11 @@ class LocalForgeTest(unittest.TestCase):
         self.assertIsNone(config.parse_local_forge(
             "## Hosts\n<!-- forge: forgejo https://h.example -->\n"))
         self.assertIsNone(config.parse_local_forge("## Hosts\nforge: forgejo\n"))
+
+    def test_gitlab_local_line(self):
+        found = config.parse_local_forge("## Hosts\nforge: gitlab https://gl.example\n")
+        self.assertEqual(found, {"kind": "gitlab", "url": "https://gl.example"})
+        self.assertEqual(config.effective_forge(self.EMPTY, found), found)
 
     def test_effective_forge(self):
         self.assertEqual(config.effective_forge(self.F, None), self.F)

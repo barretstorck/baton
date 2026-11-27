@@ -860,6 +860,19 @@ def cmd_doctor(opts):
         lines, ok = doctor.forgejo_lines(found["url"])
         print("\n".join(lines + doctor.GITHUB_ONLY_SKIPS + doctor.spike_lines(spike)))
         return 0 if ok else 1
+    if found is not None and found["kind"] == "gitlab":
+        try:
+            forge.check_url(found["url"], forge._origin(None))
+        except forge.ForgejoError as e:
+            print(f"forge: FAIL: {e}")
+            return 1
+        try:
+            token = identity.forge_token("gitlab", found["owner"], found["repo"])
+        except identity.IdentityError:
+            token = None
+        lines, ok = doctor.gitlab_lines(found["url"], token)
+        print("\n".join(lines + doctor.GITHUB_ONLY_SKIPS + doctor.spike_lines(spike)))
+        return 0 if ok else 1
     return doctor.main(_repo_name(), spike=spike)
 
 

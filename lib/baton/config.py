@@ -57,7 +57,7 @@ DEFAULTS = {
     "spike": {"tokens": {}, "minutes": {}, "max_per_sprint": 2},
     "forge": {"kind": "", "url": ""},
 }
-FORGE_KINDS = ("github", "forgejo")
+FORGE_KINDS = ("github", "forgejo", "gitlab")
 _FORGE_URL = re.compile(r"https://[^/\s:?#@]+(:[0-9]+)?/?")
 
 
@@ -254,8 +254,8 @@ def forge_problem(setting):
         return "forge.url must look like https://<host>[:<port>]"
     if url != "" and kind == "":
         return "forge.url is set but forge.kind is empty"
-    if kind == "forgejo" and url == "":
-        return "forge.url is required when forge.kind is forgejo"
+    if kind in ("forgejo", "gitlab") and url == "":
+        return f"forge.url is required when forge.kind is {kind}"
     if kind == "github" and url not in ("", "https://github.com"):
         return "forge.url must be empty or https://github.com when forge.kind is github"
     return None

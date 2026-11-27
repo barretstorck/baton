@@ -305,7 +305,7 @@ def _names(item):
 
 
 def since_path(owner, repo, home=None):
-    return verify._home(home) / f"{owner}-{repo}" / "triage-since"
+    return verify.repo_dir(owner, repo, home) / "triage-since"
 
 
 def resolve_since(cfg, owner, repo, now, home=None):
