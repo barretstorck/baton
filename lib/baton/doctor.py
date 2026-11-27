@@ -85,11 +85,21 @@ GITLAB_VERSION_PATH = "/api/v4/version"
 GITLAB_MIN_VERSION = (17, 0)
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse every redirect, so a token header never reaches another URL."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_opener = urllib.request.build_opener(_NoRedirect)
+
+
 def http_get(url, headers):
     """GET url; (status, headers with lower-cased names, body bytes); (None, {}, b"") when unreachable."""
     req = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with _opener.open(req, timeout=30) as r:
             return r.status, {k.lower(): v for k, v in r.headers.items()}, r.read()
     except urllib.error.HTTPError as e:
         try:

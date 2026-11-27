@@ -862,6 +862,11 @@ def cmd_doctor(opts):
         return 0 if ok else 1
     if found is not None and found["kind"] == "gitlab":
         try:
+            forge.check_url(found["url"], forge._origin(None))
+        except forge.ForgejoError as e:
+            print(f"forge: FAIL: {e}")
+            return 1
+        try:
             token = identity.forge_token("gitlab", found["owner"], found["repo"])
         except identity.IdentityError:
             token = None
