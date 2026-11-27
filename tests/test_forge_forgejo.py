@@ -111,9 +111,12 @@ class LabelMilestoneTest(unittest.TestCase):
     def test_milestones_shape(self):
         forge, t = make({"GET /api/v1/repos/o/r/milestones": (200, [
             {"id": 9, "title": "M", "description": "d", "state": "open",
-             "due_on": "2026-01-01T00:00:00Z"}])})
+             "due_on": "2026-01-01T00:00:00Z", "created_at": "2025-12-01T00:00:00Z",
+             "closed_at": None}])})
         self.assertEqual(forge.milestones(), [{"number": 9, "title": "M", "description": "d",
-                                               "state": "open", "due_on": "2026-01-01T00:00:00Z"}])
+                                               "state": "open", "due_on": "2026-01-01T00:00:00Z",
+                                               "created_at": "2025-12-01T00:00:00Z",
+                                               "closed_at": None}])
         self.assertIn("state=all", t.lines()[0])
         self.assertEqual(json.loads(forge.milestones_text("o", "r", "open"))[0]["number"], 9)
         self.assertEqual(forge._milestone_id("M"), 9)
@@ -152,6 +155,19 @@ class IssueTest(unittest.TestCase):
         self.addCleanup(os.unlink, handle.name)
         return handle.name
 
+    def test_list_filters_label_and_milestone_client_side(self):
+        mine = dict(self.ISSUE, number=1, milestone={"id": 9, "title": "M"})
+        no_label = dict(self.ISSUE, number=2, labels=[], milestone={"id": 9, "title": "M"})
+        other = dict(self.ISSUE, number=3, milestone={"id": 8, "title": "N"})
+        bare = dict(self.ISSUE, number=4, milestone=None)
+        forge, _ = make({"GET /api/v1/repos/o/r/issues": (200, [mine, no_label, other, bare])})
+        got = forge.issue_list("number", "all", 50, milestone="M", label="a")
+        self.assertEqual([i["number"] for i in got], [1])
+        got = forge.issue_list("number", "all", 50, milestone="9")
+        self.assertEqual([i["number"] for i in got], [1, 2])
+        got = forge.issue_list("number", "all", 50, label="a")
+        self.assertEqual([i["number"] for i in got], [1, 3, 4])
+
     def test_issue_view_shape(self):
         forge, t = make({"GET /api/v1/repos/o/r/issues/7/comments": (200, [
             {"id": 5, "user": {"login": "c"}, "body": "b", "created_at": "x",
@@ -174,7 +190,8 @@ class IssueTest(unittest.TestCase):
         self.assertEqual(t.calls, [])
 
     def test_issue_list(self):
-        forge, t = make({"GET /api/v1/repos/o/r/issues": (200, [self.ISSUE])})
+        forge, t = make({"GET /api/v1/repos/o/r/issues": (200, [
+            dict(self.ISSUE, milestone={"id": 9, "title": "M"})])})
         got = forge.issue_list("number", "open", 10, milestone="M", label="a")
         self.assertEqual(got, [{"number": 7}])
         line = t.lines()[0]

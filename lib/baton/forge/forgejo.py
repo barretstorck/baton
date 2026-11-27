@@ -146,7 +146,8 @@ class Forgejo:
     def _milestone_shape(item):
         return {"number": item["id"], "title": item.get("title"),
                 "description": item.get("description", ""), "state": item.get("state"),
-                "due_on": item.get("due_on")}
+                "due_on": item.get("due_on"), "created_at": item.get("created_at"),
+                "closed_at": item.get("closed_at")}
 
     def _milestone_list(self, state):
         items = self._paged(f"/repos/{self.owner}/{self.repo}/milestones", {"state": state})
@@ -281,10 +282,23 @@ class Forgejo:
         if search is not None:
             params["q"] = search
             items = self._paged(f"{self._repo_path()}/issues", params, max(limit, 100))
-            items = self._search_rank(items, search)[:limit]
+            items = self._search_rank(self._only(items, milestone, label), search)[:limit]
         else:
             items = self._paged(f"{self._repo_path()}/issues", params, limit)
+            items = self._only(items, milestone, label)
         return [self._issue_shape(item, names) for item in items]
+
+    @staticmethod
+    def _only(items, milestone, label):
+        """Keep what the server may have let through: it drops unknown filter labels."""
+        def keep(item):
+            if label is not None and label not in [x.get("name") for x in item.get("labels") or []]:
+                return False
+            mine = item.get("milestone") or {}
+            return milestone is None or (bool(mine) and milestone in (
+                mine.get("title"), str(mine.get("id"))))
+
+        return [item for item in items if keep(item)]
 
     @staticmethod
     def _search_rank(items, search):
