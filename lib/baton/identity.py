@@ -430,11 +430,13 @@ FORGE_REFUSAL = ("origin is not on github.com or on the host in forge.url; set f
 def remote_parts(url):
     """(host, owner, repo) of an https, ssh:// or scp-style remote URL; None for anything else."""
     url = (url or "").strip()
-    path = r"([^/\s:@]+)/([^/\s]+?)(?:\.git)?/?"
+    path = r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?"
     m = (re.fullmatch(r"https://(?:[^/@\s]*@)?([^/@:\s]+)(?::\d+)?/" + path, url)
          or re.fullmatch(r"ssh://(?:[^/@\s]*@)?([^/@:\s]+)(?::\d+)?/" + path, url)
          or re.fullmatch(r"(?:[^/@:\s]+@)?([^/@:\s]+):" + path, url))
-    return (m.group(1).lower(), m.group(2), m.group(3)) if m else None
+    if not m or {m.group(2), m.group(3)} & {".", ".."}:
+        return None
+    return m.group(1).lower(), m.group(2), m.group(3)
 
 
 def _host(url):

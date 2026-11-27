@@ -129,7 +129,11 @@ class DetectForgeTest(unittest.TestCase):
 
     def test_unparseable(self):
         for url in ("./o/r", "file://host/o/r", "http://git.example.org/o/r",
-                    "https://git.example.org/o", "https://git.example.org/a/b/c", "", None):
+                    "https://git.example.org/o", "https://git.example.org/a/b/c", "", None,
+                    "https://git.example.org/../repo", "https://git.example.org/owner/..",
+                    "https://git.example.org/owner/...git", "https://git.example.org/./r",
+                    "https://git.example.org/owner/repo%2Fx", "https://git.example.org/owner/repo?x=1",
+                    "https://git.example.org/owner/re#po"):
             self.assertIsNone(identity.remote_parts(url), url)
             with self.assertRaises(identity.ForgeError) as cm:
                 identity.detect_forge(url, self.SETTING)
