@@ -1,7 +1,6 @@
 """Issue, pull request and milestone writes: scanned first, then sent through `gh`."""
 import contextlib
 import io
-import json
 import os
 import sys
 import tempfile
@@ -9,12 +8,10 @@ import tempfile
 from . import branches
 from . import checklist
 from . import cliargs
-from . import identity
+from . import forge
 from . import issue as issue_mod
 from . import scan
 from .comment import CommentError
-
-_MILESTONES = "repos/{owner}/{repo}/milestones"
 
 
 def _check(cfg, terms, *texts):
@@ -30,12 +27,12 @@ def _need_body(body):
         raise CommentError("the body is empty; write the full text first")
 
 
-def _with_body(runner, body, build):
+def _with_body(body, send):
     handle, path = tempfile.mkstemp(suffix=".md")
     try:
         with os.fdopen(handle, "w") as out:
             out.write(body)
-        return identity.write(runner, build(path), "orchestrator").strip()
+        return send(path).strip()
     finally:
         os.unlink(path)
 
@@ -44,15 +41,9 @@ def create_issue(cfg, runner, title, body, labels, milestone, terms):
     _need_body(body)
     labels = list(labels or ())
     _check(cfg, terms, title, body, *labels, milestone)
-
-    def build(path):
-        argv = ["gh", "issue", "create", "--title", title, "--body-file", path]
-        for label in labels:
-            argv += ["--label", label]
-        if milestone:
-            argv += ["--milestone", milestone]
-        return argv
-    return _with_body(runner, body, build)
+    backend = forge.for_repo(runner=runner)
+    return _with_body(body, lambda path: backend.issue_create(
+        title, path, labels, milestone, role="orchestrator"))
 
 
 def _keep_plan(runner, number, body):
@@ -87,32 +78,24 @@ def edit(cfg, runner, target, number, terms, title=None, body=None, add_labels=(
     if body is not None and target == "issue":
         body = _keep_plan(runner, number, body)
     _check(cfg, terms, title, body, *add_labels, *remove_labels, milestone)
-    argv = ["gh", target, "edit", str(number)]
-    if title:
-        argv += ["--title", title]
-    for label in add_labels:
-        argv += ["--add-label", label]
-    for label in remove_labels:
-        argv += ["--remove-label", label]
-    if milestone:
-        argv += ["--milestone", milestone]
-    if remove_milestone:
-        argv += ["--remove-milestone"]
+    backend = forge.for_repo(runner=runner)
+
+    def send(path):
+        return backend.item_edit(target, number, title=title, add_labels=add_labels,
+                                 remove_labels=remove_labels, milestone=milestone,
+                                 remove_milestone=remove_milestone, path=path,
+                                 role="orchestrator")
     if body is None:
-        return identity.write(runner, argv, "orchestrator").strip()
-    return _with_body(runner, body, lambda path: argv + ["--body-file", path])
+        return send(None).strip()
+    return _with_body(body, send)
 
 
 def create_pr(cfg, runner, title, body, draft, terms, head=None):
     _need_body(body)
     _check(cfg, terms, title, body)
-
-    def build(path):
-        argv = ["gh", "pr", "create", "--title", title, "--body-file", path]
-        if head:
-            argv += ["--head", head]
-        return argv + ["--draft"] if draft else argv
-    return _with_body(runner, body, build)
+    backend = forge.for_repo(runner=runner)
+    return _with_body(body, lambda path: backend.pr_create(
+        title, path, head=head, draft=draft, role="orchestrator"))
 
 
 def resolve_head(runner, cwd, head):
@@ -130,20 +113,14 @@ def resolve_head(runner, cwd, head):
 
 
 def ready_pr(runner, number, undo=False):
-    argv = ["gh", "pr", "ready", str(number)]
-    if undo:
-        argv.append("--undo")
-    return identity.write(runner, argv, "orchestrator").strip()
+    return forge.for_repo(runner=runner).pr_ready(
+        number, undo=undo, role="orchestrator").strip()
 
 
 def create_milestone(cfg, runner, title, description, due_on, terms):
     _check(cfg, terms, title, description)
-    argv = ["gh", "api", _MILESTONES, "-f", f"title={title}"]
-    if description:
-        argv += ["-f", f"description={description}"]
-    if due_on:
-        argv += ["-f", f"due_on={due_on}"]
-    return identity.write(runner, argv, "orchestrator").strip()
+    return forge.for_repo(runner=runner).milestone_create(
+        title, description, due_on, role="orchestrator").strip()
 
 
 def edit_milestone(cfg, runner, ref, terms, title=None, description=None, due_on=None,
@@ -157,29 +134,29 @@ def edit_milestone(cfg, runner, ref, terms, title=None, description=None, due_on
     if ref.isdigit():
         number = ref
     else:
-        listing = json.loads(runner(["gh", "api", _MILESTONES + "?state=all"]) or "[]")
+        listing = forge.for_repo(runner=runner).milestones()
         found = [m for m in listing if m.get("title") == ref]
         if not found:
             raise CommentError(f"no milestone titled {ref!r}")
         number = str(found[0]["number"])
-    argv = ["gh", "api", "--method", "PATCH", f"{_MILESTONES}/{number}"]
-    for key, value in (("title", title), ("description", description),
-                       ("due_on", due_on), ("state", state)):
-        if value is not None and value != "":
-            argv += ["-f", f"{key}={value}"]
-    return identity.write(runner, argv, "orchestrator").strip()
+    changes = [(key, value) for key, value in (
+        ("title", title), ("description", description), ("due_on", due_on),
+        ("state", state)) if value is not None and value != ""]
+    return forge.for_repo(runner=runner).milestone_edit(
+        number, changes, role="orchestrator").strip()
 
 
 def mark_missed(cfg, runner, number, milestone_ref, terms):
     """Record that an issue missed its sprint: description line, label, no milestone."""
     ref = str(milestone_ref)
-    listing = json.loads(runner(["gh", "api", _MILESTONES + "?state=all"]) or "[]")
+    backend = forge.for_repo(runner=runner)
+    listing = backend.milestones()
     found = [m for m in listing
              if m.get("title") == ref or str(m.get("number")) == ref]
     if not found:
         raise CommentError(f"no milestone {ref!r}")
     milestone = found[0]
-    data = json.loads(runner(["gh", "issue", "view", str(number), "--json", "body"]) or "{}")
+    data = backend.issue_view(number, "body", empty={})
     body = issue_mod.add_missed_line(data.get("body") or "", milestone["title"],
                                      milestone.get("html_url", ""))
     return edit(cfg, runner, "issue", number, terms, body=body,
