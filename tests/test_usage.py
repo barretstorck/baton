@@ -104,6 +104,14 @@ class TallyTest(unittest.TestCase):
 
 
 class ClassifyTest(unittest.TestCase):
+    def test_merge_request_references(self):
+        c = usage.classify
+        self.assertEqual(c("Review pull request !40 (issue 12)."), ("review", "issue 12"))
+        self.assertEqual(c("Do review task 1.2 of pull request !40."), ("fix", "pr 40"))
+        self.assertEqual(c("Hand-check pull request !40 (issue #12)."), ("hand-check", "issue 12"))
+        self.assertEqual(c("Fix CI on pull request !40 (issue 12).")[0], "fix")
+        self.assertEqual(c("Update pull request !40.")[0], "fix")
+
     def test_prompts(self):
         self.assertEqual(usage.classify("Do task 3 of issue 12."), ("task", "issue 12"))
         self.assertEqual(usage.classify("Do review task 1.2 of pull request 40 (issue 12)."),

@@ -344,11 +344,14 @@ class GitLab:
 
     @classmethod
     def _mr_mergeable(cls, item):
-        if item.get("has_conflicts"):
+        status = item.get("detailed_merge_status")
+        if item.get("has_conflicts") or status == "conflict":
             return "CONFLICTING"
-        if item.get("detailed_merge_status") in cls._UNKNOWN_MERGE:
+        if status in cls._UNKNOWN_MERGE:
             return "UNKNOWN"
-        return "MERGEABLE"
+        if status is None or status == "mergeable":
+            return "MERGEABLE"
+        return status
 
     @staticmethod
     def _is_cross_repository(item):
@@ -553,8 +556,16 @@ class GitLab:
         return found["web_url"] + "\n"
 
     def pr_merge(self, number, head_oid, role=None):
-        self._request("PUT", f"{self._project()}/merge_requests/{number}/merge",
-                      body={"sha": head_oid})
+        base = f"{self._project()}/merge_requests/{number}"
+        try:
+            self._request("PUT", f"{base}/merge", body={"sha": head_oid})
+        except GitLabError as error:
+            try:
+                found = self._request("GET", base)
+            except GitLabError:
+                raise error from None
+            status = (found or {}).get("detailed_merge_status") or "unknown"
+            raise GitLabError(f"{error}; detailed_merge_status: {status}") from error
         return ""
 
     _REVIEW_EVENTS = ("approve", "request-changes", "comment")
