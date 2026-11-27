@@ -634,6 +634,36 @@ class QueueCommandTests(unittest.TestCase):
             code = cli.main(list(args))
         return code, out.getvalue()
 
+    def test_queue_on_forgejo(self):
+        import io
+        import os
+        from unittest import mock
+        from baton import cli
+        from baton.forge.forgejo import Forgejo
+        from tests.fakes import FakeTransport
+        transport = FakeTransport({
+            "GET /api/v1/repos/o/r/issues": (200, []),
+            "GET /api/v1/repos/o/r": (200, {"full_name": "o/r"})})
+        fj = Forgejo("https://f.example/", "o", "r", token="t", transport=transport)
+        cfg = mock.MagicMock()
+        cfg.label.side_effect = lambda n: n
+        cfg.status_labels.return_value = ["status:in-dev"]
+        cfg.data = {"triage": {"since": "2020-01-01T00:00:00Z", "max_per_run": 10,
+                                 "stale_days": 14, "max_reproductions_per_day": 3}}
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as home, \
+                mock.patch.dict(os.environ, {"BATON_HOME": home}), \
+                mock.patch("baton.forge.for_repo", return_value=fj), \
+                mock.patch.object(cli, "_require_config", return_value=cfg), \
+                mock.patch.object(cli, "_maintainers", return_value=["Boss"]), \
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+            code = cli.main(["triage", "queue"])
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertEqual(json.loads(out.getvalue())["batch"], [])
+        urls = [c[1] for c in transport.calls if c[0] == "GET"]
+        self.assertTrue(any("/repos/o/r/issues?" in u and "state=closed" in u
+                            and "since=" in u for u in urls), urls)
+
     def test_first_run_records_and_triages_nothing(self):
         import os
         issue = {"number": 1, "state": "OPEN", "labels": [], "comments": [],

@@ -4,6 +4,7 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 
 from .. import identity, run
 
@@ -295,6 +296,23 @@ class Forgejo:
             items = self._paged(f"{self._repo_path()}/issues", params, limit)
             items = self._only(items, milestone, label)
         return [self._issue_shape(item, names) for item in items]
+
+    def issues_closed_since(self, fields, day, limit, empty=None):
+        names = self._field_names(fields, self._ISSUE_FIELDS)
+        params = {"type": "issues", "state": "closed", "since": f"{day}T00:00:00Z"}
+        items = self._paged(f"{self._repo_path()}/issues", params, limit)
+        start = datetime.fromisoformat(f"{day}T00:00:00+00:00")
+        kept = []
+        for item in items:
+            stamp = item.get("closed_at")
+            if not stamp:
+                continue
+            when = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            if when.astimezone(timezone.utc) >= start:
+                kept.append(item)
+        return [self._issue_shape(item, names) for item in kept]
 
     @staticmethod
     def _only(items, milestone, label):

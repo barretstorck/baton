@@ -274,8 +274,8 @@ def _triage_queue():
     issues = forge.for_repo().issue_list("number,title,state,labels,body,author,createdAt,comments",
                                          "open", 1000)
     day_ago = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-    closed = forge.for_repo().issue_list("number,state,comments,createdAt", "closed", 200,
-                                       search="closed:>=" + day_ago, empty=[])
+    closed = forge.for_repo().issues_closed_since("number,state,comments,createdAt", day_ago,
+                                                  200, empty=[])
     for item in issues + closed:
         item["comments"] = identity.mark_authors(run.run, item["number"], item.get("comments"))
     maintainers = _maintainers(cfg)

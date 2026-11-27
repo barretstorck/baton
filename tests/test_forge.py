@@ -442,6 +442,14 @@ class SprintMethodsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             GitHub(blank).issue_list("number", "open", 5)
 
+    def test_issues_closed_since(self):
+        line = "gh issue list --state closed --search closed:>=2026-01-02 --limit 200 --json number"
+        runner = FakeRunner({line: "[1]"})
+        self.assertEqual(GitHub(runner).issues_closed_since("number", "2026-01-02", 200), [1])
+        blank = FakeRunner({line: ""})
+        self.assertEqual(GitHub(blank).issues_closed_since("number", "2026-01-02", 200, empty=[]), [])
+        self.assertEqual(runner.calls, [line.split()])
+
     def test_pr_list_text(self):
         self._text("pr_list_text", "gh pr list --state open --limit 200 --json number",
                    "number", "open", 200)
