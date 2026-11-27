@@ -199,6 +199,48 @@ class OutsideTest(unittest.TestCase):
         self.assertFalse(issue.approved(data, OWNER))
         self.assertIn("@ghost edited", issue.approval_problem(data, OWNER))
 
+    def hashed(self, text=None, when="2026-11-01T10:00:00Z", body=BODY):
+        text = text if text is not None else "/baton ready " + issue.body_hash(body)
+        return dict(comment(OWNER, text), createdAt=when)
+
+    def test_hashed_approval_of_current_body_with_unreadable_history_approves(self):
+        data = self.with_edits([self.hashed()], None)
+        self.assertTrue(issue.approved(data, OWNER))
+
+    def test_hashed_approval_with_matching_hash_is_dropped_by_outside_edit_after_it(self):
+        data = self.with_edits([self.hashed()], [self.edit("mallory", "2026-11-01T11:00:00Z")])
+        self.assertIn("@mallory edited", issue.approval_problem(data, OWNER))
+
+    def test_hashed_approval_with_matching_hash_and_readable_clean_history_approves(self):
+        data = self.with_edits([self.hashed()], [self.edit("mallory", "2026-11-01T09:00:00Z")])
+        self.assertTrue(issue.approved(data, OWNER))
+
+    def test_hashed_approval_of_other_body_is_dropped(self):
+        old = issue.body_hash("something else")
+        data = self.with_edits([self.hashed("/baton ready " + old)], [])
+        text = issue.approval_problem(data, OWNER)
+        self.assertIn(old, text)
+        self.assertIn(issue.body_hash(BODY), text)
+
+    def test_plain_approval_without_history_names_the_hash(self):
+        data = self.with_edits([self.READY], None)
+        self.assertIn("/baton ready " + issue.body_hash(BODY), issue.approval_problem(data, OWNER))
+
+    def test_malformed_hash_does_not_count(self):
+        good = issue.body_hash(BODY)
+        for text in ("/baton ready 123", "/baton ready " + good + " please"):
+            data = self.with_edits([self.hashed(text)], [])
+            self.assertEqual(issue.approval_problem(data, OWNER),
+                             "it needs a comment '/baton ready' from a maintainer")
+
+    def test_assignment_newer_than_mismatched_hash_follows_edit_history(self):
+        stale = self.hashed("/baton ready " + issue.body_hash("other"), "2026-11-01T09:00:00Z")
+        assign = {"by": OWNER, "at": "2026-11-01T10:00:00Z"}
+        data = self.with_edits([stale], [])
+        self.assertTrue(issue.approved(data, OWNER, assigned=assign))
+        data = self.with_edits([stale], [self.edit("mallory", "2026-11-01T11:00:00Z")])
+        self.assertIn("@mallory edited", issue.approval_problem(data, OWNER, assigned=assign))
+
     ASSIGN = {"by": OWNER, "at": "2026-11-01T10:00:00Z"}
 
     def test_maintainer_assignment_approves(self):
@@ -233,7 +275,8 @@ class OutsideTest(unittest.TestCase):
         self.assertTrue(issue.approved(data, OWNER, assigned=self.ASSIGN))
 
     def test_missing_edit_history_fails_closed(self):
-        text = "the body's edit history could not be read"
+        text = ("the body's edit history could not be read; a maintainer must post "
+                f"'/baton ready {issue.body_hash(BODY)}'")
         data = self.with_edits([self.READY], None)
         self.assertEqual(issue.approval_problem(data, OWNER), text)
         del data["edits"]
@@ -308,6 +351,54 @@ class OutsideTest(unittest.TestCase):
         data = self.check([comment("second", "/baton ready")])
         self.assertTrue(issue.approved(data, [OWNER, "second"]))
         self.assertFalse(issue.approved(data, OWNER))
+
+
+class BodyHashTest(unittest.TestCase):
+    BODY = ("## Context\nOld text\n\n- [ ] Task 1: Do it\n  - Check: `make`\n"
+            "  - Provides: x\n")
+
+    def test_shape(self):
+        h = issue.body_hash(self.BODY)
+        self.assertRegex(h, r"^[0-9a-f]{32}$")
+        self.assertEqual(h, issue.body_hash(self.BODY))
+        self.assertEqual(issue.body_hash(None), issue.body_hash(""))
+
+    def test_formatting_is_ignored(self):
+        h = issue.body_hash(self.BODY)
+        self.assertEqual(h, issue.body_hash(self.BODY.replace("\n", "\r\n")))
+        self.assertEqual(h, issue.body_hash(self.BODY.replace("Old text", "Old text  ")))
+        self.assertEqual(h, issue.body_hash("\n" + self.BODY + "\n\n"))
+
+    def test_baton_edits_are_ignored(self):
+        h = issue.body_hash(self.BODY)
+        ticked = self.BODY.replace("- [ ] Task 1", "- [x] Task 1")
+        self.assertEqual(h, issue.body_hash(ticked))
+        built = ticked.replace("  - Provides: x\n",
+                               "  - Provides: x\n  - Provides (as built): y\n")
+        self.assertEqual(h, issue.body_hash(built))
+
+    def test_as_built_lines_elsewhere_are_seen(self):
+        h = issue.body_hash(self.BODY)
+        line = "- Provides (as built): y\n"
+        self.assertNotEqual(h, issue.body_hash(self.BODY.replace("Old text\n", "Old text\n" + line)))
+        dec = "## Decisions\n- Use A\n"
+        self.assertNotEqual(issue.body_hash(dec), issue.body_hash(dec + "  " + line))
+        under = self.BODY.replace("  - Provides: x\n", "  - Provides: x\n  " + line + "  " + line)
+        self.assertEqual(h, issue.body_hash(under))
+        after_check = self.BODY.replace("  - Provides: x\n", "  - Provides: x\n  - Check: z\n  " + line)
+        self.assertNotEqual(issue.body_hash(self.BODY.replace("  - Provides: x\n", "  - Provides: x\n  - Check: z\n")),
+                            issue.body_hash(after_check))
+
+    def test_only_task_boxes_are_unticked(self):
+        h = issue.body_hash(self.BODY)
+        self.assertNotEqual(h, issue.body_hash(self.BODY + "- [ ] Extra\n"))
+        self.assertNotEqual(issue.body_hash("- [ ] Other\n"), issue.body_hash("- [x] Other\n"))
+
+    def test_content_changes_are_seen(self):
+        h = issue.body_hash(self.BODY)
+        for old, new in (("Old text", "New text"), ("Do it", "Do that"),
+                         ("`make`", "`true`")):
+            self.assertNotEqual(h, issue.body_hash(self.BODY.replace(old, new)))
 
 
 class PlanReadyTest(unittest.TestCase):
@@ -552,7 +643,15 @@ class ReadyCheckNoteTest(unittest.TestCase):
 
     def test_outside_issue_gets_the_note(self):
         code, text = self.check(make(author="stranger"))
-        self.assertEqual((code, text), (0, "ready (outside issue: the maintainer marks it ready)"))
+        self.assertEqual((code, text), (0, "ready (outside issue: the maintainer marks it ready)\n"
+                         f"approve with: /baton ready {issue.body_hash(make(author='stranger')['body'])}"))
+
+    def test_printed_hash_is_the_body_hash(self):
+        data = make(author="stranger")
+        data["body"] = "## Context\nsomething\n"
+        code, text = self.check(data)
+        self.assertEqual(text.splitlines()[-1],
+                         f"approve with: /baton ready {issue.body_hash(data['body'])}")
 
     def test_maintainer_issue_is_plain_ready(self):
         self.assertEqual(self.check(make()), (0, "ready"))

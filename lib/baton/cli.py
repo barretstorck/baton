@@ -636,6 +636,8 @@ def cmd_ready_check(opts):
     note = issue.ignored_assignment(assigned, maintainers, _bots())
     if note:
         print(f"note: {note}")
+    if issue.is_outside(data, maintainers, _bots()):
+        print(f"approve with: {issue.APPROVAL} {issue.body_hash(data.get('body'))}")
     return 1 if problems else 0
 
 
