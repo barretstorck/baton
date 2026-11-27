@@ -641,3 +641,17 @@ class RoleTokenTest(unittest.TestCase):
         self.assertGreaterEqual(len(t.calls), 4)
         for _, _, headers, _ in t.calls:
             self.assertNotIn("sudo", [k.lower() for k in headers])
+
+
+class NeutralReadsTest(unittest.TestCase):
+    def test_visibility(self):
+        for private, want in ((True, "PRIVATE"), (False, "PUBLIC")):
+            forge, _ = make({"GET /api/v1/repos/o/r": (200, {"private": private})})
+            self.assertEqual(forge.repo_view("visibility"), {"visibility": want})
+
+    def test_label_list_includes_org_label(self):
+        forge, _ = make({"GET /api/v1/repos/o/r/labels": (200, [
+            {"id": 1, "name": "repo-l", "description": "mine"}]),
+            "GET /api/v1/orgs/o/labels": (200, [{"id": 2, "name": "org-l"}])})
+        self.assertEqual(forge.label_list(), [{"name": "repo-l", "description": "mine"},
+                                              {"name": "org-l", "description": ""}])

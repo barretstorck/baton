@@ -771,3 +771,18 @@ class EditApprovalTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NeutralReadsTest(unittest.TestCase):
+    P = "/api/v4/projects/o%2Fr"
+
+    def test_visibility_upper_cased(self):
+        forge, _ = make({f"GET {self.P}": (200, {"visibility": "internal"})})
+        self.assertEqual(forge.repo_view("visibility"), {"visibility": "INTERNAL"})
+
+    def test_label_list_shape(self):
+        forge, t = make({f"GET {self.P}/labels": (200, [
+            {"name": "bug", "description": "b"}, {"name": "grp", "description": None}])})
+        self.assertEqual(forge.label_list(), [{"name": "bug", "description": "b"},
+                                              {"name": "grp", "description": ""}])
+        self.assertIn("include_ancestor_groups=true", t.lines()[0])

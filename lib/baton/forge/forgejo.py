@@ -128,6 +128,10 @@ class Forgejo:
     def label_names(self):
         return {item["name"] for item in self._labels()}
 
+    def label_list(self):
+        return [{"name": item["name"], "description": item.get("description") or ""}
+                for item in self._labels()]
+
     def label_create(self, name, color, description, role=None):
         self._request("POST", f"/repos/{self.owner}/{self.repo}/labels",
                       body={"name": name, "color": "#" + color, "description": description}, role=role)
@@ -228,7 +232,7 @@ class Forgejo:
         items = self._paged(f"{self._repo_path()}/issues/{number}/comments")
         return [self._comment_shape(item) for item in items]
 
-    _REPO_FIELDS = ("owner", "name", "nameWithOwner", "defaultBranchRef")
+    _REPO_FIELDS = ("owner", "name", "nameWithOwner", "defaultBranchRef", "visibility")
     _ISSUE_FIELDS = ("number", "title", "body", "state", "author", "labels", "createdAt",
                      "assignees", "comments")
 
@@ -238,7 +242,8 @@ class Forgejo:
         shapes = {"owner": lambda: self._login(item.get("owner")),
                   "name": lambda: item["name"],
                   "nameWithOwner": lambda: item["full_name"],
-                  "defaultBranchRef": lambda: {"name": item["default_branch"]}}
+                  "defaultBranchRef": lambda: {"name": item["default_branch"]},
+                  "visibility": lambda: "PRIVATE" if item.get("private") else "PUBLIC"}
         return {name: shapes[name]() for name in names}
 
     def _issue_shape(self, item, names):

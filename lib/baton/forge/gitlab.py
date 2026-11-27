@@ -129,6 +129,11 @@ class GitLab:
         items = self._paged(f"{self._project()}/labels", {"include_ancestor_groups": "true"})
         return {item["name"] for item in items}
 
+    def label_list(self):
+        items = self._paged(f"{self._project()}/labels", {"include_ancestor_groups": "true"})
+        return [{"name": item["name"], "description": item.get("description") or ""}
+                for item in items]
+
     def label_create(self, name, color, description, role=None):
         self._request("POST", f"{self._project()}/labels",
                       body={"name": name, "color": "#" + color, "description": description})
@@ -189,7 +194,7 @@ class GitLab:
 
     # --- repository, issues and notes ---
 
-    _REPO_FIELDS = ("owner", "name", "nameWithOwner", "defaultBranchRef")
+    _REPO_FIELDS = ("owner", "name", "nameWithOwner", "defaultBranchRef", "visibility")
     _ISSUE_FIELDS = ("number", "title", "body", "state", "author", "labels", "createdAt",
                      "assignees", "comments")
 
@@ -199,7 +204,8 @@ class GitLab:
         shapes = {"owner": lambda: {"login": (item.get("namespace") or {}).get("full_path", "")},
                   "name": lambda: item["path"],
                   "nameWithOwner": lambda: item["path_with_namespace"],
-                  "defaultBranchRef": lambda: {"name": item["default_branch"]}}
+                  "defaultBranchRef": lambda: {"name": item["default_branch"]},
+                  "visibility": lambda: str(item.get("visibility") or "").upper()}
         return {name: shapes[name]() for name in names}
 
     def _note_shape(self, item, web_url):

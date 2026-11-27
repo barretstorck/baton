@@ -99,6 +99,10 @@ class GitHub:
         items = self._read(["gh", "label", "list", "--limit", "500", "--json", "name"], [])
         return {item["name"] for item in items}
 
+    def label_list(self):
+        return self._read(["gh", "label", "list", "--limit", "500", "--json",
+                           "name,description"], [])
+
     def label_create(self, name, color, description, role=None):
         return self._write(["gh", "label", "create", name, "--color", color,
                             "--description", description], role)

@@ -466,3 +466,16 @@ class ForgeLayoutTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NeutralReadsTest(unittest.TestCase):
+    def test_label_list_argv(self):
+        runner = FakeRunner({"gh label list": '[{"name": "a", "description": "d"}]'})
+        self.assertEqual(GitHub(runner).label_list(), [{"name": "a", "description": "d"}])
+        self.assertEqual(runner.lines(),
+                         ["gh label list --limit 500 --json name,description"])
+
+    def test_repo_view_visibility_argv(self):
+        runner = FakeRunner({"gh repo view": '{"visibility": "PRIVATE"}'})
+        self.assertEqual(GitHub(runner).repo_view("visibility"), {"visibility": "PRIVATE"})
+        self.assertEqual(runner.lines(), ["gh repo view --json visibility"])
