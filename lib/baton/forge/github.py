@@ -23,6 +23,9 @@ TIMELINE_JQ = (
 
 AUTHOR_TYPES_JQ = '.[] | [.node_id, .user.type] | @tsv'
 
+REVIEWS_JQ = (".[] | select(.submitted_at != null) | {id: .node_id, "
+              "author: {login: .user.login, type: .user.type}, body: .body, "
+              "createdAt: .submitted_at, url: .html_url} | @json")
 _MILESTONES = "repos/{owner}/{repo}/milestones"
 
 
@@ -202,3 +205,24 @@ class GitHub:
         if undo:
             argv.append("--undo")
         return self._write(argv, role)
+
+    def pr_review_items(self, number):
+        text = self.runner(["gh", "api", "--paginate",
+                            f"repos/{{owner}}/{{repo}}/pulls/{number}/reviews?per_page=100",
+                            "--jq", REVIEWS_JQ])
+        return [json.loads(line) for line in (text or "").splitlines() if line.strip()]
+
+    def review_edit_body(self, number, review_id, path, role=None):
+        return self._write(["gh", "api", "-X", "PUT",
+                            f"repos/{{owner}}/{{repo}}/pulls/{number}/reviews/{review_id}",
+                            "-F", f"body=@{path}", "--silent"], role)
+
+    def comment_edit_body(self, comment_id, path, role=None):
+        return self._write(["gh", "api", "-X", "PATCH",
+                            f"repos/{{owner}}/{{repo}}/issues/comments/{comment_id}",
+                            "-F", f"body=@{path}", "--silent"], role)
+
+    def review_request_remove(self, number, login, role=None):
+        return self._write(["gh", "api", "-X", "DELETE",
+                            f"repos/{{owner}}/{{repo}}/pulls/{number}/requested_reviewers",
+                            "-f", f"reviewers[]={login}", "--silent"], role)

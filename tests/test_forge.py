@@ -183,6 +183,21 @@ class WriteTest(unittest.TestCase):
         self._check(lambda b, r: b.pr_review(3, "approve", "f.md", role=r),
                     "gh pr review 3 --approve --body-file f.md")
 
+    def test_review_edit_body(self):
+        self._check(lambda b, r: b.review_edit_body(3, "PRR_1", "/p.md", role=r),
+                    "gh api -X PUT repos/{owner}/{repo}/pulls/3/reviews/PRR_1 "
+                    "-F body=@/p.md --silent")
+
+    def test_comment_edit_body(self):
+        self._check(lambda b, r: b.comment_edit_body(77, "/p.md", role=r),
+                    "gh api -X PATCH repos/{owner}/{repo}/issues/comments/77 "
+                    "-F body=@/p.md --silent")
+
+    def test_review_request_remove(self):
+        self._check(lambda b, r: b.review_request_remove(3, "bot", role=r),
+                    "gh api -X DELETE repos/{owner}/{repo}/pulls/3/requested_reviewers "
+                    "-f reviewers[]=bot --silent")
+
 
 def _boom(argv, **kw):
     raise run.RunError("x")
@@ -195,6 +210,14 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(runner.lines(), [
             "gh api --paginate repos/{owner}/{repo}/pulls/5/reviews?per_page=100 "
             "--jq .[] | select(.user.login == \"bot\") | .html_url"])
+
+    def test_pr_review_items(self):
+        runner = FakeRunner({"gh api": '{"id": "a"}\n\n  \n{"id": "b"}\n'})
+        self.assertEqual(GitHub(runner).pr_review_items(5), [{"id": "a"}, {"id": "b"}])
+        self.assertEqual(len(runner.lines()), 1)
+        self.assertTrue(runner.lines()[0].startswith(
+            "gh api --paginate repos/{owner}/{repo}/pulls/5/reviews?per_page=100 --jq "))
+        self.assertEqual(GitHub(FakeRunner({"gh api": ""})).pr_review_items(5), [])
 
     def test_user(self):
         runner = FakeRunner({"gh api": '{"id": 7}'})
@@ -233,7 +256,7 @@ class ReadTest(unittest.TestCase):
 GH_ARGV = re.compile(r'\[\s*"gh"\s*,')
 LIB = Path(__file__).resolve().parent.parent / "lib" / "baton"
 # #374 and #375 empty this set as they move the remaining call sites.
-NOT_YET_MIGRATED = {"cli.py", "sprint.py","review.py", "merge.py", "triage.py"}
+NOT_YET_MIGRATED = {"cli.py", "sprint.py", "merge.py", "triage.py"}
 # The forge_clis default list is not a call.
 PERMANENT = {"config.py"}
 
