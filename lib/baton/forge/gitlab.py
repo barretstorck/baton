@@ -1,3 +1,4 @@
+import datetime
 import json
 import re
 import time
@@ -84,11 +85,12 @@ class GitLab:
         full = f"{owner or self.owner}/{repo or self.repo}"
         return "/projects/" + urllib.parse.quote(full, safe="")
 
-    def _request(self, method, path, params=None, body=None, raw=False, role=None):
+    def _request(self, method, path, params=None, body=None, raw=False, role=None,
+                 token=None):
         url = f"{self.url}/api/v4{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
-        headers = {"PRIVATE-TOKEN": self._token_for(role), "Accept": "application/json"}
+        headers = {"PRIVATE-TOKEN": token or self._token_for(role), "Accept": "application/json"}
         data = None
         if body is not None:
             data = json.dumps(body).encode()
@@ -113,6 +115,39 @@ class GitLab:
         if not text.strip():
             return None
         return json.loads(text)
+
+    def rotate_self_token(self, token, expires_at):
+        """Rotate `token` with itself; returns (kind, secret, expires_at).
+
+        A personal access token answers on /personal_access_tokens/self/rotate; any other
+        token kind gets HTTP 405 there (nothing rotated), so the project endpoint is tried.
+        """
+        body = {"expires_at": expires_at.isoformat()}
+        paths = [("personal", "/personal_access_tokens/self/rotate"),
+                 ("project", self._project() + "/access_tokens/self/rotate")]
+        for index, (kind, path) in enumerate(paths):
+            try:
+                reply = self._request("POST", path, body=body, token=token)
+            except GitLabError as err:
+                if err.status == 405 and index == 0:
+                    continue
+                raise
+            secret = reply.get("token") if isinstance(reply, dict) else None
+            if not isinstance(secret, str) or not secret:
+                raise GitLabError(f"GitLab POST {path}: the reply has no token")
+            return kind, secret, expires_at
+        raise GitLabError(f"GitLab POST {paths[1][1]}: HTTP 405", status=405)
+
+    def token_expiry(self, token):
+        """The expiry date of `token` (a personal access token), or None when it has none."""
+        found = self._request("GET", "/personal_access_tokens/self", token=token)
+        value = found.get("expires_at") if isinstance(found, dict) else None
+        if not value:
+            return None
+        try:
+            return datetime.date.fromisoformat(str(value)[:10])
+        except ValueError:
+            raise GitLabError("GitLab GET /personal_access_tokens/self: unreadable expires_at") from None
 
     def _paged(self, path, params=None, limit=None):
         items = []

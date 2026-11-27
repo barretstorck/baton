@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import pathlib
@@ -985,3 +986,52 @@ class RoleTokenTest(unittest.TestCase):
         self.assertGreaterEqual(len(t.calls), 4)
         for _, _, headers, _ in t.calls:
             self.assertNotIn("sudo", [k.lower() for k in headers])
+
+
+class SelfRotateTest(unittest.TestCase):
+    OLD = "old-secret"
+    NEW = "glpat-new"
+    DAY = datetime.date(2027, 11, 27)
+
+    def test_personal_token(self):
+        forge, t = make({"POST /api/v4/personal_access_tokens/self/rotate": (200, {"token": self.NEW})})
+        self.assertEqual(forge.rotate_self_token(self.OLD, self.DAY), ("personal", self.NEW, self.DAY))
+        self.assertEqual(len(t.calls), 1)
+        self.assertEqual(json.loads(t.calls[0][3]), {"expires_at": "2027-11-27"})
+        self.assertEqual(t.calls[0][2]["PRIVATE-TOKEN"], self.OLD)
+
+    def test_project_token_after_405(self):
+        forge, t = make({
+            "POST /api/v4/personal_access_tokens/self/rotate": (405, {"message": "405 Method Not Allowed"}),
+            "POST /api/v4/projects/o%2Fr/access_tokens/self/rotate": (200, {"token": self.NEW}),
+        })
+        self.assertEqual(forge.rotate_self_token(self.OLD, self.DAY), ("project", self.NEW, self.DAY))
+        self.assertEqual(t.lines(), ["POST /api/v4/personal_access_tokens/self/rotate",
+                                     "POST /api/v4/projects/o%2Fr/access_tokens/self/rotate"])
+        self.assertEqual({c[2]["PRIVATE-TOKEN"] for c in t.calls}, {self.OLD})
+
+    def test_403_raises_with_status_and_no_token(self):
+        forge, _ = make({"POST": (403, {"message": "insufficient_scope"})})
+        with self.assertRaises(GitLabError) as ctx:
+            forge.rotate_self_token(self.OLD, self.DAY)
+        self.assertEqual(ctx.exception.status, 403)
+        self.assertIn("/personal_access_tokens/self/rotate", str(ctx.exception))
+        self.assertNotIn(self.OLD, str(ctx.exception))
+
+    def test_reply_without_token_raises(self):
+        forge, _ = make({"POST": (200, {"id": 1})})
+        with self.assertRaises(GitLabError):
+            forge.rotate_self_token(self.OLD, self.DAY)
+
+    def test_token_expiry(self):
+        forge, t = make({"GET /api/v4/personal_access_tokens/self": (200, {"expires_at": "2026-12-01"})})
+        self.assertEqual(forge.token_expiry(self.OLD), datetime.date(2026, 12, 1))
+        self.assertEqual(t.calls[0][2]["PRIVATE-TOKEN"], self.OLD)
+
+    def test_token_expiry_null_and_failure(self):
+        forge, _ = make({"GET /api/v4/personal_access_tokens/self": (200, {"expires_at": None})})
+        self.assertIsNone(forge.token_expiry(self.OLD))
+        forge, _ = make({"GET /api/v4/personal_access_tokens/self": (401, {"message": "401 Unauthorized"})})
+        with self.assertRaises(GitLabError) as ctx:
+            forge.token_expiry(self.OLD)
+        self.assertEqual(ctx.exception.status, 401)
