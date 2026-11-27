@@ -56,6 +56,11 @@ def spike_lines(spike):
     return [SPIKE_WARNING]
 
 
+GITHUB_ONLY_SKIPS = [
+    "app: skipped (GitHub-only: GitHub App installation check)",
+    "machine: skipped (GitHub-only: api.github.com assignee check)",
+]
+
 FORGEJO_VERSION_PATH = "/api/forgejo/v1/version"
 
 

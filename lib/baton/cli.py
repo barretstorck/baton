@@ -365,9 +365,13 @@ def _change_state(action, opts):
              "duplicate_of": getattr(opts, "duplicate_of", None),
              "lock": getattr(opts, "lock", False)}
     flags = {k: v for k, v in flags.items() if v}
+    cfg = _require_config()
+    if "lock" in flags and _forge_kind(cfg) == "forgejo":
+        print(f"baton: {state.LOCK_UNSUPPORTED_FORGEJO}", file=sys.stderr)
+        return 1
     try:
         reason = comment.read_body(opts.reason_file, sys.stdin)
-        print(state.change(_require_config(), run.run, action, opts.target, opts.number,
+        print(state.change(cfg, run.run, action, opts.target, opts.number,
                            opts.role, reason, scan.load_terms(), **flags))
     except comment.CommentError as error:
         print(f"baton: {error}", file=sys.stderr)
@@ -769,6 +773,14 @@ def cmd_clean(opts):
 
 @cliargs.command("identity")
 def cmd_identity(opts):
+    if identity.bot_logins():
+        try:
+            cfg = config.load(os.getcwd())
+        except config.ConfigError:
+            cfg = None
+        if _forge_kind(cfg) == "forgejo":
+            print("baton: " + identity.APP_TIER_UNSUPPORTED_FORGEJO, file=sys.stderr)
+            return 1
     who = identity.commit_identity(run.run)
     if who is None:
         print("tier 0: commits keep your git identity")
@@ -834,6 +846,14 @@ def _detect_forge(cfg):
     return identity.detect_forge(url, config.effective_forge(committed, local))
 
 
+def _forge_kind(cfg):
+    """The detected forge kind, or "" when detection fails."""
+    try:
+        return _detect_forge(cfg)["kind"]
+    except (run.RunError, identity.ForgeError, config.ConfigError):
+        return ""
+
+
 @cliargs.command("doctor")
 def cmd_doctor(opts):
     cfg = config.load(os.getcwd())
@@ -847,7 +867,7 @@ def cmd_doctor(opts):
         return 1
     if found is not None and found["kind"] == "forgejo":
         lines, ok = doctor.forgejo_lines(found["url"])
-        print("\n".join(lines + doctor.spike_lines(spike)))
+        print("\n".join(lines + doctor.GITHUB_ONLY_SKIPS + doctor.spike_lines(spike)))
         return 0 if ok else 1
     return doctor.main(_repo_name(), spike=spike)
 
