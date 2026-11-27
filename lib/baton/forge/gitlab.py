@@ -9,7 +9,9 @@ from .. import identity, run
 
 
 class GitLabError(run.RunError):
-    pass
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
 
 
 class Unsupported(GitLabError):
@@ -101,7 +103,7 @@ class GitLab:
                         message = f": {detail}"
             except ValueError:
                 pass
-            raise GitLabError(f"GitLab {method} {path}: HTTP {status}{message}")
+            raise GitLabError(f"GitLab {method} {path}: HTTP {status}{message}", status=status)
         if raw:
             return text
         if not text.strip():
@@ -627,14 +629,23 @@ class GitLab:
 
     _REVIEW_EVENTS = ("approve", "request-changes", "comment")
 
-    def pr_review(self, number, event, path, role=None):
+    def pr_review(self, number, event, path, role=None, commit=None):
         if event not in self._REVIEW_EVENTS:
             raise Unsupported(f"the review event {event}")
         base = f"{self._project()}/merge_requests/{number}"
-        self._request("POST", f"{base}/notes", body={"body": self._read_file(path)}, role=role)
         if event == "approve":
-            current = self._request("GET", base)
-            self._request("POST", f"{base}/approve", body={"sha": current.get("sha")}, role=role)
+            sha = commit
+            if sha is None:
+                sha = self._request("GET", base).get("sha")
+            try:
+                self._request("POST", f"{base}/approve", body={"sha": sha}, role=role)
+            except GitLabError as error:
+                if error.status != 409:
+                    raise
+                raise GitLabError(
+                    f"GitLab refused a stale approval of {(sha or '')[:7]}: the merge "
+                    f"request's head moved") from error
+        self._request("POST", f"{base}/notes", body={"body": self._read_file(path)}, role=role)
         return ""
 
     def review_urls(self, number, login):
