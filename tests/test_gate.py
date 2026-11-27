@@ -1017,6 +1017,10 @@ class ForgejoWriteTest(unittest.TestCase):
         c = "tea issues create --title t -- --help"
         self.assertTrue(gate._cli_writes("tea", self.words(c)), c)
 
+    def test_double_dash_hiding_the_verb_is_a_write(self):
+        for c in ("tea -- issues create x", "tea issues -- create x", "fj -- pr close 4"):
+            self.assertTrue(gate._cli_writes(c.split()[0], self.words(c)), c)
+
     def test_tea_and_fj_help_inside_values_is_still_a_write(self):
         for c in ('tea issues create --title t --description "see --help"',
                   "fj issue comment 3 --body -h", 'tea comment 5 "try -h"',

@@ -727,13 +727,15 @@ def _cli_writes(name, args):
             return False
         words = _cli_words(args, _FORGEJO_VALUE_FLAGS)
         if not words:
-            return False
+            return "--" in args
         if words[0] == "api":
             return _api_is_write(args[1:]) or any(a in ("-d", "--data") or a.startswith("--data=") for a in args)
         if words[0] in ("comment", "c"):
             return True
-        if words[0] in _FORGEJO_READ_COMMANDS or len(words) == 1:
+        if words[0] in _FORGEJO_READ_COMMANDS:
             return False
+        if len(words) == 1:
+            return "--" in args  # a `--` may hide the verb
         return not (words[1] in _FORGEJO_READ_VERBS or words[1].isdigit())
     if name == "glab":
         if _cli_help(args, _GLAB_VALUE_FLAGS):
