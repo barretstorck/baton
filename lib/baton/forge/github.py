@@ -296,7 +296,6 @@ class GitHub:
         return self._read(self._issue_list_argv(fields, "closed", limit, search="closed:>=" + day),
                           empty)
 
-
     def pr_list_text(self, fields, state, limit, head=None):
         argv = ["gh", "pr", "list", "--state", state, "--limit", str(limit)]
         if head:
