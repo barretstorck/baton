@@ -105,7 +105,7 @@ class TemplateTest(unittest.TestCase):
     def test_develop_skill_writes_result_line(self):
         text = " ".join(develop_text().split())
         self.assertIn("Result: none | <where it was written>", text)
-        self.assertIn("gh pr edit <P> --body-file", text)
+        self.assertIn("baton pr edit <P> --body-file", text)
         self.assertIn("Port from, Result and Check", text)
 
     def test_develop_skill_handles_hand_check_prompt(self):
@@ -208,7 +208,7 @@ class TemplateTest(unittest.TestCase):
                       text)
         self.assertIn("`git fetch origin refs/spikes/<N>`", text)
         self.assertNotIn("no file is needed", text)
-        for path in ("references/github.md", "references/develop-cases.md"):
+        for path in ("references/commands.md", "references/develop-cases.md"):
             body = " ".join((ROOT / path).read_text().split())
             self.assertIn("names a `git` command", body, path)
 
@@ -307,13 +307,13 @@ class TemplateTest(unittest.TestCase):
         text = (ROOT / "skills/triage/SKILL.md").read_text()
         for needed in ("credentials", "curl | sh", "outside the repository",
                        "encoded", "hooks", "baton triage apply",
-                       "gh search issues", "triager.model"):
+                       "baton issue list", "triager.model"):
             self.assertIn(needed, text)
         for banned in ("Edit", "gh issue edit", "gh issue close"):
             self.assertNotIn(banned, text)
         agent = (ROOT / "agents/baton-triager.md").read_text()
-        for cmd in ("gh repo view", "gh search issues", "gh issue view",
-                    "gh issue list", "baton config", "baton triage apply"):
+        for cmd in ("baton repo view", "baton issue list", "baton triage read",
+                    "baton config", "baton triage apply"):
             self.assertIn(cmd, text, cmd)
             self.assertIn(cmd, agent, cmd)
         self.assertNotIn("ready-check", agent)
@@ -454,7 +454,7 @@ class TemplateTest(unittest.TestCase):
     def test_sprint_skill_redrafts_on_changes(self):
         # The skill wraps lines, so compare with whitespace collapsed.
         text = " ".join(sprint_text().split())
-        self.assertIn("gh pr ready <PR> --undo", text)
+        self.assertIn("baton pr ready <PR> --undo", text)
 
     def test_sprint_skill_dispatches_orchestrator(self):
         text = " ".join(sprint_text().split())
@@ -634,7 +634,7 @@ class TemplateTest(unittest.TestCase):
         for path in ("skills/sprint/SKILL.md", "references/sprint-dispatch.md"):
             self.assertIn("in_flight", read(path))
             self.assertIn("stale", read(path))
-        for path in ("README.md", "references/github.md"):
+        for path in ("README.md", "references/commands.md"):
             self.assertIn("baton task start", read(path))
 
     def test_bumps_documented(self):

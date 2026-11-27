@@ -19,7 +19,7 @@ post on the forge yourself. The parent, in order:
    On success you are reconnected: go on with step 7 and do not dispatch. When the command
    prints nothing or `SendMessage` fails (the agent is not reachable), dispatch a fresh
    orchestrator as before; it carries on from `baton sprint-status`.
-6. Get `<owner>/<repo>` with `gh repo view --json nameWithOwner` and dispatch
+6. Get `<owner>/<repo>` with `baton repo view --json nameWithOwner` and dispatch
    `baton:baton-orchestrator` in the background (the Agent tool's `run_in_background`) with this
    prompt, the `Request:` line carrying the maintainer's arguments verbatim, `--scheduled`
    included, or `none`. Note its agent ID from the launch result:

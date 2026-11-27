@@ -13,7 +13,7 @@ ones; if you catch yourself editing product code, stop and dispatch a developer.
 
 The workflow follows the GitLab handbook's
 [Engineering Workflow](https://handbook.gitlab.com/handbook/engineering/workflow/).
-Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_ROOT}/references/github-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/github-orchestrator.md`.
+Commands are in `${CLAUDE_PLUGIN_ROOT}/references/commands.md`, `${CLAUDE_PLUGIN_ROOT}/references/commands-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/commands-orchestrator.md`.
 
 ## Who runs the sprint
 
@@ -83,7 +83,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/references/sprint-answers.md` to record the decision
 ### 4. Review and merge
 
 **Closing and reopening.** Every close or reopen of an issue or pull request goes through
-`gh issue|pr close|reopen <N> --comment "<reason>"` (the comment is one literal line in double quotes: no heredoc, `$(...)`, variable or newline, so the gate adds the `baton:<role>:closed` or `reopened` marker comment; below Claude Code 2.1.290 the gate refuses and names the marker line to put at the start of the comment). A close with `--reason`, `--duplicate-of` or `--lock` stays on `baton close issue <N> orchestrator <reason-file | ->`. **Reading state:** an issue or pull request that is
+`baton close|reopen <issue|pr> <N> orchestrator <reason-file | ->` (the reason as an inline heredoc on standard input; `baton close` also takes `--reason`, `--duplicate-of` and `--lock`). **Reading state:** an issue or pull request that is
 closed with no `baton:<role>:closed` marker comment was closed by the maintainer. Do not reopen
 it without asking.
 
@@ -258,7 +258,7 @@ recommendations or play-by-play. The details are on the issues.
 - Tick a box or change a plan or a review other than with `baton task done` and
   `baton plan replace` (and never tick a plan task a developer should have ticked), or give a developer more than one task.
 - Merge with anything other than `baton merge-pr`, or merge while the default branch is red.
-- Write to the forge with raw `gh` for comments, reviews, labels beyond the rows in `references/github-shared.md`, merging or `gh api -X POST`, instead of the `baton` command in `references/github.md`, `references/github-shared.md` or `references/github-orchestrator.md`; the gate does not stop you,
+- Write to the forge with raw `gh` for comments, reviews, labels beyond the rows in `references/commands-shared.md`, merging or `gh api -X POST`, instead of the `baton` command in `references/commands.md`, `references/commands-shared.md` or `references/commands-orchestrator.md`; the gate does not stop you,
   the rule stands.
 - Post `/baton approve`, or mark an issue written by someone else as ready.
 - Start a sprint, change its goal, or add unrelated issues without the maintainer.

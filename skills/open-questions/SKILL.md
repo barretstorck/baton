@@ -11,7 +11,7 @@ never change labels, statuses or descriptions: the refiners and the sprint do th
 
 The mention comments that `baton notify` posts are `status` comments, so the list and the order it shows are unchanged.
 
-Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_ROOT}/references/github-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/github-orchestrator.md`. Read
+Commands are in `${CLAUDE_PLUGIN_ROOT}/references/commands.md`, `${CLAUDE_PLUGIN_ROOT}/references/commands-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/commands-orchestrator.md`. Read
 `${CLAUDE_PLUGIN_ROOT}/references/habits.md` first.
 
 ## The loop
@@ -51,7 +51,7 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_R
 5. Go back to step 3 with the next entry.
 6. **Refine.** From the freshly answered issues, choose those that are not `status:ready` and not
    in development. Leave out an issue that is `status:blocked` and has plan progress
-   (`baton tasks issue <N>`) or a pull request (`gh pr list --head <branch>`): the sprint's
+   (`baton tasks issue <N>`) or a pull request (`baton pr list --head <branch>`): the sprint's
    "Answers" step records the decision and resumes it. Dispatch `baton:baton-refiner` agents for
    the rest with `Refine issues <N>, <M>.`, **at most three issues per agent**, all agents in
    parallel. Send an update while they run (see below). When they return, run

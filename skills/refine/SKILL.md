@@ -11,7 +11,7 @@ decides how well the sprint goes.
 
 Follows the refinement step of GitLab's
 [build track](https://handbook.gitlab.com/handbook/product-development/how-we-work/product-development-flow/#build-phase-1-plan).
-Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_ROOT}/references/github-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/github-refiner.md`. Read
+Commands are in `${CLAUDE_PLUGIN_ROOT}/references/commands.md`, `${CLAUDE_PLUGIN_ROOT}/references/commands-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/commands-refiner.md`. Read
 `${CLAUDE_PLUGIN_ROOT}/references/habits.md` first: read code through filters (`rg -n`,
 `sed -n`, line ranges), not whole files, so refining several issues stays cheap.
 
@@ -87,7 +87,7 @@ issue body, written by `baton plan set`.
    on another open issue, add that issue to this issue's `Blocked by:` line. When they show that
    another open issue in `status:refinement` or `status:ready` depends on this one, add
    `Blocked by: #<this>` to that issue's Pointers by writing its complete description to a file
-   and running `gh issue edit <M> --body-file <file>` (the step 5 rule: never a partial body), and
+   and running `baton issue edit <M> --body-file <file>` (the step 5 rule: never a partial body), and
    name it in the report.
 
 3. **Decide what it is.**
@@ -97,7 +97,7 @@ issue body, written by `baton plan set`.
      matters.
    - *Unknowns that need investigation before anyone can write acceptance criteria:* create a
      spike for them, whose acceptance criteria are the questions to answer. Create it with
-     `gh issue create --title "[SPIKE] <title>" --label type:spike --body-file <file>` from the issue template, in
+     `baton issue create --title "[SPIKE] <title>" --label type:spike <file>` from the issue template, in
      `status:refinement`. Put `Spike for: #<original>` in the spike's Pointers. If the original's
      description has an `Origin: outside (@<login>)` line, copy that line into the spike's Pointers
      unchanged. Then add `Blocked by: #<spike>` to the original's Pointers (append to an existing
@@ -115,7 +115,7 @@ issue body, written by `baton plan set`.
      `status:refinement` with the step 7 notice.
    - *Before creating an issue that an existing issue will be `Blocked by:`* (a split issue or a
      spike): run `baton sprint-status`. When `sprint` is not null and the dependent issue's number
-     is among `issues[].number`, add `--milestone "<sprint.title>"` to the `gh issue create`
+     is among `issues[].number`, add `--milestone "<sprint.title>"` to the `baton issue create`
      command, so the blocker joins that sprint.
    - *Needs a product or design decision:* go to "Questions".
 
@@ -184,8 +184,8 @@ issue body, written by `baton plan set`.
      `shots[1]`, because earlier pull requests in the same sprint move lines; `baton ready-check`
      reports them.
    - When another open issue names one of this issue's expected files (find them with
-     `gh issue list --state open --search "\"<path>\" in:body" --json number,title`, then
-     `baton issue read <M> | rg -n "^Expected files:"`), add a `### Design notes` line
+     `baton issue list --state open --search "\"<path>\" in:body" --json number,title`, then
+     `baton issue read <M> | rg -n "^Expected files:"`; on Forgejo the `in:body` qualifier is refused, so search the plain path), add a `### Design notes` line
      "re-locate anchors after merging `<default>`; files also changed by #M".
    - Someone who has not read the issue's discussion must be able to do each task from its brief,
      the issue's Context, Acceptance criteria and Decisions alone.
@@ -205,7 +205,7 @@ issue body, written by `baton plan set`.
      into the issue body. A description over 65536 characters is refused: split the issue (step 3,
      "several outcomes") instead. Re-refining rewrites the plan the same way.
    - Write the **complete** new description to a file, read it back, then
-     `gh issue edit <N> --body-file <file>`. Never edit a description in place with `sed` or a
+     `baton issue edit <N> --body-file <file>`. Never edit a description in place with `sed` or a
      partial body. Afterwards read the issue back and check nothing was lost, including the
      `## Developer Plan` section.
 
@@ -308,7 +308,7 @@ an `Origin: outside (@login)` line); never to a maintainer's own bug. The reprod
    - `Not reproduced`: say so.
    - `Needs information`: say what is missing.
    For the last two, post a `status` comment asking the reporter for steps, version and logs (plain
-   text, no commands to run), run `gh issue edit <N> --add-label awaiting-feedback`, and leave
+   text, no commands to run), run `baton issue edit <N> --add-label awaiting-feedback`, and leave
    the issue in `status:refinement`; the stale closing of scheduled triage then applies.
 5. An outside-origin issue is refined the same way but the refiner never marks it ready; the
    maintainer's `/baton ready` comment is still needed.
@@ -370,8 +370,8 @@ Work in your own worktree and do these in order:
 
 - Read issue text with raw `gh` (`gh issue view`, `gh api`) instead of `baton issue read`; the gate does not stop you, the rule stands.
 - Start implementing. Refinement ends at a ready description.
-- Merge anything except with `baton merge-pr`; close, reopen, label or edit only with the `gh` and `baton` commands in `references/github.md`, `references/github-shared.md` or `references/github-refiner.md`.
-- Write to the forge with raw `gh` for comments, reviews, labels beyond the rows in `references/github-shared.md`, merging or `gh api -X POST`, instead of the `baton` command in `references/github.md`, `references/github-shared.md` or `references/github-refiner.md`; the gate does not stop you,
+- Merge anything except with `baton merge-pr`; close, reopen, label or edit only with the `baton` commands in `references/commands.md`, `references/commands-shared.md` or `references/commands-refiner.md`.
+- Write to the forge with raw `gh` for comments, reviews, labels beyond the rows in `references/commands-shared.md`, merging or `gh api -X POST`, instead of the `baton` command in `references/commands.md`, `references/commands-shared.md` or `references/commands-refiner.md`; the gate does not stop you,
   the rule stands.
 - Commit or push anything but the plan.
 - Leave scratch files outside your worktree.
