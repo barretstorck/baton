@@ -17,13 +17,13 @@ RECENT = 64   # request ids kept in the incremental state; a request's records a
 WINDOW = datetime.timedelta(hours=5)
 _PROMPTS = [
     ("orchestrator", re.compile(r"\A\s*Run the sprint\.")),
-    ("fix", re.compile(r"Do review task \d+\.\d+ of pull request #?(\d+)(?: \(issue #?(\d+)\))?")),
+    ("fix", re.compile(r"Do review task \d+\.\d+ of pull request [#!]?(\d+)(?: \(issue #?(\d+)\))?")),
     ("task", re.compile(r"Do task \d+ of issue #?(\d+)")),
     ("spike", re.compile(r"Do spike issue #?(\d+)")),
-    ("hand-check", re.compile(r"Hand-check pull request #?(\d+)(?: \(issue #?(\d+)\))?")),
-    ("review", re.compile(r"Review pull request #?(\d+)(?: \(issue #?(\d+)\))?")),
+    ("hand-check", re.compile(r"Hand-check pull request [#!]?(\d+)(?: \(issue #?(\d+)\))?")),
+    ("review", re.compile(r"Review pull request [#!]?(\d+)(?: \(issue #?(\d+)\))?")),
     ("refine", re.compile(r"Refine issues? (#?\d+(?:(?:,\s*|\s+and\s+)#?\d+)*)")),
-    ("fix", re.compile(r"(?:Fix CI on|Update) pull request #?(\d+)(?: \(issue #?(\d+)\))?")),
+    ("fix", re.compile(r"(?:Fix CI on|Update) pull request [#!]?(\d+)(?: \(issue #?(\d+)\))?")),
     ("developer", re.compile(r"Implement issue #?(\d+)")),   # before task plans (0.2.0)
 ]
 _TYPES = re.compile(r"baton-(developer|reviewer|refiner|orchestrator)")
