@@ -94,7 +94,6 @@ class TransportTest(unittest.TestCase):
 
     def test_empty_reads(self):
         forge, t = make()
-        self.assertIsNone(forge.issue_body_edits(1))
         self.assertIsNone(forge.issue_timeline(1))
         self.assertEqual(forge.comment_author_types(1), {})
         self.assertEqual(forge._login({"username": "bob"}), {"login": "bob"})
@@ -230,6 +229,38 @@ class IssueTest(unittest.TestCase):
         self.assertEqual(view["comments"][0]["id"], "1")
         self.assertTrue(view["comments"][0]["url"].endswith("#note_1"))
         self.assertIn("sort=asc", t.lines()[-1])
+
+    def test_body_edits_from_system_notes(self):
+        notes = [{"id": 4, "author": {"username": "mallory"}, "system": True,
+                  "body": "changed the description", "created_at": "2026-01-03T00:00:00Z"},
+                 {"id": 3, "author": {"username": "octo"}, "system": True,
+                  "body": "changed the description", "created_at": "2026-01-02T00:00:00Z"},
+                 {"id": 2, "author": {"username": "ann"}, "system": True,
+                  "body": "added ~bug label", "created_at": "2026-01-02T00:00:00Z"},
+                 {"id": 1, "author": {"username": "ann"}, "body": "changed the description",
+                  "created_at": "2026-01-01T00:00:00Z"}]
+        forge, t = make({f"GET {PROJ}/issues/7/notes": (200, notes)})
+        self.assertEqual(forge.issue_body_edits(7), [
+            {"editedAt": "2026-01-03T00:00:00Z",
+             "editor": {"login": "mallory", "__typename": "User"}},
+            {"editedAt": "2026-01-02T00:00:00Z",
+             "editor": {"login": "octo", "__typename": "User"}}])
+        self.assertIn("sort=desc", t.lines()[-1])
+
+    def test_body_edits_later_updated_at(self):
+        notes = [{"id": 1, "author": {"username": "ann"}, "system": True,
+                  "body": "changed the description", "created_at": "2026-01-01T00:00:00Z",
+                  "updated_at": "2026-01-01T05:00:00Z"}]
+        forge, _ = make({f"GET {PROJ}/issues/7/notes": (200, notes)})
+        self.assertEqual(forge.issue_body_edits(7)[0]["editedAt"], "2026-01-01T05:00:00Z")
+
+    def test_body_edits_none_on_error(self):
+        forge, _ = make({f"GET {PROJ}/issues/7/notes": (500, {})})
+        self.assertIsNone(forge.issue_body_edits(7))
+
+    def test_body_edits_empty(self):
+        forge, _ = make({f"GET {PROJ}/issues/7/notes": (200, self.NOTES)})
+        self.assertEqual(forge.issue_body_edits(7), [])
 
     def test_closed_state(self):
         forge, _ = make({f"GET {PROJ}/issues/7": (200, {**self.ISSUE, "state": "closed"})})
