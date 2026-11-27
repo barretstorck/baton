@@ -481,6 +481,87 @@ class CliMarkingTest(unittest.TestCase):
             self.assertFalse(any(line.startswith("gh api") for line in runner.lines()))
 
 
+class RoleTokenPathsTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = pathlib.Path(self.tmp.name) / "o-r"
+        self.dir.mkdir()
+
+    def paths(self):
+        return identity.role_token_paths("gitlab", "o", "r", home=self.tmp.name)
+
+    def write(self, text):
+        (self.dir / "identity.toml").write_text(text)
+
+    def test_both_tables_in_order(self):
+        self.write('[gitlab.reviewer]\ntoken_path = "/r"\n[gitlab.baton]\ntoken_path = "/b"\n')
+        self.assertEqual(list(self.paths().items()), [("baton", "/b"), ("reviewer", "/r")])
+
+    def test_one_table(self):
+        self.write('[gitlab.reviewer]\ntoken_path = "/r"\n')
+        self.assertEqual(self.paths(), {"reviewer": "/r"})
+
+    def test_no_file(self):
+        self.assertEqual(self.paths(), {})
+
+    def test_no_kind_table(self):
+        self.write(VALID)
+        self.assertEqual(self.paths(), {})
+
+    def test_only_token_path(self):
+        self.write('[gitlab]\ntoken_path = "/x"\n')
+        self.assertEqual(self.paths(), {})
+
+    def test_tilde_expanded(self):
+        self.write('[gitlab.baton]\ntoken_path = "~/tok"\n')
+        self.assertEqual(self.paths(), {"baton": os.path.expanduser("~/tok")})
+
+    def test_invalid_toml_and_table(self):
+        self.write("[gitlab")
+        with self.assertRaisesRegex(identity.IdentityError, "not valid TOML"):
+            self.paths()
+        self.write('[gitlab.baton]\nnope = 1\n')
+        with self.assertRaisesRegex(identity.IdentityError, "unknown keys"):
+            self.paths()
+
+
+class ReplaceTokenFileTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = pathlib.Path(self.tmp.name)
+        self.path = self.dir / "tok"
+        self.path.write_text("old\n")
+        os.chmod(self.path, 0o600)
+
+    def test_replaces_keeping_mode(self):
+        got = identity.replace_token_file(str(self.path), lambda: "new")
+        self.assertEqual(got, "new")
+        self.assertEqual(self.path.read_text(), "new\n")
+        self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o600)
+        self.assertEqual(os.listdir(self.dir), ["tok"])
+
+    def test_produce_raising_leaves_file(self):
+        def boom():
+            raise RuntimeError("x")
+        with self.assertRaises(RuntimeError):
+            identity.replace_token_file(str(self.path), boom)
+        self.assertEqual(self.path.read_text(), "old\n")
+        self.assertEqual(os.listdir(self.dir), ["tok"])
+
+    def test_unwritable_folder(self):
+        produce = mock.Mock(return_value="new")
+        os.chmod(self.dir, 0o500)
+        self.addCleanup(os.chmod, self.dir, 0o700)
+        if os.access(self.dir, os.W_OK):
+            self.skipTest("folder permissions not enforced")
+        with self.assertRaisesRegex(identity.IdentityError, "cannot write in"):
+            identity.replace_token_file(str(self.path), produce)
+        produce.assert_not_called()
+        self.assertEqual(self.path.read_text(), "old\n")
+
+
 if __name__ == "__main__":
     unittest.main()
 

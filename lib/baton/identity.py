@@ -187,6 +187,59 @@ def forge_role_token(kind, owner, repo, role, home=None):
     return value
 
 
+def role_token_paths(kind, owner, repo, home=None):
+    """Role table name to its `token_path` (`~` expanded), in ROLE_TABLES order; {} when none."""
+    ident = verify.repo_dir(owner, repo, home) / "identity.toml"
+    try:
+        text = ident.read_text()
+    except FileNotFoundError:
+        return {}
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        raise IdentityError(f"identity.toml is not valid TOML: {e}")
+    if kind not in data:
+        return {}
+    _path, roles = _token_table(kind, data[kind])
+    return {name: os.path.expanduser(roles[name]) for name in ROLE_TABLES if name in roles}
+
+
+def replace_token_file(path, produce):
+    """Atomically replace `path` with the secret `produce()` returns, keeping its permissions.
+
+    The temporary file exists before `produce` runs, so an unwritable folder fails first.
+    """
+    folder = os.path.dirname(path) or "."
+    tmp = None
+    try:
+        try:
+            mode = os.stat(path).st_mode & 0o777
+            fd, tmp = tempfile.mkstemp(dir=folder, prefix=os.path.basename(path) + ".")
+            os.chmod(tmp, mode)
+        except OSError as e:
+            if tmp:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                tmp = None
+            raise IdentityError(f"cannot write in {folder}: {e.strerror or e}")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            secret = produce()
+            f.write(secret + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        tmp = None
+        return secret
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
 def load(owner, repo, home=None):
     path = verify.repo_dir(owner, repo, home) / "identity.toml"
     try:
