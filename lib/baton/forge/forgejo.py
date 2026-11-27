@@ -372,11 +372,47 @@ class Forgejo:
         return out
 
     def _pr_rollup(self, sha):
-        found = self._request("GET", f"{self._repo_path()}/commits/{sha}/status") or {}
-        return [{"__typename": "StatusContext", "context": status.get("context"),
-                 "state": (status.get("status") or "").upper(),
-                 "targetUrl": status.get("target_url")}
-                for status in found.get("statuses") or []]
+        path = f"{self._repo_path()}/commits/{sha}/status"
+        statuses, total, state, page = [], None, "", 1
+        while True:
+            found = self._request("GET", path, params={"limit": 50, "page": page}) or {}
+            batch = found.get("statuses") or []
+            statuses.extend(batch)
+            total = found.get("total_count", total)
+            state = found.get("state") or state
+            if len(batch) < 50:
+                break
+            page += 1
+        out = [{"__typename": "StatusContext", "context": status.get("context"),
+                "state": (status.get("status") or "").upper(),
+                "targetUrl": status.get("target_url")} for status in statuses]
+        short = isinstance(total, int) and total > len(statuses)
+        unlisted = not statuses and state not in ("", "success")
+        if short or unlisted:
+            out.append({"__typename": "StatusContext", "context": "baton:incomplete-status",
+                        "state": "ERROR", "targetUrl": None})
+        return out
+
+    @staticmethod
+    def _is_draft(item):
+        if item.get("draft") is not False:
+            return True
+        title = (item.get("title") or "").strip().lower()
+        return title.startswith(("wip:", "[wip]"))
+
+    @staticmethod
+    def _is_cross_repository(item):
+        head = item.get("head") or {}
+        base = item.get("base") or {}
+        if item.get("flow") or str(head.get("ref") or "").startswith(("refs/pull/", "refs/for/")):
+            return True
+        head_repo, base_repo = head.get("repo"), base.get("repo")
+        if not head_repo or not base_repo:
+            return True
+        for key in ("id", "full_name"):
+            if head_repo.get(key) is not None and head_repo.get(key) == base_repo.get(key):
+                return False
+        return True
 
     def _pr_shape(self, item, names):
         head = item.get("head") or {}
@@ -387,13 +423,12 @@ class Forgejo:
             "title": lambda: item["title"],
             "body": lambda: item.get("body") or "",
             "state": lambda: self._pr_state(item),
-            "isDraft": lambda: bool(item.get("draft")),
+            "isDraft": lambda: self._is_draft(item),
             "mergeable": lambda: "MERGEABLE" if item.get("mergeable") else "CONFLICTING",
             "headRefName": lambda: head.get("ref"),
             "headRefOid": lambda: head.get("sha"),
             "baseRefName": lambda: base.get("ref"),
-            "isCrossRepository": lambda: (head.get("repo") or {}).get("full_name")
-            != (base.get("repo") or {}).get("full_name"),
+            "isCrossRepository": lambda: self._is_cross_repository(item),
             "changedFiles": lambda: item.get("changed_files"),
             "author": lambda: self._login(item.get("user")),
             "url": lambda: item.get("html_url"),

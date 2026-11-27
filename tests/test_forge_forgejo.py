@@ -280,6 +280,49 @@ class PullRequestTest(unittest.TestCase):
         self.assertEqual(got["statusCheckRollup"], [{"__typename": "StatusContext",
                          "context": "ci", "state": "SUCCESS", "targetUrl": "u"}])
 
+    def shape(self, **changes):
+        forge, _ = make()
+        return forge._pr_shape({**self.PR, **changes}, ["isDraft", "isCrossRepository"])
+
+    def test_rollup_reads_every_page(self):
+        first = [{"context": f"c{i}", "status": "success"} for i in range(50)]
+        forge, _ = make({
+            "GET /api/v1/repos/o/r/commits/abc/status?limit=50&page=1":
+                (200, {"statuses": first, "total_count": 51}),
+            "GET /api/v1/repos/o/r/commits/abc/status?limit=50&page=2":
+                (200, {"statuses": [{"context": "last", "status": "failure"}],
+                       "total_count": 51})})
+        got = forge._pr_rollup("abc")
+        self.assertEqual(len(got), 51)
+        self.assertEqual(got[-1]["state"], "FAILURE")
+
+    def test_rollup_short_total_fails_closed(self):
+        forge, _ = make({"GET /api/v1/repos/o/r/commits/abc/status": (200, {
+            "statuses": [{"context": "ci", "status": "success"}], "total_count": 3})})
+        got = forge._pr_rollup("abc")
+        self.assertEqual(got[-1]["state"], "ERROR")
+
+    def test_rollup_failing_state_without_statuses(self):
+        forge, _ = make({"GET /api/v1/repos/o/r/commits/abc/status": (200, {
+            "statuses": [], "state": "failure"})})
+        self.assertEqual(forge._pr_rollup("abc")[0]["state"], "ERROR")
+
+    def test_cross_repository_fails_closed(self):
+        self.assertFalse(self.shape()["isCrossRepository"])
+        self.assertTrue(self.shape(head={"ref": "br", "sha": "abc"},
+                                   base={"ref": "main"})["isCrossRepository"])
+        self.assertTrue(self.shape(head={"ref": "refs/pull/3/head", "sha": "abc",
+                                         "repo": {"full_name": "o/r"}})["isCrossRepository"])
+        self.assertTrue(self.shape(flow=1)["isCrossRepository"])
+
+    def test_draft_fails_closed(self):
+        self.assertFalse(self.shape()["isDraft"])
+        self.assertTrue(self.shape(title=" wip: x")["isDraft"])
+        self.assertTrue(self.shape(title="[WIP] x")["isDraft"])
+        no_draft = {k: v for k, v in self.PR.items() if k != "draft"}
+        forge, _ = make()
+        self.assertTrue(forge._pr_shape(no_draft, ["isDraft"])["isDraft"])
+
     def test_closing_references_unsupported(self):
         forge, t = make()
         with self.assertRaises(Unsupported):
