@@ -630,7 +630,7 @@ _FORGEJO_VALUE_FLAGS = frozenset(
     "--state --limit --lm -p --page -f --fields -k --kind -H --host --style".split())
 _FORGEJO_READ_COMMANDS = frozenset("whoami open o clone C help h version completion".split())
 _FORGEJO_READ_VERBS = frozenset(
-    "list ls view show status diff checkout clean browse search s readme contents get files "
+    "list ls view show status diff checkout browse search s readme contents get files "
     "followers following repos orgs activity members help h".split())
 _GITLAB_READ_VERBS = frozenset(
     "list view status diff checkout browse issues version help check-update completion get show "

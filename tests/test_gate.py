@@ -1028,7 +1028,7 @@ class ForgejoWriteTest(unittest.TestCase):
             self.assertTrue(gate._cli_writes(c.split()[0], self.words(c)), c)
 
     def test_tea_and_fj_unlisted_write_verbs(self):
-        for c in ("fj repo star o/r", "fj user follow bob", "tea issues c --title t",
+        for c in ("fj repo star o/r", "fj user follow bob", "tea issues c --title t", "tea pulls clean 3",
                   "tea issues e 3 --title t"):
             self.assertTrue(gate._cli_writes(c.split()[0], self.words(c)), c)
 
