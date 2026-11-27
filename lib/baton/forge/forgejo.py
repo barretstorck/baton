@@ -1,9 +1,13 @@
+import fnmatch
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
 
 from .. import identity, run
+
+CLOSING = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s+#(\d+)", re.I)
 
 
 class ForgejoError(run.RunError):
@@ -350,7 +354,8 @@ class Forgejo:
 
     _PR_FIELDS = ("number", "title", "body", "state", "isDraft", "mergeable", "headRefName",
                   "headRefOid", "baseRefName", "isCrossRepository", "changedFiles", "author",
-                  "url", "reviewRequests", "comments", "files", "commits", "statusCheckRollup")
+                  "url", "reviewRequests", "comments", "files", "commits", "statusCheckRollup",
+                  "closingIssuesReferences")
 
     @staticmethod
     def _pr_state(item):
@@ -371,7 +376,30 @@ class Forgejo:
                         "messageBody": rest.lstrip("\n")})
         return out
 
-    def _pr_rollup(self, sha):
+    def _closing_refs(self, item):
+        texts = [item.get("body") or ""]
+        for commit in self._pr_commits(item["number"]):
+            texts += [commit["messageHeadline"], commit["messageBody"]]
+        found = {int(n) for text in texts for n in CLOSING.findall(text)}
+        found.discard(item["number"])
+        return [{"number": n} for n in sorted(found) if self._is_plain_issue(n)]
+
+    def _is_plain_issue(self, number):
+        """True when the number is an issue of this repository, not a pull request."""
+        try:
+            found = self._request("GET", f"{self._repo_path()}/issues/{number}")
+        except ForgejoError:
+            return False
+        return isinstance(found, dict) and "pull_request" not in found
+
+    def _required_contexts(self, base):
+        branch = urllib.parse.quote(base, safe="")
+        found = self._request("GET", f"{self._repo_path()}/branches/{branch}") or {}
+        if not found.get("enable_status_check"):
+            return []
+        return list(found.get("status_check_contexts") or [])
+
+    def _pr_rollup(self, sha, base=None):
         path = f"{self._repo_path()}/commits/{sha}/status"
         statuses, total, state, page = [], None, "", 1
         while True:
@@ -391,6 +419,19 @@ class Forgejo:
         if short or unlisted:
             out.append({"__typename": "StatusContext", "context": "baton:incomplete-status",
                         "state": "ERROR", "targetUrl": None})
+        if base:
+            try:
+                required = self._required_contexts(base)
+            except ForgejoError:
+                out.append({"__typename": "StatusContext",
+                            "context": "baton:required-contexts-unknown",
+                            "state": "ERROR", "targetUrl": None})
+                required = []
+            names = [status.get("context") or "" for status in statuses]
+            for pattern in required:
+                if not any(fnmatch.fnmatchcase(name, pattern) for name in names):
+                    out.append({"__typename": "StatusContext", "context": pattern,
+                                "state": "PENDING", "targetUrl": None})
         return out
 
     @staticmethod
@@ -437,7 +478,8 @@ class Forgejo:
             "comments": lambda: self._comments(number),
             "files": lambda: self._pr_files(number),
             "commits": lambda: self._pr_commits(number),
-            "statusCheckRollup": lambda: self._pr_rollup(head.get("sha")),
+            "statusCheckRollup": lambda: self._pr_rollup(head.get("sha"), base.get("ref")),
+            "closingIssuesReferences": lambda: self._closing_refs(item),
         }
         return {name: shapes[name]() for name in names}
 

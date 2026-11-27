@@ -259,7 +259,7 @@ class PullRequestTest(unittest.TestCase):
 
     def test_pr_view_all_fields(self):
         from baton.merge import PR_FIELDS
-        fields = ",".join(f for f in PR_FIELDS.split(",") if f != "closingIssuesReferences")
+        fields = PR_FIELDS
         forge, _ = make({
             "GET /api/v1/repos/o/r/pulls/3/files": (200, [
                 {"filename": "a.py", "additions": 2, "deletions": 1}]),
@@ -268,6 +268,7 @@ class PullRequestTest(unittest.TestCase):
             "GET /api/v1/repos/o/r/commits/abc/status": (200, {"statuses": [
                 {"context": "ci", "status": "success", "target_url": "u"}]}),
             "GET /api/v1/repos/o/r/issues/3/comments": (200, []),
+            "GET /api/v1/repos/o/r/branches/main": (200, {"enable_status_check": False}),
             "GET /api/v1/repos/o/r/pulls/3": (200, self.PR)})
         got = forge.pr_view(3, fields)
         self.assertEqual(set(got), set(fields.split(",")))
@@ -279,6 +280,7 @@ class PullRequestTest(unittest.TestCase):
                                            "messageBody": "body"}])
         self.assertEqual(got["statusCheckRollup"], [{"__typename": "StatusContext",
                          "context": "ci", "state": "SUCCESS", "targetUrl": "u"}])
+        self.assertEqual(got["closingIssuesReferences"], [])
 
     def shape(self, **changes):
         forge, _ = make()
@@ -307,6 +309,34 @@ class PullRequestTest(unittest.TestCase):
             "statuses": [], "state": "failure"})})
         self.assertEqual(forge._pr_rollup("abc")[0]["state"], "ERROR")
 
+    def rollup_with(self, branch, statuses):
+        replies = {"GET /api/v1/repos/o/r/commits/abc/status": (200, {"statuses": statuses})}
+        if branch is not None:
+            replies["GET /api/v1/repos/o/r/branches/main"] = (200, branch)
+        forge, _ = make(replies)
+        return forge._pr_rollup("abc", "main")
+
+    def test_required_context_matched_by_glob(self):
+        got = self.rollup_with({"enable_status_check": True, "status_check_contexts": ["ci/*"]},
+                               [{"context": "ci/test", "status": "success"}])
+        self.assertEqual([c["context"] for c in got], ["ci/test"])
+
+    def test_required_context_missing_is_pending(self):
+        got = self.rollup_with({"enable_status_check": True, "status_check_contexts": ["ci/*"]},
+                               [])
+        self.assertEqual(got, [{"__typename": "StatusContext", "context": "ci/*",
+                                "state": "PENDING", "targetUrl": None}])
+
+    def test_required_contexts_off(self):
+        got = self.rollup_with({"enable_status_check": False, "status_check_contexts": ["x"]},
+                               [])
+        self.assertEqual(got, [])
+
+    def test_branch_read_failure_fails_closed(self):
+        got = self.rollup_with(None, [{"context": "ci", "status": "success"}])
+        self.assertEqual(got[-1]["context"], "baton:required-contexts-unknown")
+        self.assertEqual(got[-1]["state"], "ERROR")
+
     def test_cross_repository_fails_closed(self):
         self.assertFalse(self.shape()["isCrossRepository"])
         self.assertTrue(self.shape(head={"ref": "br", "sha": "abc"},
@@ -323,11 +353,27 @@ class PullRequestTest(unittest.TestCase):
         forge, _ = make()
         self.assertTrue(forge._pr_shape(no_draft, ["isDraft"])["isDraft"])
 
-    def test_closing_references_unsupported(self):
-        forge, t = make()
-        with self.assertRaises(Unsupported):
-            forge.pr_view(1, "closingIssuesReferences")
-        self.assertEqual(t.calls, [])
+    def test_closing_references_drop_pull_requests_and_missing(self):
+        forge, _ = make({"GET /api/v1/repos/o/r/pulls/3/commits": (200, []),
+                         "GET /api/v1/repos/o/r/issues/4": (200, {"number": 4}),
+                         "GET /api/v1/repos/o/r/issues/5": (200, {"number": 5, "pull_request": {}}),
+                         "GET /api/v1/repos/o/r/issues/6": (404, "")})
+        body = "Closes #3, closes #4, fixes #5, resolves #6"
+        got = forge._pr_shape({**self.PR, "body": body}, ["closingIssuesReferences"])
+        self.assertEqual(got["closingIssuesReferences"], [{"number": 4}])
+
+    def test_closing_references_from_body_and_commits(self):
+        forge, _ = make({"GET /api/v1/repos/o/r/pulls/3/commits": (200, [
+            {"sha": "a", "commit": {"message": "Add x\n\nCloses: #7"}},
+            {"sha": "b", "commit": {"message": "see #9"}}]),
+            "GET /api/v1/repos/o/r/issues/4": (200, {"number": 4}),
+            "GET /api/v1/repos/o/r/issues/7": (200, {"number": 7})})
+        got = forge._pr_shape({**self.PR, "body": "Fixes #4"}, ["closingIssuesReferences"])
+        self.assertEqual(got["closingIssuesReferences"], [{"number": 4}, {"number": 7}])
+        forge, _ = make({"GET /api/v1/repos/o/r/pulls/3/commits": (200, [
+            {"sha": "b", "commit": {"message": "see #9"}}])})
+        got = forge._pr_shape({**self.PR, "body": "no keyword"}, ["closingIssuesReferences"])
+        self.assertEqual(got["closingIssuesReferences"], [])
 
     def test_pr_merge(self):
         forge, t = make({"POST /api/v1/repos/o/r/pulls/3/merge": (200, "")})
