@@ -1,4 +1,5 @@
 """`baton doctor`: print the identity tier, check each configured GitHub App and, at tier 2, the machine user, and warn about unlimited spikes."""
+import datetime
 import json
 import time
 import urllib.error
@@ -82,6 +83,8 @@ def forgejo_lines(url, get=identity._get):
 
 
 GITLAB_VERSION_PATH = "/api/v4/version"
+GITLAB_SELF_PATH = "/api/v4/personal_access_tokens/self"
+ROTATE_WITHIN_DAYS = 30
 GITLAB_MIN_VERSION = (17, 0)
 
 
@@ -135,6 +138,40 @@ def gitlab_lines(url, token, get=http_get):
         floor = ".".join(str(x) for x in GITLAB_MIN_VERSION)
         return [f"forge: FAIL: GitLab {version} is below the minimum {floor}"], False
     return [f"forge: ok (GitLab {version}, plan {data.get('plan') or 'unknown'})"], True
+
+
+def gitlab_expiry_lines(url, owner, repo, today, get=http_get, home=None):
+    """Warnings for role tokens that expire within ROTATE_WITHIN_DAYS of `today`; never a token."""
+    try:
+        paths = identity.role_token_paths("gitlab", owner, repo, home=home)
+        tokens = {name: identity._read_token(path, f"[gitlab.{name}] token_path file")
+                  for name, path in paths.items()}
+    except identity.IdentityError as e:
+        return [f"token: WARN: {e}"]
+    lines = []
+    for name, token in tokens.items():
+        status, _headers, body = get(url.rstrip("/") + GITLAB_SELF_PATH,
+                                     {"Accept": "application/json", "PRIVATE-TOKEN": token})
+        if status == 401:
+            lines.append(f"token: WARN: [gitlab.{name}] was refused (HTTP 401); "
+                         "it may have expired: renew it by hand")
+            continue
+        try:
+            if status != 200:
+                raise ValueError
+            data = json.loads(body)
+            value = data.get("expires_at") if isinstance(data, dict) else None
+            expires = datetime.date.fromisoformat(str(value)[:10]) if value else None
+        except (ValueError, TypeError):
+            lines.append(f"token: WARN: [gitlab.{name}] expiry not checked (HTTP {status})")
+            continue
+        if expires is None:
+            continue
+        days = (expires - today).days
+        if days <= ROTATE_WITHIN_DAYS:
+            lines.append(f"token: WARN: [gitlab.{name}] expires {expires.isoformat()} (in {days} days); "
+                         "run baton identity rotate")
+    return lines
 
 
 def main(repo, runner=_run.run, get=identity._get, post=identity._post, now=None, home=None,

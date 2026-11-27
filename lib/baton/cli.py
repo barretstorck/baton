@@ -968,6 +968,8 @@ def cmd_doctor(opts):
         except identity.IdentityError:
             token = None
         lines, ok = doctor.gitlab_lines(found["url"], token)
+        lines = lines + doctor.gitlab_expiry_lines(found["url"], found["owner"], found["repo"],
+                                                   datetime.now().date())
         print("\n".join(lines + doctor.GITHUB_ONLY_SKIPS + doctor.spike_lines(spike)))
         return 0 if ok else 1
     return doctor.main(_repo_name(), spike=spike)

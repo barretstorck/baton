@@ -1,5 +1,7 @@
 import contextlib
+import datetime
 import io
+import json
 import pathlib
 import tempfile
 import unittest
@@ -267,6 +269,91 @@ class GitLabProbeTest(unittest.TestCase):
         self.assertNotIn("sekret", "".join(lines))
 
 
+class GitlabExpiryLinesTest(unittest.TestCase):
+    TODAY = datetime.date(2026, 11, 27)
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.home = pathlib.Path(tmp.name)
+
+    def setup_tables(self, names=("baton", "reviewer")):
+        folder = self.home / "o-r"
+        folder.mkdir(parents=True, exist_ok=True)
+        text = ""
+        for name in names:
+            tok = self.home / f"{name}.tok"
+            tok.write_text(f"SECRET-{name}\n")
+            text += f'[gitlab.{name}]\ntoken_path = "{tok}"\n'
+        (folder / "identity.toml").write_text(text)
+
+    def fake(self, status=200, expires="2026-12-27"):
+        self.seen = []
+
+        def get(url, h):
+            self.seen.append((url, dict(h)))
+            return status, {}, json.dumps({"expires_at": expires}).encode()
+        return get
+
+    def lines(self, get):
+        return doctor.gitlab_expiry_lines("https://g.example/", "o", "r", self.TODAY, get=get, home=self.home)
+
+    def test_thirty_days_warns(self):
+        self.setup_tables(("baton",))
+        out = self.lines(self.fake(expires="2026-12-27"))
+        self.assertEqual(out, ["token: WARN: [gitlab.baton] expires 2026-12-27 (in 30 days); "
+                               "run baton identity rotate"])
+        self.assertEqual(self.seen[0][0], "https://g.example/api/v4/personal_access_tokens/self")
+        self.assertEqual(self.seen[0][1]["PRIVATE-TOKEN"], "SECRET-baton")
+
+    def test_twenty_nine_days_warns(self):
+        self.setup_tables(("baton",))
+        self.assertIn("in 29 days", self.lines(self.fake(expires="2026-12-26"))[0])
+
+    def test_thirty_one_days_and_null_print_nothing(self):
+        self.setup_tables(("baton",))
+        self.assertEqual(self.lines(self.fake(expires="2026-12-28")), [])
+        self.assertEqual(self.lines(self.fake(expires=None)), [])
+
+    def test_401(self):
+        self.setup_tables(("baton",))
+        self.assertEqual(self.lines(self.fake(status=401)),
+                         ["token: WARN: [gitlab.baton] was refused (HTTP 401); "
+                          "it may have expired: renew it by hand"])
+
+    def test_500(self):
+        self.setup_tables(("baton",))
+        self.assertEqual(self.lines(self.fake(status=500)),
+                         ["token: WARN: [gitlab.baton] expiry not checked (HTTP 500)"])
+
+    def test_unreadable_reply(self):
+        self.setup_tables(("baton",))
+        out = self.lines(lambda u, h: (200, {}, b"nope"))
+        self.assertEqual(out, ["token: WARN: [gitlab.baton] expiry not checked (HTTP 200)"])
+
+    def test_no_tables(self):
+        self.assertEqual(self.lines(self.fake()), [])
+
+    def test_missing_token_file(self):
+        self.setup_tables(("baton",))
+        (self.home / "baton.tok").unlink()
+        out = self.lines(self.fake())
+        self.assertEqual(len(out), 1)
+        self.assertTrue(out[0].startswith("token: WARN: cannot read"))
+
+    def test_invalid_identity_toml(self):
+        (self.home / "o-r").mkdir()
+        (self.home / "o-r" / "identity.toml").write_text("[[[")
+        out = self.lines(self.fake())
+        self.assertEqual(len(out), 1)
+        self.assertTrue(out[0].startswith("token: WARN: "))
+
+    def test_token_in_no_line(self):
+        self.setup_tables()
+        for get in (self.fake(), self.fake(status=401), self.fake(status=500)):
+            self.assertNotIn("SECRET", "\n".join(self.lines(get)))
+
+
 class CmdDoctorForgeTest(unittest.TestCase):
     def run_doctor(self, origin, local=None, gl_ok=True, token="tok", token_error=False):
         from baton import cli
@@ -286,6 +373,8 @@ class CmdDoctorForgeTest(unittest.TestCase):
                                   return_value=(["forge: ok (Forgejo 1)"], True)) as fl, \
                 mock.patch.object(cli.doctor, "gitlab_lines",
                                   return_value=(["forge: ok (GitLab 17.0)"], gl_ok)) as self.gl, \
+                mock.patch.object(cli.doctor, "gitlab_expiry_lines",
+                                  return_value=["token: WARN: [gitlab.baton] expires soon"]) as self.ex, \
                 mock.patch.object(cli.identity, "forge_token", **token_kw) as self.ft, \
                 mock.patch.object(cli.doctor, "main", return_value=0) as main, \
                 mock.patch.object(cli, "_repo_name", return_value="o/r"), \
@@ -323,6 +412,14 @@ class CmdDoctorForgeTest(unittest.TestCase):
         fl.assert_not_called()
         for call in run_.call_args_list:
             self.assertNotEqual(call.args[0][0], "gh")
+
+    def test_gitlab_expiry_line_printed_and_exit_stays_zero(self):
+        code, out, _, _, _ = self.run_doctor(
+            "https://gl.example/a/b/proj.git", "## Hosts\n\nforge: gitlab https://gl.example\n")
+        self.assertEqual(code, 0)
+        self.assertIn("token: WARN: [gitlab.baton] expires soon", out)
+        args = self.ex.call_args.args
+        self.assertEqual(args[:3], ("https://gl.example", "a/b", "proj"))
 
     def test_gitlab_com(self):
         code, _, _, _, _ = self.run_doctor("https://gitlab.com/g/p.git")
