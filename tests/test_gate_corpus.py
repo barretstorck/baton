@@ -17,6 +17,8 @@ IP = ".".join(["192", "168", "7", "7"])
 HOME_PATH = "/" + "home/app/work"
 MAIL = "alice" + "@" + "corp-mail.test"
 TERM = "Zebrowski"
+LOCAL_MODULE = ".".join(["pkg", "adapters", "local"])
+MDNS_HOST = "nas" + "." + "local"
 
 ALLOWED = {
     # (a) raw forge writes with a clean body
@@ -124,10 +126,19 @@ ALLOWED = {
         'gh pr list --search ""',
         "echo hi > new.md && gh pr edit 5 --body-file new.md",
     ),
+    # (l) python module paths ending in local
+    "l python module paths ending in local": (
+        "gh issue comment 5 --body-file - <<'EOF'\nfrom " + LOCAL_MODULE + " import Adapter\nEOF",
+        "gh issue comment 5 --body \"name = '" + LOCAL_MODULE + "'\"",
+        "git commit -m \"wire up\nfrom " + LOCAL_MODULE + " import Adapter\"",
+    ),
 }
 
 # (command shape, expected finding kind); kind "bypass" is a hook bypass, not a privacy finding
 REFUSED = (
+    ("gh issue comment 5 --body \"host %s\"" % MDNS_HOST, "internal-domain"),
+    ("gh issue comment 5 --body-file - <<'EOF'\nhost %s\nEOF" % MDNS_HOST, "internal-domain"),
+    ('git commit -m "host %s"' % MDNS_HOST, "internal-domain"),
     ('gh issue comment 5 --body "host %s is down"' % IP, "private-ip"),
     ('gh issue comment 5 --body "see %s"' % HOME_PATH, "host-path"),
     ('gh pr create --title t --body "ask %s"' % MAIL, "email"),

@@ -72,9 +72,29 @@ def load_terms(path=None, warn=True):
             if line.strip() and not line.strip().startswith("#")]
 
 
+_IDENT = re.compile(r"[A-Za-z_]\w*\Z")
+_IMPORT_OPERAND = re.compile(
+    r"\s*(?:from\s+\.*|import\s+(?:[\w.]+\s*,\s*)*)\Z")
+_OPERAND_END = re.compile(r"(?:\s|,|\Z)")
+
+
+def _python_module_path(line, match):
+    """True when an internal-domain match is a Python module path ending in `local`."""
+    parts = match.group(0).split(".")
+    if parts[-1] != "local" or not all(_IDENT.match(part) for part in parts):
+        return False
+    start, end = match.span()
+    if _IMPORT_OPERAND.match(line[:start]) and _OPERAND_END.match(line, end):
+        return True
+    return (len(parts) >= 3 and start > 0 and end < len(line)
+            and line[start - 1] in "'\"" and line[end] == line[start - 1])
+
+
 def _matches(kind, pattern, line):
     for match in pattern.finditer(line):
         text = match.group(0)
+        if kind == "internal-domain" and _python_module_path(line, match):
+            continue
         if kind == "email" and (_EMAIL_OK.search(text) or text.startswith("git@")):
             continue
         yield text
