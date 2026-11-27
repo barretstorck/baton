@@ -640,6 +640,24 @@ class MergeRequestWriteTest(unittest.TestCase):
         self.assertEqual(t.lines(), [f"PUT {PROJ}/merge_requests/4/merge"])
         self.assertEqual(self.sent(t, 0), {"sha": "abc"})
 
+    def test_pr_merge_refused_names_detailed_status(self):
+        forge, t = make({f"PUT {PROJ}/merge_requests/4/merge": (405, ""),
+                         f"GET {PROJ}/merge_requests/4": (
+                             200, {"detailed_merge_status": "ci_must_pass"})})
+        with self.assertRaises(GitLabError) as ctx:
+            forge.pr_merge(4, "abc")
+        self.assertIn("HTTP 405", str(ctx.exception))
+        self.assertIn("detailed_merge_status: ci_must_pass", str(ctx.exception))
+        self.assertNotIn(TOKEN, str(ctx.exception))
+
+    def test_pr_merge_refused_and_unreadable_keeps_error(self):
+        forge, t = make({f"PUT {PROJ}/merge_requests/4/merge": (405, ""),
+                         f"GET {PROJ}/merge_requests/4": (500, "")})
+        with self.assertRaises(GitLabError) as ctx:
+            forge.pr_merge(4, "abc")
+        self.assertIn("HTTP 405", str(ctx.exception))
+        self.assertNotIn("detailed_merge_status", str(ctx.exception))
+
     def test_approve_posts_note_then_approves_head_sha(self):
         forge, t = make({f"POST {PROJ}/merge_requests/4/notes": (201, {"id": 1}),
                          f"GET {PROJ}/merge_requests/4": (200, {"sha": "head1"}),

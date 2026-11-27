@@ -556,8 +556,16 @@ class GitLab:
         return found["web_url"] + "\n"
 
     def pr_merge(self, number, head_oid, role=None):
-        self._request("PUT", f"{self._project()}/merge_requests/{number}/merge",
-                      body={"sha": head_oid})
+        base = f"{self._project()}/merge_requests/{number}"
+        try:
+            self._request("PUT", f"{base}/merge", body={"sha": head_oid})
+        except GitLabError as error:
+            try:
+                found = self._request("GET", base)
+            except GitLabError:
+                raise error from None
+            status = (found or {}).get("detailed_merge_status") or "unknown"
+            raise GitLabError(f"{error}; detailed_merge_status: {status}") from error
         return ""
 
     _REVIEW_EVENTS = ("approve", "request-changes", "comment")
