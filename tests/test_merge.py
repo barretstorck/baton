@@ -27,7 +27,7 @@ def make_pr(**overrides):
         "number": 9, "state": "OPEN", "isDraft": False, "mergeable": "MERGEABLE",
         "headRefOid": HEAD, "headRefName": "issue-4-flag",
         "body": "Adds the flag.\n\nCloses #4",
-        "files": [{"path": "src/tool.py"}],
+        "files": [{"path": "src/tool.py", "previousPath": None}],
         "statusCheckRollup": [{"__typename": "CheckRun", "name": "test",
                                "status": "COMPLETED", "conclusion": "SUCCESS"}],
         "closingIssuesReferences": [{"number": 4}],
@@ -205,17 +205,36 @@ class CheckTest(unittest.TestCase):
         merge.check(make_pr(), make_config(), OWNER, "main", runner)
         self.assertFalse(any(line.startswith("gh pr diff") for line in runner.lines()))
 
+    def test_rename_out_of_a_protected_path_needs_approval(self):
+        files = [{"path": "lib/tool.yml", "previousPath": ".github/workflows/ci.yml"}]
+        found = problems(files=files)
+        self.assertTrue(any("protected" in p and ".github/workflows/ci.yml" in p
+                            for p in found), found)
+
+    def test_rename_out_of_a_protected_path_unlocks_with_approval(self):
+        files = [{"path": "lib/tool.yml", "previousPath": ".github/workflows/ci.yml"}]
+        comments = [approval(), {"author": {"login": OWNER}, "body": "/baton approve abc1234"}]
+        self.assertEqual(problems(files=files, comments=comments), [])
+
+    def test_unknown_rename_source_fails_closed(self):
+        files = [{"path": "src/tool.py"}]
+        found = problems(files=files)
+        self.assertTrue(any("protected" in p and "src/tool.py (rename source unknown)" in p
+                            for p in found), found)
+        self.assertEqual(merge.check(make_pr(files=files), make_config(protected_paths=[]),
+                                     OWNER, "main", FakeRunner()), [])
+
     def test_protected_path_needs_approval(self):
-        files = [{"path": ".github/workflows/ci.yml"}]
+        files = [{"path": ".github/workflows/ci.yml", "previousPath": None}]
         self.assertTrue(any("protected" in p for p in problems(files=files)))
 
     def test_owner_approval_naming_the_head_commit_unlocks(self):
-        files = [{"path": ".github/workflows/ci.yml"}]
+        files = [{"path": ".github/workflows/ci.yml", "previousPath": None}]
         ok = [approval(), {"author": {"login": OWNER}, "body": "/baton approve abc1234"}]
         self.assertEqual(problems(files=files, comments=ok), [])
 
     def test_second_maintainer_approval_unlocks_but_a_stranger_does_not(self):
-        files = [{"path": ".github/workflows/ci.yml"}]
+        files = [{"path": ".github/workflows/ci.yml", "previousPath": None}]
         for login, ok in (("second", True), ("mallory", False)):
             with self.subTest(login=login):
                 comments = [approval(), {"author": {"login": login}, "body": "/baton approve abc1234"}]
@@ -224,7 +243,7 @@ class CheckTest(unittest.TestCase):
                 self.assertEqual(not any("protected" in p for p in found), ok)
 
     def test_a_bot_approval_does_not_unlock_protected_paths(self):
-        files = [{"path": ".github/workflows/ci.yml"}]
+        files = [{"path": ".github/workflows/ci.yml", "previousPath": None}]
         bots = {"baton[bot]", "baton-reviewer[bot]"}
         for login in ("baton", "app/baton", "baton-reviewer"):
             for owner in ([OWNER], [OWNER, "baton[bot]"]):
@@ -257,7 +276,7 @@ class CheckTest(unittest.TestCase):
                 self.assertTrue(any("reviewer approval" in p for p in found))
 
     def test_other_approvals_do_not_unlock(self):
-        files = [{"path": ".baton/brief.md"}]
+        files = [{"path": ".baton/brief.md", "previousPath": None}]
         cases = {
             "no sha": [{"author": {"login": OWNER}, "body": "/baton approve"}],
             "old sha": [{"author": {"login": OWNER}, "body": "/baton approve 9999999"}],
@@ -297,7 +316,7 @@ class CheckTest(unittest.TestCase):
 
     def test_protected_approval_of_an_earlier_identical_change_unlocks(self):
         old = "e" * 40
-        files = [{"path": ".github/workflows/ci.yml"}]
+        files = [{"path": ".github/workflows/ci.yml", "previousPath": None}]
         runner = FakeRunner({f"git merge-base origin/main {old[:7]}": "b1\n",
                              f"git merge-base origin/main {HEAD}": "b2\n",
                              f"git diff --binary b1 {old[:7]} -- .github/workflows/ci.yml": "+on: push\n",
@@ -309,7 +328,7 @@ class CheckTest(unittest.TestCase):
 
     def test_protected_approval_of_a_different_change_does_not_unlock(self):
         old = "e" * 40
-        files = [{"path": ".github/workflows/ci.yml"}]
+        files = [{"path": ".github/workflows/ci.yml", "previousPath": None}]
         runner = FakeRunner({f"git merge-base origin/main {old[:7]}": "b1\n",
                              f"git merge-base origin/main {HEAD}": "b2\n",
                              f"git diff --binary b1 {old[:7]} -- .github/workflows/ci.yml": "+on: push\n",
