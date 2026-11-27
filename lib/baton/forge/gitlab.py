@@ -326,6 +326,107 @@ class GitLab:
             raise GitLabError(f"GitLab user not found: {login}")
         return {**found[0], "login": found[0].get("username", login)}
 
+    # --- merge requests ---
+
+    _PR_FIELDS = ("number", "title", "body", "state", "isDraft", "mergeable", "headRefName",
+                  "headRefOid", "baseRefName", "isCrossRepository", "changedFiles", "author",
+                  "url", "reviewRequests", "comments", "files", "commits")
+
+    _UNKNOWN_MERGE = ("checking", "unchecked", "preparing", "approvals_syncing")
+
+    @staticmethod
+    def _mr_state(item):
+        state = item.get("state")
+        if state == "merged":
+            return "MERGED"
+        return "OPEN" if state == "opened" else "CLOSED"
+
+    @classmethod
+    def _mr_mergeable(cls, item):
+        if item.get("has_conflicts"):
+            return "CONFLICTING"
+        if item.get("detailed_merge_status") in cls._UNKNOWN_MERGE:
+            return "UNKNOWN"
+        return "MERGEABLE"
+
+    @staticmethod
+    def _is_cross_repository(item):
+        source, target = item.get("source_project_id"), item.get("target_project_id")
+        return not (source is not None and target is not None and source == target)
+
+    @staticmethod
+    def _changed_files(item):
+        count = str(item.get("changes_count") or "")
+        return int(count) if count.isdigit() else None
+
+    def _mr_diffs(self, iid):
+        return self._paged(f"{self._project()}/merge_requests/{iid}/diffs")
+
+    def _mr_files(self, iid):
+        out = []
+        for item in self._mr_diffs(iid):
+            lines = (item.get("diff") or "").split("\n")
+            out.append({"path": item["new_path"],
+                        "additions": sum(1 for line in lines if line.startswith("+")),
+                        "deletions": sum(1 for line in lines if line.startswith("-"))})
+        return out
+
+    def _mr_commits(self, iid):
+        out = []
+        for item in self._paged(f"{self._project()}/merge_requests/{iid}/commits"):
+            _, _, rest = (item.get("message") or "").partition("\n")
+            out.append({"oid": item["id"], "messageHeadline": item.get("title") or "",
+                        "messageBody": rest.lstrip("\n")})
+        return out
+
+    def _mr_shape(self, item, names):
+        iid = item["iid"]
+        shapes = {
+            "number": lambda: iid,
+            "title": lambda: item["title"],
+            "body": lambda: item.get("description") or "",
+            "state": lambda: self._mr_state(item),
+            "isDraft": lambda: item.get("draft") is not False,
+            "mergeable": lambda: self._mr_mergeable(item),
+            "headRefName": lambda: item.get("source_branch"),
+            "headRefOid": lambda: item.get("sha"),
+            "baseRefName": lambda: item.get("target_branch"),
+            "isCrossRepository": lambda: self._is_cross_repository(item),
+            "changedFiles": lambda: self._changed_files(item),
+            "author": lambda: self._login(item.get("author")),
+            "url": lambda: item.get("web_url"),
+            "reviewRequests": lambda: [self._login(user) for user in item.get("reviewers") or []],
+            "comments": lambda: self._notes("merge_requests", iid, item["web_url"]),
+            "files": lambda: self._mr_files(iid),
+            "commits": lambda: self._mr_commits(iid),
+        }
+        return {name: shapes[name]() for name in names}
+
+    def pr_view(self, number, fields, empty=None):
+        names = self._field_names(fields, self._PR_FIELDS)
+        item = self._request("GET", f"{self._project()}/merge_requests/{number}")
+        return self._mr_shape(item, names)
+
+    def pr_list_text(self, fields, state, limit):
+        names = self._field_names(fields, self._PR_FIELDS)
+        wanted = {"open": "opened"}.get(state, state)
+        items = self._paged(f"{self._project()}/merge_requests", {"state": wanted}, limit)
+        return json.dumps([self._mr_shape(item, names) for item in items])
+
+    def pr_diff(self, number):
+        out = []
+        for item in self._mr_diffs(number):
+            old, new = item.get("old_path"), item.get("new_path")
+            text = item.get("diff") or ""
+            if not text and (item.get("too_large") or item.get("collapsed")):
+                raise GitLabError(f"GitLab merge request {number}: the diff of {new} "
+                                  "is too large to read")
+            out.append(f"diff --git a/{old} b/{new}\n")
+            out.append("--- " + ("/dev/null" if item.get("new_file") else f"a/{old}") + "\n")
+            out.append("+++ " + ("/dev/null" if item.get("deleted_file") else f"b/{new}") + "\n")
+            out.append(text if not text or text.endswith("\n") else text + "\n")
+        return "".join(out)
+
     # --- not supported yet ---
 
     def review_edit_body(self, number, review_id, path, role=None):

@@ -352,5 +352,97 @@ class IssueTest(unittest.TestCase):
             forge.user("zed")
 
 
+class MergeRequestTest(unittest.TestCase):
+    MR = {"iid": 7, "title": "T", "description": "D", "state": "opened", "draft": False,
+          "has_conflicts": False, "detailed_merge_status": "mergeable",
+          "source_branch": "feat", "sha": "abc", "target_branch": "main",
+          "source_project_id": 1, "target_project_id": 1, "changes_count": "2",
+          "author": {"username": "ann"}, "web_url": "https://g.example/o/r/-/merge_requests/7",
+          "reviewers": [{"username": "bob"}]}
+
+    def view(self, fields, **changes):
+        forge, t = make({
+            f"GET {PROJ}/merge_requests/7/notes": (200, [
+                {"id": 3, "author": {"username": "c"}, "body": "hi", "created_at": "t"},
+                {"id": 4, "system": True}]),
+            f"GET {PROJ}/merge_requests/7/diffs": (200, [
+                {"old_path": "a", "new_path": "a", "diff": "@@ -1 +1,2 @@\n-x\n+y\n+z\n"}]),
+            f"GET {PROJ}/merge_requests/7/commits": (200, [
+                {"id": "c1", "title": "Head", "message": "Head\n\nBody\nmore"}]),
+            f"GET {PROJ}/merge_requests/7": (200, {**self.MR, **changes})})
+        return forge.pr_view(7, fields), t
+
+    def test_every_field(self):
+        view, _ = self.view(",".join(GitLab._PR_FIELDS))
+        self.assertEqual(view["number"], 7)
+        self.assertEqual(view["body"], "D")
+        self.assertEqual(view["state"], "OPEN")
+        self.assertFalse(view["isDraft"])
+        self.assertEqual(view["mergeable"], "MERGEABLE")
+        self.assertEqual((view["headRefName"], view["headRefOid"], view["baseRefName"]),
+                         ("feat", "abc", "main"))
+        self.assertFalse(view["isCrossRepository"])
+        self.assertEqual(view["changedFiles"], 2)
+        self.assertEqual(view["author"], {"login": "ann"})
+        self.assertEqual(view["url"], self.MR["web_url"])
+        self.assertEqual(view["reviewRequests"], [{"login": "bob"}])
+        self.assertEqual([c["id"] for c in view["comments"]], ["3"])
+        self.assertEqual(view["files"], [{"path": "a", "additions": 2, "deletions": 1}])
+        self.assertEqual(view["commits"], [{"oid": "c1", "messageHeadline": "Head",
+                                            "messageBody": "Body\nmore"}])
+
+    def test_states(self):
+        for state, want in (("opened", "OPEN"), ("merged", "MERGED"), ("closed", "CLOSED"),
+                            ("locked", "CLOSED")):
+            self.assertEqual(self.view("state", state=state)[0]["state"], want)
+
+    def test_mergeable(self):
+        self.assertEqual(self.view("mergeable", has_conflicts=True)[0]["mergeable"], "CONFLICTING")
+        self.assertEqual(self.view("mergeable", detailed_merge_status="checking")[0]["mergeable"],
+                         "UNKNOWN")
+
+    def test_missing_draft_reads_as_draft(self):
+        mr = {k: v for k, v in self.MR.items() if k != "draft"}
+        forge, _ = make({f"GET {PROJ}/merge_requests/7": (200, mr)})
+        self.assertTrue(forge.pr_view(7, "isDraft")["isDraft"])
+        self.assertTrue(self.view("isDraft", draft=True)[0]["isDraft"])
+
+    def test_cross_repository(self):
+        self.assertTrue(self.view("isCrossRepository", source_project_id=2)[0]["isCrossRepository"])
+        mr = {k: v for k, v in self.MR.items() if k != "source_project_id"}
+        forge, _ = make({f"GET {PROJ}/merge_requests/7": (200, mr)})
+        self.assertTrue(forge.pr_view(7, "isCrossRepository")["isCrossRepository"])
+
+    def test_changes_count_capped_is_none(self):
+        self.assertIsNone(self.view("changedFiles", changes_count="1000+")[0]["changedFiles"])
+
+    def test_list_text(self):
+        forge, _ = make({f"GET {PROJ}/merge_requests?state=opened": (200, [self.MR])})
+        out = json.loads(forge.pr_list_text("number,state", "open", 5))
+        self.assertEqual(out, [{"number": 7, "state": "OPEN"}])
+
+    def diff(self, entries):
+        forge, _ = make({f"GET {PROJ}/merge_requests/7/diffs": (200, entries)})
+        return forge.pr_diff(7)
+
+    def test_diff_parses(self):
+        from baton import forbid
+        patch = self.diff([
+            {"old_path": "n", "new_path": "n", "new_file": True, "diff": "@@ -0,0 +1 @@\n+new"},
+            {"old_path": "c", "new_path": "c", "diff": "@@ -1 +1 @@\n-a\n+b\n"},
+            {"old_path": "d", "new_path": "d", "deleted_file": True,
+             "diff": "@@ -1 +0,0 @@\n-x\n"}])
+        self.assertIn("--- /dev/null\n+++ b/n\n@@", patch)
+        self.assertIn("--- a/d\n+++ /dev/null\n", patch)
+        self.assertIn("diff --git a/c b/c\n--- a/c\n+++ b/c\n", patch)
+        self.assertEqual(forbid.violations(patch, {"*": "ZZZ"}), [])
+        self.assertEqual(len(forbid.violations(patch, {"n": "new"})), 1)
+
+    def test_diff_too_large_raises(self):
+        for flag in ("too_large", "collapsed"):
+            with self.assertRaises(GitLabError):
+                self.diff([{"old_path": "a", "new_path": "a", "diff": "", flag: True}])
+
+
 if __name__ == "__main__":
     unittest.main()
