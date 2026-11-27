@@ -23,6 +23,8 @@ TIMELINE_JQ = (
 
 AUTHOR_TYPES_JQ = '.[] | [.node_id, .user.type] | @tsv'
 
+_MILESTONES = "repos/{owner}/{repo}/milestones"
+
 
 class GitHub:
     kind = "github"
@@ -144,3 +146,59 @@ class GitHub:
                 continue
             events.append({"event": parts[0], "by": parts[1], "subject": parts[2], "at": parts[3]})
         return events
+
+    def milestones(self):
+        return self._read(["gh", "api", _MILESTONES + "?state=all"], [])
+
+    def milestone_create(self, title, description=None, due_on=None, role=None):
+        argv = ["gh", "api", _MILESTONES, "-f", f"title={title}"]
+        if description:
+            argv += ["-f", f"description={description}"]
+        if due_on:
+            argv += ["-f", f"due_on={due_on}"]
+        return self._write(argv, role)
+
+    def milestone_edit(self, number, changes, role=None):
+        argv = ["gh", "api", "--method", "PATCH", f"{_MILESTONES}/{number}"]
+        for key, value in changes:
+            argv += ["-f", f"{key}={value}"]
+        return self._write(argv, role)
+
+    def issue_create(self, title, path, labels=(), milestone=None, role=None):
+        argv = ["gh", "issue", "create", "--title", title, "--body-file", path]
+        for label in labels:
+            argv += ["--label", label]
+        if milestone:
+            argv += ["--milestone", milestone]
+        return self._write(argv, role)
+
+    def item_edit(self, target, number, title=None, add_labels=(), remove_labels=(),
+                  milestone=None, remove_milestone=False, path=None, role=None):
+        argv = ["gh", target, "edit", str(number)]
+        if title:
+            argv += ["--title", title]
+        for label in add_labels:
+            argv += ["--add-label", label]
+        for label in remove_labels:
+            argv += ["--remove-label", label]
+        if milestone:
+            argv += ["--milestone", milestone]
+        if remove_milestone:
+            argv += ["--remove-milestone"]
+        if path is not None:
+            argv += ["--body-file", path]
+        return self._write(argv, role)
+
+    def pr_create(self, title, path, head=None, draft=False, role=None):
+        argv = ["gh", "pr", "create", "--title", title, "--body-file", path]
+        if head:
+            argv += ["--head", head]
+        if draft:
+            argv += ["--draft"]
+        return self._write(argv, role)
+
+    def pr_ready(self, number, undo=False, role=None):
+        argv = ["gh", "pr", "ready", str(number)]
+        if undo:
+            argv.append("--undo")
+        return self._write(argv, role)

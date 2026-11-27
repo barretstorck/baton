@@ -137,6 +137,48 @@ class WriteTest(unittest.TestCase):
         self._check(lambda b, r: b.label_create("n", "ffffff", "d e", role=r),
                     "gh label create n --color ffffff --description d e")
 
+    def test_milestones(self):
+        runner = FakeRunner({"gh api": ""})
+        self.assertEqual(GitHub(runner).milestones(), [])
+        runner = FakeRunner({"gh api": '[{"number": 1}]'})
+        self.assertEqual(GitHub(runner).milestones(), [{"number": 1}])
+        self.assertEqual(runner.lines(), ["gh api repos/{owner}/{repo}/milestones?state=all"])
+
+    def test_milestone_create(self):
+        m = "repos/{owner}/{repo}/milestones"
+        self._check(lambda b, r: b.milestone_create("T", role=r), f"gh api {m} -f title=T")
+        self._check(lambda b, r: b.milestone_create("T", "D", "2026-01-01", role=r),
+                    f"gh api {m} -f title=T -f description=D -f due_on=2026-01-01")
+
+    def test_milestone_edit(self):
+        self._check(lambda b, r: b.milestone_edit(
+            "3", [("title", "N"), ("state", "closed")], role=r),
+            "gh api --method PATCH repos/{owner}/{repo}/milestones/3 -f title=N -f state=closed")
+
+    def test_issue_create(self):
+        self._check(lambda b, r: b.issue_create("T", "p.md", role=r),
+                    "gh issue create --title T --body-file p.md")
+        self._check(lambda b, r: b.issue_create("T", "p.md", ["a", "b"], "M", role=r),
+                    "gh issue create --title T --body-file p.md --label a --label b --milestone M")
+
+    def test_item_edit(self):
+        self._check(lambda b, r: b.item_edit("pr", 4, role=r), "gh pr edit 4")
+        self._check(lambda b, r: b.item_edit(
+            "issue", 4, title="T", add_labels=["a"], remove_labels=["r"], milestone="M",
+            remove_milestone=True, path="p.md", role=r),
+            "gh issue edit 4 --title T --add-label a --remove-label r --milestone M"
+            " --remove-milestone --body-file p.md")
+
+    def test_pr_create(self):
+        self._check(lambda b, r: b.pr_create("T", "p.md", role=r),
+                    "gh pr create --title T --body-file p.md")
+        self._check(lambda b, r: b.pr_create("T", "p.md", head="h", draft=True, role=r),
+                    "gh pr create --title T --body-file p.md --head h --draft")
+
+    def test_pr_ready(self):
+        self._check(lambda b, r: b.pr_ready(5, role=r), "gh pr ready 5")
+        self._check(lambda b, r: b.pr_ready(5, undo=True, role=r), "gh pr ready 5 --undo")
+
     def test_pr_review(self):
         self._check(lambda b, r: b.pr_review(3, "approve", "f.md", role=r),
                     "gh pr review 3 --approve --body-file f.md")
@@ -191,7 +233,7 @@ class ReadTest(unittest.TestCase):
 GH_ARGV = re.compile(r'\[\s*"gh"\s*,')
 LIB = Path(__file__).resolve().parent.parent / "lib" / "baton"
 # #374 and #375 empty this set as they move the remaining call sites.
-NOT_YET_MIGRATED = {"cli.py", "sprint.py", "publish.py", "review.py", "merge.py", "triage.py"}
+NOT_YET_MIGRATED = {"cli.py", "sprint.py","review.py", "merge.py", "triage.py"}
 # The forge_clis default list is not a call.
 PERMANENT = {"config.py"}
 
