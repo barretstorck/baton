@@ -124,7 +124,7 @@ class ForTest(unittest.TestCase):
         self.assertEqual(runner.lines(), [])
 
 
-class ReadTest(unittest.TestCase):
+class ItemReadTest(unittest.TestCase):
     def test_repo_view(self):
         runner = FakeRunner({"gh repo view": '{"owner": {"login": "o"}}'})
         self.assertEqual(GitHub(runner).repo_view("owner"), {"owner": {"login": "o"}})
