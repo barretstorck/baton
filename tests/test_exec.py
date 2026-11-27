@@ -7,9 +7,14 @@ from unittest import mock
 from baton import cli, identity
 
 
-def run_exec(argv, returncode=0):
-    with mock.patch.object(cli.subprocess, "run", return_value=mock.Mock(returncode=returncode)) as m, \
-            contextlib.redirect_stderr(io.StringIO()):
+GITHUB = {"kind": "github", "owner": "o", "repo": "r"}
+
+
+def run_exec(argv, returncode=0, forge=GITHUB, stderr=None):
+    with mock.patch.object(cli, "_detect_forge", return_value=forge), \
+            mock.patch.object(cli.config, "load", return_value=None), \
+            mock.patch.object(cli.subprocess, "run", return_value=mock.Mock(returncode=returncode)) as m, \
+            contextlib.redirect_stderr(stderr or io.StringIO()):
         code = cli.COMMANDS["exec"](argv)
     return code, m
 
@@ -138,3 +143,24 @@ class ExecHostPinTest(ExecTest):  # inherits tier1() helper
         self.assertNotIn("GH_ENTERPRISE_TOKEN", env)
         self.assertNotIn("GITHUB_ENTERPRISE_TOKEN", env)
         self.assertEqual(env["GH_TOKEN"], "tok-baton")
+
+
+class ExecForgejoTest(unittest.TestCase):
+    ARGV = ["gh", "issue", "comment", "5", "--body", "x"]
+
+    def tearDown(self):
+        identity.use(None)
+
+    def test_refused_on_forgejo(self):
+        err = io.StringIO()
+        code, m = run_exec(self.ARGV, forge={"kind": "forgejo", "url": "https://f.example", "owner": "o",
+                                             "repo": "r"}, stderr=err)
+        self.assertEqual(code, 1)
+        m.assert_not_called()
+        self.assertIn("Forgejo", err.getvalue())
+
+    def test_github_unchanged(self):
+        identity.use(lambda: None)
+        code, m = run_exec(self.ARGV)
+        self.assertEqual(code, 0)
+        m.assert_called_once_with(self.ARGV, env=None)

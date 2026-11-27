@@ -215,6 +215,14 @@ def _repo_values(words):
 
 @cliargs.command("exec")
 def cmd_exec(opts):
+    try:
+        cfg = config.load(os.getcwd())
+    except config.ConfigError:
+        cfg = None
+    if _forge_kind(cfg) == "forgejo":
+        print("baton: baton exec runs only gh and is not supported on Forgejo; use the baton subcommands",
+              file=sys.stderr)
+        return 1
     words = opts.words
     if not words or words[0] != "gh" or len(words) < 2 or opts.role not in set(comment.ROLES) | set(config.ROLES) \
             or not gate.is_recognised_write(words) or _exec_forbidden(words):
