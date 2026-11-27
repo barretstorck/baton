@@ -1221,6 +1221,45 @@ class SprintMetricsTest(unittest.TestCase):
             sprint.parse_metrics("## Metrics\ntokens: 1\n")
 
 
+class SprintMetricsForgejoTest(unittest.TestCase):
+    TITLE = SprintMetricsTest.TITLE
+
+    def item(self, number, labels=(), state="open", body="x", milestone=None):
+        return {"number": number, "title": f"I{number}", "state": state, "body": body,
+                "labels": [{"name": n} for n in labels], "milestone": milestone}
+
+    def transport(self):
+        from tests.fakes import FakeTransport
+        ms = {"id": 3, "title": self.TITLE}
+        plan = "## Developer Plan\n\n- [x] Task 1: a\n- [x] Task 2: b\n- [ ] Task 3: c\n"
+        line = f"x\nMissed sprint: [{self.TITLE}](https://e/1)\n"
+        other = "x\nMissed sprint: [Sprint other](https://e/2)\n"
+        issues = [self.item(1, state="closed", body=plan, milestone=ms),
+                  self.item(2, ["status:complete", "type:spike"], state="closed", milestone=ms),
+                  self.item(3, ["status:in-dev"], milestone=ms),
+                  self.item(4, ["missed-sprint"], body=line),
+                  self.item(5, ["missed-sprint"], body=other),
+                  self.item(6, [f"missed:{self.TITLE}"]),
+                  self.item(7)]
+        return FakeTransport({
+            "GET /api/v1/repos/o/r/milestones": (200, [
+                {"id": 3, "title": self.TITLE, "created_at": "2026-10-01T00:00:00Z",
+                 "closed_at": "2026-10-04T12:00:00Z"}]),
+            "GET /api/v1/repos/o/r/issues": (200, issues),
+            "GET /api/v1/repos/o/r": (200, {"name": "r", "owner": {"login": "o"},
+                                            "full_name": "o/r", "default_branch": "main"})})
+
+    def test_numbers(self):
+        from unittest import mock
+        from baton.forge.forgejo import Forgejo
+        backend = Forgejo("https://f.example", "o", "r", token="t", transport=self.transport())
+        with mock.patch("baton.forge.for_repo", return_value=backend):
+            got = sprint.sprint_metrics(cfg(), FakeRunner({}), self.TITLE, 1234.5)
+        self.assertEqual(got, {"duration_days": 3.5, "issues_worked": 5, "issues_completed": 2,
+                               "issues_missed": 3, "plan_tasks_done": 2, "spikes": 1,
+                               "tokens": 1234})
+
+
 class SprintMetricsCommandTest(unittest.TestCase):
     def call(self, args, runner=None):
         import io

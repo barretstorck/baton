@@ -44,6 +44,22 @@ def _latest_runs(rollup):
     return [item for _, item in latest.values()]
 
 
+def check_rows(rollup):
+    """One {name, state, url} row per CI check of a status rollup, sorted by name."""
+    rows = []
+    for item in _latest_runs(rollup or []):
+        if item.get("__typename") == "StatusContext":
+            rows.append({"name": item.get("context"), "state": item.get("state"),
+                         "url": item.get("targetUrl")})
+            continue
+        name = item.get("name")
+        if item.get("workflowName"):
+            name = f"{item['workflowName']} / {name}"
+        state = item.get("conclusion") if item.get("status") == "COMPLETED" else item.get("status")
+        rows.append({"name": name, "state": state, "url": item.get("detailsUrl")})
+    return sorted(rows, key=lambda row: row["name"] or "")
+
+
 _RUN_URL = re.compile(r"/actions/runs/(\d+)(?:/|$)")
 
 

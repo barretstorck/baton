@@ -604,6 +604,30 @@ def verified(state, commit=HEAD):
     return [{"author": {"login": OWNER}, "body": body}]
 
 
+class CheckRowsTest(unittest.TestCase):
+    def test_rows_per_check_sorted(self):
+        rollup = [
+            {"__typename": "StatusContext", "context": "ci/z", "state": "SUCCESS",
+             "targetUrl": "http://z"},
+            {"__typename": "CheckRun", "workflowName": "CI", "name": "test",
+             "status": "COMPLETED", "conclusion": "FAILURE", "detailsUrl": "http://t",
+             "startedAt": "2026-01-02"},
+            {"__typename": "CheckRun", "workflowName": "CI", "name": "test",
+             "status": "COMPLETED", "conclusion": "CANCELLED", "detailsUrl": "http://old",
+             "startedAt": "2026-01-01"},
+            {"__typename": "CheckRun", "workflowName": "", "name": "lint",
+             "status": "IN_PROGRESS", "conclusion": "", "detailsUrl": "http://l"},
+        ]
+        self.assertEqual(merge.check_rows(rollup), [
+            {"name": "CI / test", "state": "FAILURE", "url": "http://t"},
+            {"name": "ci/z", "state": "SUCCESS", "url": "http://z"},
+            {"name": "lint", "state": "IN_PROGRESS", "url": "http://l"},
+        ])
+
+    def test_empty(self):
+        self.assertEqual(merge.check_rows([]), [])
+
+
 class VerifyRecordTest(unittest.TestCase):
     def found(self, comments, cfg=None):
         return merge.check(make_pr(comments=comments), cfg or verify_config(), OWNER, "main",

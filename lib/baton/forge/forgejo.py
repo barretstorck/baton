@@ -129,6 +129,10 @@ class Forgejo:
     def label_names(self):
         return {item["name"] for item in self._labels()}
 
+    def label_list(self):
+        return [{"name": item["name"], "description": item.get("description") or ""}
+                for item in self._labels()]
+
     def label_create(self, name, color, description, role=None):
         self._request("POST", f"/repos/{self.owner}/{self.repo}/labels",
                       body={"name": name, "color": "#" + color, "description": description}, role=role)
@@ -147,7 +151,8 @@ class Forgejo:
     def _milestone_shape(item):
         return {"number": item["id"], "title": item.get("title"),
                 "description": item.get("description", ""), "state": item.get("state"),
-                "due_on": item.get("due_on")}
+                "due_on": item.get("due_on"), "created_at": item.get("created_at"),
+                "closed_at": item.get("closed_at")}
 
     def _milestone_list(self, state):
         items = self._paged(f"/repos/{self.owner}/{self.repo}/milestones", {"state": state})
@@ -228,7 +233,7 @@ class Forgejo:
         items = self._paged(f"{self._repo_path()}/issues/{number}/comments")
         return [self._comment_shape(item) for item in items]
 
-    _REPO_FIELDS = ("owner", "name", "nameWithOwner", "defaultBranchRef")
+    _REPO_FIELDS = ("owner", "name", "nameWithOwner", "defaultBranchRef", "visibility")
     _ISSUE_FIELDS = ("number", "title", "body", "state", "author", "labels", "createdAt",
                      "assignees", "comments")
 
@@ -238,7 +243,8 @@ class Forgejo:
         shapes = {"owner": lambda: self._login(item.get("owner")),
                   "name": lambda: item["name"],
                   "nameWithOwner": lambda: item["full_name"],
-                  "defaultBranchRef": lambda: {"name": item["default_branch"]}}
+                  "defaultBranchRef": lambda: {"name": item["default_branch"]},
+                  "visibility": lambda: "PRIVATE" if item.get("private") else "PUBLIC"}
         return {name: shapes[name]() for name in names}
 
     def _issue_shape(self, item, names):
@@ -282,9 +288,10 @@ class Forgejo:
         if search is not None:
             params["q"] = search
             items = self._paged(f"{self._repo_path()}/issues", params, max(limit, 100))
-            items = self._search_rank(items, search)[:limit]
+            items = self._search_rank(self._only(items, milestone, label), search)[:limit]
         else:
             items = self._paged(f"{self._repo_path()}/issues", params, limit)
+            items = self._only(items, milestone, label)
         return [self._issue_shape(item, names) for item in items]
 
     def issues_closed_since(self, fields, day, limit, empty=None):
@@ -303,6 +310,18 @@ class Forgejo:
             if when.astimezone(timezone.utc) >= start:
                 kept.append(item)
         return [self._issue_shape(item, names) for item in kept]
+
+    @staticmethod
+    def _only(items, milestone, label):
+        """Keep what the server may have let through: it drops unknown filter labels."""
+        def keep(item):
+            if label is not None and label not in [x.get("name") for x in item.get("labels") or []]:
+                return False
+            mine = item.get("milestone") or {}
+            return milestone is None or (bool(mine) and milestone in (
+                mine.get("title"), str(mine.get("id"))))
+
+        return [item for item in items if keep(item)]
 
     @staticmethod
     def _search_rank(items, search):
@@ -549,10 +568,16 @@ class Forgejo:
         item = self._request("GET", f"{self._repo_path()}/pulls/{number}")
         return self._pr_shape(item, names)
 
-    def pr_list_text(self, fields, state, limit):
+    def pr_list_text(self, fields, state, limit, head=None):
         names = self._field_names(fields, self._PR_FIELDS)
-        items = self._paged(f"{self._repo_path()}/pulls", {"state": state}, limit)
+        items = self._paged(f"{self._repo_path()}/pulls", {"state": state},
+                            max(limit, 200) if head else limit)
+        if head:
+            items = [i for i in items if (i.get("head") or {}).get("ref") == head][:limit]
         return json.dumps([self._pr_shape(item, names) for item in items])
+
+    def run_log_failed(self, run_id):
+        raise Unsupported("run logs")
 
     def pr_create(self, title, path, head=None, draft=False, role=None):
         if draft:
