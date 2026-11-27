@@ -363,10 +363,9 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None, n
         limit = cfg.data["developer"]["in_flight_minutes"]
         try:
             stale = inflight.is_stale(record, None, now, limit)
-            if stale and pr and pr.get("headRefOid"):
+            if stale and pr and pr.get("headRefName"):
                 try:
-                    head = backend.branch_head(owner, repo["name"], pr["headRefOid"])
-                    pushed = head["commit"]["committer"]["date"]
+                    pushed = backend.last_push(owner, repo["name"], pr["headRefName"])
                 except (RunError, ValueError, KeyError, TypeError):
                     pushed = None
                 stale = inflight.is_stale(record, pushed, now, limit)
