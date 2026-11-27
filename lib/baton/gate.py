@@ -624,9 +624,14 @@ def _api_is_write(args):
     return any(a in _API_FIELD_FLAGS or a.startswith(("--field=", "--raw-field=", "--input=")) for a in args)
 
 
-_FORGEJO_WRITE_VERBS = frozenset(
-    "create edit update delete rm close reopen comment merge approve lgtm reject review add reset "
-    "fork migrate lock unlock pin unpin read unread transfer".split())
+_FORGEJO_VALUE_FLAGS = frozenset(
+    "-t --title -d --description --body --body-file -m --message -L --labels -a --assignees "
+    "--milestone -D --deadline -b --base --head -r --repo -R --remote -l --login -o --output "
+    "--state --limit --lm -p --page -f --fields -k --kind -H --host --style".split())
+_FORGEJO_READ_COMMANDS = frozenset("whoami open o clone C help h version completion".split())
+_FORGEJO_READ_VERBS = frozenset(
+    "list ls view show status diff checkout clean browse search s readme contents get files "
+    "followers following repos orgs activity members help h".split())
 _GITLAB_READ_VERBS = frozenset(
     "list view status diff checkout browse issues version help check-update completion get show "
     "search describe".split())
@@ -718,14 +723,18 @@ def _request_method(args, short, longs):
 def _cli_writes(name, args):
     """True when `args` (the words after the program `name`) is a write."""
     if name in ("tea", "fj"):
-        if any(_HELP.search(a) for a in args):
+        if _cli_help(args, _FORGEJO_VALUE_FLAGS):
             return False
-        if args and args[0] == "api":
-            if _api_is_write(args[1:]) or any(a in ("-d", "--data") or a.startswith("--data=") for a in args):
-                return True
-        if args and args[0] == "c":
+        words = _cli_words(args, _FORGEJO_VALUE_FLAGS)
+        if not words:
+            return False
+        if words[0] == "api":
+            return _api_is_write(args[1:]) or any(a in ("-d", "--data") or a.startswith("--data=") for a in args)
+        if words[0] in ("comment", "c"):
             return True
-        return any(a in _FORGEJO_WRITE_VERBS for a in args)
+        if words[0] in _FORGEJO_READ_COMMANDS or len(words) == 1:
+            return False
+        return not (words[1] in _FORGEJO_READ_VERBS or words[1].isdigit())
     if name == "glab":
         if _cli_help(args, _GLAB_VALUE_FLAGS):
             return False
