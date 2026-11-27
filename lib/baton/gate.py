@@ -592,6 +592,77 @@ def _api_is_write(args):
     return any(a in _API_FIELD_FLAGS or a.startswith(("--field=", "--raw-field=", "--input=")) for a in args)
 
 
+_FORGEJO_PROGRAMS = ("tea", "fj", "curl", "wget")
+_FORGEJO_WRITE_VERBS = frozenset(
+    "create edit update delete rm close reopen comment merge approve lgtm reject review add reset "
+    "fork migrate lock unlock pin unpin read unread transfer".split())
+_CURL_BODY_FLAGS = ("-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "--json",
+                    "-F", "--form", "--form-string", "-T", "--upload-file")
+_WGET_BODY_FLAGS = ("--post-data", "--post-file", "--body-data", "--body-file")
+_URL_HOST = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.-]*://)?(?:[^@/?#:]*@)?([A-Za-z0-9][A-Za-z0-9.-]*)(?::\d+)?(?:[/?#].*)?$")
+
+
+def _args(text):
+    tokens = _gh_tokens(text)
+    return tokens if tokens is not None else text.split()
+
+
+def _url_host(word):
+    m = _URL_HOST.match(word)
+    return m.group(1).lower() if m else None
+
+
+def _has_flag(args, flags):
+    """True when a word is one of `flags`, or starts with `<long flag>=`."""
+    for a in args:
+        for f in flags:
+            if a == f or (f.startswith("--") and a.startswith(f + "=")):
+                return True
+    return False
+
+
+def _request_method(args, short, longs):
+    method = None
+    for i, a in enumerate(args):
+        if short and a == short:
+            method = args[i + 1] if i + 1 < len(args) else ""
+        elif short and a.startswith(short) and not a.startswith("--") and len(a) > 2:
+            method = a[2:]
+        else:
+            for f in longs:
+                if a == f:
+                    method = args[i + 1] if i + 1 < len(args) else ""
+                elif a.startswith(f + "="):
+                    method = a[len(f) + 1:]
+    return method
+
+
+def _cli_writes(name, args):
+    """True when `args` (the words after the program `name`) is a write."""
+    if name in ("tea", "fj"):
+        if any(_HELP.search(a) for a in args):
+            return False
+        if args and args[0] == "api":
+            if _api_is_write(args[1:]) or any(a in ("-d", "--data") or a.startswith("--data=") for a in args):
+                return True
+        if args and args[0] == "c":
+            return True
+        return any(a in _FORGEJO_WRITE_VERBS for a in args)
+    if name == "curl":
+        if any(a in ("-G", "--get") for a in args):
+            return False
+        method = _request_method(args, "-X", ("--request",))
+        if method is not None and method.upper() not in ("GET", "HEAD"):
+            return True
+        return _has_flag(args, _CURL_BODY_FLAGS)
+    if name == "wget":
+        method = _request_method(args, None, ("--method",))
+        if method is not None and method.upper() not in ("GET", "HEAD"):
+            return True
+        return _has_flag(args, _WGET_BODY_FLAGS)
+    return False
+
+
 def _gh_write_offset(command):
     """Offset of the `gh` starting a recognised write (after only `cd <dir> &&` steps), else None."""
     tokens = _gh_tokens(command)

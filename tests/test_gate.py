@@ -989,3 +989,36 @@ class ScratchRemoveTest(unittest.TestCase):
             self.assertEqual(self.run_gate(command)[0], 0, command)
         self.assertEqual(self.run_gate(f"rm -rf {self.PAD}", agent_type=None)[0], 0)
         self.assertEqual(self.run_gate(f"rm -rf {self.PAD}", agent_type="general-purpose")[0], 0)
+
+
+class ForgejoWriteTest(unittest.TestCase):
+    URL = "https://git.example.org/api/v1/repos/o/r/issues"
+
+    def words(self, text):
+        return gate._args(text)[1:]
+
+    def test_tea_and_fj_writes(self):
+        for c in ("tea issues create --title t", "tea pr merge 3", "tea comment 5 hi", "tea c 5 hi",
+                  "tea labels delete 2", "fj issue comment 12 --body-file c.txt", "fj pr close 4",
+                  "tea api -X POST /repos/o/r/issues", "tea api /repos/o/r/issues -f title=t"):
+            self.assertTrue(gate._cli_writes(c.split()[0], self.words(c)), c)
+
+    def test_tea_and_fj_reads(self):
+        for c in ("tea issues list", "tea pr 5", "fj issue view 5", "tea api /repos/o/r/issues",
+                  "tea issues create --help", "fj --version"):
+            self.assertFalse(gate._cli_writes(c.split()[0], self.words(c)), c)
+
+    def test_curl_and_wget(self):
+        u = self.URL
+        for c in (f"curl -X POST {u}", f"curl -XPATCH {u}", f"curl --request=DELETE {u}",
+                  f"curl -d @c.json {u}", f"curl --json '{{}}' {u}", f"curl -F f=@x {u}",
+                  f"wget --method=PUT {u}", f"wget --post-data x {u}"):
+            self.assertTrue(gate._cli_writes(c.split()[0], self.words(c)), c)
+        for c in (f"curl {u}", f"curl -X GET {u}", f"curl -I {u}", f"curl -G -d q=1 {u}", f"wget {u}"):
+            self.assertFalse(gate._cli_writes(c.split()[0], self.words(c)), c)
+
+    def test_url_host(self):
+        user = "gituser" + "@" + "git.example.org:3000/o/r"
+        for w in ("https://Git.Example.org:3000/api", "git.example.org/api", user):
+            self.assertEqual(gate._url_host(w), "git.example.org", w)
+        self.assertIsNone(gate._url_host("-X"))
