@@ -28,13 +28,21 @@ _TICKED_TASK = re.compile(r"^(\s*- )\[[xX]\]( Task \d+:)")
 
 def body_hash(body):
     """A short hash of a description that ignores Baton's own later edits: task
-    ticks and `Provides (as built):` lines, line-end and outer-blank differences."""
+    ticks (`- [x] Task <n>:` lines only), `Provides (as built):` lines that sit
+    directly under a task's `- Provides:` line (or another such line), and
+    line-end and outer-blank differences. Everything else is byte-exact.
+    Remaining limitation: text edited inside an as-built line directly under a
+    `Provides:` line is not seen."""
     text = (body or "").replace("\r\n", "\n").replace("\r", "\n")
     lines = []
+    prev = ""
     for line in text.split("\n"):
         line = line.rstrip()
-        if line.lstrip().startswith("- Provides (as built):"):
+        head = line.lstrip()
+        if head.startswith("- Provides (as built):") and (
+                prev.startswith("- Provides:") or prev.startswith("- Provides (as built):")):
             continue
+        prev = head
         lines.append(_TICKED_TASK.sub(r"\1[ ]\2", line))
     norm = "\n".join(lines).strip("\n")
     return hashlib.sha256(norm.encode("utf-8")).hexdigest()[:HASH_LENGTH]

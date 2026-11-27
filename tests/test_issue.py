@@ -377,6 +377,23 @@ class BodyHashTest(unittest.TestCase):
                                "  - Provides: x\n  - Provides (as built): y\n")
         self.assertEqual(h, issue.body_hash(built))
 
+    def test_as_built_lines_elsewhere_are_seen(self):
+        h = issue.body_hash(self.BODY)
+        line = "- Provides (as built): y\n"
+        self.assertNotEqual(h, issue.body_hash(self.BODY.replace("Old text\n", "Old text\n" + line)))
+        dec = "## Decisions\n- Use A\n"
+        self.assertNotEqual(issue.body_hash(dec), issue.body_hash(dec + "  " + line))
+        under = self.BODY.replace("  - Provides: x\n", "  - Provides: x\n  " + line + "  " + line)
+        self.assertEqual(h, issue.body_hash(under))
+        after_check = self.BODY.replace("  - Provides: x\n", "  - Provides: x\n  - Check: z\n  " + line)
+        self.assertNotEqual(issue.body_hash(self.BODY.replace("  - Provides: x\n", "  - Provides: x\n  - Check: z\n")),
+                            issue.body_hash(after_check))
+
+    def test_only_task_boxes_are_unticked(self):
+        h = issue.body_hash(self.BODY)
+        self.assertNotEqual(h, issue.body_hash(self.BODY + "- [ ] Extra\n"))
+        self.assertNotEqual(issue.body_hash("- [ ] Other\n"), issue.body_hash("- [x] Other\n"))
+
     def test_content_changes_are_seen(self):
         h = issue.body_hash(self.BODY)
         for old, new in (("Old text", "New text"), ("Do it", "Do that"),
