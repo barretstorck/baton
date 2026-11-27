@@ -154,8 +154,9 @@ def _declare_install_hooks(subs):
 
 
 def _declare_labels(subs):
-    p = _add(subs, "labels", "usage: baton labels [--create]", lenient=True)
+    p = _add(subs, "labels", "usage: baton labels [--create | --list]", lenient=True)
     p.add_argument("--create", action="store_true")
+    p.add_argument("--list", action="store_true")
 
 
 def _declare_set_status(subs):
@@ -254,6 +255,10 @@ _EDIT = ("usage: baton {t} edit <N> [--title <t>] [--body-file <file | ->] "
 _PR_CREATE = ("usage: baton pr create --title <t> [--draft] [--head <branch>] "
               "<body-file | ->")
 _PR_READY = "usage: baton pr ready <N> [--undo]"
+_PR_LIST = ("usage: baton pr list [--state open|closed|all] [--head <branch>] "
+            "[--limit <n>] [--json <fields>]")
+_PR_VIEW = "usage: baton pr view <N> [--json <fields>]"
+_PR_CHECKS = "usage: baton pr checks <N>"
 _MS_CREATE = ("usage: baton milestone create --title <t> [--description <d>] "
               "[--due-on <ISO date>]")
 _MS_EDIT = ("usage: baton milestone edit <number | title> [--title <t>] "
@@ -261,6 +266,9 @@ _MS_EDIT = ("usage: baton milestone edit <number | title> [--title <t>] "
 _ISSUE_MISSED = ("usage: baton issue missed <issue number> "
                  "<milestone title or number>")
 _ISSUE_READ = "usage: baton issue read <issue>"
+_ISSUE_LIST = ("usage: baton issue list [--state open|closed|all] [--search <words>] "
+               "[--label <l>] [--milestone <title>] [--limit <n>] [--json <fields>]")
+ISSUE_LIST_FIELDS = ("number", "title", "state", "labels", "author", "createdAt", "assignees")
 
 
 def _action(subs, key: str, usage: str) -> BatonParser:
@@ -290,7 +298,8 @@ def _declare_edit(actions, target: str):
 
 
 def _declare_issue(subs):
-    actions = _actions(subs, "issue", _ISSUE_CREATE + "\n" + _EDIT.format(t="issue"))
+    actions = _actions(subs, "issue", "\n".join(
+        [_ISSUE_CREATE, _EDIT.format(t="issue"), _ISSUE_LIST]))
     p = _action(actions, "issue create", _ISSUE_CREATE)
     p.add_argument("--title", type=nonempty, required=True)
     p.add_argument("--label", dest="labels", action="append", default=[])
@@ -298,6 +307,13 @@ def _declare_issue(subs):
     p.add_argument("body_source")
     _declare_edit(actions, "issue")
     _action(actions, "issue read", _ISSUE_READ).add_argument("number", type=digits)
+    p = _action(actions, "issue list", _ISSUE_LIST)
+    p.add_argument("--state", choices=["open", "closed", "all"], default="open")
+    p.add_argument("--search")
+    p.add_argument("--label")
+    p.add_argument("--milestone")
+    p.add_argument("--limit", type=at_least_one, default=30)
+    p.add_argument("--json", dest="fields", default="number,title,state,labels")
     p = _action(actions, "issue missed", _ISSUE_MISSED)
     p.add_argument("number", type=digits)
     p.add_argument("milestone")
@@ -305,7 +321,7 @@ def _declare_issue(subs):
 
 def _declare_pr(subs):
     actions = _actions(subs, "pr", "\n".join(
-        [_PR_CREATE, _EDIT.format(t="pr"), _PR_READY]))
+        [_PR_CREATE, _EDIT.format(t="pr"), _PR_READY, _PR_LIST, _PR_VIEW, _PR_CHECKS]))
     p = _action(actions, "pr create", _PR_CREATE)
     p.add_argument("--title", type=nonempty, required=True)
     p.add_argument("--draft", action="store_true")
@@ -315,6 +331,16 @@ def _declare_pr(subs):
     p = _action(actions, "pr ready", _PR_READY)
     p.add_argument("number", type=digits)
     p.add_argument("--undo", action="store_true")
+    p = _action(actions, "pr list", _PR_LIST)
+    p.add_argument("--state", choices=["open", "closed", "all"], default="open")
+    p.add_argument("--head")
+    p.add_argument("--limit", type=at_least_one, default=30)
+    p.add_argument("--json", dest="fields", default="number,title,headRefName,isDraft")
+    p = _action(actions, "pr view", _PR_VIEW)
+    p.add_argument("number", type=digits)
+    p.add_argument("--json", dest="fields",
+                   default="number,title,state,isDraft,headRefName,headRefOid,url")
+    _action(actions, "pr checks", _PR_CHECKS).add_argument("number", type=digits)
 
 
 def _declare_milestone(subs):
@@ -444,12 +470,30 @@ def _declare_notify(subs):
 
 def _declare_triage(subs):
     usage = ("usage: baton triage apply <issue> <decision.json>  |  "
-             "baton triage queue")
+             "baton triage queue  |  baton triage read <issue> [--json <fields>]")
     actions = _nested(subs, "triage", usage)
     p = _leaf(actions, "apply", usage)
     p.add_argument("issue", type=digits)
     p.add_argument("decision")
     _leaf(actions, "queue", usage)
+    p = _leaf(actions, "read", usage)
+    p.add_argument("issue", type=digits)
+    p.add_argument("--json", dest="fields", default="title,body,labels,author,comments")
+
+
+_REPO_VIEW = "usage: baton repo view [--json <fields>]"
+_RUN_LOG = "usage: baton run log <run-id>"
+
+
+def _declare_repo(subs):
+    actions = _actions(subs, "repo", _REPO_VIEW)
+    p = _action(actions, "repo view", _REPO_VIEW)
+    p.add_argument("--json", dest="fields", default="nameWithOwner,owner,name,defaultBranchRef")
+
+
+def _declare_run(subs):
+    actions = _actions(subs, "run", _RUN_LOG)
+    _action(actions, "run log", _RUN_LOG).add_argument("run_id", type=digits)
 
 
 def _declare_git_hook(subs):
@@ -541,7 +585,7 @@ def build() -> BatonParser:
                     _declare_sprint_status, _declare_sprint_order,
                     _declare_pr_state, _declare_verify, _declare_clean,
                     _declare_identity, _declare_push, _declare_doctor,
-                    _declare_issue, _declare_pr, _declare_milestone,
+                    _declare_issue, _declare_pr, _declare_milestone, _declare_repo, _declare_run,
                     _declare_review, _declare_tasks, _declare_task,
                     _declare_plan, _declare_notify, _declare_triage,
                     _declare_git_hook, _declare_usage, _declare_sprint_capacity,

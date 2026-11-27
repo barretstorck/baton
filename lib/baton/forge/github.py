@@ -99,6 +99,10 @@ class GitHub:
         items = self._read(["gh", "label", "list", "--limit", "500", "--json", "name"], [])
         return {item["name"] for item in items}
 
+    def label_list(self):
+        return self._read(["gh", "label", "list", "--limit", "500", "--json",
+                           "name,description"], [])
+
     def label_create(self, name, color, description, role=None):
         return self._write(["gh", "label", "create", name, "--color", color,
                             "--description", description], role)
@@ -288,6 +292,11 @@ class GitHub:
     def issue_list(self, fields, state, limit, milestone=None, label=None, search=None, empty=None):
         return self._read(self._issue_list_argv(fields, state, limit, milestone, label, search), empty)
 
-    def pr_list_text(self, fields, state, limit):
-        return self.runner(["gh", "pr", "list", "--state", state, "--limit", str(limit),
-                            "--json", fields])
+    def pr_list_text(self, fields, state, limit, head=None):
+        argv = ["gh", "pr", "list", "--state", state, "--limit", str(limit)]
+        if head:
+            argv += ["--head", head]
+        return self.runner(argv + ["--json", fields])
+
+    def run_log_failed(self, run_id):
+        return self.runner(["gh", "run", "view", str(run_id), "--log-failed"])
