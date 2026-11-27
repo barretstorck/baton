@@ -23,6 +23,11 @@ TIMELINE_JQ = (
 
 AUTHOR_TYPES_JQ = '.[] | [.node_id, .user.type] | @tsv'
 
+REVIEWS_JQ = (".[] | select(.submitted_at != null) | {id: .node_id, "
+              "author: {login: .user.login, type: .user.type}, body: .body, "
+              "createdAt: .submitted_at, url: .html_url} | @json")
+_MILESTONES = "repos/{owner}/{repo}/milestones"
+
 
 class GitHub:
     kind = "github"
@@ -46,6 +51,9 @@ class GitHub:
 
     def issue_view(self, number, fields, empty=None):
         return self._read(["gh", "issue", "view", str(number), "--json", fields], empty)
+
+    def issue_view_text(self, number, fields):
+        return self.runner(["gh", "issue", "view", str(number), "--json", fields])
 
     def pr_view(self, number, fields, empty=None):
         return self._read(["gh", "pr", "view", str(number), "--json", fields], empty)
@@ -144,3 +152,90 @@ class GitHub:
                 continue
             events.append({"event": parts[0], "by": parts[1], "subject": parts[2], "at": parts[3]})
         return events
+
+    def milestones(self):
+        return self._read(["gh", "api", _MILESTONES + "?state=all"], [])
+
+    def milestone_create(self, title, description=None, due_on=None, role=None):
+        argv = ["gh", "api", _MILESTONES, "-f", f"title={title}"]
+        if description:
+            argv += ["-f", f"description={description}"]
+        if due_on:
+            argv += ["-f", f"due_on={due_on}"]
+        return self._write(argv, role)
+
+    def milestone_edit(self, number, changes, role=None):
+        argv = ["gh", "api", "--method", "PATCH", f"{_MILESTONES}/{number}"]
+        for key, value in changes:
+            argv += ["-f", f"{key}={value}"]
+        return self._write(argv, role)
+
+    def issue_create(self, title, path, labels=(), milestone=None, role=None):
+        argv = ["gh", "issue", "create", "--title", title, "--body-file", path]
+        for label in labels:
+            argv += ["--label", label]
+        if milestone:
+            argv += ["--milestone", milestone]
+        return self._write(argv, role)
+
+    def item_edit(self, target, number, title=None, add_labels=(), remove_labels=(),
+                  milestone=None, remove_milestone=False, path=None, role=None):
+        argv = ["gh", target, "edit", str(number)]
+        if title:
+            argv += ["--title", title]
+        for label in add_labels:
+            argv += ["--add-label", label]
+        for label in remove_labels:
+            argv += ["--remove-label", label]
+        if milestone:
+            argv += ["--milestone", milestone]
+        if remove_milestone:
+            argv += ["--remove-milestone"]
+        if path is not None:
+            argv += ["--body-file", path]
+        return self._write(argv, role)
+
+    def pr_create(self, title, path, head=None, draft=False, role=None):
+        argv = ["gh", "pr", "create", "--title", title, "--body-file", path]
+        if head:
+            argv += ["--head", head]
+        if draft:
+            argv += ["--draft"]
+        return self._write(argv, role)
+
+    def pr_ready(self, number, undo=False, role=None):
+        argv = ["gh", "pr", "ready", str(number)]
+        if undo:
+            argv.append("--undo")
+        return self._write(argv, role)
+
+    def pr_review_items(self, number):
+        text = self.runner(["gh", "api", "--paginate",
+                            f"repos/{{owner}}/{{repo}}/pulls/{number}/reviews?per_page=100",
+                            "--jq", REVIEWS_JQ])
+        return [json.loads(line) for line in (text or "").splitlines() if line.strip()]
+
+    def review_edit_body(self, number, review_id, path, role=None):
+        return self._write(["gh", "api", "-X", "PUT",
+                            f"repos/{{owner}}/{{repo}}/pulls/{number}/reviews/{review_id}",
+                            "-F", f"body=@{path}", "--silent"], role)
+
+    def comment_edit_body(self, comment_id, path, role=None):
+        return self._write(["gh", "api", "-X", "PATCH",
+                            f"repos/{{owner}}/{{repo}}/issues/comments/{comment_id}",
+                            "-F", f"body=@{path}", "--silent"], role)
+
+    def review_request_remove(self, number, login, role=None):
+        return self._write(["gh", "api", "-X", "DELETE",
+                            f"repos/{{owner}}/{{repo}}/pulls/{number}/requested_reviewers",
+                            "-f", f"reviewers[]={login}", "--silent"], role)
+
+    def run_view(self, run_id, fields):
+        return self._read(["gh", "run", "view", str(run_id), "--json", fields])
+
+    def pr_diff(self, number):
+        return self.runner(["gh", "pr", "diff", str(number)])
+
+    def pr_merge(self, number, head_oid, role=None):
+        return self._write(["gh", "pr", "merge", str(number), "--merge",
+                            "--match-head-commit", head_oid], role)

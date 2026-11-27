@@ -10,7 +10,7 @@ import os
 import re
 import tempfile
 
-from . import checklist, comment, gate, identity, run, verify as verifylog
+from . import checklist, comment, forge, gate, identity, run, verify as verifylog
 from .config import has_login
 
 # The one place a verdict is defined. `tasks` is "none" (a `## Tasks` section is
@@ -106,24 +106,11 @@ def history(comments, owner, repliers=None):
     return events
 
 
-REVIEWS_JQ = (".[] | select(.submitted_at != null) | {id: .node_id, "
-              "author: {login: .user.login, type: .user.type}, body: .body, "
-              "createdAt: .submitted_at, url: .html_url} | @json")
-
-
 def app_reviews(runner, number):
     """The pull request's submitted reviews written by the reviewer App, as comment-shaped dicts."""
-    text = runner(["gh", "api", "--paginate",
-                   f"repos/{{owner}}/{{repo}}/pulls/{number}/reviews?per_page=100",
-                   "--jq", REVIEWS_JQ])
+    items = forge.for_repo(runner=runner).pr_review_items(number)
     logins = identity.reviewer_logins()
-    found = []
-    for line in (text or "").splitlines():
-        if line.strip():
-            item = json.loads(line)
-            if has_login(item.get("author"), logins):
-                found.append(item)
-    return found
+    return [item for item in items if has_login(item.get("author"), logins)]
 
 
 def pr_comments(runner, number, comments):
@@ -335,7 +322,7 @@ def review_tasks(pr, owner):
 
 def tick_review(runner, number, owner, task_id):
     """Tick a task in the latest review. False when it was already ticked."""
-    pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", "comments"]))
+    pr = forge.for_repo(runner=runner).pr_view(number, "comments")
     pr["comments"] = pr_comments(runner, number, pr.get("comments"))
     item, match = _latest_review(pr.get("comments"), owner)
     if item is None or VERDICTS[match.group(1)]["tasks"] == "none":
@@ -348,16 +335,15 @@ def tick_review(runner, number, owner, task_id):
     found = formal_review or _COMMENT_ID.search(url)
     if not found:
         raise ReviewError("cannot tell the review comment's id from its URL")
-    if formal_review:
-        method, target = "PUT", f"repos/{{owner}}/{{repo}}/pulls/{number}/reviews/{found.group(1)}"
-    else:
-        method, target = "PATCH", f"repos/{{owner}}/{{repo}}/issues/comments/{found.group(1)}"
     handle, path = tempfile.mkstemp(suffix=".md")
     try:
         with os.fdopen(handle, "w", newline="") as out:
             out.write(new)
-        identity.write(runner, ["gh", "api", "-X", method, target,
-                                "-F", f"body=@{path}", "--silent"], "reviewer")
+        backend = forge.for_repo(runner=runner)
+        if formal_review:
+            backend.review_edit_body(number, found.group(1), path, role="reviewer")
+        else:
+            backend.comment_edit_body(found.group(1), path, role="reviewer")
     finally:
         os.unlink(path)
     return True
@@ -384,12 +370,12 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, ho
     verify = "none"
     if cfg.data["verify"]["command"]:
         if repo is None:
-            repo = json.loads(runner(["gh", "repo", "view", "--json", "name"]))["name"]
+            repo = forge.for_repo(runner=runner).repo_view("name")["name"]
         found = verifylog.latest_result(owner, repo, number, commit, home)
         verify = found["result"] if found else "missing"
     text = compose(verdict, commit, body, verify)
-    pr = json.loads(runner(["gh", "pr", "view", str(number), "--json",
-                            "headRefOid,comments,closingIssuesReferences,reviewRequests"]))
+    pr = forge.for_repo(runner=runner).pr_view(
+        number, "headRefOid,comments,closingIssuesReferences,reviewRequests")
     pr["comments"] = pr_comments(runner, number, pr.get("comments"))
     head = pr["headRefOid"]
     if head != commit:
@@ -446,9 +432,8 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, ho
     if machine and any((req.get("login") or "").lower() == machine.lower()
                        for req in pr.get("reviewRequests") or []):
         try:
-            identity.write(runner, ["gh", "api", "-X", "DELETE",
-                                    f"repos/{{owner}}/{{repo}}/pulls/{number}/requested_reviewers",
-                                    "-f", f"reviewers[]={machine}", "--silent"], "reviewer")
+            forge.for_repo(runner=runner).review_request_remove(
+                number, machine, role="reviewer")
         except run.RunError as error:
             raise ReviewError(f"the review was posted but the review request for {machine} "
                               "could not be removed") from error
