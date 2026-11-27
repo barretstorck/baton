@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 from baton import cli, config, labels
 from baton.forge.forgejo import Forgejo
+from baton.forge.gitlab import GitLab
 from tests.fakes import FakeRunner, FakeTransport
 
 
@@ -209,3 +210,29 @@ class ForgejoLabelsTest(unittest.TestCase):
         self.assertEqual(posts, ["POST /api/v1/repos/o/r/labels"])
         writes = [line for line in self.transport.lines() if not line.startswith("GET")]
         self.assertFalse(any("/orgs/" in line for line in writes))
+
+
+class GitLabLabelsTest(unittest.TestCase):
+    def setUp(self):
+        self.cfg = make_config()
+        names = [self.cfg.label(name) for name in labels._STYLE]
+        self.in_group, self.nowhere = names[0], names[1]
+        on_gitlab = [{"name": name, "is_project_label": name != self.in_group}
+                     for name in [self.in_group] + names[2:]]
+        self.transport = FakeTransport({
+            "GET /api/v4/projects/o%2Fr/labels": (200, on_gitlab),
+            "POST /api/v4/projects/o%2Fr/labels": (201, {}),
+        })
+        self.backend = GitLab("https://g.example", "o", "r", token="t", transport=self.transport)
+
+    def test_group_label_is_not_missing(self):
+        with mock.patch("baton.forge.for_repo", return_value=self.backend):
+            self.assertEqual(labels.missing(self.cfg, FakeRunner()), [self.nowhere])
+
+    def test_ensure_creates_at_project_level(self):
+        with mock.patch("baton.forge.for_repo", return_value=self.backend):
+            created, still = labels.ensure(self.cfg, FakeRunner(), create=True)
+        self.assertEqual((created, still), ([self.nowhere], []))
+        posts = [line for line in self.transport.lines() if line.startswith("POST")]
+        self.assertEqual(posts, ["POST /api/v4/projects/o%2Fr/labels"])
+        self.assertFalse(any("/groups/" in line for line in self.transport.lines()))
