@@ -261,6 +261,9 @@ _MS_EDIT = ("usage: baton milestone edit <number | title> [--title <t>] "
 _ISSUE_MISSED = ("usage: baton issue missed <issue number> "
                  "<milestone title or number>")
 _ISSUE_READ = "usage: baton issue read <issue>"
+_ISSUE_LIST = ("usage: baton issue list [--state open|closed|all] [--search <words>] "
+               "[--label <l>] [--milestone <title>] [--limit <n>] [--json <fields>]")
+ISSUE_LIST_FIELDS = ("number", "title", "state", "labels", "author", "createdAt", "assignees")
 
 
 def _action(subs, key: str, usage: str) -> BatonParser:
@@ -290,7 +293,8 @@ def _declare_edit(actions, target: str):
 
 
 def _declare_issue(subs):
-    actions = _actions(subs, "issue", _ISSUE_CREATE + "\n" + _EDIT.format(t="issue"))
+    actions = _actions(subs, "issue", "\n".join(
+        [_ISSUE_CREATE, _EDIT.format(t="issue"), _ISSUE_LIST]))
     p = _action(actions, "issue create", _ISSUE_CREATE)
     p.add_argument("--title", type=nonempty, required=True)
     p.add_argument("--label", dest="labels", action="append", default=[])
@@ -298,6 +302,13 @@ def _declare_issue(subs):
     p.add_argument("body_source")
     _declare_edit(actions, "issue")
     _action(actions, "issue read", _ISSUE_READ).add_argument("number", type=digits)
+    p = _action(actions, "issue list", _ISSUE_LIST)
+    p.add_argument("--state", choices=["open", "closed", "all"], default="open")
+    p.add_argument("--search")
+    p.add_argument("--label")
+    p.add_argument("--milestone")
+    p.add_argument("--limit", type=at_least_one, default=30)
+    p.add_argument("--json", dest="fields", default="number,title,state,labels")
     p = _action(actions, "issue missed", _ISSUE_MISSED)
     p.add_argument("number", type=digits)
     p.add_argument("milestone")
@@ -444,12 +455,15 @@ def _declare_notify(subs):
 
 def _declare_triage(subs):
     usage = ("usage: baton triage apply <issue> <decision.json>  |  "
-             "baton triage queue")
+             "baton triage queue  |  baton triage read <issue> [--json <fields>]")
     actions = _nested(subs, "triage", usage)
     p = _leaf(actions, "apply", usage)
     p.add_argument("issue", type=digits)
     p.add_argument("decision")
     _leaf(actions, "queue", usage)
+    p = _leaf(actions, "read", usage)
+    p.add_argument("issue", type=digits)
+    p.add_argument("--json", dest="fields", default="title,body,labels,author,comments")
 
 
 def _declare_git_hook(subs):

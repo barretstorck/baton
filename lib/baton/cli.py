@@ -239,6 +239,8 @@ def cmd_exec(opts):
 def cmd_triage(opts):
     if opts.action == "queue":
         return _triage_queue()
+    if opts.action == "read":
+        return _triage_read(opts)
     try:
         with open(opts.decision, encoding="utf-8") as handle:
             text = handle.read()
@@ -249,6 +251,15 @@ def cmd_triage(opts):
     decision = triage.parse_decision(text)
     print(triage.apply(cfg, run.run, opts.issue, decision, _maintainers(cfg),
                        scan.load_terms(), owner, repo))
+    return 0
+
+
+def _triage_read(opts):
+    """The issue as the forge has it, nothing withheld: for the triager only."""
+    fields = [f for f in opts.fields.split(",") if f]
+    if not fields:
+        return cliargs.fail("triage")
+    print(json.dumps(forge.for_repo().issue_view(opts.issue, ",".join(fields)), indent=2))
     return 0
 
 
@@ -326,8 +337,20 @@ def _issue_read(opts):
     return 0
 
 
+def _issue_list(opts):
+    fields = [f for f in opts.fields.split(",") if f]
+    if not fields or any(f not in cliargs.ISSUE_LIST_FIELDS for f in fields):
+        return cliargs.fail("issue list")
+    data = forge.for_repo().issue_list(",".join(fields), opts.state, opts.limit,
+                                       opts.milestone, opts.label, opts.search, empty=[])
+    print(json.dumps(data, indent=2))
+    return 0
+
+
 @cliargs.command("issue")
 def cmd_issue(opts):
+    if opts.action == "list":
+        return _issue_list(opts)
     if opts.action == "missed":
         return _issue_missed(opts)
     if opts.action == "read":
