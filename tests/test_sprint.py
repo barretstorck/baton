@@ -849,6 +849,23 @@ class DefaultBranchStateTest(unittest.TestCase):
                          "after the '/baton ready' comment of 2026-11-01T10:00:00Z; "
                          "a maintainer must post '/baton ready' again"}])
 
+    def _hashed(self, digest):
+        item = issue(5, "ready", "deliverable", author="stranger",
+                     comments=[comment(OWNER, f"/baton ready {digest}", 1)])
+        runner = FakeRunner(replies([item], extra={"gh api graphql": ""}))
+        return item, sprint.snapshot(cfg(), runner)
+
+    def test_outside_issue_with_hashed_approval_is_dispatchable(self):
+        from baton import issue as issue_mod
+        body = issue(5, "ready", "deliverable")["body"]
+        _, result = self._hashed(issue_mod.body_hash(body))
+        self.assertEqual(result["dispatchable"], [5])
+
+    def test_outside_issue_with_other_hash_is_held(self):
+        _, result = self._hashed("0123456789abcdef")
+        self.assertEqual(result["dispatchable"], [])
+        self.assertIn("approved a different description", result["held"][0]["reason"])
+
     def test_outside_issue_with_maintainer_approval_is_dispatchable(self):
         result = self._outside([comment(OWNER, "/baton ready", 1)])
         self.assertEqual(result["dispatchable"], [5])

@@ -622,7 +622,15 @@ class ReadyCheckNoteTest(unittest.TestCase):
 
     def test_outside_issue_gets_the_note(self):
         code, text = self.check(make(author="stranger"))
-        self.assertEqual((code, text), (0, "ready (outside issue: the maintainer marks it ready)"))
+        self.assertEqual((code, text), (0, "ready (outside issue: the maintainer marks it ready)\n"
+                         f"approve with: /baton ready {issue.body_hash(make(author='stranger')['body'])}"))
+
+    def test_printed_hash_is_the_body_hash(self):
+        data = make(author="stranger")
+        data["body"] = "## Context\nsomething\n"
+        code, text = self.check(data)
+        self.assertEqual(text.splitlines()[-1],
+                         f"approve with: /baton ready {issue.body_hash(data['body'])}")
 
     def test_maintainer_issue_is_plain_ready(self):
         self.assertEqual(self.check(make()), (0, "ready"))
