@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from baton import identity
 from baton.issue import approval_problem, body_hash
 from baton.forge.gitlab import GitLab, GitLabError, Unsupported, urllib_transport
 
@@ -803,3 +804,70 @@ class NeutralReadsTest(unittest.TestCase):
         forge, _ = make({})
         with self.assertRaises(Unsupported):
             forge.run_log_failed(1)
+
+
+def _role_token(kind, owner, repo, role, home=None):
+    return {"reviewer": "tok-reviewer", "baton": "tok-baton"}[identity.route(role)]
+
+
+class RoleTokenTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.body = os.path.join(self.dir.name, "body.md")
+        pathlib.Path(self.body).write_text("hi")
+
+    def send(self, call, fake=_role_token, replies=None):
+        forge, t = make(replies or {"POST": (201, {"id": 1}), "PUT": (200, {})})
+        with mock.patch("baton.forge.gitlab.identity.forge_role_token", fake):
+            call(forge)
+        return t
+
+    def tokens(self, t):
+        return [headers["PRIVATE-TOKEN"] for _, _, headers, _ in t.calls]
+
+    def test_reviewer_comment(self):
+        t = self.send(lambda f: f.comment("issue", 5, self.body, role="reviewer"))
+        self.assertEqual(self.tokens(t), ["tok-reviewer"])
+
+    def test_other_roles_use_baton(self):
+        for role in ("developer", "orchestrator"):
+            t = self.send(lambda f: f.issue_edit_labels(5, ["a"], role=role))
+            self.assertEqual(self.tokens(t), ["tok-baton"])
+
+    def test_no_role_uses_maintainer(self):
+        t = self.send(lambda f: f.comment("issue", 5, self.body))
+        self.assertEqual(self.tokens(t), [TOKEN])
+
+    def test_none_falls_back_to_maintainer(self):
+        t = self.send(lambda f: f.comment("issue", 5, self.body, role="reviewer"),
+                      fake=lambda *a, **k: None)
+        self.assertEqual(self.tokens(t), [TOKEN])
+
+    def test_error_sends_nothing(self):
+        def boom(*a, **k):
+            raise identity.IdentityError("no table")
+        forge, t = make()
+        with mock.patch("baton.forge.gitlab.identity.forge_role_token", boom):
+            with self.assertRaises(GitLabError) as ctx:
+                forge.comment("issue", 5, self.body, role="reviewer")
+        self.assertIn("GitLab token: no table", str(ctx.exception))
+        self.assertEqual(t.calls, [])
+
+    def test_review_approve_uses_reviewer(self):
+        t = self.send(lambda f: f.pr_review(7, "approve", self.body, role="reviewer"),
+                      replies={"POST": (201, {}), "GET": (200, {"sha": "abc"})})
+        self.assertEqual([(m, h["PRIVATE-TOKEN"]) for m, _, h, _ in t.calls],
+                         [("POST", "tok-reviewer"), ("GET", TOKEN), ("POST", "tok-reviewer")])
+        self.assertTrue(t.lines()[2].endswith("/approve"))
+
+    def test_no_sudo_header(self):
+        forge, t = make({"POST": (201, {"id": 1}), "PUT": (200, {}), "GET": (200, [])})
+        with mock.patch("baton.forge.gitlab.identity.forge_role_token", _role_token):
+            forge.comment("issue", 5, self.body, role="reviewer")
+            forge.comment("issue", 5, self.body)
+            forge.issue_edit_labels(5, ["a"], role="developer")
+            forge.label_names()
+        self.assertGreaterEqual(len(t.calls), 4)
+        for _, _, headers, _ in t.calls:
+            self.assertNotIn("sudo", [k.lower() for k in headers])
