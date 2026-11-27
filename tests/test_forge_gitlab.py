@@ -548,5 +548,86 @@ class CiTest(unittest.TestCase):
         self.assertIsNone(forge.last_push("o", "r", "none"))
 
 
+class MergeRequestWriteTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.body = os.path.join(self.dir.name, "body.md")
+        pathlib.Path(self.body).write_text("the body")
+
+    def sent(self, t, index):
+        return json.loads(t.calls[index][3])
+
+    def test_pr_create(self):
+        forge, t = make({f"GET {PROJ}": (200, {"default_branch": "main"}),
+                         f"POST {PROJ}/merge_requests": (201, {"web_url": "https://g/mr/1"})})
+        self.assertEqual(forge.pr_create("T", self.body, head="feat"), "https://g/mr/1\n")
+        self.assertEqual(self.sent(t, 1), {"source_branch": "feat", "target_branch": "main",
+                                           "title": "T", "description": "the body"})
+
+    def test_pr_create_head_from_runner(self):
+        forge, t = make({f"GET {PROJ}": (200, {"default_branch": "main"}),
+                         f"POST {PROJ}/merge_requests": (201, {"web_url": "u"})})
+        forge.runner = lambda argv: "topic\n"
+        forge.pr_create("T", self.body)
+        self.assertEqual(self.sent(t, 1)["source_branch"], "topic")
+
+    def test_draft_raises_without_request(self):
+        forge, t = make()
+        with self.assertRaises(Unsupported):
+            forge.pr_create("T", self.body, draft=True)
+        self.assertEqual(t.calls, [])
+
+    def test_pr_merge_sends_sha(self):
+        forge, t = make({f"PUT {PROJ}/merge_requests/4/merge": (200, {})})
+        forge.pr_merge(4, "abc")
+        self.assertEqual(t.lines(), [f"PUT {PROJ}/merge_requests/4/merge"])
+        self.assertEqual(self.sent(t, 0), {"sha": "abc"})
+
+    def test_approve_posts_note_then_approves_head_sha(self):
+        forge, t = make({f"POST {PROJ}/merge_requests/4/notes": (201, {"id": 1}),
+                         f"GET {PROJ}/merge_requests/4": (200, {"sha": "head1"}),
+                         f"POST {PROJ}/merge_requests/4/approve": (201, {})})
+        forge.pr_review(4, "approve", self.body)
+        self.assertEqual(t.lines(), [f"POST {PROJ}/merge_requests/4/notes",
+                                     f"GET {PROJ}/merge_requests/4",
+                                     f"POST {PROJ}/merge_requests/4/approve"])
+        self.assertEqual(self.sent(t, 0), {"body": "the body"})
+        self.assertEqual(self.sent(t, 2), {"sha": "head1"})
+
+    def test_comment_only_posts_note_and_unknown_event_raises(self):
+        forge, t = make({f"POST {PROJ}/merge_requests/4/notes": (201, {"id": 1})})
+        forge.pr_review(4, "request-changes", self.body)
+        self.assertEqual(t.lines(), [f"POST {PROJ}/merge_requests/4/notes"])
+        with self.assertRaises(Unsupported):
+            forge.pr_review(4, "dismiss", self.body)
+
+    def test_approve_conflict_raises(self):
+        forge, t = make({f"POST {PROJ}/merge_requests/4/notes": (201, {"id": 1}),
+                         f"GET {PROJ}/merge_requests/4": (200, {"sha": "h"}),
+                         f"POST {PROJ}/merge_requests/4/approve": (409, {"message": "sha"})})
+        with self.assertRaises(GitLabError):
+            forge.pr_review(4, "approve", self.body)
+
+    def test_review_reads_are_empty(self):
+        forge, t = make()
+        self.assertEqual(forge.review_urls(4, "x"), [])
+        self.assertEqual(forge.pr_review_items(4), [])
+        self.assertEqual(t.calls, [])
+
+    def test_review_request_remove_keeps_others(self):
+        forge, t = make({f"GET {PROJ}/merge_requests/4": (200, {"reviewers": [
+            {"id": 1, "username": "a"}, {"id": 2, "username": "b"}]}),
+            f"PUT {PROJ}/merge_requests/4": (200, {})})
+        forge.review_request_remove(4, "a")
+        self.assertEqual(self.sent(t, 1), {"reviewer_ids": [2]})
+
+    def test_review_request_remove_not_a_reviewer(self):
+        forge, t = make({f"GET {PROJ}/merge_requests/4": (200, {"reviewers": [
+            {"id": 1, "username": "a"}]})})
+        forge.review_request_remove(4, "z")
+        self.assertEqual(t.lines(), [f"GET {PROJ}/merge_requests/4"])
+
+
 if __name__ == "__main__":
     unittest.main()

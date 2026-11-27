@@ -519,6 +519,51 @@ class GitLab:
                 newest = created
         return newest
 
+    # --- merge request writes ---
+
+    def pr_create(self, title, path, head=None, draft=False, role=None):
+        if draft:
+            raise Unsupported("creating a draft merge request")
+        if not head:
+            head = self.runner(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip()
+        base = self._request("GET", self._project())["default_branch"]
+        found = self._request("POST", f"{self._project()}/merge_requests",
+                              body={"source_branch": head, "target_branch": base,
+                                    "title": title, "description": self._read_file(path)})
+        return found["web_url"] + "\n"
+
+    def pr_merge(self, number, head_oid, role=None):
+        self._request("PUT", f"{self._project()}/merge_requests/{number}/merge",
+                      body={"sha": head_oid})
+        return ""
+
+    _REVIEW_EVENTS = ("approve", "request-changes", "comment")
+
+    def pr_review(self, number, event, path, role=None):
+        if event not in self._REVIEW_EVENTS:
+            raise Unsupported(f"the review event {event}")
+        base = f"{self._project()}/merge_requests/{number}"
+        self._request("POST", f"{base}/notes", body={"body": self._read_file(path)})
+        if event == "approve":
+            current = self._request("GET", base)
+            self._request("POST", f"{base}/approve", body={"sha": current.get("sha")})
+        return ""
+
+    def review_urls(self, number, login):
+        return []
+
+    def pr_review_items(self, number):
+        return []
+
+    def review_request_remove(self, number, login, role=None):
+        path = f"{self._project()}/merge_requests/{number}"
+        reviewers = self._request("GET", path).get("reviewers") or []
+        if not any(user.get("username") == login for user in reviewers):
+            return ""
+        ids = [user["id"] for user in reviewers if user.get("username") != login]
+        self._request("PUT", path, body={"reviewer_ids": ids})
+        return ""
+
     def review_edit_body(self, number, review_id, path, role=None):
         raise Unsupported("editing a review body")
 
