@@ -187,6 +187,25 @@ class IssueTest(unittest.TestCase):
         self.assertEqual(len(forge.issue_list("number", "all", 20)), 20)
         self.assertEqual(len(t.calls), 1)
 
+    def test_issues_closed_since(self):
+        def closed(number, stamp):
+            return dict(self.ISSUE, number=number, state="closed", closed_at=stamp)
+
+        items = [closed(1, "2026-01-02T05:00:00Z"), closed(2, "2026-01-01T23:00:00Z"),
+                 closed(3, "2026-01-02T00:30:00+02:00"),
+                 dict(self.ISSUE, number=4, state="closed", closed_at=None)]
+        forge, t = make({"GET /api/v1/repos/o/r/issues": (200, items)})
+        got = forge.issues_closed_since("number,state", "2026-01-02", 200)
+        self.assertEqual(got, [{"number": 1, "state": "CLOSED"}])
+        line = t.lines()[0]
+        for part in ("type=issues", "state=closed", "since=2026-01-02T00%3A00%3A00Z"):
+            self.assertIn(part, line)
+        self.assertNotIn("q=", line)
+        forge, t = make()
+        with self.assertRaises(Unsupported):
+            forge.issues_closed_since("number,bogus", "2026-01-02", 200)
+        self.assertEqual(t.calls, [])
+
     def test_search_sends_q_and_ranks(self):
         items = [dict(self.ISSUE, number=1, title="other", body="nothing"),
                  dict(self.ISSUE, number=2, title="other", body="csv here"),
