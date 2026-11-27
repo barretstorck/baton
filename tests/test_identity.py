@@ -1046,6 +1046,20 @@ class RotateRoleTokensTest(_RotateFiles, unittest.TestCase):
         for secret in ("old-baton", "old-reviewer", "new-secret"):
             self.assertNotIn(secret, text)
 
+    def test_rotated_but_file_not_written_says_so(self):
+        def rotate(token):
+            return ("personal", "new-secret", self.DAY)
+
+        with mock.patch("os.replace", side_effect=OSError("No space left on device")):
+            lines, ok = self.rotate_with(rotate)
+        self.assertFalse(ok)
+        self.assertEqual(self.read("baton"), "old-baton")
+        self.assertEqual(self.read("reviewer"), "old-reviewer")
+        self.assertEqual(len(lines), 2)
+        for line in lines:
+            self.assertIn("rotated but", line)
+            self.assertNotIn("new-secret", line)
+
 
 class CmdIdentityRotateTest(_RotateFiles, unittest.TestCase):
     def found(self, kind):

@@ -260,7 +260,11 @@ def rotate_role_tokens(kind, owner, repo, rotate, home=None):
             replace_token_file(path, produce)
         except Exception as e:
             all_ok = False
-            lines.append(f"[{kind}.{name}]: {e}")
+            if got:
+                lines.append(f"[{kind}.{name}]: the token was rotated but the file was not written "
+                             f"(renew it by hand): {e}")
+            else:
+                lines.append(f"[{kind}.{name}]: {e}")
             continue
         token_kind, _secret, expires = got[0]
         lines.append(f"rotated [{kind}.{name}] ({token_kind} access token), expires {expires}")
