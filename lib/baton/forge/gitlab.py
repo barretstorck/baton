@@ -1,4 +1,5 @@
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -41,6 +42,7 @@ def urllib_transport(method, url, headers, data):
 
 class GitLab:
     kind = "gitlab"
+    _DRAFT = re.compile(r"^\s*(?:draft:|\[draft\]|\(draft\))\s*", re.I)
 
     def __init__(self, url, owner, repo, token=None, runner=None, transport=None, sleep=None):
         self.url = url.rstrip("/")
@@ -561,7 +563,7 @@ class GitLab:
 
     def pr_create(self, title, path, head=None, draft=False, role=None):
         if draft:
-            raise Unsupported("creating a draft merge request")
+            title = f"Draft: {title}"
         if not head:
             head = self.runner(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip()
         base = self._request("GET", self._project())["default_branch"]
@@ -617,7 +619,15 @@ class GitLab:
         raise Unsupported("editing a note")
 
     def pr_ready(self, number, undo=False, role=None):
-        raise Unsupported("marking a merge request ready")
+        path = f"{self._project()}/merge_requests/{number}"
+        title = (self._request("GET", path) or {}).get("title") or ""
+        if undo:
+            new = title if self._DRAFT.match(title) else f"Draft: {title}"
+        else:
+            new = self._DRAFT.sub("", title, count=1)
+        if new != title:
+            self._request("PUT", path, body={"title": new})
+        return ""
 
     def workflow_entries_text(self, *args, **kwargs):
         raise Unsupported("GitHub Actions workflow reads")

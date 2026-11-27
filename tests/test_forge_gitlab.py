@@ -84,7 +84,6 @@ class TransportTest(unittest.TestCase):
         forge, t = make()
         for call in (lambda: forge.review_edit_body(1, 2, "p"),
                      lambda: forge.comment_edit_body("3", "p"),
-                     lambda: forge.pr_ready(1),
                      lambda: forge.workflow_entries_text("o", "r"),
                      lambda: forge.workflow_file_text("o", "r", "f"),
                      lambda: forge.actions_permissions_text("o", "r")):
@@ -667,11 +666,29 @@ class MergeRequestWriteTest(unittest.TestCase):
         forge.pr_create("T", self.body)
         self.assertEqual(self.sent(t, 1)["source_branch"], "topic")
 
-    def test_draft_raises_without_request(self):
-        forge, t = make()
-        with self.assertRaises(Unsupported):
-            forge.pr_create("T", self.body, draft=True)
-        self.assertEqual(t.calls, [])
+    def test_draft_sends_prefixed_title(self):
+        forge, t = make({f"GET {PROJ}": (200, {"default_branch": "main"}),
+                         f"POST {PROJ}/merge_requests": (201, {"web_url": "u"})})
+        forge.pr_create("T", self.body, head="feat", draft=True)
+        self.assertEqual(self.sent(t, 1)["title"], "Draft: T")
+
+    def test_pr_ready_strips_each_prefix(self):
+        for title in ("Draft: T", "[draft] T", "(Draft) T"):
+            forge, t = make({f"GET {PROJ}/merge_requests/3": (200, {"title": title}),
+                             f"PUT {PROJ}/merge_requests/3": (200, {})})
+            self.assertEqual(forge.pr_ready(3), "")
+            self.assertEqual(self.sent(t, 1), {"title": "T"})
+
+    def test_pr_ready_undo_adds_prefix(self):
+        forge, t = make({f"GET {PROJ}/merge_requests/3": (200, {"title": "T"}),
+                         f"PUT {PROJ}/merge_requests/3": (200, {})})
+        forge.pr_ready(3, undo=True)
+        self.assertEqual(self.sent(t, 1), {"title": "Draft: T"})
+
+    def test_pr_ready_unchanged_sends_nothing(self):
+        forge, t = make({f"GET {PROJ}/merge_requests/3": (200, {"title": "T"})})
+        forge.pr_ready(3)
+        self.assertEqual(t.lines(), [f"GET {PROJ}/merge_requests/3"])
 
     def test_pr_merge_sends_sha(self):
         forge, t = make({f"PUT {PROJ}/merge_requests/4/merge": (200, {})})
