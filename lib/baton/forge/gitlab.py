@@ -49,6 +49,7 @@ class GitLab:
         self.owner = owner
         self.repo = repo
         self._token = token
+        self._role_tokens = {}
         self.runner = runner or run.run
         self.transport = transport or urllib_transport
         self.sleep = sleep or time.sleep
@@ -61,15 +62,27 @@ class GitLab:
                 raise GitLabError(f"GitLab token: {err}") from None
         return self._token
 
+    def _token_for(self, role):
+        if role is None:
+            return self._get_token()
+        key = identity.route(role)
+        if key not in self._role_tokens:
+            try:
+                found = identity.forge_role_token("gitlab", self.owner, self.repo, role)
+            except identity.IdentityError as err:
+                raise GitLabError(f"GitLab token: {err}") from None
+            self._role_tokens[key] = found
+        return self._role_tokens[key] or self._get_token()
+
     def _project(self, owner=None, repo=None):
         full = f"{owner or self.owner}/{repo or self.repo}"
         return "/projects/" + urllib.parse.quote(full, safe="")
 
-    def _request(self, method, path, params=None, body=None, raw=False):
+    def _request(self, method, path, params=None, body=None, raw=False, role=None):
         url = f"{self.url}/api/v4{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
-        headers = {"PRIVATE-TOKEN": self._get_token(), "Accept": "application/json"}
+        headers = {"PRIVATE-TOKEN": self._token_for(role), "Accept": "application/json"}
         data = None
         if body is not None:
             data = json.dumps(body).encode()
@@ -138,7 +151,7 @@ class GitLab:
 
     def label_create(self, name, color, description, role=None):
         self._request("POST", f"{self._project()}/labels",
-                      body={"name": name, "color": "#" + color, "description": description})
+                      body={"name": name, "color": "#" + color, "description": description}, role=role)
         return ""
 
     @staticmethod
@@ -173,7 +186,7 @@ class GitLab:
             body["description"] = description
         if due_on:
             body["due_date"] = due_on[:10]
-        self._request("POST", f"{self._project()}/milestones", body=body)
+        self._request("POST", f"{self._project()}/milestones", body=body, role=role)
         return ""
 
     def milestone_edit(self, number, changes, role=None):
@@ -185,7 +198,7 @@ class GitLab:
             body["due_date"] = (changes["due_on"] or "")[:10]
         if "state" in changes:
             body["state_event"] = "close" if changes["state"] == "closed" else "activate"
-        self._request("PUT", f"{self._project()}/milestones/{number}", body=body)
+        self._request("PUT", f"{self._project()}/milestones/{number}", body=body, role=role)
         return ""
 
     def _milestone_id(self, title):
@@ -287,7 +300,7 @@ class GitLab:
 
     def issue_edit_body(self, number, path, role=None):
         self._request("PUT", f"{self._project()}/issues/{number}",
-                      body={"description": self._read_file(path)})
+                      body={"description": self._read_file(path)}, role=role)
         return ""
 
     def issue_edit_labels(self, number, add, remove=(), role=None):
@@ -297,20 +310,20 @@ class GitLab:
         if remove:
             body["remove_labels"] = ",".join(remove)
         if body:
-            self._request("PUT", f"{self._project()}/issues/{number}", body=body)
+            self._request("PUT", f"{self._project()}/issues/{number}", body=body, role=role)
         return ""
 
     def comment(self, target, number, path, role=None):
         kind = "merge_requests" if target == "pr" else "issues"
         made = self._request("POST", f"{self._project()}/{kind}/{number}/notes",
-                             body={"body": self._read_file(path)})
+                             body={"body": self._read_file(path)}, role=role)
         note = (made or {}).get("id", "")
         return f"{self.url}/{self.owner}/{self.repo}/-/{kind}/{number}#note_{note}\n"
 
     def change_state(self, target, action, number, role=None):
         kind = "merge_requests" if target == "pr" else "issues"
         event = "close" if action == "close" else "reopen"
-        self._request("PUT", f"{self._project()}/{kind}/{number}", body={"state_event": event})
+        self._request("PUT", f"{self._project()}/{kind}/{number}", body={"state_event": event}, role=role)
         return ""
 
     def issue_close(self, number, reason, duplicate_of=None, role=None):
@@ -318,7 +331,7 @@ class GitLab:
 
     def issue_lock(self, number, reason=None, role=None):
         self._request("PUT", f"{self._project()}/issues/{number}",
-                      body={"discussion_locked": True})
+                      body={"discussion_locked": True}, role=role)
         return ""
 
     def issue_create(self, title, path, labels=(), milestone=None, role=None):
@@ -327,7 +340,7 @@ class GitLab:
             body["labels"] = ",".join(labels)
         if milestone:
             body["milestone_id"] = self._milestone_id(milestone)
-        made = self._request("POST", f"{self._project()}/issues", body=body)
+        made = self._request("POST", f"{self._project()}/issues", body=body, role=role)
         return (made or {}).get("web_url", "") + "\n"
 
     def item_edit(self, target, number, title=None, add_labels=(), remove_labels=(),
@@ -347,7 +360,7 @@ class GitLab:
             body["remove_labels"] = ",".join(remove_labels)
         if body:
             kind = "merge_requests" if target == "pr" else "issues"
-            self._request("PUT", f"{self._project()}/{kind}/{number}", body=body)
+            self._request("PUT", f"{self._project()}/{kind}/{number}", body=body, role=role)
         return ""
 
     def user(self, login):
@@ -596,13 +609,13 @@ class GitLab:
         base = self._request("GET", self._project())["default_branch"]
         found = self._request("POST", f"{self._project()}/merge_requests",
                               body={"source_branch": head, "target_branch": base,
-                                    "title": title, "description": self._read_file(path)})
+                                    "title": title, "description": self._read_file(path)}, role=role)
         return found["web_url"] + "\n"
 
     def pr_merge(self, number, head_oid, role=None):
         base = f"{self._project()}/merge_requests/{number}"
         try:
-            self._request("PUT", f"{base}/merge", body={"sha": head_oid})
+            self._request("PUT", f"{base}/merge", body={"sha": head_oid}, role=role)
         except GitLabError as error:
             try:
                 found = self._request("GET", base)
@@ -618,10 +631,10 @@ class GitLab:
         if event not in self._REVIEW_EVENTS:
             raise Unsupported(f"the review event {event}")
         base = f"{self._project()}/merge_requests/{number}"
-        self._request("POST", f"{base}/notes", body={"body": self._read_file(path)})
+        self._request("POST", f"{base}/notes", body={"body": self._read_file(path)}, role=role)
         if event == "approve":
             current = self._request("GET", base)
-            self._request("POST", f"{base}/approve", body={"sha": current.get("sha")})
+            self._request("POST", f"{base}/approve", body={"sha": current.get("sha")}, role=role)
         return ""
 
     def review_urls(self, number, login):
@@ -636,7 +649,7 @@ class GitLab:
         if not any(user.get("username") == login for user in reviewers):
             return ""
         ids = [user["id"] for user in reviewers if user.get("username") != login]
-        self._request("PUT", path, body={"reviewer_ids": ids})
+        self._request("PUT", path, body={"reviewer_ids": ids}, role=role)
         return ""
 
     def review_edit_body(self, number, review_id, path, role=None):
@@ -653,7 +666,7 @@ class GitLab:
         else:
             new = self._DRAFT.sub("", title, count=1)
         if new != title:
-            self._request("PUT", path, body={"title": new})
+            self._request("PUT", path, body={"title": new}, role=role)
         return ""
 
     def workflow_entries_text(self, *args, **kwargs):

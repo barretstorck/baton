@@ -269,6 +269,21 @@ class ForgeRoleTokenTest(unittest.TestCase):
             self.assertEqual(self.tok("reviewer"), "tok-reviewer")
 
 
+class GitlabRoleTokenTest(unittest.TestCase):
+    def test_gitlab_tables(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "o-r").mkdir()
+            (root / "bat").write_text("tok-baton\n")
+            (root / "rev").write_text("tok-reviewer\n")
+            (root / "o-r" / "identity.toml").write_text(
+                f'[gitlab.baton]\ntoken_path = "{root / "bat"}"\n'
+                f'[gitlab.reviewer]\ntoken_path = "{root / "rev"}"\n')
+            tok = lambda role: identity.forge_role_token("gitlab", "o", "r", role, home=tmp)
+            self.assertEqual(tok("reviewer"), "tok-reviewer")
+            self.assertEqual(tok("developer"), "tok-baton")
+
+
 class DetectForgeTest(unittest.TestCase):
     SETTING = {"kind": "forgejo", "url": "https://git.example.org/"}
 
