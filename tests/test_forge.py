@@ -479,3 +479,16 @@ class NeutralReadsTest(unittest.TestCase):
         runner = FakeRunner({"gh repo view": '{"visibility": "PRIVATE"}'})
         self.assertEqual(GitHub(runner).repo_view("visibility"), {"visibility": "PRIVATE"})
         self.assertEqual(runner.lines(), ["gh repo view --json visibility"])
+
+    def test_pr_list_head_argv(self):
+        runner = FakeRunner({"gh pr list": "[]"})
+        GitHub(runner).pr_list_text("number", "open", 5)
+        GitHub(runner).pr_list_text("number", "open", 5, head="b")
+        self.assertEqual(runner.lines(), [
+            "gh pr list --state open --limit 5 --json number",
+            "gh pr list --state open --limit 5 --head b --json number"])
+
+    def test_run_log_failed_argv(self):
+        runner = FakeRunner({"gh run view": "log text"})
+        self.assertEqual(GitHub(runner).run_log_failed(7), "log text")
+        self.assertEqual(runner.lines(), ["gh run view 7 --log-failed"])

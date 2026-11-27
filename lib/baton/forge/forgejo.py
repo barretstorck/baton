@@ -550,10 +550,16 @@ class Forgejo:
         item = self._request("GET", f"{self._repo_path()}/pulls/{number}")
         return self._pr_shape(item, names)
 
-    def pr_list_text(self, fields, state, limit):
+    def pr_list_text(self, fields, state, limit, head=None):
         names = self._field_names(fields, self._PR_FIELDS)
-        items = self._paged(f"{self._repo_path()}/pulls", {"state": state}, limit)
+        items = self._paged(f"{self._repo_path()}/pulls", {"state": state},
+                            max(limit, 200) if head else limit)
+        if head:
+            items = [i for i in items if (i.get("head") or {}).get("ref") == head][:limit]
         return json.dumps([self._pr_shape(item, names) for item in items])
+
+    def run_log_failed(self, run_id):
+        raise Unsupported("run logs")
 
     def pr_create(self, title, path, head=None, draft=False, role=None):
         if draft:

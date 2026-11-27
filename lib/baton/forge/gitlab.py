@@ -461,11 +461,16 @@ class GitLab:
         item = self._request("GET", f"{self._project()}/merge_requests/{number}")
         return self._mr_shape(item, names)
 
-    def pr_list_text(self, fields, state, limit):
+    def pr_list_text(self, fields, state, limit, head=None):
         names = self._field_names(fields, self._PR_FIELDS)
-        wanted = {"open": "opened"}.get(state, state)
-        items = self._paged(f"{self._project()}/merge_requests", {"state": wanted}, limit)
+        params = {"state": {"open": "opened"}.get(state, state)}
+        if head:
+            params["source_branch"] = head
+        items = self._paged(f"{self._project()}/merge_requests", params, limit)
         return json.dumps([self._mr_shape(item, names) for item in items])
+
+    def run_log_failed(self, run_id):
+        raise Unsupported("run logs")
 
     def pr_diff(self, number):
         out = []

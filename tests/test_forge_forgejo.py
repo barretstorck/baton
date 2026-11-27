@@ -655,3 +655,16 @@ class NeutralReadsTest(unittest.TestCase):
             "GET /api/v1/orgs/o/labels": (200, [{"id": 2, "name": "org-l"}])})
         self.assertEqual(forge.label_list(), [{"name": "repo-l", "description": "mine"},
                                               {"name": "org-l", "description": ""}])
+
+    def test_pr_list_head_filter(self):
+        prs = [{"number": n, "head": {"ref": ref}} for n, ref in ((1, "a"), (2, "b"), (3, "b"))]
+        forge, _ = make({"GET /api/v1/repos/o/r/pulls": (200, prs)})
+        out = json.loads(forge.pr_list_text("number", "open", 1, head="b"))
+        self.assertEqual(out, [{"number": 2}])
+        out = json.loads(forge.pr_list_text("number", "open", 10))
+        self.assertEqual(len(out), 3)
+
+    def test_run_log_failed_unsupported(self):
+        forge, _ = make({})
+        with self.assertRaises(Unsupported):
+            forge.run_log_failed(1)

@@ -786,3 +786,13 @@ class NeutralReadsTest(unittest.TestCase):
         self.assertEqual(forge.label_list(), [{"name": "bug", "description": "b"},
                                               {"name": "grp", "description": ""}])
         self.assertIn("include_ancestor_groups=true", t.lines()[0])
+
+    def test_pr_list_source_branch(self):
+        forge, t = make({f"GET {self.P}/merge_requests": (200, [])})
+        forge.pr_list_text("number", "open", 5, head="feat")
+        self.assertIn("source_branch=feat", t.lines()[0])
+
+    def test_run_log_failed_unsupported(self):
+        forge, _ = make({})
+        with self.assertRaises(Unsupported):
+            forge.run_log_failed(1)
