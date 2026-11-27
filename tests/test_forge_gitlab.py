@@ -369,6 +369,7 @@ class MergeRequestTest(unittest.TestCase):
                 {"old_path": "a", "new_path": "a", "diff": "@@ -1 +1,2 @@\n-x\n+y\n+z\n"}]),
             f"GET {PROJ}/merge_requests/7/commits": (200, [
                 {"id": "c1", "title": "Head", "message": "Head\n\nBody\nmore"}]),
+            f"GET {PROJ}/merge_requests/7/closes_issues": (200, [{"iid": 4}]),
             f"GET {PROJ}/merge_requests/7": (200, {**self.MR, **changes})})
         return forge.pr_view(7, fields), t
 
@@ -390,6 +391,36 @@ class MergeRequestTest(unittest.TestCase):
         self.assertEqual(view["files"], [{"path": "a", "additions": 2, "deletions": 1}])
         self.assertEqual(view["commits"], [{"oid": "c1", "messageHeadline": "Head",
                                             "messageBody": "Body\nmore"}])
+        self.assertEqual(view["closingIssuesReferences"], [{"number": 4}])
+
+    def closes(self, replies):
+        sleeps, queue = [], list(replies)
+        forge, t = make()
+        forge.sleep = sleeps.append
+
+        def transport(method, url, headers, data):
+            t.calls.append((method, url, headers, data))
+            body = queue.pop(0) if len(queue) > 1 else queue[0]
+            return 200, {}, json.dumps(body).encode()
+        forge.transport = transport
+        return forge._closes_issues(7), sleeps, t
+
+    def test_closes_issues_retries_until_filled(self):
+        got, sleeps, t = self.closes([[], [], [{"iid": 4}]])
+        self.assertEqual(got, [{"number": 4}])
+        self.assertEqual(sleeps, [2, 2])
+        self.assertEqual(len(t.calls), 3)
+
+    def test_closes_issues_always_empty(self):
+        got, sleeps, t = self.closes([[]])
+        self.assertEqual(got, [])
+        self.assertEqual(sleeps, [2, 2, 2])
+        self.assertEqual(len(t.calls), 4)
+
+    def test_closes_issues_no_sleep_when_filled(self):
+        got, sleeps, _ = self.closes([[{"iid": 1}, {"iid": 2}]])
+        self.assertEqual(got, [{"number": 1}, {"number": 2}])
+        self.assertEqual(sleeps, [])
 
     def test_states(self):
         for state, want in (("opened", "OPEN"), ("merged", "MERGED"), ("closed", "CLOSED"),

@@ -330,7 +330,8 @@ class GitLab:
 
     _PR_FIELDS = ("number", "title", "body", "state", "isDraft", "mergeable", "headRefName",
                   "headRefOid", "baseRefName", "isCrossRepository", "changedFiles", "author",
-                  "url", "reviewRequests", "comments", "files", "commits")
+                  "url", "reviewRequests", "comments", "files", "commits",
+                  "closingIssuesReferences")
 
     _UNKNOWN_MERGE = ("checking", "unchecked", "preparing", "approvals_syncing")
 
@@ -379,6 +380,17 @@ class GitLab:
                         "messageBody": rest.lstrip("\n")})
         return out
 
+    def _closes_issues(self, iid):
+        # GitLab fills closes_issues in asynchronously: read an empty list again.
+        path = f"{self._project()}/merge_requests/{iid}/closes_issues"
+        issues = self._request("GET", path) or []
+        for _ in range(3):
+            if issues:
+                break
+            self.sleep(2)
+            issues = self._request("GET", path) or []
+        return [{"number": issue["iid"]} for issue in issues]
+
     def _mr_shape(self, item, names):
         iid = item["iid"]
         shapes = {
@@ -399,6 +411,7 @@ class GitLab:
             "comments": lambda: self._notes("merge_requests", iid, item["web_url"]),
             "files": lambda: self._mr_files(iid),
             "commits": lambda: self._mr_commits(iid),
+            "closingIssuesReferences": lambda: self._closes_issues(iid),
         }
         return {name: shapes[name]() for name in names}
 
