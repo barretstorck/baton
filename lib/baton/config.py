@@ -310,6 +310,11 @@ def load(path):
     root = repo_root(path)
     if root is None:
         return None
+    return load_root(root)
+
+
+def load_root(root):
+    """The config of the repository whose top level is `root`, or None without a brief."""
     brief = root / ".baton" / "brief.md"
     if not brief.is_file():
         return None
