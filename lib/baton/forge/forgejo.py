@@ -45,7 +45,8 @@ def urllib_transport(method, url, headers, data):
 class Forgejo:
     kind = "forgejo"
 
-    def __init__(self, url, owner, repo, token=None, runner=None, transport=None):
+    def __init__(self, url, owner, repo, token=None, runner=None, transport=None,
+                 draft_prefix=""):
         self.url = url.rstrip("/")
         self.owner = owner
         self.repo = repo
@@ -53,6 +54,7 @@ class Forgejo:
         self._role_tokens = {}
         self.runner = runner or run.run
         self.transport = transport or urllib_transport
+        self.draft_prefix = draft_prefix or "WIP:"
 
     def _get_token(self):
         if not self._token:

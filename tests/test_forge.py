@@ -26,6 +26,12 @@ class SelectTest(unittest.TestCase):
                          ("https://git.example", "o", "r"))
         self.assertIs(backend.runner, runner)
 
+    def test_forgejo_gets_the_draft_prefix(self):
+        found = {"kind": "forgejo", "url": "https://git.example", "owner": "o", "repo": "r"}
+        for extra, want in (({"draft_prefix": "[draft]"}, "[draft]"), ({}, "WIP:")):
+            with mock.patch.object(forge, "detect", lambda cwd=None, f=dict(found, **extra): f):
+                self.assertEqual(forge.for_repo(runner=FakeRunner({})).draft_prefix, want)
+
     def test_gitlab_detection_gives_gitlab(self):
         found = {"kind": "gitlab", "url": "https://gl.example", "owner": "g/s", "repo": "r"}
         runner = FakeRunner({})
