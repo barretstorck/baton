@@ -268,6 +268,7 @@ class PullRequestTest(unittest.TestCase):
             "GET /api/v1/repos/o/r/commits/abc/status": (200, {"statuses": [
                 {"context": "ci", "status": "success", "target_url": "u"}]}),
             "GET /api/v1/repos/o/r/issues/3/comments": (200, []),
+            "GET /api/v1/repos/o/r/branches/main": (200, {"enable_status_check": False}),
             "GET /api/v1/repos/o/r/pulls/3": (200, self.PR)})
         got = forge.pr_view(3, fields)
         self.assertEqual(set(got), set(fields.split(",")))
@@ -307,6 +308,34 @@ class PullRequestTest(unittest.TestCase):
         forge, _ = make({"GET /api/v1/repos/o/r/commits/abc/status": (200, {
             "statuses": [], "state": "failure"})})
         self.assertEqual(forge._pr_rollup("abc")[0]["state"], "ERROR")
+
+    def rollup_with(self, branch, statuses):
+        replies = {"GET /api/v1/repos/o/r/commits/abc/status": (200, {"statuses": statuses})}
+        if branch is not None:
+            replies["GET /api/v1/repos/o/r/branches/main"] = (200, branch)
+        forge, _ = make(replies)
+        return forge._pr_rollup("abc", "main")
+
+    def test_required_context_matched_by_glob(self):
+        got = self.rollup_with({"enable_status_check": True, "status_check_contexts": ["ci/*"]},
+                               [{"context": "ci/test", "status": "success"}])
+        self.assertEqual([c["context"] for c in got], ["ci/test"])
+
+    def test_required_context_missing_is_pending(self):
+        got = self.rollup_with({"enable_status_check": True, "status_check_contexts": ["ci/*"]},
+                               [])
+        self.assertEqual(got, [{"__typename": "StatusContext", "context": "ci/*",
+                                "state": "PENDING", "targetUrl": None}])
+
+    def test_required_contexts_off(self):
+        got = self.rollup_with({"enable_status_check": False, "status_check_contexts": ["x"]},
+                               [])
+        self.assertEqual(got, [])
+
+    def test_branch_read_failure_fails_closed(self):
+        got = self.rollup_with(None, [{"context": "ci", "status": "success"}])
+        self.assertEqual(got[-1]["context"], "baton:required-contexts-unknown")
+        self.assertEqual(got[-1]["state"], "ERROR")
 
     def test_cross_repository_fails_closed(self):
         self.assertFalse(self.shape()["isCrossRepository"])

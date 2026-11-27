@@ -1,3 +1,4 @@
+import fnmatch
 import json
 import re
 import urllib.error
@@ -382,7 +383,14 @@ class Forgejo:
         found = {int(n) for text in texts for n in CLOSING.findall(text)}
         return [{"number": n} for n in sorted(found)]
 
-    def _pr_rollup(self, sha):
+    def _required_contexts(self, base):
+        branch = urllib.parse.quote(base, safe="")
+        found = self._request("GET", f"{self._repo_path()}/branches/{branch}") or {}
+        if not found.get("enable_status_check"):
+            return []
+        return list(found.get("status_check_contexts") or [])
+
+    def _pr_rollup(self, sha, base=None):
         path = f"{self._repo_path()}/commits/{sha}/status"
         statuses, total, state, page = [], None, "", 1
         while True:
@@ -402,6 +410,19 @@ class Forgejo:
         if short or unlisted:
             out.append({"__typename": "StatusContext", "context": "baton:incomplete-status",
                         "state": "ERROR", "targetUrl": None})
+        if base:
+            try:
+                required = self._required_contexts(base)
+            except ForgejoError:
+                out.append({"__typename": "StatusContext",
+                            "context": "baton:required-contexts-unknown",
+                            "state": "ERROR", "targetUrl": None})
+                required = []
+            names = [status.get("context") or "" for status in statuses]
+            for pattern in required:
+                if not any(fnmatch.fnmatchcase(name, pattern) for name in names):
+                    out.append({"__typename": "StatusContext", "context": pattern,
+                                "state": "PENDING", "targetUrl": None})
         return out
 
     @staticmethod
@@ -448,7 +469,7 @@ class Forgejo:
             "comments": lambda: self._comments(number),
             "files": lambda: self._pr_files(number),
             "commits": lambda: self._pr_commits(number),
-            "statusCheckRollup": lambda: self._pr_rollup(head.get("sha")),
+            "statusCheckRollup": lambda: self._pr_rollup(head.get("sha"), base.get("ref")),
             "closingIssuesReferences": lambda: self._closing_refs(item),
         }
         return {name: shapes[name]() for name in names}
