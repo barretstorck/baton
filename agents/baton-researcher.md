@@ -17,6 +17,6 @@ Scratch files go only in `.baton-scratch/` at the root of your own worktree, nev
 
 Your final message is read by the sprint orchestrator, not by a person. Make it one of the return forms the skill defines, and nothing else.
 
-The `tools:` list above is deliberate: the `research` skill needs file, search and shell work (`gh`, `git` and `baton` run through Bash), `Edit` and `Write` for prototype code and working files, and web search for research. If a run shows a tool is missing, add it to the list and write the reason here.
+The `tools:` list above is deliberate: the `research` skill needs file, search and shell work (`git` and `baton` run through Bash), `Edit` and `Write` for prototype code and working files, and web search for research. If a run shows a tool is missing, add it to the list and write the reason here.
 
 Never copy or link `.env` or any other secret file into your worktree. Reach local data only by the absolute paths under `## Local data` in the local brief, and return `QUESTION` if what you need is not listed.
