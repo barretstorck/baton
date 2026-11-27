@@ -116,6 +116,13 @@ class TemplateTest(unittest.TestCase):
         agent = (ROOT / "agents" / "baton-developer.md").read_text()
         self.assertIn("Hand-check pull request <P> (issue <N>).", agent)
 
+    def test_sprint_dispatches_hand_checks_to_a_subagent(self):
+        text = " ".join(sprint_text().split())
+        self.assertIn("Hand-check pull request <P> (issue <N>).", text)
+        self.assertIn("CHECKED <sha>", text)
+        parent = " ".join((ROOT / "references" / "sprint-parent.md").read_text().split())
+        self.assertIn("never runs a hand check", parent)
+
     def test_develop_skill_reports_merge_first(self):
         text = " ".join(develop_text().split())
         self.assertIn(

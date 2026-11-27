@@ -23,6 +23,7 @@ Read this when a developer, refiner, researcher or reviewer returns, and act on 
 - `DONE <sha>` for an update (`Issue: #<N>, update`): check the sha the
   same way, then `baton set-status <N> status:in-review`. There is no box to tick.
 - `FIXED <sha>`: check the sha the same way, then `baton task done pr <P> <r.n>`.
+- `CHECKED <sha>` (a hand check, `Pull request: #<P>, hand check`): there is no box to tick. Relay its `Task <n>:` lines in the sprint status. On any `fail`, run `baton notify <N> stuck <file | ->` with the failing lines and do not merge the pull request until the maintainer answers.
 - `DECLINED <reason>`: `baton task done pr <P> <r.n>`, and keep the reason for the reply.
 - Only the orchestrator runs `baton task done pr`, from the main checkout, or with
   `BATON_ROLE=orchestrator` set when it runs from a linked worktree (otherwise `baton` warns).
