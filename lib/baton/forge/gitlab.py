@@ -453,6 +453,10 @@ class GitLab:
         for item in self._mr_diffs(number):
             old, new = item.get("old_path"), item.get("new_path")
             text = item.get("diff") or ""
+            for path in (old, new):
+                if any(ord(c) < 32 or c in '"\\' or ord(c) == 127 for c in str(path)):
+                    raise GitLabError(f"GitLab merge request {number}: refusing a path with "
+                                      f"a control character, quote or backslash: {path!r}")
             if not text and (item.get("too_large") or item.get("collapsed")):
                 raise GitLabError(f"GitLab merge request {number}: the diff of {new} "
                                   "is too large to read")

@@ -469,6 +469,14 @@ class MergeRequestTest(unittest.TestCase):
         self.assertEqual(forbid.violations(patch, {"*": "ZZZ"}), [])
         self.assertEqual(len(forbid.violations(patch, {"n": "new"})), 1)
 
+    def test_diff_refuses_unsafe_paths(self):
+        for bad in ("a\nb", "a\rb", "a\tb", 'x"y', "x\\y"):
+            for key in ("old_path", "new_path"):
+                entry = {"old_path": "ok", "new_path": "ok", "diff": "@@ -1 +1 @@\n-a\n+b\n"}
+                entry[key] = bad
+                with self.assertRaises(GitLabError):
+                    self.diff([entry])
+
     def test_diff_too_large_raises(self):
         for flag in ("too_large", "collapsed"):
             with self.assertRaises(GitLabError):
