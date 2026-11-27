@@ -251,10 +251,6 @@ class DenyRules(unittest.TestCase):
             self.assertFalse(self._matches(path), path)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ForgeNotes(unittest.TestCase):
     def test_each_forge_kind_has_a_named_notes_file(self):
         from baton.config import FORGE_KINDS
@@ -266,3 +262,7 @@ class ForgeNotes(unittest.TestCase):
             rel = "references/forge-%s.md" % kind
             self.assertTrue(os.path.isfile(os.path.join(ROOT, rel)), rel + " is missing")
             self.assertIn(rel, commands, rel + " is not named from references/commands.md")
+
+
+if __name__ == "__main__":
+    unittest.main()
