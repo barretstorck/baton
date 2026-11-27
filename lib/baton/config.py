@@ -55,7 +55,7 @@ DEFAULTS = {
     "budgets": {},
     "work_mix": {},
     "spike": {"tokens": {}, "minutes": {}, "max_per_sprint": 2},
-    "forge": {"kind": "", "url": ""},
+    "forge": {"kind": "", "url": "", "draft_prefix": ""},
 }
 FORGE_KINDS = ("github", "forgejo", "gitlab")
 _FORGE_URL = re.compile(r"https://[^/\s:?#@]+(:[0-9]+)?/?")

@@ -71,8 +71,7 @@ class TransportTest(unittest.TestCase):
     def test_unsupported_methods(self):
         forge, t = make()
         for call in (lambda: forge.issue_lock(1),
-                     lambda: forge.review_edit_body(1, 2, "p"),
-                     lambda: forge.pr_ready(1)):
+                     lambda: forge.review_edit_body(1, 2, "p")):
             with self.assertRaises(Unsupported) as ctx:
                 call()
             self.assertIn("not supported on Forgejo", str(ctx.exception))
@@ -182,11 +181,30 @@ class IssueTest(unittest.TestCase):
         for part in ("type=issues", "state=open", "labels=a", "milestones=M"):
             self.assertIn(part, line)
         with self.assertRaises(Unsupported):
-            forge.issue_list("number", "open", 10, search="x")
+            forge.issue_list("number", "open", 10, search="closed:>=2026-01-01")
         full = [dict(self.ISSUE, number=n) for n in range(50)]
         forge, t = make({"GET /api/v1/repos/o/r/issues?": (200, full)})
         self.assertEqual(len(forge.issue_list("number", "all", 20)), 20)
         self.assertEqual(len(t.calls), 1)
+
+    def test_search_sends_q_and_ranks(self):
+        items = [dict(self.ISSUE, number=1, title="other", body="nothing"),
+                 dict(self.ISSUE, number=2, title="other", body="csv here"),
+                 dict(self.ISSUE, number=3, title="Export CSV", body="")]
+        forge, t = make({"GET /api/v1/repos/o/r/issues": (200, items)})
+        got = forge.issue_list("number", "open", 10, search="export csv")
+        self.assertIn("q=export+csv", t.lines()[0])
+        self.assertEqual(got, [{"number": 3}, {"number": 2}, {"number": 1}])
+
+    def test_search_ranks_before_limit(self):
+        items = [dict(self.ISSUE, number=n, title="x", body="") for n in range(1, 61)]
+        items[55]["title"] = "needle"
+        base = "GET /api/v1/repos/o/r/issues?type=issues&state=open&q=needle&limit=50&page="
+        forge, t = make({base + "1": (200, items[:50]), base + "2": (200, items[50:])})
+        got = forge.issue_list("number", "open", 5, search="needle")
+        self.assertEqual(len(got), 5)
+        self.assertEqual(got[0], {"number": 56})
+        self.assertEqual(len(t.calls), 2)
 
     def test_issue_edit_labels(self):
         forge, t = make({"POST /api/v1/repos/o/r/issues/1/labels": (200, []),
@@ -396,8 +414,29 @@ class PullRequestTest(unittest.TestCase):
         self.assertEqual(seen, [["git", "rev-parse", "--abbrev-ref", "HEAD"]])
         sent = json.loads(transport.calls[-1][3])
         self.assertEqual((sent["head"], sent["base"], sent["body"]), ("feat", "main", "hello"))
-        with self.assertRaises(Unsupported):
-            forge.pr_create("T", self.body(), draft=True)
+        forge.pr_create("T", self.body(), draft=True)
+        self.assertEqual(json.loads(transport.calls[-1][3])["title"], "WIP: T")
+
+    def ready(self, title, **kw):
+        forge, t = make({"GET /api/v1/repos/o/r/pulls/3": (200, {"title": title}),
+                         "PATCH /api/v1/repos/o/r/pulls/3": (201, {})})
+        self.assertEqual(forge.pr_ready(3, **kw), "")
+        return [json.loads(c[3]) for c in t.calls if c[0] == "PATCH"]
+
+    def test_pr_ready_strips_prefix(self):
+        self.assertEqual(self.ready("wip: T"), [{"title": "T"}])
+
+    def test_pr_ready_undo_adds_prefix(self):
+        self.assertEqual(self.ready("T", undo=True), [{"title": "WIP: T"}])
+
+    def test_pr_ready_unchanged_sends_nothing(self):
+        self.assertEqual(self.ready("T"), [])
+        self.assertEqual(self.ready("WIP: T", undo=True), [])
+
+    def test_draft_custom_prefix(self):
+        forge = Forgejo("https://f.example", "o", "r", token=TOKEN,
+                        transport=FakeTransport(), draft_prefix="[draft]")
+        self.assertTrue(forge._pr_shape(dict(self.PR, title="[Draft] x"), ["isDraft"])["isDraft"])
 
     def test_pr_review_approve(self):
         forge, t = make({"POST /api/v1/repos/o/r/pulls/3/reviews": (200, {})})

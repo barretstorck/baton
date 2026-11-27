@@ -45,7 +45,8 @@ def urllib_transport(method, url, headers, data):
 class Forgejo:
     kind = "forgejo"
 
-    def __init__(self, url, owner, repo, token=None, runner=None, transport=None):
+    def __init__(self, url, owner, repo, token=None, runner=None, transport=None,
+                 draft_prefix=""):
         self.url = url.rstrip("/")
         self.owner = owner
         self.repo = repo
@@ -53,6 +54,7 @@ class Forgejo:
         self._role_tokens = {}
         self.runner = runner or run.run
         self.transport = transport or urllib_transport
+        self.draft_prefix = draft_prefix or "WIP:"
 
     def _get_token(self):
         if not self._token:
@@ -184,7 +186,17 @@ class Forgejo:
         raise Unsupported("editing a review body")
 
     def pr_ready(self, number, undo=False, role=None):
-        raise Unsupported("marking a pull request ready")
+        path = f"{self._repo_path()}/pulls/{number}"
+        title = self._request("GET", path).get("title") or ""
+        prefix = self.draft_prefix
+        starts = title.lower().startswith(prefix.lower())
+        if undo:
+            new = title if starts else f"{prefix} {title}"
+        else:
+            new = title[len(prefix):].lstrip() if starts else title
+        if new != title:
+            self._request("PATCH", path, body={"title": new}, role=role)
+        return ""
 
     def issue_body_edits(self, number):
         return None
@@ -257,16 +269,35 @@ class Forgejo:
 
     def issue_list(self, fields, state, limit, milestone=None, label=None, search=None,
                    empty=None):
-        if search is not None:
-            raise Unsupported("issue search")
+        if search is not None and any(re.match(r"[A-Za-z][\w-]*:", word)
+                                      for word in search.split()):
+            raise Unsupported("issue search qualifiers")
         names = self._field_names(fields, self._ISSUE_FIELDS)
         params = {"type": "issues", "state": state}
         if label is not None:
             params["labels"] = label
         if milestone is not None:
             params["milestones"] = milestone
-        items = self._paged(f"{self._repo_path()}/issues", params, limit)
+        if search is not None:
+            params["q"] = search
+            items = self._paged(f"{self._repo_path()}/issues", params, max(limit, 100))
+            items = self._search_rank(items, search)[:limit]
+        else:
+            items = self._paged(f"{self._repo_path()}/issues", params, limit)
         return [self._issue_shape(item, names) for item in items]
+
+    @staticmethod
+    def _search_rank(items, search):
+        def words(text):
+            return {w for w in re.split(r"[^a-z0-9]+", (text or "").lower()) if len(w) >= 2}
+
+        wanted = words(search)
+
+        def score(item):
+            title, body = words(item.get("title")), words(item.get("body"))
+            return sum(2 if w in title else 1 if w in body else 0 for w in wanted)
+
+        return sorted(items, key=lambda item: (-score(item), -item["number"]))
 
     def issue_list_text(self, fields, state, limit, milestone=None, label=None, search=None):
         return json.dumps(self.issue_list(fields, state, limit, milestone, label, search))
@@ -447,12 +478,11 @@ class Forgejo:
                                 "state": "PENDING", "targetUrl": None})
         return out
 
-    @staticmethod
-    def _is_draft(item):
+    def _is_draft(self, item):
         if item.get("draft") is not False:
             return True
         title = (item.get("title") or "").strip().lower()
-        return title.startswith(("wip:", "[wip]"))
+        return title.startswith(("wip:", "[wip]", self.draft_prefix.lower()))
 
     @staticmethod
     def _is_cross_repository(item):
@@ -508,7 +538,7 @@ class Forgejo:
 
     def pr_create(self, title, path, head=None, draft=False, role=None):
         if draft:
-            raise Unsupported("creating a draft pull request")
+            title = f"{self.draft_prefix} {title}"
         if not head:
             head = self.runner(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip()
         base = self._request("GET", self._repo_path())["default_branch"]

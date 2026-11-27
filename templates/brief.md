@@ -95,6 +95,7 @@ spike:                        # limits for a spike's Timebox: line, picked by th
 forge:
   kind: ""                    # github or forgejo; empty: GitHub when origin is on github.com
   url: ""                     # https://<host> of a self-hosted forge; a private host goes in the local brief's ## Hosts section instead
+  draft_prefix: ""            # Forgejo only: title prefix that marks a draft pull request; empty: WIP:
 ---
 # Baton brief
 

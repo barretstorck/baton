@@ -6,6 +6,7 @@ import re
 from .. import config, identity, run, sandbox
 from .forgejo import Forgejo, ForgejoError
 from .github import GitHub
+from .gitlab import GitLab, GitLabError
 
 _git = run.run
 _detected = {}
@@ -20,7 +21,8 @@ def resolve(url, cfg):
         if path.is_file():
             local = config.parse_local_forge(path.read_text())
     committed = cfg.data["forge"] if cfg is not None else config.DEFAULTS["forge"]
-    return identity.detect_forge(url, config.effective_forge(committed, local))
+    found = identity.detect_forge(url, config.effective_forge(committed, local))
+    return dict(found, draft_prefix=committed.get("draft_prefix", ""))
 
 
 def detect(cwd=None):
@@ -65,9 +67,13 @@ def check_url(url, origin):
 
 
 def for_repo(cwd=None, runner=None):
-    """The backend for this repository: Forgejo when detected, else GitHub."""
+    """The backend for this repository: Forgejo or GitLab when detected, else GitHub."""
     found = detect(cwd)
     if found and found["kind"] == "forgejo":
         check_url(found["url"], _origin(cwd))
-        return Forgejo(found["url"], found["owner"], found["repo"], runner=runner or run.run)
+        return Forgejo(found["url"], found["owner"], found["repo"], runner=runner or run.run,
+                       draft_prefix=found.get("draft_prefix", ""))
+    if found and found["kind"] == "gitlab":
+        check_url(found["url"], _origin(cwd))
+        return GitLab(found["url"], found["owner"], found["repo"], runner=runner or run.run)
     return GitHub(runner or run.run)
