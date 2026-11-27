@@ -834,14 +834,7 @@ def cmd_push(opts):
 
 def _detect_forge(cfg):
     url = run.run(["git", "remote", "get-url", "origin"]).strip()
-    parts = identity.remote_parts(url)
-    local = None
-    if parts:
-        path = sandbox.brief_path(parts[1], parts[2])
-        if path.is_file():
-            local = config.parse_local_forge(path.read_text())
-    committed = cfg.data["forge"] if cfg is not None else config.DEFAULTS["forge"]
-    return identity.detect_forge(url, config.effective_forge(committed, local))
+    return forge.resolve(url, cfg)
 
 
 def _forge_kind(cfg):

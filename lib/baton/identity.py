@@ -17,6 +17,7 @@ from . import verify
 
 NAMES = ("baton", "reviewer")
 MACHINE = "machine"
+TOKEN_KINDS = ("forgejo",)
 DEFAULT_LOGINS = {"baton": "baton[bot]", "reviewer": "baton-reviewer[bot]"}
 
 
@@ -82,6 +83,60 @@ def _machine(table):
     return login
 
 
+def _token_table(kind, table):
+    if not isinstance(table, dict):
+        raise IdentityError(f"identity.toml [{kind}] must be a table")
+    extra = sorted(set(table) - {"token_path"})
+    if extra:
+        raise IdentityError(f"identity.toml [{kind}] has unknown keys: {', '.join(extra)}")
+    path = table.get("token_path")
+    if not isinstance(path, str) or not path:
+        raise IdentityError(f"identity.toml [{kind}] token_path must be a non-empty string")
+    return path
+
+
+def _read_token(path, what):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError as e:
+        raise IdentityError(f"cannot read {what} {path}: {e.strerror or e}")
+
+
+def forge_token(kind, owner, repo, home=None, environ=None):
+    env_name = f"{kind.upper()}_TOKEN"
+    value = (os.environ if environ is None else environ).get(env_name, "").strip()
+    if value:
+        return value
+    folder = verify._home(home) / f"{owner}-{repo}"
+    ident = folder / "identity.toml"
+    try:
+        text = ident.read_text()
+    except FileNotFoundError:
+        text = None
+    if text is not None:
+        try:
+            data = tomllib.loads(text)
+        except tomllib.TOMLDecodeError as e:
+            raise IdentityError(f"identity.toml is not valid TOML: {e}")
+        if kind in data:
+            path = _token_table(kind, data[kind])
+            value = _read_token(os.path.expanduser(path), "token_path file")
+            if value:
+                return value
+    bare = folder / f"{kind}-token"
+    try:
+        value = bare.read_text().strip()
+    except FileNotFoundError:
+        value = ""
+    except OSError as e:
+        raise IdentityError(f"cannot read {bare}: {e.strerror or e}")
+    if value:
+        return value
+    raise IdentityError(f"no {kind} token: set {env_name}, or token_path in the [{kind}] table of {ident}, "
+                        f"or put the token in {bare}")
+
+
 def load(owner, repo, home=None):
     path = verify._home(home) / f"{owner}-{repo}" / "identity.toml"
     try:
@@ -92,9 +147,14 @@ def load(owner, repo, home=None):
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as e:
         raise IdentityError(f"identity.toml is not valid TOML: {e}")
-    unknown = sorted(set(data) - set(NAMES) - {MACHINE})
+    for kind in TOKEN_KINDS:
+        if kind in data:
+            _token_table(kind, data[kind])
+    unknown = sorted(set(data) - set(NAMES) - {MACHINE} - set(TOKEN_KINDS))
     if unknown:
         raise IdentityError(f"identity.toml has unknown entries: {', '.join(unknown)}")
+    if not any(k in data for k in (*NAMES, MACHINE)):
+        return None
     if MACHINE in data and "baton" not in data:
         raise IdentityError("identity.toml [machine] needs a [baton] entry: tier 2 builds on tier 1")
     found = {name: _app(name, data[name]) for name in NAMES if name in data}
