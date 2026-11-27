@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from baton.issue import approval_problem, body_hash
 from baton.forge.gitlab import GitLab, GitLabError, Unsupported, urllib_transport
 
 from tests.fakes import FakeTransport
@@ -707,6 +708,40 @@ class MergeRequestWriteTest(unittest.TestCase):
         forge.review_request_remove(4, "z")
         self.assertEqual(t.lines(), [f"GET {PROJ}/merge_requests/4"])
 
+
+class EditApprovalTest(unittest.TestCase):
+    BODY = "the description"
+    APPROVED = "2026-01-02T12:00:00Z"
+
+    def issue(self, notes_reply, comment="/baton ready"):
+        forge, _ = make({f"GET {PROJ}/issues/7/notes": notes_reply})
+        return {"author": {"login": "mallory"}, "body": self.BODY,
+                "comments": [{"author": {"login": "octo"}, "body": comment,
+                              "createdAt": self.APPROVED}],
+                "edits": forge.issue_body_edits(7)}
+
+    @staticmethod
+    def note(user, created):
+        return {"id": 1, "author": {"username": user}, "system": True,
+                "body": "changed the description", "created_at": created}
+
+    def test_unchanged_description_keeps_approval(self):
+        issue = self.issue((200, [self.note("mallory", "2026-01-02T11:00:00Z")]))
+        self.assertIsNone(approval_problem(issue, ["octo"]))
+
+    def test_edit_after_approval_drops_it(self):
+        issue = self.issue((200, [self.note("mallory", "2026-01-02T13:00:00Z")]))
+        self.assertIn("@mallory", approval_problem(issue, ["octo"]))
+
+    def test_maintainer_edit_keeps_approval(self):
+        issue = self.issue((200, [self.note("octo", "2026-01-02T13:00:00Z")]))
+        self.assertIsNone(approval_problem(issue, ["octo"]))
+
+    def test_unreadable_notes_fall_back_to_hash(self):
+        issue = self.issue((500, {}))
+        self.assertIn(body_hash(self.BODY), approval_problem(issue, ["octo"]))
+        issue = self.issue((500, {}), f"/baton ready {body_hash(self.BODY)}")
+        self.assertIsNone(approval_problem(issue, ["octo"]))
 
 if __name__ == "__main__":
     unittest.main()
