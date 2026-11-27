@@ -27,7 +27,7 @@ installed build by the commit SHA of `main`, shown as `version` in
 
 Requirements: [Claude Code](https://docs.claude.com/en/docs/claude-code), `git`, on GitHub the
 [GitHub CLI](https://cli.github.com/) (`gh`) signed in to an account that can push to your
-repository (Forgejo needs no forge CLI, see [Forgejo](#forgejo)), and Python 3.11 or newer (CI tests 3.12). `baton` runs the first Python that is new
+repository (Forgejo and GitLab need no forge CLI, see [Forgejo](#forgejo) and [GitLab](#gitlab)), and Python 3.11 or newer (CI tests 3.12). `baton` runs the first Python that is new
 enough: `$BATON_PYTHON` when set, then each `python3` on `PATH` in order, then `python3.11` and
 later names, so an older system `python3` earlier on `PATH` is skipped. [Forge](#forge) says which
 forges Baton knows and how it picks one.
@@ -62,6 +62,36 @@ For a repository on a Forgejo instance, set up in this order:
    [docs/forgejo-identity.md](docs/forgejo-identity.md).
 
 GitHub App identities are not used on Forgejo. [Forge](#forge) lists the behaviours that differ.
+
+### GitLab
+
+For a project on gitlab.com or a self-managed GitLab, set up in this order:
+
+1. Name the forge. On `gitlab.com` there is nothing to do: the `origin` URL decides. On a
+   self-managed host (GitLab 17.0 or newer), set the `forge:` key in `.baton/brief.md`:
+
+       forge:
+         kind: gitlab
+         url: https://gitlab.example
+
+   For a private host, put a `forge: gitlab https://gitlab.example` line under `## Hosts` in
+   the local brief `~/.baton/<folder>/brief.local.md` instead. GitLab has no `draft_prefix`
+   key: drafts are the `Draft:` title prefix.
+2. Give Baton the maintainer's personal access token with scope `api` (`read_api` is read-only
+   and cannot write), from an account with at least the Developer role on `group/repo`. Baton
+   reads it from `GITLAB_TOKEN`, then `token_path` in the `[gitlab]` table of
+   `~/.baton/<folder>/identity.toml`, then the file `~/.baton/<folder>/gitlab-token`; the first
+   that is set wins. `<folder>` is the owner with `/` as `-`, then `-`, then the repository, so
+   `group/sub` and `repo` give `~/.baton/group-sub-repo/`. Prefer a file over an exported
+   variable, which agent shells inherit.
+3. Run `baton doctor`. Its `forge:` line should pass once the token is set; with no token it
+   warns without failing.
+4. Run `/baton:init`. It creates the labels through `baton labels`, at project level.
+5. Optionally, give the roles their own bot tokens, set up as in
+   [docs/gitlab-identity.md](docs/gitlab-identity.md): project access tokens on self-managed
+   GitLab or paid gitlab.com, machine users with personal access tokens on gitlab.com Free.
+
+GitHub App identities are not used on GitLab. [Forge](#forge) lists the behaviours that differ.
 
 ## Safety
 
