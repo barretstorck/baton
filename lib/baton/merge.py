@@ -178,10 +178,24 @@ def check(pr, cfg, owner, default_branch, runner, notes=None, bots=(), reviewers
                             "latest review; the reviewer runs baton verify")
 
     protected = tuple(cfg.data["protected_paths"])
-    touched = [f["path"] for f in files if protected and f["path"].startswith(protected)]
+    touched, shown = [], []
+    for f in files:
+        if not protected:
+            break
+        path, has_key = f["path"], "previousPath" in f
+        source = f.get("previousPath")
+        source = source if isinstance(source, str) else None
+        hit = [x for x in (source, path) if x and x.startswith(protected)]
+        if hit:
+            touched.extend(x for x in hit if x not in touched)
+            shown.append(f"{source} -> {path}" if source else path)
+        elif not has_key:
+            if path not in touched:
+                touched.append(path)
+            shown.append(f"{path} (rename source unknown)")
     if touched and not _approved(pr, owner, runner, default_branch, touched, bots):
         problems.append("protected paths changed without maintainer approval "
-                        f"(comment `/baton approve <head commit sha>`): {', '.join(touched)}")
+                        f"(comment `/baton approve <head commit sha>`): {', '.join(shown)}")
     rules = cfg.data["forbid_added"]
     if rules:
         patch = forge.for_repo(runner=runner).pr_diff(pr["number"])

@@ -400,9 +400,14 @@ class GitLab:
         out = []
         for item in self._mr_diffs(iid):
             lines = (item.get("diff") or "").split("\n")
-            out.append({"path": item["new_path"],
-                        "additions": sum(1 for line in lines if line.startswith("+")),
-                        "deletions": sum(1 for line in lines if line.startswith("-"))})
+            entry = {"path": item["new_path"],
+                     "additions": sum(1 for line in lines if line.startswith("+")),
+                     "deletions": sum(1 for line in lines if line.startswith("-"))}
+            old = item.get("old_path")
+            if old:
+                renamed = item.get("renamed_file") or old != item["new_path"]
+                entry["previousPath"] = old if renamed else None
+            out.append(entry)
         return out
 
     def _mr_commits(self, iid):

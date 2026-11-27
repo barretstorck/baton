@@ -27,6 +27,9 @@ AUTHOR_TYPES_JQ = '.[] | [.node_id, .user.type] | @tsv'
 REVIEWS_JQ = (".[] | select(.submitted_at != null) | {id: .node_id, "
               "author: {login: .user.login, type: .user.type}, body: .body, "
               "createdAt: .submitted_at, url: .html_url} | @json")
+FILES_JQ = (".[] | {filename: .filename, status: .status, "
+            "previous_filename: .previous_filename, additions: .additions, "
+            "deletions: .deletions} | @json")
 _MILESTONES = "repos/{owner}/{repo}/milestones"
 
 
@@ -57,7 +60,30 @@ class GitHub:
         return self.runner(["gh", "issue", "view", str(number), "--json", fields])
 
     def pr_view(self, number, fields, empty=None):
-        return self._read(["gh", "pr", "view", str(number), "--json", fields], empty)
+        found = self._read(["gh", "pr", "view", str(number), "--json", fields], empty)
+        if "files" in fields.split(",") and found is not empty:
+            found["files"] = self.pr_files(number)
+        return found
+
+    def pr_files(self, number):
+        text = self.runner(["gh", "api", "--paginate",
+                            f"repos/{{owner}}/{{repo}}/pulls/{number}/files?per_page=100",
+                            "--jq", FILES_JQ])
+        files = []
+        for line in (text or "").splitlines():
+            if not line.strip():
+                continue
+            item = json.loads(line)
+            entry = {"path": item.get("filename"), "additions": item.get("additions"),
+                     "deletions": item.get("deletions")}
+            status = item.get("status")
+            if status in ("renamed", "copied"):
+                if item.get("previous_filename"):
+                    entry["previousPath"] = item["previous_filename"]
+            elif status:
+                entry["previousPath"] = None
+            files.append(entry)
+        return files
 
     def closing_problems(self, pr):
         return []
