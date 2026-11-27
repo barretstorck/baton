@@ -226,3 +226,13 @@ class GitHub:
         return self._write(["gh", "api", "-X", "DELETE",
                             f"repos/{{owner}}/{{repo}}/pulls/{number}/requested_reviewers",
                             "-f", f"reviewers[]={login}", "--silent"], role)
+
+    def run_view(self, run_id, fields):
+        return self._read(["gh", "run", "view", str(run_id), "--json", fields])
+
+    def pr_diff(self, number):
+        return self.runner(["gh", "pr", "diff", str(number)])
+
+    def pr_merge(self, number, head_oid, role=None):
+        return self._write(["gh", "pr", "merge", str(number), "--merge",
+                            "--match-head-commit", head_oid], role)

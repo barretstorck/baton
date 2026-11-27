@@ -11,7 +11,7 @@ import shutil
 import sys
 import tempfile
 
-from . import checklist, clean, forbid, gate, identity, labels, planfile, review, scan, state as item_state, verify
+from . import checklist, clean, forbid, forge, gate, identity, labels, planfile, review, scan, state as item_state, verify
 from .run import RunError
 from .config import has_login, logins
 
@@ -58,8 +58,8 @@ def _settle(item, runner, notes, head=""):
     if runner is None or not found or not head:
         return item
     try:
-        run = json.loads(runner(["gh", "run", "view", found.group(1),
-                                 "--json", "status,conclusion,workflowName,url,headSha"]))
+        run = forge.for_repo(runner=runner).run_view(
+            found.group(1), "status,conclusion,workflowName,url,headSha")
     except (RunError, ValueError):
         return item
     if not isinstance(run, dict) or str(run.get("status", "")).lower() != "completed" \
@@ -168,7 +168,7 @@ def check(pr, cfg, owner, default_branch, runner, notes=None, bots=(), reviewers
                         f"(comment `/baton approve <head commit sha>`): {', '.join(touched)}")
     rules = cfg.data["forbid_added"]
     if rules:
-        patch = runner(["gh", "pr", "diff", str(pr["number"])])
+        patch = forge.for_repo(runner=runner).pr_diff(pr["number"])
         allowed = _allowances(pr, closing, cfg, runner, problems)
         problems.extend(forbid.violations(patch, rules, allowed))
     return problems
@@ -233,7 +233,7 @@ def _task_worktrees(commits, runner):
 def _after_merge(pr, cfg, runner, notes):
     for ref in pr.get("closingIssuesReferences") or []:
         issue = ref["number"]
-        state = json.loads(runner(["gh", "issue", "view", str(issue), "--json", "state"]))["state"]
+        state = forge.for_repo(runner=runner).issue_view(issue, "state")["state"]
         if state == "OPEN":
             item_state.change(cfg, runner, "close", "issue", issue, "orchestrator",
                               f"Merged pull request #{pr['number']}.", scan.load_terms())
@@ -304,8 +304,8 @@ def _retire_plan(pr, repo, runner, cfg, notes=None):
 
 def merge(number, cfg, runner, notes=None, bots=(), reviewers=()):
     notes = [] if notes is None else notes
-    repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
-    pr = json.loads(runner(["gh", "pr", "view", str(number), "--json", PR_FIELDS]))
+    repo = forge.for_repo(runner=runner).repo_view("owner,name,defaultBranchRef")
+    pr = forge.for_repo(runner=runner).pr_view(number, PR_FIELDS)
     pr["comments"] = review.pr_comments(runner, number, pr.get("comments"))
     if pr.get("state") != "MERGED":
         problems = check(pr, cfg, cfg.maintainers(repo["owner"]["login"]), repo["defaultBranchRef"]["name"], runner,
@@ -315,8 +315,7 @@ def merge(number, cfg, runner, notes=None, bots=(), reviewers=()):
         note = _retire_plan(pr, repo, runner, cfg, notes)
         if note:
             raise PlanRetired(note)
-        runner(["gh", "pr", "merge", str(number), "--merge",
-                "--match-head-commit", pr["headRefOid"]])
+        forge.for_repo(runner=runner).pr_merge(number, pr["headRefOid"])
     try:
         _after_merge(pr, cfg, runner, notes)
     except Exception as error:

@@ -253,10 +253,29 @@ class ReadTest(unittest.TestCase):
         self.assertIsNone(GitHub(_boom).issue_timeline(6))
 
 
+class MergeMethodsTest(unittest.TestCase):
+    def test_run_view(self):
+        runner = FakeRunner({"gh run view 9 --json status,url": json.dumps({"status": "completed"})})
+        self.assertEqual(GitHub(runner).run_view("9", "status,url"), {"status": "completed"})
+        self.assertEqual(runner.lines(), ["gh run view 9 --json status,url"])
+        with self.assertRaises(ValueError):
+            GitHub(FakeRunner({"gh run view 9 --json x": ""})).run_view("9", "x")
+
+    def test_pr_diff(self):
+        runner = FakeRunner({"gh pr diff 4": "diff --git a b"})
+        self.assertEqual(GitHub(runner).pr_diff(4), "diff --git a b")
+        self.assertEqual(runner.lines(), ["gh pr diff 4"])
+
+    def test_pr_merge(self):
+        runner = FakeRunner({"gh pr merge 4 --merge --match-head-commit abc": ""})
+        GitHub(runner).pr_merge(4, "abc")
+        self.assertEqual(runner.lines(), ["gh pr merge 4 --merge --match-head-commit abc"])
+
+
 GH_ARGV = re.compile(r'\[\s*"gh"\s*,')
 LIB = Path(__file__).resolve().parent.parent / "lib" / "baton"
 # #374 and #375 empty this set as they move the remaining call sites.
-NOT_YET_MIGRATED = {"cli.py", "sprint.py", "merge.py", "triage.py"}
+NOT_YET_MIGRATED = {"cli.py", "sprint.py", "triage.py"}
 # The forge_clis default list is not a call.
 PERMANENT = {"config.py"}
 
