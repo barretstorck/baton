@@ -1,6 +1,6 @@
 import json
 
-from .. import identity
+from .. import identity, run
 
 
 class GitHub:
@@ -19,3 +19,19 @@ class GitHub:
         if role is None:
             return self.runner(argv)
         return identity.write(self.runner, argv, role)
+
+    def repo_view(self, fields, empty=None):
+        return self._read(["gh", "repo", "view", "--json", fields], empty)
+
+    def issue_view(self, number, fields, empty=None):
+        return self._read(["gh", "issue", "view", str(number), "--json", fields], empty)
+
+    def pr_view(self, number, fields, empty=None):
+        return self._read(["gh", "pr", "view", str(number), "--json", fields], empty)
+
+    def issue_exists(self, number):
+        try:
+            found = self.runner(["gh", "issue", "view", str(number), "--json", "number"])
+        except run.RunError:
+            return False
+        return bool((found or "").strip())

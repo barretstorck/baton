@@ -5,7 +5,7 @@ import pwd
 import re
 import shutil
 
-from . import run
+from . import forge, run
 
 WORKTREES_DIR = ".claude/worktrees"
 
@@ -71,8 +71,7 @@ def _keep_reason(wt, runner, default_branch):
         return "it is locked"
     match = re.match(r"issue-(\d+)-", wt["branch"] or "")
     if match:
-        state = json.loads(runner(["gh", "issue", "view", match.group(1),
-                                   "--json", "state"]))["state"]
+        state = forge.for_repo(runner=runner).issue_view(match.group(1), "state")["state"]
         if state == "OPEN":
             return f"issue #{match.group(1)} is open"
     if wt["detached"]:
@@ -138,8 +137,7 @@ def clean_logs(runner, logs_root, report):
         if not match or not os.path.isdir(path):
             continue
         try:
-            state = json.loads(runner(["gh", "pr", "view", match.group(1),
-                                       "--json", "state"]))["state"]
+            state = forge.for_repo(runner=runner).pr_view(match.group(1), "state")["state"]
         except (run.RunError, ValueError, KeyError):
             report(f"kept {path} : pull request state unknown")
             continue

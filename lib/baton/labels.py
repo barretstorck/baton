@@ -1,6 +1,6 @@
 import json
 
-from . import config, identity
+from . import config, forge, identity
 
 _STYLE = {
     "status:refinement": ("d4c5f9", "Needs work before it is ready"),
@@ -64,8 +64,8 @@ def ensure(cfg, runner, create):
 def set_status(cfg, runner, number, status):
     if status not in config.STATUSES:
         raise ValueError(f"unknown status {status!r}")
-    out = runner(["gh", "issue", "view", str(number), "--json", "labels"])
-    present = {item["name"] for item in json.loads(out)["labels"]}
+    present = {item["name"] for item in
+               forge.for_repo(runner=runner).issue_view(number, "labels")["labels"]}
     target = cfg.label(status)
     argv = ["gh", "issue", "edit", str(number), "--add-label", target]
     for other in cfg.status_labels():
@@ -80,8 +80,8 @@ def set_group(cfg, runner, number, group, value):
         raise ValueError(f"unknown label group {group!r}")
     if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 4:
         raise ValueError(f"{group} must be a number from 1 to 4")
-    out = runner(["gh", "issue", "view", str(number), "--json", "labels"])
-    present = {item["name"] for item in json.loads(out)["labels"]}
+    present = {item["name"] for item in
+               forge.for_repo(runner=runner).issue_view(number, "labels")["labels"]}
     if group == "severity" and cfg.label("type:bug") not in present:
         raise ValueError("severity applies to bugs only")
     target = cfg.label(f"{group}:{value}")

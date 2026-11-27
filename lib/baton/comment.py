@@ -3,7 +3,7 @@ import json
 import os
 import tempfile
 
-from . import gate, identity, scan
+from . import forge, gate, identity, scan
 from .config import has_login
 
 ROLES = {"orchestrator", "developer", "refine", "reviewer", "researcher"}
@@ -123,8 +123,7 @@ def notify(cfg, runner, number, cause, text, maintainers, terms, bots=()):
         raise CommentError(f"unknown cause {cause!r}; use one of {list(NOTIFY_CAUSES)}")
     if not maintainers:
         raise CommentError("no maintainers to mention")
-    found = json.loads(runner(["gh", "issue", "view", str(number), "--json", "comments"])
-                       or "{}")
+    found = forge.for_repo(runner=runner).issue_view(number, "comments", empty={})
     comments = identity.mark_authors(runner, number, found.get("comments"))
     if notified(comments, cause, list(maintainers) + sorted(bots)):
         return None

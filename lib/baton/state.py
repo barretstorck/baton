@@ -1,5 +1,5 @@
 """Closing and reopening issues and pull requests, always with a marker comment."""
-from . import comment, identity, run
+from . import comment, forge, identity, run
 
 ACTIONS = {"close": "closed", "reopen": "reopened"}
 REASONS = ("spam", "duplicate", "support", "wont-do", "completed")
@@ -57,9 +57,5 @@ def _check_options(runner, action, target, number, close_reason, duplicate_of, l
             raise comment.CommentError("--reason duplicate needs --duplicate-of <N>")
         if duplicate_of == number:
             raise comment.CommentError("an issue cannot be a duplicate of itself")
-        try:
-            found = runner(["gh", "issue", "view", str(duplicate_of), "--json", "number"])
-        except run.RunError:
-            found = ""
-        if not (found or "").strip():
+        if not forge.for_repo(runner=runner).issue_exists(duplicate_of):
             raise comment.CommentError(f"issue #{duplicate_of} was not found")
