@@ -3,11 +3,10 @@
 Design spec, "plans in the repo": the issue body starts with a `Plan:` link to the file on
 the issue branch, or at a commit once the branch is gone.
 """
-import json
 import os
 import re
 
-from . import checklist
+from . import checklist, forge
 from .config import DEFAULTS, STATUSES
 from .run import RunError
 
@@ -292,7 +291,7 @@ def migrate(cfg, runner, number):
     plan, or that already has a `## Developer Plan`. Returns a one-line summary.
     """
     docs_dir = cfg.data["docs"]["dir"]
-    info = json.loads(runner(["gh", "issue", "view", str(number), "--json", "title,body,labels"]))
+    info = forge.for_repo(runner=runner).issue_view(number, "title,body,labels")
     labels = {item["name"] for item in info.get("labels") or []}
     started = [name for name in STATUSES[STATUSES.index("status:in-dev"):] if cfg.label(name) in labels]
     if started:

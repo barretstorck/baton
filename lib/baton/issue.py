@@ -6,9 +6,8 @@ headed sections, an `Expected files:` line and `Blocked by:` lines.
 import re
 from datetime import datetime
 
-from . import checklist, gate, planfile
+from . import checklist, forge, gate, planfile
 from .config import has_login, logins
-from .run import RunError
 
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.M)
 _BLOCKED = re.compile(r"^\s*Blocked by:(.*)$", re.M | re.I)
@@ -22,60 +21,15 @@ APPROVAL = "/baton ready"
 _LIST_ITEM = re.compile(r"^\s*(?:[-*]|\d+\.)\s+\S", re.M)
 
 
-EDITS_QUERY = (
-    "query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){"
-    "repository(owner:$owner,name:$repo){issue(number:$number){"
-    "userContentEdits(first:100,after:$endCursor){pageInfo{hasNextPage endCursor} "
-    "nodes{editedAt editor{login __typename}}}}}}")
-_EDITS_JQ = (".data.repository.issue.userContentEdits.nodes[] | "
-             "[.editedAt, (.editor.login // \"\"), (.editor.__typename // \"\")] | @tsv")
-
-
 def body_edits(runner, number):
     """The issue body's edit history, newest first; None when it cannot be read."""
-    try:
-        text = runner(["gh", "api", "graphql", "--paginate",
-                       "-F", "owner={owner}", "-F", "repo={repo}", "-F", f"number={number}",
-                       "-f", f"query={EDITS_QUERY}", "--jq", _EDITS_JQ])
-    except RunError:
-        return None
-    edits = []
-    for line in (text or "").splitlines():
-        parts = line.rstrip("\r\n").split("\t")
-        if len(parts) != 3 or not parts[0].strip():
-            continue
-        editor = {"login": parts[1], "__typename": parts[2]} if parts[1] else None
-        edits.append({"editedAt": parts[0].strip(), "editor": editor})
-    return edits
-
-
-TIMELINE_JQ = (
-    '.[] | select(.event == "assigned" or .event == "unassigned" or '
-    '.event == "review_requested" or .event == "review_request_removed") | '
-    '[.event, '
-    '(if .event == "assigned" or .event == "unassigned" then (.actor.login // "") '
-    'else (.review_requester.login // .actor.login // "") end), '
-    '(if .event == "assigned" or .event == "unassigned" then (.assignee.login // "") '
-    'else (.requested_reviewer.login // "") end), '
-    '(.created_at // "")] | @tsv')
+    return forge.for_repo(runner=runner).issue_body_edits(number)
 
 
 def timeline(runner, number):
     """Assignment and review-request events of an issue or pull request, oldest first;
     None when the timeline cannot be read."""
-    try:
-        text = runner(["gh", "api", "--paginate",
-                       f"repos/{{owner}}/{{repo}}/issues/{number}/timeline?per_page=100",
-                       "--jq", TIMELINE_JQ])
-    except RunError:
-        return None
-    events = []
-    for line in (text or "").splitlines():
-        parts = line.rstrip("\r\n").split("\t")
-        if len(parts) != 4:
-            continue
-        events.append({"event": parts[0], "by": parts[1], "subject": parts[2], "at": parts[3]})
-    return events
+    return forge.for_repo(runner=runner).issue_timeline(number)
 
 
 def _latest(events, login, added, removed):

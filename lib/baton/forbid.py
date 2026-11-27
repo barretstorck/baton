@@ -1,9 +1,8 @@
 """Forbidden diff patterns: the brief's `forbid_added` rules checked against added lines."""
 import fnmatch
-import json
 import re
 
-from . import checklist, githooks
+from . import checklist, forge, githooks
 from .run import RunError
 
 _ALLOWS = re.compile(r'^\s*(?:[-*]\s*)?Allows:\s*forbid_added\s+"([^"]+)"\s*$', re.M)
@@ -47,8 +46,9 @@ def plan_text(runner, cfg, branch, number=None):
     if number is None:
         return ""
     try:
-        issue = json.loads(runner(["gh", "issue", "view", str(number), "--json", "author,body"]))
-        owner = json.loads(runner(["gh", "repo", "view", "--json", "owner"]))["owner"]["login"]
+        backend = forge.for_repo(runner=runner)
+        issue = backend.issue_view(number, "author,body")
+        owner = backend.repo_view("owner")["owner"]["login"]
         if issue["author"]["login"] not in cfg.maintainers(owner):
             return ""
         body = issue["body"] or ""
