@@ -444,6 +444,24 @@ def _forge_segments(command, clis):
     return [seg for seg in segments if pattern.search(seg)]
 
 
+_GLAB_NOTE = re.compile(_POS + r"(?:[\w.~+-]*/)*glab\s+(?:issue|mr)\s+note(?=\s|$)([^;&|\n]*)")
+_GLAB_MESSAGE = re.compile(r"(?<!\S)(?:-m|--message)(?:\s|=|$|\S)")
+_REDIRECT_IN = re.compile(r"(?<!<)<(?![<(])")
+
+
+def _glab_note_stdin(stripped):
+    """True when `glab issue note` or `glab mr note` without -m/--message reads a `<` redirect or a pipe."""
+    for found in _GLAB_NOTE.finditer(stripped):
+        args = found.group(1)
+        if _GLAB_MESSAGE.search(args):
+            continue
+        start = found.start()
+        piped = stripped[start:start + 1] == "|" and stripped[start - 1:start] != "|"
+        if piped or _REDIRECT_IN.search(args):
+            return True
+    return False
+
+
 def decide(command, cwd, terms):
     stripped = _join_continuations(_HEREDOC.sub(r"<<HD\2", command))
     clis, flags = _brief_lists(cwd)
@@ -481,6 +499,8 @@ def decide(command, cwd, terms):
     http_only = bool(forge) and not git and all(name in _HTTP_CLIS for name in forge)
     stdin_pattern = _stdin_re(flags) if forge else _GIT_STDIN
     if stdin_pattern.search(stripped) and "<<" not in stripped and (forge or "|" not in stripped):
+        problems.append(_STDIN)
+    if _STDIN not in problems and "<<" not in stripped and _glab_note_stdin(stripped):
         problems.append(_STDIN)
     cats = []  # (path, offset) of each literal $(cat <path>) inside a double-quoted string
     scanned = []

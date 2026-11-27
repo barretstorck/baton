@@ -1145,3 +1145,35 @@ class GitLabGateTest(unittest.TestCase):
             problems = gate.decide("glab mr create --title t -d d", repo, TERMS)
         gate.forge._detected.clear()
         self.assertIn(gate._GITLAB_WRITE, problems)
+
+    def test_note_stdin_refused(self):
+        repo = make_repo()
+        pathlib.Path(repo, "c.txt").write_text("hi")
+        for command in ("glab issue note 3 < c.txt", "glab mr note 4 <c.txt",
+                        "cat c.txt | glab issue note 3", "echo hi | glab mr note 4"):
+            with self.subTest(command=command):
+                self.assertIn(gate._STDIN, self.decide(command, None, repo))
+
+    def test_note_message_or_heredoc_allowed(self):
+        repo = make_repo()
+        pathlib.Path(repo, "c.txt").write_text("hi")
+        for command in ("glab issue note 3 -m hi", "glab mr note 4 --message hi",
+                        "glab issue note 3 -m hi < c.txt"):
+            with self.subTest(command=command):
+                self.assertEqual(self.decide(command, None, repo), [])
+        problems = self.decide("glab issue note 3 <<'EOF'\nhello\nEOF", None, repo)
+        self.assertNotIn(gate._STDIN, problems)
+
+    def test_description_file_scanned(self):
+        repo = make_repo()
+        bad = pathlib.Path(repo, "bad.txt")
+        bad.write_text(f"Zebrowski {IP}\n")
+        good = pathlib.Path(repo, "good.txt")
+        good.write_text("fine text\n")
+        for template in ("glab issue create --title t --description-file {}",
+                         "glab issue update 3 --description-file {}",
+                         "glab mr create --title t --description-file {}"):
+            with self.subTest(command=template):
+                problems = self.decide(template.format(bad), None, repo)
+                self.assertTrue(any(p.startswith("privacy:") for p in problems), problems)
+                self.assertEqual(self.decide(template.format(good), None, repo), [])
