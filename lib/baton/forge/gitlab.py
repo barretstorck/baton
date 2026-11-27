@@ -8,6 +8,10 @@ import urllib.request
 from .. import identity, run
 
 
+# The start of every review note the reviewer posts (matches baton.review._REVIEW).
+_REVIEW_MARKER = "<!-- baton:reviewer:review "
+
+
 class GitLabError(run.RunError):
     def __init__(self, message, status=None):
         super().__init__(message)
@@ -649,7 +653,11 @@ class GitLab:
         return ""
 
     def review_urls(self, number, login):
-        return []
+        web_url = self._request(
+            "GET", f"{self._project()}/merge_requests/{number}")["web_url"]
+        return [note["url"] for note in self._notes("merge_requests", number, web_url)
+                if note["author"]["login"] == login
+                and note["body"].startswith(_REVIEW_MARKER)]
 
     def pr_review_items(self, number):
         return []

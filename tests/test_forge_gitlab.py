@@ -683,6 +683,10 @@ class CiTest(unittest.TestCase):
         self.assertIsNone(forge.last_push("o", "r", "none"))
 
 
+MARK = ("<!-- baton:reviewer:review verdict=approved commit=" + "a" * 40
+        + " -->\nok")
+
+
 class MergeRequestWriteTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
@@ -805,9 +809,31 @@ class MergeRequestWriteTest(unittest.TestCase):
         self.assertIn("abcdef1", str(ctx.exception))
         self.assertNotIn(f"POST {PROJ}/merge_requests/4/notes", t.lines())
 
-    def test_review_reads_are_empty(self):
+    REVIEW_NOTES = [
+        {"id": 3, "author": {"username": "rev"}, "body": MARK,
+         "created_at": "2026-01-01T00:00:00Z"},
+        {"id": 4, "author": {"username": "rev"}, "body": "plain reply",
+         "created_at": "2026-01-01T01:00:00Z"},
+        {"id": 5, "author": {"username": "ann"}, "body": MARK,
+         "created_at": "2026-01-01T02:00:00Z"},
+        {"id": 6, "author": {"username": "rev"}, "body": "approved this merge request",
+         "system": True, "created_at": "2026-01-01T03:00:00Z"},
+        {"id": 9, "author": {"username": "rev"}, "body": MARK,
+         "created_at": "2026-01-02T00:00:00Z"},
+    ]
+
+    def test_review_urls_lists_the_logins_review_notes_oldest_first(self):
+        forge, _ = make({
+            f"GET {PROJ}/merge_requests/4": (
+                200, {"web_url": "https://g/o/r/-/merge_requests/4"}),
+            f"GET {PROJ}/merge_requests/4/notes": (200, self.REVIEW_NOTES)})
+        self.assertEqual(forge.review_urls(4, "rev"),
+                         ["https://g/o/r/-/merge_requests/4#note_3",
+                          "https://g/o/r/-/merge_requests/4#note_9"])
+        self.assertEqual(forge.review_urls(4, "nobody"), [])
+
+    def test_pr_review_items_stays_empty(self):
         forge, t = make()
-        self.assertEqual(forge.review_urls(4, "x"), [])
         self.assertEqual(forge.pr_review_items(4), [])
         self.assertEqual(t.calls, [])
 
