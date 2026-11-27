@@ -181,11 +181,30 @@ class IssueTest(unittest.TestCase):
         for part in ("type=issues", "state=open", "labels=a", "milestones=M"):
             self.assertIn(part, line)
         with self.assertRaises(Unsupported):
-            forge.issue_list("number", "open", 10, search="x")
+            forge.issue_list("number", "open", 10, search="closed:>=2026-01-01")
         full = [dict(self.ISSUE, number=n) for n in range(50)]
         forge, t = make({"GET /api/v1/repos/o/r/issues?": (200, full)})
         self.assertEqual(len(forge.issue_list("number", "all", 20)), 20)
         self.assertEqual(len(t.calls), 1)
+
+    def test_search_sends_q_and_ranks(self):
+        items = [dict(self.ISSUE, number=1, title="other", body="nothing"),
+                 dict(self.ISSUE, number=2, title="other", body="csv here"),
+                 dict(self.ISSUE, number=3, title="Export CSV", body="")]
+        forge, t = make({"GET /api/v1/repos/o/r/issues": (200, items)})
+        got = forge.issue_list("number", "open", 10, search="export csv")
+        self.assertIn("q=export+csv", t.lines()[0])
+        self.assertEqual(got, [{"number": 3}, {"number": 2}, {"number": 1}])
+
+    def test_search_ranks_before_limit(self):
+        items = [dict(self.ISSUE, number=n, title="x", body="") for n in range(1, 61)]
+        items[55]["title"] = "needle"
+        base = "GET /api/v1/repos/o/r/issues?type=issues&state=open&q=needle&limit=50&page="
+        forge, t = make({base + "1": (200, items[:50]), base + "2": (200, items[50:])})
+        got = forge.issue_list("number", "open", 5, search="needle")
+        self.assertEqual(len(got), 5)
+        self.assertEqual(got[0], {"number": 56})
+        self.assertEqual(len(t.calls), 2)
 
     def test_issue_edit_labels(self):
         forge, t = make({"POST /api/v1/repos/o/r/issues/1/labels": (200, []),

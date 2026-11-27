@@ -269,16 +269,35 @@ class Forgejo:
 
     def issue_list(self, fields, state, limit, milestone=None, label=None, search=None,
                    empty=None):
-        if search is not None:
-            raise Unsupported("issue search")
+        if search is not None and any(re.match(r"[A-Za-z][\w-]*:", word)
+                                      for word in search.split()):
+            raise Unsupported("issue search qualifiers")
         names = self._field_names(fields, self._ISSUE_FIELDS)
         params = {"type": "issues", "state": state}
         if label is not None:
             params["labels"] = label
         if milestone is not None:
             params["milestones"] = milestone
-        items = self._paged(f"{self._repo_path()}/issues", params, limit)
+        if search is not None:
+            params["q"] = search
+            items = self._paged(f"{self._repo_path()}/issues", params, max(limit, 100))
+            items = self._search_rank(items, search)[:limit]
+        else:
+            items = self._paged(f"{self._repo_path()}/issues", params, limit)
         return [self._issue_shape(item, names) for item in items]
+
+    @staticmethod
+    def _search_rank(items, search):
+        def words(text):
+            return {w for w in re.split(r"[^a-z0-9]+", (text or "").lower()) if len(w) >= 2}
+
+        wanted = words(search)
+
+        def score(item):
+            title, body = words(item.get("title")), words(item.get("body"))
+            return sum(2 if w in title else 1 if w in body else 0 for w in wanted)
+
+        return sorted(items, key=lambda item: (-score(item), -item["number"]))
 
     def issue_list_text(self, fields, state, limit, milestone=None, label=None, search=None):
         return json.dumps(self.issue_list(fields, state, limit, milestone, label, search))
