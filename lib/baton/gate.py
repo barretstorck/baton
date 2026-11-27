@@ -624,9 +624,14 @@ def _api_is_write(args):
     return any(a in _API_FIELD_FLAGS or a.startswith(("--field=", "--raw-field=", "--input=")) for a in args)
 
 
-_FORGEJO_WRITE_VERBS = frozenset(
-    "create edit update delete rm close reopen comment merge approve lgtm reject review add reset "
-    "fork migrate lock unlock pin unpin read unread transfer".split())
+_FORGEJO_VALUE_FLAGS = frozenset(
+    "-t --title -d --description --body --body-file -m --message -L --labels -a --assignees "
+    "--milestone -D --deadline -b --base --head -r --repo -R --remote -l --login -o --output "
+    "--state --limit --lm -p --page -f --fields -k --kind -H --host --style".split())
+_FORGEJO_READ_COMMANDS = frozenset("whoami open o clone C help h version completion".split())
+_FORGEJO_READ_VERBS = frozenset(
+    "list ls view show status diff checkout browse search s readme contents get files "
+    "followers following repos orgs activity members help h".split())
 _GITLAB_READ_VERBS = frozenset(
     "list view status diff checkout browse issues version help check-update completion get show "
     "search describe".split())
@@ -636,20 +641,20 @@ _GLAB_VALUE_FLAGS = frozenset(
     "-X --method --milestone --description-file".split())
 
 
-def _glab_help(args):
+def _cli_help(args, value_flags):
     """True when an argument is exactly --help or -h, not a flag's value, before any `--`."""
     for i, a in enumerate(args):
         if a == "--":
             return False
-        if i and args[i - 1] in _GLAB_VALUE_FLAGS:
+        if i and args[i - 1] in value_flags:
             continue
         if _HELP.fullmatch(a):
             return True
     return False
 
 
-def _glab_verb(args):
-    """The subcommand word of a glab command (the second word, or the only one), skipping flags."""
+def _cli_words(args, value_flags):
+    """The non-flag words before `--`, skipping the value after any flag in value_flags."""
     words = []
     skip = False
     for a in args:
@@ -658,9 +663,15 @@ def _glab_verb(args):
         elif a == "--":
             break
         elif a.startswith("-"):
-            skip = a in _GLAB_VALUE_FLAGS
+            skip = a in value_flags
         else:
             words.append(a)
+    return words
+
+
+def _glab_verb(args):
+    """The subcommand word of a glab command (the second word, or the only one), skipping flags."""
+    words = _cli_words(args, _GLAB_VALUE_FLAGS)
     if not words:
         return None
     return words[1] if len(words) > 1 else words[0]
@@ -712,16 +723,22 @@ def _request_method(args, short, longs):
 def _cli_writes(name, args):
     """True when `args` (the words after the program `name`) is a write."""
     if name in ("tea", "fj"):
-        if any(_HELP.search(a) for a in args):
+        if _cli_help(args, _FORGEJO_VALUE_FLAGS):
             return False
-        if args and args[0] == "api":
-            if _api_is_write(args[1:]) or any(a in ("-d", "--data") or a.startswith("--data=") for a in args):
-                return True
-        if args and args[0] == "c":
+        words = _cli_words(args, _FORGEJO_VALUE_FLAGS)
+        if not words:
+            return "--" in args
+        if words[0] == "api":
+            return _api_is_write(args[1:]) or any(a in ("-d", "--data") or a.startswith("--data=") for a in args)
+        if words[0] in ("comment", "c"):
             return True
-        return any(a in _FORGEJO_WRITE_VERBS for a in args)
+        if words[0] in _FORGEJO_READ_COMMANDS:
+            return False
+        if len(words) == 1:
+            return "--" in args  # a `--` may hide the verb
+        return not (words[1] in _FORGEJO_READ_VERBS or words[1].isdigit())
     if name == "glab":
-        if _glab_help(args):
+        if _cli_help(args, _GLAB_VALUE_FLAGS):
             return False
         if args and args[0] == "api":
             return _api_is_write(args[1:])
