@@ -218,7 +218,8 @@ issue body, written by `baton plan set`.
    - Ready, but one of those conditions fails: `baton set-status <N> status:refinement`, run
      `baton notify <N> stuck <file | ->` (it adds the `needs-maintainer` label and posts a `status` comment) saying it is ready for the maintainer
      to mark. This includes an outside issue, whatever `refine.may_mark_ready` says: propose and
-     stop.
+     stop. In the notice, include the `approve with:` line that `baton ready-check` prints, so the
+     maintainer can post `/baton ready <hash>` as it is.
    - Not ready: `baton set-status <N> status:refinement` and post what is missing.
 
 8. **Report** in a few lines per issue: the outcome, the number of plan tasks, what you changed,
