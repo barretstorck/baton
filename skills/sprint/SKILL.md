@@ -47,7 +47,10 @@ every state is a label.
    agent types. If one is missing, the plugin was installed or updated after this session
    started: add one short line after the update telling the maintainer to restart the session (it
    is on no issue), and do not dispatch another agent type in its place.
-5. Send the first update ("Talking to the maintainer"), then begin passes.
+5. On a GitLab repository where `baton doctor` (or the maintainer) reports a role token expiring, run
+   `baton identity rotate` before the first pass. If it fails, tell the maintainer and do not
+   dispatch writes for that role.
+6. Send the first update ("Talking to the maintainer"), then begin passes.
 
 ## A pass
 
