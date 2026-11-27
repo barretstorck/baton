@@ -1388,6 +1388,14 @@ class InFlightTest(unittest.TestCase):
         found = self.snap("in-dev", [self.record(180)], pr_age=5)
         self.assertFalse(found["progress"]["7"]["in_flight"]["stale"])
 
+    def test_future_committer_date_does_not_keep_old_record_fresh(self):
+        found = self.snap("in-dev", [self.record(180)], pr_age=-24 * 60)
+        self.assertTrue(found["progress"]["7"]["in_flight"]["stale"])
+
+    def test_past_committer_date_does_not_make_fresh_record_stale(self):
+        found = self.snap("in-dev", [self.record(10)], pr_age=7 * 24 * 60)
+        self.assertFalse(found["progress"]["7"]["in_flight"]["stale"])
+
     def test_released_record_is_none(self):
         found = self.snap("in-dev", [self.record(30), self.record(5, "Released")])
         self.assertIsNone(found["progress"]["7"]["in_flight"])
