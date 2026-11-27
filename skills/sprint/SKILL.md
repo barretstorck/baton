@@ -83,7 +83,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/references/sprint-answers.md` to record the decision
 ### 4. Review and merge
 
 **Closing and reopening.** Every close or reopen of an issue or pull request goes through
-`gh issue|pr close|reopen <N> --comment "<reason>"` (the comment is one literal line in double quotes: no heredoc, `$(...)`, variable or newline, so the gate adds the `baton:<role>:closed` or `reopened` marker comment; below Claude Code 2.1.290 the gate refuses and names the marker line to put at the start of the comment). A close with `--reason`, `--duplicate-of` or `--lock` stays on `baton close issue <N> orchestrator <reason-file | ->`. **Reading state:** an issue or pull request that is
+`baton close|reopen <issue|pr> <N> orchestrator <reason-file | ->` (the reason as an inline heredoc on standard input; `baton close` also takes `--reason`, `--duplicate-of` and `--lock`). **Reading state:** an issue or pull request that is
 closed with no `baton:<role>:closed` marker comment was closed by the maintainer. Do not reopen
 it without asking.
 

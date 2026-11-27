@@ -34,7 +34,7 @@ Place each by its severity (`critical`, `important`, `minor`; the review's own w
 placement it names for the severity:
 
 - `deliverable` or `stretch`: joins the open sprint with that label
-  (`gh issue edit <N> --milestone "<title>"`), is refined with `baton:refine` as a subagent
+  (`baton issue edit <N> --milestone "<title>"`), is refined with `baton:refine` as a subagent
   at once, and is dispatched once ready.
 - `goal`: joins as `stretch` only when it serves the sprint goal; otherwise it is filed in the
   backlog.
