@@ -428,7 +428,8 @@ def post(cfg, runner, number, verdict, commit, body, terms, owner, repo=None, ho
     try:
         if logins:
             url = comment.publish_review(cfg, runner, number, text, terms,
-                                         VERDICTS[verdict]["event"], sorted(logins)[0])
+                                         VERDICTS[verdict]["event"], sorted(logins)[0],
+                                         commit=commit)
         else:
             url = comment.publish(cfg, runner, "pr", number, text, terms, role="reviewer")
     except comment.CommentError as error:
