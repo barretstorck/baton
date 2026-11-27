@@ -461,6 +461,10 @@ class GitLab:
         item = self._request("GET", f"{self._project()}/merge_requests/{number}")
         return self._mr_shape(item, names)
 
+    def closing_problems(self, pr):
+        # GitLab gets no closing-reference rule here; merge-pr behaves as before.
+        return []
+
     def pr_list_text(self, fields, state, limit, head=None):
         names = self._field_names(fields, self._PR_FIELDS)
         params = {"state": {"open": "opened"}.get(state, state)}
