@@ -456,3 +456,81 @@ class Forgejo:
         self._request("DELETE", f"{self._repo_path()}/pulls/{number}/requested_reviewers",
                       body={"reviewers": [login]})
         return ""
+
+    # --- actions runs, workflows and branches ---
+
+    _RUN_FIELDS = ("databaseId", "status", "conclusion", "headSha", "headBranch",
+                   "workflowName", "event", "url")
+    _DONE = ("success", "failure", "cancelled", "skipped")
+
+    def _run_shape(self, item, names):
+        state = item.get("status") or ""
+        if state in self._DONE:
+            status = "completed"
+        elif state == "running":
+            status = "in_progress"
+        else:
+            status = "queued"
+        shapes = {"databaseId": lambda: item["id"],
+                  "status": lambda: status,
+                  "conclusion": lambda: state if status == "completed" else "",
+                  "headSha": lambda: item.get("commit_sha"),
+                  "headBranch": lambda: item.get("prettyref"),
+                  "workflowName": lambda: item.get("workflow_id"),
+                  "event": lambda: item.get("event"),
+                  "url": lambda: item.get("html_url")}
+        return {name: shapes[name]() for name in names}
+
+    def run_view(self, run_id, fields):
+        names = self._field_names(fields, self._RUN_FIELDS)
+        item = self._request("GET", f"{self._repo_path()}/actions/runs/{run_id}")
+        return self._run_shape(item, names)
+
+    def run_list_text(self, branch, sha, event, limit, fields):
+        names = self._field_names(fields, self._RUN_FIELDS)
+        found = self._request("GET", f"{self._repo_path()}/actions/runs",
+                              params={"head_sha": sha, "event": event, "limit": limit}) or {}
+        items = [item for item in found.get("workflow_runs") or []
+                 if item.get("prettyref") == branch]
+        return json.dumps([self._run_shape(item, names) for item in items])
+
+    def workflow_entries_text(self, owner, repo, sha):
+        base = f"/repos/{owner}/{repo}/contents"
+        try:
+            found = self._request("GET", f"{base}/.forgejo/workflows", params={"ref": sha})
+        except ForgejoError as err:
+            if "404" not in str(err):
+                raise
+            found = self._request("GET", f"{base}/.github/workflows", params={"ref": sha})
+        return json.dumps(found)
+
+    def workflow_file_text(self, owner, repo, name, sha):
+        base = f"/repos/{owner}/{repo}/raw"
+        try:
+            return self._request("GET", f"{base}/.forgejo/workflows/{name}",
+                                 params={"ref": sha}, raw=True)
+        except ForgejoError as err:
+            if "404" not in str(err):
+                raise
+            return self._request("GET", f"{base}/.github/workflows/{name}",
+                                 params={"ref": sha}, raw=True)
+
+    def actions_permissions_text(self, owner, repo):
+        found = self._request("GET", f"/repos/{owner}/{repo}")
+        return json.dumps({"enabled": bool(found.get("has_actions"))})
+
+    def branch_head(self, owner, repo, branch):
+        found = self._request(
+            "GET", f"/repos/{owner}/{repo}/branches/{urllib.parse.quote(branch, safe='')}")
+        commit = found.get("commit") or {}
+        return {"sha": commit.get("id"),
+                "commit": {"committer": {"date": commit.get("timestamp")}}}
+
+    def last_push(self, owner, repo, branch):
+        found = self._request("GET", f"/repos/{owner}/{repo}/activities/feeds",
+                              params={"limit": 50}) or []
+        for entry in found:
+            if (entry.get("op_type") == "commit_repo"
+                    and entry.get("ref_name") == f"refs/heads/{branch}"):
+                return entry.get("created")
+        return None

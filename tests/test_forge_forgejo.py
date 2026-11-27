@@ -332,3 +332,66 @@ class PullRequestTest(unittest.TestCase):
                          [{"number": 3, "state": "MERGED"}])
         forge.review_request_remove(3, "rv")
         self.assertEqual(json.loads(t.calls[-1][3]), {"reviewers": ["rv"]})
+
+
+class CiTest(unittest.TestCase):
+    RUNS = {"workflow_runs": [
+        {"id": 1, "status": "success", "commit_sha": "abc", "prettyref": "feat",
+         "workflow_id": "ci.yml", "event": "push", "html_url": "u1"},
+        {"id": 2, "status": "waiting", "commit_sha": "abc", "prettyref": "feat",
+         "workflow_id": "ci.yml", "event": "push", "html_url": "u2"},
+        {"id": 3, "status": "success", "commit_sha": "abc", "prettyref": "other",
+         "workflow_id": "ci.yml", "event": "push", "html_url": "u3"}]}
+
+    def test_run_list(self):
+        forge, t = make({"GET /api/v1/repos/o/r/actions/runs": (200, self.RUNS)})
+        got = json.loads(forge.run_list_text("feat", "abc", "push", 5,
+                                             "databaseId,status,conclusion"))
+        self.assertEqual(got, [{"databaseId": 1, "status": "completed", "conclusion": "success"},
+                               {"databaseId": 2, "status": "queued", "conclusion": ""}])
+        self.assertEqual(t.lines()[0],
+                         "GET /api/v1/repos/o/r/actions/runs?head_sha=abc&event=push&limit=5")
+
+    def test_run_view(self):
+        forge, _ = make({"GET /api/v1/repos/o/r/actions/runs/1": (
+            200, self.RUNS["workflow_runs"][0])})
+        self.assertEqual(forge.run_view(1, "headSha,workflowName"),
+                         {"headSha": "abc", "workflowName": "ci.yml"})
+        with self.assertRaises(Unsupported):
+            forge.run_view(1, "jobs")
+
+    def test_workflow_fallback(self):
+        forge, t = make({
+            "GET /api/v1/repos/o/r/contents/.github/workflows": (200, [{"name": "ci.yml"}]),
+            "GET /api/v1/repos/o/r/raw/.github/workflows/ci.yml": (200, "on: push")})
+        self.assertEqual(json.loads(forge.workflow_entries_text("o", "r", "abc")),
+                         [{"name": "ci.yml"}])
+        self.assertEqual(forge.workflow_file_text("o", "r", "ci.yml", "abc"), "on: push")
+        self.assertIn("contents/.forgejo/workflows?ref=abc", t.lines()[0])
+        empty, _ = make()
+        with self.assertRaises(ForgejoError) as ctx:
+            empty.workflow_entries_text("o", "r", "abc")
+        self.assertIn("404", str(ctx.exception))
+
+    def test_workflow_prefers_forgejo(self):
+        forge, _ = make({"GET /api/v1/repos/o/r/raw/.forgejo/workflows/ci.yml": (200, "f")})
+        self.assertEqual(forge.workflow_file_text("o", "r", "ci.yml", "abc"), "f")
+
+    def test_actions_permissions(self):
+        forge, _ = make({"GET /api/v1/repos/o/r": (200, {"has_actions": False})})
+        self.assertEqual(json.loads(forge.actions_permissions_text("o", "r")),
+                         {"enabled": False})
+
+    def test_branch_head(self):
+        forge, _ = make({"GET /api/v1/repos/o/r/branches/a%2Fb": (
+            200, {"commit": {"id": "abc", "timestamp": "T"}})})
+        self.assertEqual(forge.branch_head("o", "r", "a/b"),
+                         {"sha": "abc", "commit": {"committer": {"date": "T"}}})
+
+    def test_last_push(self):
+        feed = [{"op_type": "create_issue", "ref_name": ""},
+                {"op_type": "commit_repo", "ref_name": "refs/heads/other", "created": "t0"},
+                {"op_type": "commit_repo", "ref_name": "refs/heads/feat", "created": "t1"}]
+        forge, _ = make({"GET /api/v1/repos/o/r/activities/feeds": (200, feed)})
+        self.assertEqual(forge.last_push("o", "r", "feat"), "t1")
+        self.assertIsNone(forge.last_push("o", "r", "none"))
