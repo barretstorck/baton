@@ -1079,3 +1079,102 @@ class ForgejoGateTest(unittest.TestCase):
             problems = gate.decide("tea pr create --title t --description d", repo, TERMS)
         gate.forge._detected.clear()
         self.assertIn(gate._FORGEJO_WRITE, problems)
+
+
+GITLAB = {"kind": "gitlab", "url": "https://gitlab.example.org", "owner": "o", "repo": "r"}
+
+
+class GitLabGateTest(unittest.TestCase):
+    def decide(self, command, found, repo=None):
+        repo = repo or make_repo()
+        with mock.patch.object(gate.forge, "detect", return_value=found):
+            return gate.decide(command, repo, TERMS)
+
+    def test_raw_writes_refused(self):
+        repo = make_repo()
+        pathlib.Path(repo, "c.json").write_text("{}")
+        for command in ("glab issue note 3 -m hi", "glab issue create --title t --description d",
+                        "glab issue close 3", "glab mr create --title t -d d", "glab mr approve 4",
+                        "glab mr merge 4", 'glab mr note 5 -m "see --help"', "glab repo mirror x",
+                        "glab mr add x", "glab repo import x", "cd sub && glab mr note 4 -m hi",
+                        "glab api -X POST projects/1/issues -f title=t",
+                        "curl -X POST https://gitlab.example.org/api/v4/projects/1/issues -d @c.json",
+                        "wget --post-data x https://gitlab.example.org/api/v4/x"):
+            with self.subTest(command=command):
+                self.assertIn(gate._GITLAB_WRITE, self.decide(command, GITLAB, repo))
+
+    def test_reads_and_other_hosts_allowed(self):
+        for command in ("glab issue list", "glab mr view 3", "glab issue note --help", "glab mr note --help",
+                        "glab api projects/1/issues",
+                        "curl https://gitlab.example.org/api/v4/projects/1/issues",
+                        "curl -X POST https://other.example.net/hook -d x"):
+            with self.subTest(command=command):
+                self.assertEqual(self.decide(command, GITLAB), [])
+
+    def test_github_unchanged(self):
+        github = {"kind": "github", "url": "https://github.com", "owner": "o", "repo": "r"}
+        repo = make_repo()
+        pathlib.Path(repo, "notes.md").write_text("notes")
+        for found in (github, None):
+            for command in ("glab mr approve 4", "curl -X POST https://gitlab.example.org/x -d x"):
+                with self.subTest(found=found, command=command):
+                    self.assertEqual(self.decide(command, found, repo), [])
+            for command in ALLOWED:
+                with self.subTest(found=found, command=command):
+                    self.assertEqual(self.decide(command, found, repo), [])
+
+    def test_other_forge_programs_not_refused(self):
+        problems = self.decide("tea issues create --title t", GITLAB)
+        self.assertNotIn(gate._GITLAB_WRITE, problems)
+        self.assertNotIn(gate._FORGEJO_WRITE, problems)
+        self.assertNotIn(gate._FORGEJO_WRITE, self.decide("glab mr approve 4", FORGEJO))
+
+    def test_detection_only_for_forge_programs(self):
+        repo = make_repo()
+        with mock.patch.object(gate.forge, "detect", return_value=GITLAB) as detect:
+            gate.decide("gh issue comment 5 --body x", repo, TERMS)
+            gate.decide("git commit -m x", repo, TERMS)
+        detect.assert_not_called()
+
+    def test_end_to_end(self):
+        brief = '---\nforge:\n  kind: "gitlab"\n  url: "https://gitlab.example.org"\n---\n'
+        repo = make_repo(brief=brief)
+        subprocess.run(["git", "-C", repo, "remote", "add", "origin", "https://gitlab.example.org/o/r.git"],
+                       check=True)
+        gate.forge._detected.clear()
+        with tempfile.TemporaryDirectory() as home, mock.patch.dict(os.environ, {"BATON_HOME": home}):
+            problems = gate.decide("glab mr create --title t -d d", repo, TERMS)
+        gate.forge._detected.clear()
+        self.assertIn(gate._GITLAB_WRITE, problems)
+
+    def test_note_stdin_refused(self):
+        repo = make_repo()
+        pathlib.Path(repo, "c.txt").write_text("hi")
+        for command in ("glab issue note 3 < c.txt", "glab mr note 4 <c.txt",
+                        "cat c.txt | glab issue note 3", "echo hi | glab mr note 4"):
+            with self.subTest(command=command):
+                self.assertIn(gate._STDIN, self.decide(command, None, repo))
+
+    def test_note_message_or_heredoc_allowed(self):
+        repo = make_repo()
+        pathlib.Path(repo, "c.txt").write_text("hi")
+        for command in ("glab issue note 3 -m hi", "glab mr note 4 --message hi",
+                        "glab issue note 3 -m hi < c.txt"):
+            with self.subTest(command=command):
+                self.assertEqual(self.decide(command, None, repo), [])
+        problems = self.decide("glab issue note 3 <<'EOF'\nhello\nEOF", None, repo)
+        self.assertNotIn(gate._STDIN, problems)
+
+    def test_description_file_scanned(self):
+        repo = make_repo()
+        bad = pathlib.Path(repo, "bad.txt")
+        bad.write_text(f"Zebrowski {IP}\n")
+        good = pathlib.Path(repo, "good.txt")
+        good.write_text("fine text\n")
+        for template in ("glab issue create --title t --description-file {}",
+                         "glab issue update 3 --description-file {}",
+                         "glab mr create --title t --description-file {}"):
+            with self.subTest(command=template):
+                problems = self.decide(template.format(bad), None, repo)
+                self.assertTrue(any(p.startswith("privacy:") for p in problems), problems)
+                self.assertEqual(self.decide(template.format(good), None, repo), [])

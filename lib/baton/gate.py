@@ -33,9 +33,9 @@ The gate also completes one command: a `gh pr create` from a detached HEAD gets
 `--head <branch>` added (the one pushed issue branch at HEAD) through the same
 rewrite; it never changes a command otherwise.
 
-On a Forgejo repository (forge detection) it also refuses raw `tea`/`fj` writes
-and `curl`/`wget` with a non-GET method to the forge host, pointing to the
-`baton` subcommands.
+On a Forgejo repository (forge detection) it also refuses raw `tea`/`fj` writes,
+and on a GitLab repository raw `glab` writes, and on either `curl`/`wget` with a
+non-GET method to the forge host, pointing to the `baton` subcommands.
 
 This guards against mistakes and nudged agents. It is not a sandbox: a script
 that talks to the forge without one of these programs is outside its view.
@@ -124,6 +124,8 @@ _DATA_FLAG = re.compile(r"""(?:--data(?:-raw|-binary|-urlencode)?|--json|--form|
 _CLOSE_RE = re.compile(r"(?<![\w-])gh\s+(?:(?:-R|--repo)\s+\S+\s+|-\S+\s+)*(issue|pr)\s+(close|reopen)\b")
 _FORGEJO_WRITE = ("this repository is on Forgejo: write to it with a baton subcommand "
                   "(for example baton comment or baton close), not raw tea, fj, curl or wget")
+_GITLAB_WRITE = ("this repository is on GitLab: write to it with a baton subcommand "
+                 "(for example baton comment or baton close), not raw glab, curl or wget")
 _CLOSE_REASON = ("`gh issue|pr close|reopen` needs a reason in a Baton repository: add --comment \"<reason>\"; "
                  "Baton adds its marker to the comment")
 _HAS_REASON = re.compile(r"(?<![\w-])(?:-c|--comment)(?=[\s=]|$)|(?<![\w-])-c\S")
@@ -442,6 +444,24 @@ def _forge_segments(command, clis):
     return [seg for seg in segments if pattern.search(seg)]
 
 
+_GLAB_NOTE = re.compile(_POS + r"(?:[\w.~+-]*/)*glab\s+(?:issue|mr)\s+note(?=\s|$)([^;&|\n]*)")
+_GLAB_MESSAGE = re.compile(r"(?<!\S)(?:-m|--message)(?:\s|=|$|\S)")
+_REDIRECT_IN = re.compile(r"(?<!<)<(?![<(])")
+
+
+def _glab_note_stdin(stripped):
+    """True when `glab issue note` or `glab mr note` without -m/--message reads a `<` redirect or a pipe."""
+    for found in _GLAB_NOTE.finditer(stripped):
+        args = found.group(1)
+        if _GLAB_MESSAGE.search(args):
+            continue
+        start = found.start()
+        piped = stripped[start:start + 1] == "|" and stripped[start - 1:start] != "|"
+        if piped or _REDIRECT_IN.search(args):
+            return True
+    return False
+
+
 def decide(command, cwd, terms):
     stripped = _join_continuations(_HEREDOC.sub(r"<<HD\2", command))
     clis, flags = _brief_lists(cwd)
@@ -472,13 +492,15 @@ def decide(command, cwd, terms):
     if closing and not closing[2]:
         problems.append(_CLOSE_REASON)
 
-    forgejo = _forgejo_problem(stripped, clis, cwd)
-    if forgejo is not None:
-        problems.append(forgejo)
+    forge_write = _forge_write_problem(stripped, clis, cwd)
+    if forge_write is not None:
+        problems.append(forge_write)
 
     http_only = bool(forge) and not git and all(name in _HTTP_CLIS for name in forge)
     stdin_pattern = _stdin_re(flags) if forge else _GIT_STDIN
     if stdin_pattern.search(stripped) and "<<" not in stripped and (forge or "|" not in stripped):
+        problems.append(_STDIN)
+    if _STDIN not in problems and "<<" not in stripped and _glab_note_stdin(stripped):
         problems.append(_STDIN)
     cats = []  # (path, offset) of each literal $(cat <path>) inside a double-quoted string
     scanned = []
@@ -602,10 +624,50 @@ def _api_is_write(args):
     return any(a in _API_FIELD_FLAGS or a.startswith(("--field=", "--raw-field=", "--input=")) for a in args)
 
 
-_FORGEJO_PROGRAMS = ("tea", "fj", "curl", "wget")
 _FORGEJO_WRITE_VERBS = frozenset(
     "create edit update delete rm close reopen comment merge approve lgtm reject review add reset "
     "fork migrate lock unlock pin unpin read unread transfer".split())
+_GITLAB_READ_VERBS = frozenset(
+    "list view status diff checkout browse issues version help check-update completion get show "
+    "search describe".split())
+_GLAB_VALUE_FLAGS = frozenset(
+    "-m --message -d --description --title -t -l --label -R --repo -g --group -a --assignee "
+    "-b --branch -s --source-branch --target-branch -F --field -f --raw-field -H --header "
+    "-X --method --milestone --description-file".split())
+
+
+def _glab_help(args):
+    """True when an argument is exactly --help or -h, not a flag's value, before any `--`."""
+    for i, a in enumerate(args):
+        if a == "--":
+            return False
+        if i and args[i - 1] in _GLAB_VALUE_FLAGS:
+            continue
+        if _HELP.fullmatch(a):
+            return True
+    return False
+
+
+def _glab_verb(args):
+    """The subcommand word of a glab command (the second word, or the only one), skipping flags."""
+    words = []
+    skip = False
+    for a in args:
+        if skip:
+            skip = False
+        elif a == "--":
+            break
+        elif a.startswith("-"):
+            skip = a in _GLAB_VALUE_FLAGS
+        else:
+            words.append(a)
+    if not words:
+        return None
+    return words[1] if len(words) > 1 else words[0]
+
+
+_FORGE_WRITE_PROGRAMS = {"forgejo": (("tea", "fj", "curl", "wget"), _FORGEJO_WRITE),
+                         "gitlab": (("glab", "curl", "wget"), _GITLAB_WRITE)}
 _CURL_BODY_FLAGS = ("-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "--json",
                     "-F", "--form", "--form-string", "-T", "--upload-file")
 _WGET_BODY_FLAGS = ("--post-data", "--post-file", "--body-data", "--body-file")
@@ -658,6 +720,13 @@ def _cli_writes(name, args):
         if args and args[0] == "c":
             return True
         return any(a in _FORGEJO_WRITE_VERBS for a in args)
+    if name == "glab":
+        if _glab_help(args):
+            return False
+        if args and args[0] == "api":
+            return _api_is_write(args[1:])
+        verb = _glab_verb(args)
+        return verb is not None and verb not in _GITLAB_READ_VERBS
     if name == "curl":
         if any(a in ("-G", "--get") for a in args):
             return False
@@ -673,23 +742,25 @@ def _cli_writes(name, args):
     return False
 
 
-def _forgejo_problem(stripped, clis, cwd):
-    """The Forgejo write refusal when `stripped` runs a raw write to a Forgejo repository, else None."""
+def _forge_write_problem(stripped, clis, cwd):
+    """The write refusal when `stripped` runs a raw write to a Forgejo or GitLab repository, else None."""
     pattern = _forge_re(tuple(clis))
-    if not any(m.group(1) in _FORGEJO_PROGRAMS for m in pattern.finditer(stripped)):
+    every = {p for programs, _ in _FORGE_WRITE_PROGRAMS.values() for p in programs}
+    if not any(m.group(1) in every for m in pattern.finditer(stripped)):
         return None
     found = forge.detect(cwd)
-    if not isinstance(found, dict) or found.get("kind") != "forgejo":
+    if not isinstance(found, dict) or found.get("kind") not in _FORGE_WRITE_PROGRAMS:
         return None
+    programs, message = _FORGE_WRITE_PROGRAMS[found["kind"]]
     host = identity._host(found.get("url"))
     for segment in _forge_segments(stripped, clis):
         for m in pattern.finditer(segment):
             name = m.group(1)
-            if name not in _FORGEJO_PROGRAMS:
+            if name not in programs:
                 continue
             args = _args(segment[m.end():])
-            if _cli_writes(name, args) and (name in ("tea", "fj") or any(_url_host(a) == host for a in args)):
-                return _FORGEJO_WRITE
+            if _cli_writes(name, args) and (name not in ("curl", "wget") or any(_url_host(a) == host for a in args)):
+                return message
     return None
 
 
