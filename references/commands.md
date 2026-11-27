@@ -48,6 +48,8 @@ Where a row says "write ... to a file", an inline heredoc works too and needs no
 
 On Forgejo (`forge.kind` is `forgejo` in `baton config`, or the local brief has a `forge: forgejo <url>` line under `## Hosts`) also read `${CLAUDE_PLUGIN_ROOT}/references/forge-forgejo.md`.
 
+On GitLab (`forge.kind` is `gitlab` in `baton config`, the local brief has a `forge: gitlab <url>` line under `## Hosts`, or the origin is on gitlab.com) also read `${CLAUDE_PLUGIN_ROOT}/references/forge-gitlab.md`.
+
 A body that names a `git` command must be a file, because Claude Code's worktree isolation refuses a command line that names `git` inside a heredoc.
 
 ## Rules the publish gate enforces
