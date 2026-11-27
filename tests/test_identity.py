@@ -1,5 +1,6 @@
 import base64
 import calendar
+import io
 import json
 import pathlib
 import subprocess
@@ -671,3 +672,39 @@ class StatusTest(unittest.TestCase):
             with self.assertRaises(identity.IdentityError) as cm:
                 identity._status("https://x/y", {"Authorization": "Bearer SECRET"})
         self.assertNotIn("SECRET", str(cm.exception))
+
+
+class CmdIdentityForgeTest(unittest.TestCase):
+    FORGEJO = {"kind": "forgejo", "url": "https://f.example", "owner": "o", "repo": "r"}
+    GITHUB = {"kind": "github", "url": "https://github.com", "owner": "o", "repo": "r"}
+
+    def run_identity(self, logins, forge, who=None):
+        from baton import cli
+        err = io.StringIO()
+        out = io.StringIO()
+        commit = mock.Mock(return_value=who)
+        detect = mock.Mock(return_value=forge)
+        with mock.patch.object(cli.identity, "bot_logins", return_value=logins), \
+                mock.patch.object(cli.config, "load", return_value=None), \
+                mock.patch.object(cli, "_detect_forge", detect), \
+                mock.patch.object(cli.identity, "commit_identity", commit), \
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+            code = cli.main(["identity", "worktree"])
+        return code, out.getvalue(), err.getvalue(), commit, detect
+
+    def test_app_tier_refused_on_forgejo(self):
+        code, _, err, commit, _ = self.run_identity(["baton[bot]"], self.FORGEJO)
+        self.assertEqual(code, 1)
+        self.assertIn("Forgejo", err)
+        self.assertIn("machine-user", err)
+        commit.assert_not_called()
+
+    def test_tier_zero_on_forgejo_unchanged(self):
+        code, out, _, commit, detect = self.run_identity([], self.FORGEJO)
+        self.assertEqual(code, 0)
+        self.assertEqual(out.strip(), "tier 0: commits keep your git identity")
+        detect.assert_not_called()
+
+    def test_app_tier_on_github_unchanged(self):
+        _, _, _, commit, _ = self.run_identity(["baton[bot]"], self.GITHUB)
+        commit.assert_called()

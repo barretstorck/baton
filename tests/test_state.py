@@ -163,7 +163,7 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(runner.lines()[-1], "gh issue close 5")
 
     def run_cli(self, argv, runner):
-        err = io.StringIO()
+        err = self.stderr = io.StringIO()
         with mock.patch.object(cli, "_require_config", return_value=cfg()), \
                 mock.patch.object(cli.identity, "use"), \
                 mock.patch.object(cli.scan, "load_terms", return_value=[]), \
@@ -191,6 +191,25 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(self.run_cli(["close", "issue", "5", "developer", "-", "--lock"],
                                       runner), 0)
         self.assertEqual(runner.lines()[-1], "gh issue lock 5")
+
+    FORGEJO = {"kind": "forgejo", "url": "https://f.example", "owner": "o", "repo": "r"}
+
+    def test_close_lock_refused_on_forgejo(self):
+        runner = FakeRunner()
+        with mock.patch.object(cli, "_detect_forge", return_value=self.FORGEJO):
+            code = self.run_cli(["close", "issue", "5", "developer", "-", "--lock"], runner)
+        self.assertEqual(code, 1)
+        self.assertIn("Forgejo", self.stderr.getvalue())
+        self.assertIn("lock", self.stderr.getvalue())
+        self.assertEqual(runner.calls, [])
+
+    def test_close_without_lock_on_forgejo_unaffected(self):
+        runner = FakeRunner()
+        with mock.patch.object(cli, "_detect_forge", return_value=self.FORGEJO) as detect:
+            code = self.run_cli(["close", "issue", "5", "developer", "-"], runner)
+        self.assertEqual(code, 0)
+        self.assertEqual(runner.lines()[-1], "gh issue close 5")
+        detect.assert_not_called()
 
     def test_bad_flags_exit_64(self):
         base = ["issue", "5", "developer", "-"]

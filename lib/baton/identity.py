@@ -423,6 +423,9 @@ class ForgeError(Exception):
     pass
 
 
+APP_TIER_UNSUPPORTED_FORGEJO = ("GitHub App identities are not supported on Forgejo; remove the App entries "
+                                "from identity.toml and use the machine-user tier")
+
 FORGE_REFUSAL = ("origin is not on github.com or on the host in forge.url; set forge: (kind and url) "
                  "in .baton/brief.md or in the local brief's ## Hosts section")
 
