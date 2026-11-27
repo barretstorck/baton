@@ -92,6 +92,9 @@ spike:                        # limits for a spike's Timebox: line, picked by th
   tokens: {}                  # weighted tokens as `baton usage` counts them; write optional min: and max: on indented lines
   minutes: {}                 # wall-clock minutes; the same form, e.g. min: 30 then max: 120 on indented lines
   max_per_sprint: 2           # most spikes sprint-plan proposes per sprint; 0: none
+forge:
+  kind: ""                    # github or forgejo; empty: GitHub when origin is on github.com
+  url: ""                     # https://<host> of a self-hosted forge; a private host goes in the local brief's ## Hosts section instead
 ---
 # Baton brief
 
