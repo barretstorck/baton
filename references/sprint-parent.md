@@ -30,7 +30,7 @@ post on the forge yourself. The parent, in order:
 
 7. While it runs, show each message it sends you unchanged and nothing else. Pass every message
    the maintainer types in the session to it verbatim with `SendMessage` to its agent ID,
-   prefixed `MAINTAINER: `, and do not act on it yourself; `/baton:sprint` typed again while it
+   prefixed `MAINTAINER: `, and do not act on it yourself (the parent never runs a hand check itself, even one the maintainer asks for; it passes the request to the orchestrator like any other message); `/baton:sprint` typed again while it
    runs is passed on the same way, not dispatched a second time. When it completes, show its
    final message unchanged. A result marked
    partial (stopped at a turn limit) is resumed with `SendMessage` to the same agent ID

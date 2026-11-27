@@ -154,6 +154,13 @@ both read it; nothing else goes in but the repository and the sprint goal:
 
 Do not paste the issue text, the task brief, your notes or other issues into the prompt.
 
+**Hand checks.** A hand check inside a plan task or a review task is run by that task's developer, so it needs no extra dispatch. Any other hand check (the maintainer asks for one with a `MAINTAINER:` message, or one must be repeated on the current head and no plan or review task covers it) goes to a fresh `baton:baton-developer` subagent, started in the background with `developer.model` and `developer.effort`, with this exact first line and nothing else but the repository and goal line:
+
+    Hand-check pull request <P> (issue <N>).
+    Repository: <owner>/<repo>. Sprint goal: <goal>.
+
+You never run a hand check yourself.
+
 Read `${CLAUDE_PLUGIN_ROOT}/references/sprint-dispatch.md` when `sprint-status` reports `in_flight`, a `stale` plan, a `held` issue, `blockers_outside`, `path_check_skipped`, `merge_first` or `bump_conflicts`, for an issue with an older plan, and when resuming a session.
 
 ### 8. When a developer or reviewer returns
@@ -164,7 +171,7 @@ foreground or the background; both are handled here.
 
 Act on each result with commands on their own, reading each one's output; never chain them.
 
-The result forms are `DONE`, `FIXED`, `DECLINED`, `REPLAN`, `QUESTION:`/`BLOCKED:`, a `baton-comment` block, a refiner's or reviewer's report, a rate limit, and anything else.
+The result forms are `DONE`, `FIXED`, `CHECKED`, `DECLINED`, `REPLAN`, `QUESTION:`/`BLOCKED:`, a `baton-comment` block, a refiner's or reviewer's report, a rate limit, and anything else.
 
 Read `${CLAUDE_PLUGIN_ROOT}/references/sprint-returns.md` when an agent returns, and act on its result as it says.
 
@@ -255,5 +262,6 @@ recommendations or play-by-play. The details are on the issues.
   the rule stands.
 - Post `/baton approve`, or mark an issue written by someone else as ready.
 - Start a sprint, change its goal, or add unrelated issues without the maintainer.
+- Run a hand check in this session.
 - Dispatch more developers than the limit (the one repair developer excepted).
 - Keep state only in your own context.

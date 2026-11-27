@@ -20,6 +20,7 @@ _PROMPTS = [
     ("fix", re.compile(r"Do review task \d+\.\d+ of pull request #?(\d+)(?: \(issue #?(\d+)\))?")),
     ("task", re.compile(r"Do task \d+ of issue #?(\d+)")),
     ("spike", re.compile(r"Do spike issue #?(\d+)")),
+    ("hand-check", re.compile(r"Hand-check pull request #?(\d+)(?: \(issue #?(\d+)\))?")),
     ("review", re.compile(r"Review pull request #?(\d+)(?: \(issue #?(\d+)\))?")),
     ("refine", re.compile(r"Refine issues? (#?\d+(?:(?:,\s*|\s+and\s+)#?\d+)*)")),
     ("fix", re.compile(r"(?:Fix CI on|Update) pull request #?(\d+)(?: \(issue #?(\d+)\))?")),
@@ -38,7 +39,7 @@ def classify(prompt, agent_type=None):
             return role, "sprint"
         if role in ("task", "spike", "developer"):
             return role, f"issue {match.group(1)}"
-        if role in ("fix", "review"):
+        if role in ("fix", "review", "hand-check"):
             return role, (f"issue {match.group(2)}" if match.group(2) else f"pr {match.group(1)}")
         numbers = re.findall(r"\d+", match.group(1))
         return role, "issues " + ", ".join(numbers)
