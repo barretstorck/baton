@@ -105,6 +105,38 @@ class LoadTest(unittest.TestCase):
             self.load('[baton]\napp_id = 1\ninstallation_id = 2\nkey_path = "k"\nlogin = "baton"\n')
 
 
+class DetectForgeTest(unittest.TestCase):
+    SETTING = {"kind": "forgejo", "url": "https://git.example.org/"}
+
+    def test_shapes(self):
+        for host, kind, base in (("github.com", "github", "https://github.com"),
+                                 ("git.example.org", "forgejo", "https://git.example.org")):
+            for url in (f"https://{host}/o/r.git", f"https://u{AT}{host}/o/r", f"https://{host}:8443/o/r/",
+                        f"ssh://g{AT}{host}:2222/o/r.git", f"ssh://{host}/o/r/",
+                        f"g{AT}{host}:o/r.git", f"{host}:o/r"):
+                got = identity.detect_forge(url, self.SETTING)
+                self.assertEqual(got, {"kind": kind, "url": base, "owner": "o", "repo": "r"}, url)
+
+    def test_host_lowercased(self):
+        self.assertEqual(identity.remote_parts("https://GIT.Example.org/o/r"), ("git.example.org", "o", "r"))
+
+    def test_refusal(self):
+        for setting in (self.SETTING, {}, None):
+            with self.assertRaises(identity.ForgeError) as cm:
+                identity.detect_forge("https://other.example.net/o/r", setting)
+            self.assertEqual(str(cm.exception), identity.FORGE_REFUSAL)
+            self.assertNotIn("other.example.net", str(cm.exception))
+
+    def test_unparseable(self):
+        for url in ("./o/r", "file://host/o/r", "http://git.example.org/o/r",
+                    "https://git.example.org/o", "https://git.example.org/a/b/c", "", None):
+            self.assertIsNone(identity.remote_parts(url), url)
+            with self.assertRaises(identity.ForgeError) as cm:
+                identity.detect_forge(url, self.SETTING)
+            self.assertTrue(str(cm.exception).startswith("origin is not an https"))
+            self.assertNotIn("example.org", str(cm.exception))
+
+
 class ReviewerLoginsTest(unittest.TestCase):
     def test_reviewer_logins(self):
         self.addCleanup(identity.use, None)
