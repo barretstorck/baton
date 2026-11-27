@@ -862,7 +862,7 @@ class DefaultBranchStateTest(unittest.TestCase):
         self.assertEqual(result["dispatchable"], [5])
 
     def test_outside_issue_with_other_hash_is_held(self):
-        _, result = self._hashed("0123456789abcdef")
+        _, result = self._hashed("0123456789abcdef0123456789abcdef")
         self.assertEqual(result["dispatchable"], [])
         self.assertIn("approved a different description", result["held"][0]["reason"])
 

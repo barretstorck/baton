@@ -4,6 +4,7 @@ The description is the single source of truth (design spec, section 4):
 headed sections, an `Expected files:` line and `Blocked by:` lines.
 """
 import hashlib
+import hmac
 import re
 from datetime import datetime
 
@@ -20,8 +21,8 @@ _ORIGIN_OUTSIDE = re.compile(r"^\s*Origin:\s*outside\s*\(@[\w-]+\)\s*$", re.M | 
 _ORIGIN_LINE = re.compile(r"^\s*Origin:.*$", re.M | re.I)
 APPROVAL = "/baton ready"
 _LIST_ITEM = re.compile(r"^\s*(?:[-*]|\d+\.)\s+\S", re.M)
-HASH_LENGTH = 16
-_APPROVAL_HASH = re.compile(r"/baton ready ([0-9a-f]{16})")
+HASH_LENGTH = 32
+_APPROVAL_HASH = re.compile(r"/baton ready ([0-9a-f]{32})")
 _TICKED_TASK = re.compile(r"^(\s*- )\[[xX]\]( Task \d+:)")
 
 
@@ -183,11 +184,14 @@ def approval_problem(issue, maintainers, bots=(), assigned=None):
     if not by_assignment:
         hashed = _APPROVAL_HASH.fullmatch((latest.get("body") or "").strip())
         if hashed:
-            if hashed.group(1) == current:
-                return None
-            return (f"the '{APPROVAL} {hashed.group(1)}' comment of {created or 'unknown'} approved "
-                    f"a different description (now {current}); a maintainer must post "
-                    f"'{APPROVAL} {current}' again")
+            if hmac.compare_digest(hashed.group(1), current):
+                if issue.get("edits") is None:
+                    return None
+                # history readable: the edit-history rule still applies to a matching hash
+            else:
+                return (f"the '{APPROVAL} {hashed.group(1)}' comment of {created or 'unknown'} approved "
+                        f"a different description (now {current}); a maintainer must post "
+                        f"'{APPROVAL} {current}' again")
     edits = issue.get("edits")
     if edits is None:
         return (f"the body's edit history could not be read; a maintainer must post "

@@ -203,12 +203,16 @@ class OutsideTest(unittest.TestCase):
         text = text if text is not None else "/baton ready " + issue.body_hash(body)
         return dict(comment(OWNER, text), createdAt=when)
 
-    def test_hashed_approval_of_current_body_ignores_history(self):
+    def test_hashed_approval_of_current_body_with_unreadable_history_approves(self):
         data = self.with_edits([self.hashed()], None)
         self.assertTrue(issue.approved(data, OWNER))
 
-    def test_hashed_approval_survives_outside_edit_when_hash_matches(self):
+    def test_hashed_approval_with_matching_hash_is_dropped_by_outside_edit_after_it(self):
         data = self.with_edits([self.hashed()], [self.edit("mallory", "2026-11-01T11:00:00Z")])
+        self.assertIn("@mallory edited", issue.approval_problem(data, OWNER))
+
+    def test_hashed_approval_with_matching_hash_and_readable_clean_history_approves(self):
+        data = self.with_edits([self.hashed()], [self.edit("mallory", "2026-11-01T09:00:00Z")])
         self.assertTrue(issue.approved(data, OWNER))
 
     def test_hashed_approval_of_other_body_is_dropped(self):
@@ -355,7 +359,7 @@ class BodyHashTest(unittest.TestCase):
 
     def test_shape(self):
         h = issue.body_hash(self.BODY)
-        self.assertRegex(h, r"^[0-9a-f]{16}$")
+        self.assertRegex(h, r"^[0-9a-f]{32}$")
         self.assertEqual(h, issue.body_hash(self.BODY))
         self.assertEqual(issue.body_hash(None), issue.body_hash(""))
 
