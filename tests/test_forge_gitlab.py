@@ -484,12 +484,13 @@ class MergeRequestTest(unittest.TestCase):
 
 
 class CiTest(unittest.TestCase):
-    def rollup(self, jobs, pipeline=None, sha="abc"):
+    def rollup(self, jobs, pipeline=None, sha="abc", bridges=()):
         mr = {**MergeRequestTest.MR, "sha": sha}
         if pipeline is not None:
             mr["head_pipeline"] = pipeline
         forge, t = make({
             f"GET {PROJ}/pipelines/9/jobs": (200, jobs),
+            f"GET {PROJ}/pipelines/9/bridges": (200, list(bridges)),
             f"GET {PROJ}/merge_requests/7": (200, mr)})
         return forge.pr_view(7, "statusCheckRollup")["statusCheckRollup"], t
 
@@ -506,12 +507,36 @@ class CiTest(unittest.TestCase):
                  (job("running"), "IN_PROGRESS", ""),
                  (job("pending"), "IN_PROGRESS", "")]
         rollup, _ = self.rollup([c[0] for c in cases], {"id": 9, "sha": "abc"})
-        for entry, (_, status, conclusion) in zip(rollup, cases):
+        for entry, (_, status, conclusion) in zip(rollup[:len(cases)], cases):
             self.assertEqual((entry["status"], entry["conclusion"]), (status, conclusion))
         self.assertEqual(rollup[0], {
             "__typename": "CheckRun", "name": "n", "workflowName": "test",
             "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "u",
             "startedAt": "t"})
+
+    def test_failed_downstream_pipeline_is_failure(self):
+        bridge = {"name": "deploy", "stage": "test", "status": "failed",
+                  "downstream_pipeline": {"status": "failed", "web_url": "d"}}
+        rollup, _ = self.rollup([], {"id": 9, "sha": "abc", "status": "success"}, bridges=[bridge])
+        self.assertEqual(rollup[0]["name"], "deploy")
+        self.assertEqual((rollup[0]["status"], rollup[0]["conclusion"]), ("COMPLETED", "FAILURE"))
+        self.assertEqual(rollup[0]["detailsUrl"], "d")
+
+    def test_bridge_without_downstream_is_in_progress(self):
+        bridge = {"name": "deploy", "stage": "test", "status": "success"}
+        rollup, _ = self.rollup([], {"id": 9, "sha": "abc", "status": "success"}, bridges=[bridge])
+        self.assertEqual((rollup[0]["status"], rollup[0]["conclusion"]), ("IN_PROGRESS", ""))
+
+    def test_pipeline_status_is_an_entry(self):
+        jobs = [{"name": "n", "stage": "test", "status": "success"}]
+        for state, status, conclusion in [
+                ("running", "IN_PROGRESS", ""), ("pending", "IN_PROGRESS", ""),
+                ("created", "IN_PROGRESS", ""), ("weird", "IN_PROGRESS", ""),
+                ("success", "COMPLETED", "SUCCESS"), ("failed", "COMPLETED", "FAILURE"),
+                ("canceled", "COMPLETED", "CANCELLED"), ("skipped", "COMPLETED", "SKIPPED")]:
+            rollup, _ = self.rollup(jobs, {"id": 9, "sha": "abc", "status": state})
+            self.assertEqual(len(rollup), 2)
+            self.assertEqual((rollup[-1]["status"], rollup[-1]["conclusion"]), (status, conclusion), state)
 
     def test_other_sha_or_no_pipeline_is_empty(self):
         rollup, t = self.rollup([{"status": "success"}], {"id": 9, "sha": "old"})

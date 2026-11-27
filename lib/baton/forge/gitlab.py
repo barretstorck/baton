@@ -409,8 +409,18 @@ class GitLab:
         pipeline = item.get("head_pipeline") or {}
         if not pipeline.get("id") or pipeline.get("sha") != item.get("sha"):
             return []
-        jobs = self._paged(f"{self._project()}/pipelines/{pipeline['id']}/jobs")
-        return [self._job_shape(job) for job in jobs]
+        base = f"{self._project()}/pipelines/{pipeline['id']}"
+        entries = [self._job_shape(job) for job in self._paged(f"{base}/jobs")]
+        for bridge in self._paged(f"{base}/bridges"):
+            downstream = bridge.get("downstream_pipeline") or {}
+            entry = self._job_shape({**bridge, "status": downstream.get("status")})
+            entry["detailsUrl"] = downstream.get("web_url") or bridge.get("web_url")
+            entries.append(entry)
+        # the pipeline as a whole: running, pending, created or unknown states stay IN_PROGRESS
+        entries.append(self._job_shape({
+            "name": "pipeline", "stage": "pipeline", "web_url": pipeline.get("web_url"),
+            "status": pipeline.get("status")}))
+        return entries
 
     def _mr_shape(self, item, names):
         iid = item["iid"]
