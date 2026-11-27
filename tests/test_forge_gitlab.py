@@ -1,6 +1,7 @@
 import json
 import os
 import pathlib
+import tempfile
 import unittest
 from unittest import mock
 
@@ -197,6 +198,158 @@ class LabelMilestoneTest(unittest.TestCase):
         with self.assertRaises(GitLabError) as ctx:
             forge._milestone_id("nope")
         self.assertIn("nope", str(ctx.exception))
+
+
+PROJ = "/api/v4/projects/o%2Fr"
+
+
+def body_of(transport, index=-1):
+    return json.loads(transport.calls[index][3])
+
+
+class IssueTest(unittest.TestCase):
+    ISSUE = {"iid": 7, "id": 900, "title": "T", "description": "D", "state": "opened",
+             "author": {"username": "ann"}, "labels": ["bug", "x"],
+             "created_at": "2026-01-01T00:00:00Z", "assignees": [{"username": "bob"}],
+             "web_url": "https://g.example/o/r/-/issues/7"}
+    NOTES = [{"id": 1, "author": {"username": "ann"}, "body": "hi", "created_at": "c1"},
+             {"id": 2, "author": {"username": "ann"}, "body": "added label", "system": True,
+              "created_at": "c2"}]
+
+    def test_view_shape(self):
+        forge, t = make({f"GET {PROJ}/issues/7/notes": (200, self.NOTES),
+                         f"GET {PROJ}/issues/7": (200, self.ISSUE)})
+        view = forge.issue_view(7, "number,title,body,state,author,labels,createdAt,"
+                                   "assignees,comments")
+        self.assertEqual(view["number"], 7)
+        self.assertEqual(view["state"], "OPEN")
+        self.assertEqual(view["labels"], [{"name": "bug"}, {"name": "x"}])
+        self.assertEqual(view["assignees"], [{"login": "bob"}])
+        self.assertEqual(view["author"], {"login": "ann"})
+        self.assertEqual(len(view["comments"]), 1)
+        self.assertEqual(view["comments"][0]["id"], "1")
+        self.assertTrue(view["comments"][0]["url"].endswith("#note_1"))
+        self.assertIn("sort=asc", t.lines()[-1])
+
+    def test_closed_state(self):
+        forge, _ = make({f"GET {PROJ}/issues/7": (200, {**self.ISSUE, "state": "closed"})})
+        self.assertEqual(forge.issue_view(7, "state"), {"state": "CLOSED"})
+
+    def test_unknown_field_raises_before_request(self):
+        forge, t = make()
+        with self.assertRaises(Unsupported):
+            forge.issue_view(7, "number,bogus")
+        self.assertEqual(t.calls, [])
+
+    def test_issue_exists(self):
+        forge, _ = make({f"GET {PROJ}/issues/7": (200, self.ISSUE)})
+        self.assertTrue(forge.issue_exists(7))
+        self.assertFalse(forge.issue_exists(8))
+
+    def test_list_parameters_and_state_mapping(self):
+        forge, t = make({f"GET {PROJ}/issues": (200, [self.ISSUE])})
+        out = forge.issue_list("number", "open", 5, milestone="M", label="bug")
+        self.assertEqual(out, [{"number": 7}])
+        line = t.lines()[0]
+        self.assertIn("state=opened", line)
+        self.assertIn("labels=bug", line)
+        self.assertIn("milestone=M", line)
+        forge.issue_list("number", "closed", 5)
+        self.assertIn("state=closed", t.lines()[-1])
+        forge.issue_list("number", "all", 5)
+        self.assertIn("state=all", t.lines()[-1])
+
+    def test_list_search_unsupported(self):
+        forge, t = make()
+        with self.assertRaises(Unsupported):
+            forge.issue_list("number", "open", 5, search="x")
+        self.assertEqual(t.calls, [])
+
+    def test_edit_labels_one_put(self):
+        forge, t = make({f"PUT {PROJ}/issues/7": (200, {})})
+        forge.issue_edit_labels(7, ["a", "b"], ["c", "d"])
+        self.assertEqual(t.lines(), [f"PUT {PROJ}/issues/7"])
+        self.assertEqual(body_of(t), {"add_labels": "a,b", "remove_labels": "c,d"})
+
+    def test_edit_body(self):
+        forge, t = make({f"PUT {PROJ}/issues/7": (200, {})})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "b.txt")
+            pathlib.Path(path).write_text("new body")
+            forge.issue_edit_body(7, path)
+        self.assertEqual(body_of(t), {"description": "new body"})
+
+    def _comment(self, target):
+        forge, t = make({f"POST {PROJ}/issues/7/notes": (201, {"id": 55}),
+                         f"POST {PROJ}/merge_requests/7/notes": (201, {"id": 56})})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "c.txt")
+            pathlib.Path(path).write_text("hello")
+            out = forge.comment(target, 7, path)
+        return out, t
+
+    def test_comment_on_issue(self):
+        out, t = self._comment("issue")
+        self.assertEqual(out, "https://g.example/o/r/-/issues/7#note_55\n")
+        self.assertEqual(body_of(t), {"body": "hello"})
+
+    def test_comment_on_pr_posts_to_merge_requests(self):
+        out, t = self._comment("pr")
+        self.assertEqual(t.lines(), [f"POST {PROJ}/merge_requests/7/notes"])
+        self.assertEqual(out, "https://g.example/o/r/-/merge_requests/7#note_56\n")
+
+    def test_state_events(self):
+        forge, t = make({f"PUT {PROJ}/issues/7": (200, {}),
+                         f"PUT {PROJ}/merge_requests/8": (200, {})})
+        forge.issue_close(7, "completed")
+        self.assertEqual(body_of(t), {"state_event": "close"})
+        forge.change_state("pr", "reopen", 8)
+        self.assertEqual(t.lines()[-1], f"PUT {PROJ}/merge_requests/8")
+        self.assertEqual(body_of(t), {"state_event": "reopen"})
+
+    def test_issue_lock(self):
+        forge, t = make({f"PUT {PROJ}/issues/7": (200, {})})
+        forge.issue_lock(7)
+        self.assertEqual(body_of(t), {"discussion_locked": True})
+
+    def test_issue_create_resolves_milestone(self):
+        forge, t = make({f"GET {PROJ}/milestones": (200, [{"id": 31, "title": "M",
+                                                          "state": "active"}]),
+                         f"POST {PROJ}/issues": (201, {"web_url": "https://g.example/o/r/-/issues/9"})})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "i.txt")
+            pathlib.Path(path).write_text("body")
+            out = forge.issue_create("Title", path, labels=["a", "b"], milestone="M")
+        self.assertEqual(out, "https://g.example/o/r/-/issues/9\n")
+        self.assertEqual(body_of(t), {"title": "Title", "description": "body",
+                                      "labels": "a,b", "milestone_id": 31})
+
+    def test_item_edit_remove_milestone(self):
+        forge, t = make({f"PUT {PROJ}/merge_requests/7": (200, {})})
+        forge.item_edit("pr", 7, title="N", add_labels=["a"], remove_labels=["b"],
+                        remove_milestone=True)
+        self.assertEqual(t.lines(), [f"PUT {PROJ}/merge_requests/7"])
+        self.assertEqual(body_of(t), {"title": "N", "milestone_id": 0, "add_labels": "a",
+                                      "remove_labels": "b"})
+
+    def test_item_edit_nothing_sends_nothing(self):
+        forge, t = make()
+        forge.item_edit("issue", 7)
+        self.assertEqual(t.calls, [])
+
+    def test_repo_view_nested_namespace(self):
+        forge, t = make({"GET /api/v4/projects/a%2Fb%2Fr": (200, {
+            "path": "r", "path_with_namespace": "a/b/r", "default_branch": "main",
+            "namespace": {"full_path": "a/b"}})}, owner="a/b")
+        view = forge.repo_view("owner,name,nameWithOwner,defaultBranchRef")
+        self.assertEqual(view, {"owner": {"login": "a/b"}, "name": "r",
+                                "nameWithOwner": "a/b/r", "defaultBranchRef": {"name": "main"}})
+
+    def test_user(self):
+        forge, _ = make({"GET /api/v4/users?username=ann": (200, [{"id": 1, "username": "ann"}])})
+        self.assertEqual(forge.user("ann")["login"], "ann")
+        with self.assertRaises(GitLabError):
+            forge.user("zed")
 
 
 if __name__ == "__main__":

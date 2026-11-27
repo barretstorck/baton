@@ -187,6 +187,145 @@ class GitLab:
                 return item["number"]
         raise GitLabError(f"GitLab milestone not found: {title}")
 
+    # --- repository, issues and notes ---
+
+    _REPO_FIELDS = ("owner", "name", "nameWithOwner", "defaultBranchRef")
+    _ISSUE_FIELDS = ("number", "title", "body", "state", "author", "labels", "createdAt",
+                     "assignees", "comments")
+
+    def repo_view(self, fields, empty=None):
+        names = self._field_names(fields, self._REPO_FIELDS)
+        item = self._request("GET", self._project())
+        shapes = {"owner": lambda: {"login": (item.get("namespace") or {}).get("full_path", "")},
+                  "name": lambda: item["path"],
+                  "nameWithOwner": lambda: item["path_with_namespace"],
+                  "defaultBranchRef": lambda: {"name": item["default_branch"]}}
+        return {name: shapes[name]() for name in names}
+
+    def _note_shape(self, item, web_url):
+        return {"id": str(item["id"]), "author": self._login(item.get("author")),
+                "body": item.get("body") or "", "createdAt": item.get("created_at"),
+                "url": f"{web_url}#note_{item['id']}"}
+
+    def _notes(self, kind, iid, web_url):
+        items = self._paged(f"{self._project()}/{kind}/{iid}/notes",
+                            {"sort": "asc", "order_by": "created_at"})
+        return [self._note_shape(item, web_url) for item in items if not item.get("system")]
+
+    def _issue_shape(self, item, names):
+        state = "OPEN" if item.get("state") == "opened" else "CLOSED"
+        shapes = {"number": lambda: item["iid"],
+                  "title": lambda: item["title"],
+                  "body": lambda: item.get("description") or "",
+                  "state": lambda: state,
+                  "author": lambda: self._login(item.get("author")),
+                  "labels": lambda: [{"name": label} for label in item.get("labels") or []],
+                  "createdAt": lambda: item.get("created_at"),
+                  "assignees": lambda: [self._login(user) for user in item.get("assignees") or []],
+                  "comments": lambda: self._notes("issues", item["iid"], item["web_url"])}
+        return {name: shapes[name]() for name in names}
+
+    def issue_view(self, number, fields, empty=None):
+        names = self._field_names(fields, self._ISSUE_FIELDS)
+        item = self._request("GET", f"{self._project()}/issues/{number}")
+        return self._issue_shape(item, names)
+
+    def issue_view_text(self, number, fields):
+        return json.dumps(self.issue_view(number, fields))
+
+    def issue_exists(self, number):
+        try:
+            return bool(self._request("GET", f"{self._project()}/issues/{number}"))
+        except GitLabError:
+            return False
+
+    def issue_list(self, fields, state, limit, milestone=None, label=None, search=None,
+                   empty=None):
+        if search is not None:
+            raise Unsupported("issue search")
+        names = self._field_names(fields, self._ISSUE_FIELDS)
+        params = {"state": {"open": "opened"}.get(state, state)}
+        if label is not None:
+            params["labels"] = label
+        if milestone is not None:
+            params["milestone"] = milestone
+        items = self._paged(f"{self._project()}/issues", params, limit)
+        return [self._issue_shape(item, names) for item in items]
+
+    def issue_list_text(self, fields, state, limit, milestone=None, label=None, search=None):
+        return json.dumps(self.issue_list(fields, state, limit, milestone, label, search))
+
+    def issue_edit_body(self, number, path, role=None):
+        self._request("PUT", f"{self._project()}/issues/{number}",
+                      body={"description": self._read_file(path)})
+        return ""
+
+    def issue_edit_labels(self, number, add, remove=(), role=None):
+        body = {}
+        if add:
+            body["add_labels"] = ",".join(add)
+        if remove:
+            body["remove_labels"] = ",".join(remove)
+        if body:
+            self._request("PUT", f"{self._project()}/issues/{number}", body=body)
+        return ""
+
+    def comment(self, target, number, path, role=None):
+        kind = "merge_requests" if target == "pr" else "issues"
+        made = self._request("POST", f"{self._project()}/{kind}/{number}/notes",
+                             body={"body": self._read_file(path)})
+        note = (made or {}).get("id", "")
+        return f"{self.url}/{self.owner}/{self.repo}/-/{kind}/{number}#note_{note}\n"
+
+    def change_state(self, target, action, number, role=None):
+        kind = "merge_requests" if target == "pr" else "issues"
+        event = "close" if action == "close" else "reopen"
+        self._request("PUT", f"{self._project()}/{kind}/{number}", body={"state_event": event})
+        return ""
+
+    def issue_close(self, number, reason, duplicate_of=None, role=None):
+        return self.change_state("issue", "close", number, role)
+
+    def issue_lock(self, number, reason=None, role=None):
+        self._request("PUT", f"{self._project()}/issues/{number}",
+                      body={"discussion_locked": True})
+        return ""
+
+    def issue_create(self, title, path, labels=(), milestone=None, role=None):
+        body = {"title": title, "description": self._read_file(path)}
+        if labels:
+            body["labels"] = ",".join(labels)
+        if milestone:
+            body["milestone_id"] = self._milestone_id(milestone)
+        made = self._request("POST", f"{self._project()}/issues", body=body)
+        return (made or {}).get("web_url", "") + "\n"
+
+    def item_edit(self, target, number, title=None, add_labels=(), remove_labels=(),
+                  milestone=None, remove_milestone=False, path=None, role=None):
+        body = {}
+        if title:
+            body["title"] = title
+        if path is not None:
+            body["description"] = self._read_file(path)
+        if milestone:
+            body["milestone_id"] = self._milestone_id(milestone)
+        if remove_milestone:
+            body["milestone_id"] = 0
+        if add_labels:
+            body["add_labels"] = ",".join(add_labels)
+        if remove_labels:
+            body["remove_labels"] = ",".join(remove_labels)
+        if body:
+            kind = "merge_requests" if target == "pr" else "issues"
+            self._request("PUT", f"{self._project()}/{kind}/{number}", body=body)
+        return ""
+
+    def user(self, login):
+        found = self._request("GET", "/users", params={"username": login}) or []
+        if not found:
+            raise GitLabError(f"GitLab user not found: {login}")
+        return {**found[0], "login": found[0].get("username", login)}
+
     # --- not supported yet ---
 
     def review_edit_body(self, number, review_id, path, role=None):
