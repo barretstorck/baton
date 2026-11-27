@@ -46,6 +46,7 @@ class Forgejo:
         self.owner = owner
         self.repo = repo
         self._token = token
+        self._role_tokens = {}
         self.runner = runner or run.run
         self.transport = transport or urllib_transport
 
@@ -57,11 +58,23 @@ class Forgejo:
                 raise ForgejoError(f"Forgejo token: {err}") from None
         return self._token
 
-    def _request(self, method, path, params=None, body=None, raw=False):
+    def _token_for(self, role):
+        if role is None:
+            return self._get_token()
+        key = identity.route(role)
+        if key not in self._role_tokens:
+            try:
+                found = identity.forge_role_token("forgejo", self.owner, self.repo, role)
+            except identity.IdentityError as err:
+                raise ForgejoError(f"Forgejo token: {err}") from None
+            self._role_tokens[key] = found
+        return self._role_tokens[key] or self._get_token()
+
+    def _request(self, method, path, params=None, body=None, raw=False, role=None):
         url = f"{self.url}/api/v1{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
-        headers = {"Authorization": f"token {self._get_token()}",
+        headers = {"Authorization": f"token {self._token_for(role)}",
                    "Accept": "application/json"}
         data = None
         if body is not None:
@@ -111,7 +124,7 @@ class Forgejo:
 
     def label_create(self, name, color, description, role=None):
         self._request("POST", f"/repos/{self.owner}/{self.repo}/labels",
-                      body={"name": name, "color": "#" + color, "description": description})
+                      body={"name": name, "color": "#" + color, "description": description}, role=role)
         return ""
 
     def _label_ids(self, names):
@@ -146,12 +159,12 @@ class Forgejo:
             body["description"] = description
         if due_on:
             body["due_on"] = due_on
-        self._request("POST", f"/repos/{self.owner}/{self.repo}/milestones", body=body)
+        self._request("POST", f"/repos/{self.owner}/{self.repo}/milestones", body=body, role=role)
         return ""
 
     def milestone_edit(self, number, changes, role=None):
         self._request("PATCH", f"/repos/{self.owner}/{self.repo}/milestones/{number}",
-                      body=dict(changes))
+                      body=dict(changes), role=role)
         return ""
 
     def _milestone_id(self, title):
@@ -261,30 +274,30 @@ class Forgejo:
 
     def issue_edit_body(self, number, path, role=None):
         self._request("PATCH", f"{self._repo_path()}/issues/{number}",
-                      body={"body": self._read_file(path)})
+                      body={"body": self._read_file(path)}, role=role)
         return ""
 
     def issue_edit_labels(self, number, add, remove=(), role=None):
         base = f"{self._repo_path()}/issues/{number}/labels"
         if add:
-            self._request("POST", base, body={"labels": list(add)})
+            self._request("POST", base, body={"labels": list(add)}, role=role)
         for name in remove:
-            self._request("DELETE", f"{base}/{urllib.parse.quote(name, safe='')}")
+            self._request("DELETE", f"{base}/{urllib.parse.quote(name, safe='')}", role=role)
         return ""
 
     def comment(self, target, number, path, role=None):
         made = self._request("POST", f"{self._repo_path()}/issues/{number}/comments",
-                             body={"body": self._read_file(path)})
+                             body={"body": self._read_file(path)}, role=role)
         return (made or {}).get("html_url", "") + "\n"
 
     def change_state(self, target, action, number, role=None):
         kind = "pulls" if target == "pr" else "issues"
         state = "closed" if action == "close" else "open"
-        self._request("PATCH", f"{self._repo_path()}/{kind}/{number}", body={"state": state})
+        self._request("PATCH", f"{self._repo_path()}/{kind}/{number}", body={"state": state}, role=role)
         return ""
 
     def issue_close(self, number, reason, duplicate_of=None, role=None):
-        self._request("PATCH", f"{self._repo_path()}/issues/{number}", body={"state": "closed"})
+        self._request("PATCH", f"{self._repo_path()}/issues/{number}", body={"state": "closed"}, role=role)
         return ""
 
     def issue_create(self, title, path, labels=(), milestone=None, role=None):
@@ -293,7 +306,7 @@ class Forgejo:
             body["labels"] = self._label_ids(labels)
         if milestone:
             body["milestone"] = self._milestone_id(milestone)
-        made = self._request("POST", f"{self._repo_path()}/issues", body=body)
+        made = self._request("POST", f"{self._repo_path()}/issues", body=body, role=role)
         return (made or {}).get("html_url", "") + "\n"
 
     def item_edit(self, target, number, title=None, add_labels=(), remove_labels=(),
@@ -309,14 +322,14 @@ class Forgejo:
             body["milestone"] = 0
         if body:
             kind = "pulls" if target == "pr" else "issues"
-            self._request("PATCH", f"{self._repo_path()}/{kind}/{number}", body=body)
+            self._request("PATCH", f"{self._repo_path()}/{kind}/{number}", body=body, role=role)
         if add_labels or remove_labels:
             self.issue_edit_labels(number, add_labels, remove_labels, role)
         return ""
 
     def comment_edit_body(self, comment_id, path, role=None):
         self._request("PATCH", f"{self._repo_path()}/issues/comments/{comment_id}",
-                      body={"body": self._read_file(path)})
+                      body={"body": self._read_file(path)}, role=role)
         return ""
 
     def comment_author_types(self, number):
@@ -459,7 +472,7 @@ class Forgejo:
         base = self._request("GET", self._repo_path())["default_branch"]
         found = self._request("POST", f"{self._repo_path()}/pulls",
                               body={"title": title, "body": self._read_file(path),
-                                    "head": head, "base": base})
+                                    "head": head, "base": base}, role=role)
         return found["html_url"] + "\n"
 
     def pr_diff(self, number):
@@ -467,7 +480,7 @@ class Forgejo:
 
     def pr_merge(self, number, head_oid, role=None):
         self._request("POST", f"{self._repo_path()}/pulls/{number}/merge",
-                      body={"Do": "merge", "head_commit_id": head_oid})
+                      body={"Do": "merge", "head_commit_id": head_oid}, role=role)
         return ""
 
     _REVIEW_EVENTS = {"approve": "APPROVED", "request-changes": "REQUEST_CHANGES",
@@ -477,7 +490,7 @@ class Forgejo:
         if event not in self._REVIEW_EVENTS:
             raise Unsupported(f"the review event {event}")
         self._request("POST", f"{self._repo_path()}/pulls/{number}/reviews",
-                      body={"event": self._REVIEW_EVENTS[event], "body": self._read_file(path)})
+                      body={"event": self._REVIEW_EVENTS[event], "body": self._read_file(path)}, role=role)
         return ""
 
     def _reviews(self, number):
@@ -499,7 +512,7 @@ class Forgejo:
 
     def review_request_remove(self, number, login, role=None):
         self._request("DELETE", f"{self._repo_path()}/pulls/{number}/requested_reviewers",
-                      body={"reviewers": [login]})
+                      body={"reviewers": [login]}, role=role)
         return ""
 
     # --- actions runs, workflows and branches ---
