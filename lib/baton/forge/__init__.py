@@ -6,6 +6,7 @@ import re
 from .. import config, identity, run, sandbox
 from .forgejo import Forgejo, ForgejoError
 from .github import GitHub
+from .gitlab import GitLab, GitLabError
 
 _git = run.run
 _detected = {}
@@ -65,9 +66,12 @@ def check_url(url, origin):
 
 
 def for_repo(cwd=None, runner=None):
-    """The backend for this repository: Forgejo when detected, else GitHub."""
+    """The backend for this repository: Forgejo or GitLab when detected, else GitHub."""
     found = detect(cwd)
     if found and found["kind"] == "forgejo":
         check_url(found["url"], _origin(cwd))
         return Forgejo(found["url"], found["owner"], found["repo"], runner=runner or run.run)
+    if found and found["kind"] == "gitlab":
+        check_url(found["url"], _origin(cwd))
+        return GitLab(found["url"], found["owner"], found["repo"], runner=runner or run.run)
     return GitHub(runner or run.run)

@@ -7,6 +7,7 @@ from unittest import mock
 from baton import cli, forge, identity, run
 from baton.forge.forgejo import Forgejo
 from baton.forge.github import GitHub
+from baton.forge.gitlab import GitLab
 from tests.fakes import FakeRunner
 
 
@@ -23,6 +24,17 @@ class SelectTest(unittest.TestCase):
         self.assertIsInstance(backend, Forgejo)
         self.assertEqual((backend.url, backend.owner, backend.repo),
                          ("https://git.example", "o", "r"))
+        self.assertIs(backend.runner, runner)
+
+    def test_gitlab_detection_gives_gitlab(self):
+        found = {"kind": "gitlab", "url": "https://gl.example", "owner": "g/s", "repo": "r"}
+        runner = FakeRunner({})
+        with mock.patch.object(forge, "detect", lambda cwd=None: found), \
+                mock.patch.object(forge, "_origin", lambda cwd: "https://gl.example/g/s/r.git"):
+            backend = forge.for_repo(runner=runner)
+        self.assertIsInstance(backend, GitLab)
+        self.assertEqual((backend.url, backend.owner, backend.repo),
+                         ("https://gl.example", "g/s", "r"))
         self.assertIs(backend.runner, runner)
 
     def test_github_none_and_error_give_github(self):
