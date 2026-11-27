@@ -1,6 +1,7 @@
 import copy
 import pathlib
 import unittest
+from unittest import mock
 from baton import config, merge, review
 from baton.forge.forgejo import Forgejo
 from tests.fakes import FakeRunner, FakeTransport
@@ -38,6 +39,7 @@ def served(body="Closes #4", approved=HEAD, required=("ci/*",)):
 
 def problems(forge, runner=None):
     pr = forge.pr_view(9, merge.PR_FIELDS)
+    pr["closingProblems"] = forge.closing_problems(pr)
     return merge.check(pr, make_config(), OWNER, "main", runner or FakeRunner())
 
 
@@ -60,3 +62,19 @@ class ForgejoMergeCheckTest(unittest.TestCase):
     def test_no_closing_keyword_is_refused(self):
         found = problems(served(body="Adds x"))
         self.assertTrue(any("must close exactly one issue" in p for p in found), found)
+
+    def test_cross_repository_closing_reference_is_refused(self):
+        found = problems(served(body="Closes #4\nfixes other/repo#5"))
+        self.assertTrue(any("other/repo#5" in p for p in found), found)
+
+    def test_url_closing_reference_is_refused(self):
+        found = problems(served(body="Closes #4\nResolves: https://f.example/o/r/issues/6"))
+        self.assertTrue(any("https://f.example/o/r/issues/6" in p for p in found), found)
+
+    def test_merge_refuses_through_merge(self):
+        backend = served(body="Closes #4\nfixes other/repo#5")
+        backend.transport.replies[f"GET {API}"] = (200, {
+            "owner": {"login": "o"}, "name": "r", "full_name": "o/r", "default_branch": "main"})
+        with mock.patch("baton.merge.forge.for_repo", return_value=backend):
+            found = merge.merge(9, make_config(), FakeRunner())
+        self.assertTrue(any("other/repo#5" in p for p in found), found)
