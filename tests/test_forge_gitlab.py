@@ -544,6 +544,13 @@ class MergeRequestTest(unittest.TestCase):
                 self.diff([{"old_path": "a", "new_path": "a", "diff": "", flag: True}])
 
 
+class ClosingProblemsTest(unittest.TestCase):
+    def test_returns_empty_without_request(self):
+        forge, t = make()
+        self.assertEqual(forge.closing_problems({"number": 5, "body": "Closes #1"}), [])
+        self.assertEqual(t.calls, [])
+
+
 class CiTest(unittest.TestCase):
     def rollup(self, jobs, pipeline=None, sha="abc", bridges=()):
         mr = {**MergeRequestTest.MR, "sha": sha}

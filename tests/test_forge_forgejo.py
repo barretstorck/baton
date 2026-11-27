@@ -442,6 +442,45 @@ class PullRequestTest(unittest.TestCase):
         got = forge._pr_shape({**self.PR, "body": "no keyword"}, ["closingIssuesReferences"])
         self.assertEqual(got["closingIssuesReferences"], [])
 
+    def test_closing_problems_cross_repository_and_url(self):
+        forge, _ = make()
+        for body, text in (("Closes #4\nfixes other/repo#5", "fixes other/repo#5"),
+                           ("Closes #4\nResolves: https://f.example/o/r/issues/6",
+                            "Resolves: https://f.example/o/r/issues/6")):
+            pr = {"number": 3, "body": body, "commits": [],
+                  "closingIssuesReferences": [{"number": 4}]}
+            got = forge.closing_problems(pr)
+            self.assertEqual(len(got), 1)
+            self.assertIn(text, got[0])
+        pr = {"number": 3, "body": "Closes #4", "closingIssuesReferences": [{"number": 4}],
+              "commits": [{"messageHeadline": "x", "messageBody": "fixes o/r!7"}]}
+        got = forge.closing_problems(pr)
+        self.assertEqual(len(got), 1)
+        self.assertIn("fixes o/r!7", got[0])
+
+    def test_closing_problems_plain_reference_is_clean(self):
+        forge, t = make()
+        pr = {"number": 3, "body": "Closes #4", "commits": [],
+              "closingIssuesReferences": [{"number": 4}]}
+        self.assertEqual(forge.closing_problems(pr), [])
+        self.assertEqual(t.calls, [])
+
+    def test_closing_problems_server_keyword_from_timeline(self):
+        pr = {"number": 3, "body": "Closes #4, implements #8", "commits": [],
+              "closingIssuesReferences": [{"number": 4}]}
+        key = "GET /api/v1/repos/o/r/issues/8/timeline"
+        forge, _ = make({key: (200, [{"type": "pull_ref", "ref_action": "closes",
+                                      "ref_issue": {"number": 3}}])})
+        got = forge.closing_problems(pr)
+        self.assertEqual(len(got), 1)
+        self.assertIn("#8", got[0])
+        for action in ("none", "neutered"):
+            forge, _ = make({key: (200, [{"type": "pull_ref", "ref_action": action,
+                                          "ref_issue": {"number": 3}}])})
+            self.assertEqual(forge.closing_problems(pr), [])
+        forge, _ = make({key: (404, {"message": "no"})})
+        self.assertEqual(forge.closing_problems(pr), [])
+
     def test_pr_merge(self):
         forge, t = make({"POST /api/v1/repos/o/r/pulls/3/merge": (200, "")})
         forge.pr_merge(3, "abc")

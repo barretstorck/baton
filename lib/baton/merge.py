@@ -152,6 +152,7 @@ def check(pr, cfg, owner, default_branch, runner, notes=None, bots=(), reviewers
     closing = {ref["number"] for ref in pr.get("closingIssuesReferences") or []}
     if len(closing) != 1:
         problems.append(f"pull request must close exactly one issue, found {sorted(closing)}")
+    problems.extend(pr.get("closingProblems") or [])
     texts = [pr.get("body") or ""] + [
         f"{commit.get('messageHeadline', '')}\n{commit.get('messageBody', '')}"
         for commit in pr.get("commits") or []]
@@ -333,8 +334,10 @@ def _retire_plan(pr, repo, runner, cfg, notes=None):
 
 def merge(number, cfg, runner, notes=None, bots=(), reviewers=()):
     notes = [] if notes is None else notes
-    repo = forge.for_repo(runner=runner).repo_view("owner,name,defaultBranchRef")
-    pr = forge.for_repo(runner=runner).pr_view(number, PR_FIELDS)
+    backend = forge.for_repo(runner=runner)
+    repo = backend.repo_view("owner,name,defaultBranchRef")
+    pr = backend.pr_view(number, PR_FIELDS)
+    pr["closingProblems"] = backend.closing_problems(pr)
     pr["comments"] = review.pr_comments(runner, number, pr.get("comments"))
     if pr.get("state") != "MERGED":
         problems = check(pr, cfg, cfg.maintainers(repo["owner"]["login"]), repo["defaultBranchRef"]["name"], runner,

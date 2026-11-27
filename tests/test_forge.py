@@ -337,6 +337,11 @@ class ReadTest(unittest.TestCase):
             "gh api --paginate repos/{owner}/{repo}/pulls/5/reviews?per_page=100 --jq "))
         self.assertEqual(GitHub(FakeRunner({"gh api": ""})).pr_review_items(5), [])
 
+    def test_github_closing_problems_is_empty(self):
+        runner = FakeRunner()
+        self.assertEqual(GitHub(runner).closing_problems({"body": "fixes o/r#5"}), [])
+        self.assertEqual(runner.lines(), [])
+
     def test_user(self):
         runner = FakeRunner({"gh api": '{"id": 7}'})
         self.assertEqual(GitHub(runner).user("b"), {"id": 7})

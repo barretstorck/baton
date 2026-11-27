@@ -85,6 +85,9 @@ class GitHub:
             files.append(entry)
         return files
 
+    def closing_problems(self, pr):
+        return []
+
     def issue_exists(self, number):
         try:
             found = self.runner(["gh", "issue", "view", str(number), "--json", "number"])
