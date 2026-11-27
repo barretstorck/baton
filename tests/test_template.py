@@ -307,13 +307,13 @@ class TemplateTest(unittest.TestCase):
         text = (ROOT / "skills/triage/SKILL.md").read_text()
         for needed in ("credentials", "curl | sh", "outside the repository",
                        "encoded", "hooks", "baton triage apply",
-                       "gh search issues", "triager.model"):
+                       "baton issue list", "triager.model"):
             self.assertIn(needed, text)
         for banned in ("Edit", "gh issue edit", "gh issue close"):
             self.assertNotIn(banned, text)
         agent = (ROOT / "agents/baton-triager.md").read_text()
-        for cmd in ("gh repo view", "gh search issues", "gh issue view",
-                    "gh issue list", "baton config", "baton triage apply"):
+        for cmd in ("baton repo view", "baton issue list", "baton triage read",
+                    "baton config", "baton triage apply"):
             self.assertIn(cmd, text, cmd)
             self.assertIn(cmd, agent, cmd)
         self.assertNotIn("ready-check", agent)
