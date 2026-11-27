@@ -1008,6 +1008,17 @@ class ForgejoWriteTest(unittest.TestCase):
                   "tea issues create --help", "fj --version"):
             self.assertFalse(gate._cli_writes(c.split()[0], self.words(c)), c)
 
+    def test_tea_and_fj_help_inside_values_is_still_a_write(self):
+        for c in ('tea issues create --title t --description "see --help"',
+                  "fj issue comment 3 --body -h", 'tea comment 5 "try -h"',
+                  'fj pr create --title "-h" --body x'):
+            self.assertTrue(gate._cli_writes(c.split()[0], self.words(c)), c)
+
+    def test_tea_and_fj_unlisted_write_verbs(self):
+        for c in ("fj repo star o/r", "fj user follow bob", "tea issues c --title t",
+                  "tea issues e 3 --title t"):
+            self.assertTrue(gate._cli_writes(c.split()[0], self.words(c)), c)
+
     def test_curl_and_wget(self):
         u = self.URL
         for c in (f"curl -X POST {u}", f"curl -XPATCH {u}", f"curl --request=DELETE {u}",
