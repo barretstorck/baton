@@ -56,6 +56,22 @@ def spike_lines(spike):
     return [SPIKE_WARNING]
 
 
+FORGEJO_VERSION_PATH = "/api/forgejo/v1/version"
+
+
+def forgejo_lines(url, get=identity._get):
+    """Probe a Forgejo host (Gitea does not serve this path); (lines, ok)."""
+    try:
+        reply = get(url.rstrip("/") + FORGEJO_VERSION_PATH, {"Accept": "application/json"})
+        version = reply.get("version") if isinstance(reply, dict) else None
+        if not isinstance(version, str):
+            raise identity.IdentityError("no version in the reply")
+    except identity.IdentityError as e:
+        return ([f"forge: FAIL: forge.url does not answer {FORGEJO_VERSION_PATH} ({e}), "
+                 "so it is not Forgejo (Gitea does not serve this path)"], False)
+    return [f"forge: ok (Forgejo {version})"], True
+
+
 def main(repo, runner=_run.run, get=identity._get, post=identity._post, now=None, home=None,
          spike=None, status=identity._status):
     owner, name = repo.split("/", 1)

@@ -55,7 +55,10 @@ DEFAULTS = {
     "budgets": {},
     "work_mix": {},
     "spike": {"tokens": {}, "minutes": {}, "max_per_sprint": 2},
+    "forge": {"kind": "", "url": ""},
 }
+FORGE_KINDS = ("github", "forgejo")
+_FORGE_URL = re.compile(r"https://[^/\s:?#@]+(:[0-9]+)?/?")
 
 
 class ConfigError(Exception):
@@ -242,6 +245,59 @@ def _check_spike(data):
             raise ConfigError(f".baton/brief.md: spike.{part}.min must not be greater than max")
 
 
+def forge_problem(setting):
+    """The first problem in a forge setting ({"kind", "url"}), or None."""
+    kind, url = setting["kind"], setting["url"]
+    if kind != "" and kind not in FORGE_KINDS:
+        return "forge.kind must be one of " + ", ".join(FORGE_KINDS) + " or empty"
+    if url != "" and not (isinstance(url, str) and _FORGE_URL.fullmatch(url)):
+        return "forge.url must look like https://<host>[:<port>]"
+    if url != "" and kind == "":
+        return "forge.url is set but forge.kind is empty"
+    if kind == "forgejo" and url == "":
+        return "forge.url is required when forge.kind is forgejo"
+    if kind == "github" and url not in ("", "https://github.com"):
+        return "forge.url must be empty or https://github.com when forge.kind is github"
+    return None
+
+
+def _check_forge_setting(data):
+    problem = forge_problem(data["forge"])
+    if problem:
+        raise ConfigError(".baton/brief.md: " + problem)
+
+
+def parse_local_forge(text):
+    """The `forge: <kind> <url>` line under `## Hosts` of the local brief, or None."""
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    in_section = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            in_section = line[3:].strip().lower() == "hosts"
+            continue
+        if in_section:
+            m = re.fullmatch(r"\s*forge:\s+(\S+)\s+(\S+)\s*", line)
+            if m:
+                return {"kind": m.group(1), "url": m.group(2)}
+    return None
+
+
+def effective_forge(committed, local):
+    """Combine the committed forge setting with the local brief's, or raise ConfigError."""
+    if local is None:
+        return committed
+    problem = forge_problem(local)
+    if problem:
+        raise ConfigError("local brief: " + problem)
+    if not committed["kind"]:
+        return local
+    if (committed["kind"] != local["kind"]
+            or committed["url"].rstrip("/") != local["url"].rstrip("/")):
+        raise ConfigError("forge: is set differently in .baton/brief.md and the local brief; "
+                          "keep one")
+    return committed
+
+
 def repo_root(path):
     try:
         out = run.run(["git", "-C", path, "rev-parse", "--show-toplevel"])
@@ -286,5 +342,6 @@ def load(path):
     _check_spike(merged)
     _check_docs_dir(merged)
     _check_forge(merged)
+    _check_forge_setting(merged)
     _check_work_mix(merged)
     return Config(root=root, data=merged)

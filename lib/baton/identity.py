@@ -419,6 +419,45 @@ def github_repo(url):
     return f"{m.group(1)}/{m.group(2)}" if m else None
 
 
+class ForgeError(Exception):
+    pass
+
+
+FORGE_REFUSAL = ("origin is not on github.com or on the host in forge.url; set forge: (kind and url) "
+                 "in .baton/brief.md or in the local brief's ## Hosts section")
+
+
+def remote_parts(url):
+    """(host, owner, repo) of an https, ssh:// or scp-style remote URL; None for anything else."""
+    url = (url or "").strip()
+    path = r"([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?"
+    m = (re.fullmatch(r"https://(?:[^/@\s]*@)?([^/@:\s]+)(?::\d+)?/" + path, url)
+         or re.fullmatch(r"ssh://(?:[^/@\s]*@)?([^/@:\s]+)(?::\d+)?/" + path, url)
+         or re.fullmatch(r"(?:[^/@:\s]+@)?([^/@:\s]+):" + path, url))
+    if not m or {m.group(2), m.group(3)} & {".", ".."}:
+        return None
+    return m.group(1).lower(), m.group(2), m.group(3)
+
+
+def _host(url):
+    m = re.fullmatch(r"https?://(?:[^/@\s]*@)?([^/@:\s]+)(?::\d+)?(?:/.*)?", (url or "").strip())
+    return m.group(1).lower() if m else None
+
+
+def detect_forge(url, setting):
+    """{kind, url, owner, repo} for an origin URL; refuses a host that is not github.com or forge.url's."""
+    parts = remote_parts(url)
+    if parts is None:
+        raise ForgeError("origin is not an https, ssh:// or scp-style remote; " + FORGE_REFUSAL)
+    host, owner, repo = parts
+    if host == "github.com":
+        return {"kind": "github", "url": "https://github.com", "owner": owner, "repo": repo}
+    setting = setting or {}
+    if _host(setting.get("url")) == host:
+        return {"kind": setting["kind"], "url": setting["url"].rstrip("/"), "owner": owner, "repo": repo}
+    raise ForgeError(FORGE_REFUSAL)
+
+
 def origin_problem(url, repo):
     """Why origin is not `repo` (owner/repo), or None when it is. Never repeats the URL."""
     found = github_repo(url)

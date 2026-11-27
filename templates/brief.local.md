@@ -5,7 +5,8 @@ by its absolute path from any worktree. Nothing from it may appear in anything t
 
 ## Hosts
 
-<!-- Names or addresses of machines agents may use, one per line. -->
+<!-- Names or addresses of machines agents may use, one per line.
+     For a self-hosted forge, add `forge: <github|forgejo> https://<host>`. -->
 
 ## Paths
 

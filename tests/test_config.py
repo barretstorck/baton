@@ -336,3 +336,50 @@ class BotSlugTest(unittest.TestCase):
         self.assertIsNone(config.bot_slug("baton"))
         self.assertIsNone(config.bot_slug("[bot]"))
         self.assertIsNone(config.bot_slug("app/"))
+
+
+class ForgeSettingTest(unittest.TestCase):
+    def _load(self, kind, url):
+        return config.load(str(make_repo(f'---\nforge:\n  kind: "{kind}"\n  url: "{url}"\n---\n')))
+
+    def test_default_loads(self):
+        self.assertEqual(config.DEFAULTS["forge"], {"kind": "", "url": ""})
+        self.assertEqual(config.load(str(make_repo("# none\n"))).data["forge"], {"kind": "", "url": ""})
+
+    def test_forgejo_with_url_loads(self):
+        for url in ("https://git.example.org", "https://git.example.org:3000/"):
+            self.assertEqual(self._load("forgejo", url).data["forge"]["kind"], "forgejo")
+        self.assertEqual(self._load("github", "https://github.com").data["forge"]["kind"], "github")
+
+    def test_problems_raise(self):
+        cases = [("gitlab", ""), ("forgejo", "http://git.example.org"),
+                 ("forgejo", "https://git.example.org/x"), ("", "https://git.example.org"),
+                 ("forgejo", ""), ("github", "https://git.example.org")]
+        for kind, url in cases:
+            with self.assertRaisesRegex(config.ConfigError, r"forge\.", msg=(kind, url)):
+                self._load(kind, url)
+
+
+class LocalForgeTest(unittest.TestCase):
+    F = {"kind": "forgejo", "url": "https://git.example.org"}
+    EMPTY = {"kind": "", "url": ""}
+
+    def test_line_found_under_hosts(self):
+        text = "# x\n\n## hosts\n\nbox\nforge: forgejo https://git.example.org\n\n## Paths\n"
+        self.assertEqual(config.parse_local_forge(text), self.F)
+
+    def test_ignored_elsewhere(self):
+        self.assertIsNone(config.parse_local_forge("## Paths\nforge: forgejo https://h.example\n"))
+        self.assertIsNone(config.parse_local_forge(
+            "## Hosts\n<!-- forge: forgejo https://h.example -->\n"))
+        self.assertIsNone(config.parse_local_forge("## Hosts\nforge: forgejo\n"))
+
+    def test_effective_forge(self):
+        self.assertEqual(config.effective_forge(self.F, None), self.F)
+        with self.assertRaisesRegex(config.ConfigError, "^local brief: forge.url"):
+            config.effective_forge(self.EMPTY, {"kind": "forgejo", "url": "http://x"})
+        self.assertEqual(config.effective_forge(self.EMPTY, self.F), self.F)
+        same = {"kind": "forgejo", "url": "https://git.example.org/"}
+        self.assertEqual(config.effective_forge(self.F, same), self.F)
+        with self.assertRaisesRegex(config.ConfigError, "set differently"):
+            config.effective_forge(self.F, {"kind": "forgejo", "url": "https://other.example"})
