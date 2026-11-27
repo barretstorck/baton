@@ -15,17 +15,20 @@ def make_config():
     return config.Config(root=pathlib.Path("."), data=copy.deepcopy(config.DEFAULTS))
 
 
-def served(body="Closes #4", approved=HEAD, required=("ci/*",)):
+def served(body="Closes #4", approved=HEAD, required=("ci/*",), files=None):
     """A Forgejo backend serving pull request 9 on a fake transport."""
+    if files is None:
+        files = [{"filename": "src/tool.py", "additions": 1, "deletions": 0,
+                  "status": "changed"}]
     comments = [{"id": 1, "body": review.compose("approve", approved, "Round 1."),
                  "user": {"login": OWNER}, "created_at": "2026-01-01T00:00:00Z"}]
     pr = {"number": 9, "title": "T", "body": body, "state": "open", "merged": False,
-          "draft": False, "mergeable": True, "changed_files": 1,
+          "draft": False, "mergeable": True, "changed_files": len(files),
           "html_url": "https://f.example/o/r/pulls/9", "user": {"login": "u"},
           "head": {"ref": "issue-4-x", "sha": HEAD, "repo": {"full_name": "o/r"}},
           "base": {"ref": "main", "repo": {"full_name": "o/r"}}}
     return Forgejo("https://f.example", "o", "r", token="t", transport=FakeTransport({
-        f"GET {API}/pulls/9/files": (200, [{"filename": "src/tool.py", "additions": 1, "deletions": 0}]),
+        f"GET {API}/pulls/9/files": (200, files),
         f"GET {API}/pulls/9/commits": (200, [{"sha": HEAD, "commit": {"message": "Add x"}}]),
         f"GET {API}/commits/{HEAD}/status": (200, {"statuses": [
             {"context": "ci/test", "status": "success", "target_url": None}]}),
@@ -44,6 +47,18 @@ def problems(forge, runner=None):
 class ForgejoMergeCheckTest(unittest.TestCase):
     def test_approved_head_has_no_problems(self):
         self.assertEqual(problems(served()), [])
+
+    def test_rename_out_of_a_protected_path_needs_approval(self):
+        files = [{"filename": "src/ci.yml", "status": "renamed",
+                  "previous_filename": ".github/workflows/ci.yml"}]
+        found = problems(served(files=files))
+        self.assertTrue(any("protected" in p and ".github/workflows/ci.yml" in p
+                            for p in found), found)
+
+    def test_unknown_rename_source_fails_closed(self):
+        files = [{"filename": "src/ci.yml", "status": "renamed"}]
+        found = problems(served(files=files))
+        self.assertTrue(any("rename source unknown" in p for p in found), found)
 
     def test_stale_approval_is_refused(self):
         runner = FakeRunner({f"git merge-base origin/main {OLD}": "b1\n",

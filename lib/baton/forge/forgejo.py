@@ -445,9 +445,18 @@ class Forgejo:
         return "OPEN" if item.get("state") == "open" else "CLOSED"
 
     def _pr_files(self, number):
-        return [{"path": item["filename"], "additions": item.get("additions", 0),
-                 "deletions": item.get("deletions", 0)}
-                for item in self._paged(f"{self._repo_path()}/pulls/{number}/files")]
+        out = []
+        for item in self._paged(f"{self._repo_path()}/pulls/{number}/files"):
+            entry = {"path": item["filename"], "additions": item.get("additions", 0),
+                     "deletions": item.get("deletions", 0)}
+            status = item.get("status")
+            if status in ("renamed", "copied"):
+                if item.get("previous_filename"):
+                    entry["previousPath"] = item["previous_filename"]
+            elif status:
+                entry["previousPath"] = None
+            out.append(entry)
+        return out
 
     def _pr_commits(self, number):
         out = []

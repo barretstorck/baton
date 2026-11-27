@@ -317,7 +317,8 @@ class PullRequestTest(unittest.TestCase):
         fields = PR_FIELDS
         forge, _ = make({
             "GET /api/v1/repos/o/r/pulls/3/files": (200, [
-                {"filename": "a.py", "additions": 2, "deletions": 1}]),
+                {"filename": "a.py", "additions": 2, "deletions": 1,
+                 "status": "changed"}]),
             "GET /api/v1/repos/o/r/pulls/3/commits": (200, [
                 {"sha": "abc", "commit": {"message": "head\n\nbody"}}]),
             "GET /api/v1/repos/o/r/commits/abc/status": (200, {"statuses": [
@@ -330,12 +331,23 @@ class PullRequestTest(unittest.TestCase):
         self.assertEqual(got["state"], "MERGED")
         self.assertEqual(got["mergeable"], "MERGEABLE")
         self.assertFalse(got["isCrossRepository"])
-        self.assertEqual(got["files"], [{"path": "a.py", "additions": 2, "deletions": 1}])
+        self.assertEqual(got["files"], [{"path": "a.py", "additions": 2, "deletions": 1,
+                                           "previousPath": None}])
         self.assertEqual(got["commits"], [{"oid": "abc", "messageHeadline": "head",
                                            "messageBody": "body"}])
         self.assertEqual(got["statusCheckRollup"], [{"__typename": "StatusContext",
                          "context": "ci", "state": "SUCCESS", "targetUrl": "u"}])
         self.assertEqual(got["closingIssuesReferences"], [])
+
+    def test_pr_files_rename_source(self):
+        forge, _ = make({"GET /api/v1/repos/o/r/pulls/3/files": (200, [
+            {"filename": "b", "status": "renamed", "previous_filename": "a"},
+            {"filename": "d", "status": "renamed"},
+            {"filename": "e"}])})
+        got = forge._pr_files(3)
+        self.assertEqual(got[0]["previousPath"], "a")
+        self.assertNotIn("previousPath", got[1])
+        self.assertNotIn("previousPath", got[2])
 
     def shape(self, **changes):
         forge, _ = make()
