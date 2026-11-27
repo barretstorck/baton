@@ -37,6 +37,7 @@ _REFINE_REPLY = f"{gate.MARKER}refine:reply -->"
 _HUNK = re.compile(r"^@@ [^@]* @@.*$")
 _COMMENT_ID = re.compile(r"#issuecomment-(\d+)$")
 _REVIEW_ID = re.compile(r"#pullrequestreview-(\d+)$")
+_NOTE_ID = re.compile(r"#note_(\d+)$")
 
 
 class ReviewError(Exception):
@@ -332,7 +333,9 @@ def tick_review(runner, number, owner, task_id):
         return False
     url = item.get("url") or ""
     formal_review = _REVIEW_ID.search(url)
-    found = formal_review or _COMMENT_ID.search(url)
+    comment = None if formal_review else _COMMENT_ID.search(url)
+    note = None if formal_review or comment else _NOTE_ID.search(url)
+    found = formal_review or comment or note
     if not found:
         raise ReviewError("cannot tell the review comment's id from its URL")
     handle, path = tempfile.mkstemp(suffix=".md")
@@ -342,6 +345,8 @@ def tick_review(runner, number, owner, task_id):
         backend = forge.for_repo(runner=runner)
         if formal_review:
             backend.review_edit_body(number, found.group(1), path, role="reviewer")
+        elif note:
+            backend.comment_edit_body(found.group(1), path, role="reviewer", number=number)
         else:
             backend.comment_edit_body(found.group(1), path, role="reviewer")
     finally:
