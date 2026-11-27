@@ -33,6 +33,10 @@ The gate also completes one command: a `gh pr create` from a detached HEAD gets
 `--head <branch>` added (the one pushed issue branch at HEAD) through the same
 rewrite; it never changes a command otherwise.
 
+On a Forgejo repository (forge detection) it also refuses raw `tea`/`fj` writes
+and `curl`/`wget` with a non-GET method to the forge host, pointing to the
+`baton` subcommands.
+
 This guards against mistakes and nudged agents. It is not a sandbox: a script
 that talks to the forge without one of these programs is outside its view.
 """
@@ -46,7 +50,7 @@ import signal
 import sys
 import tempfile
 
-from . import branches, config, githooks, identity, run, scan
+from . import branches, config, forge, githooks, identity, run, scan
 
 MARKER = "<!-- baton:"
 HOOK_TAG = githooks.HOOK_TAG
@@ -118,6 +122,8 @@ _QUOTED = re.compile(r"""'[^']*'|"[^"]*\"""")
 _DATA_FLAG = re.compile(r"""(?:--data(?:-raw|-binary|-urlencode)?|--json|--form|-[dF])(?:\s+|=)('[^']*'|"[^"]*"|\S+)""")
 
 _CLOSE_RE = re.compile(r"(?<![\w-])gh\s+(?:(?:-R|--repo)\s+\S+\s+|-\S+\s+)*(issue|pr)\s+(close|reopen)\b")
+_FORGEJO_WRITE = ("this repository is on Forgejo: write to it with a baton subcommand "
+                  "(for example baton comment or baton close), not raw tea, fj, curl or wget")
 _CLOSE_REASON = ("`gh issue|pr close|reopen` needs a reason in a Baton repository: add --comment \"<reason>\"; "
                  "Baton adds its marker to the comment")
 _HAS_REASON = re.compile(r"(?<![\w-])(?:-c|--comment)(?=[\s=]|$)|(?<![\w-])-c\S")
@@ -466,6 +472,10 @@ def decide(command, cwd, terms):
     if closing and not closing[2]:
         problems.append(_CLOSE_REASON)
 
+    forgejo = _forgejo_problem(stripped, clis, cwd)
+    if forgejo is not None:
+        problems.append(forgejo)
+
     http_only = bool(forge) and not git and all(name in _HTTP_CLIS for name in forge)
     stdin_pattern = _stdin_re(flags) if forge else _GIT_STDIN
     if stdin_pattern.search(stripped) and "<<" not in stripped and (forge or "|" not in stripped):
@@ -661,6 +671,26 @@ def _cli_writes(name, args):
             return True
         return _has_flag(args, _WGET_BODY_FLAGS)
     return False
+
+
+def _forgejo_problem(stripped, clis, cwd):
+    """The Forgejo write refusal when `stripped` runs a raw write to a Forgejo repository, else None."""
+    pattern = _forge_re(tuple(clis))
+    if not any(m.group(1) in _FORGEJO_PROGRAMS for m in pattern.finditer(stripped)):
+        return None
+    found = forge.detect(cwd)
+    if not isinstance(found, dict) or found.get("kind") != "forgejo":
+        return None
+    host = identity._host(found.get("url"))
+    for segment in _forge_segments(stripped, clis):
+        for m in pattern.finditer(segment):
+            name = m.group(1)
+            if name not in _FORGEJO_PROGRAMS:
+                continue
+            args = _args(segment[m.end():])
+            if _cli_writes(name, args) and (name in ("tea", "fj") or any(_url_host(a) == host for a in args)):
+                return _FORGEJO_WRITE
+    return None
 
 
 def _gh_write_offset(command):

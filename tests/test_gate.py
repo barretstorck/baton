@@ -1022,3 +1022,60 @@ class ForgejoWriteTest(unittest.TestCase):
         for w in ("https://Git.Example.org:3000/api", "git.example.org/api", user):
             self.assertEqual(gate._url_host(w), "git.example.org", w)
         self.assertIsNone(gate._url_host("-X"))
+
+
+FORGEJO = {"kind": "forgejo", "url": "https://git.example.org", "owner": "o", "repo": "r"}
+
+
+class ForgejoGateTest(unittest.TestCase):
+    def decide(self, command, found, repo=None):
+        repo = repo or make_repo()
+        with mock.patch.object(gate.forge, "detect", return_value=found):
+            return gate.decide(command, repo, TERMS)
+
+    def test_raw_writes_refused(self):
+        repo = make_repo()
+        pathlib.Path(repo, "c.json").write_text("{}")
+        for command in ("tea issues create --title t --description d", "fj pr close 4",
+                        "cd sub && tea comment 5 hi",
+                        "curl -X POST https://git.example.org/api/v1/repos/o/r/issues/1/comments -d @c.json",
+                        "wget --post-data x https://git.example.org/api/v1/x"):
+            with self.subTest(command=command):
+                self.assertIn(gate._FORGEJO_WRITE, self.decide(command, FORGEJO, repo))
+
+    def test_reads_and_other_hosts_allowed(self):
+        for command in ("tea issues list", "fj issue view 5",
+                        "curl https://git.example.org/api/v1/repos/o/r/issues",
+                        "curl -X POST https://other.example.net/hook -d x"):
+            with self.subTest(command=command):
+                self.assertEqual(self.decide(command, FORGEJO), [])
+
+    def test_github_unchanged(self):
+        github = {"kind": "github", "url": "https://github.com", "owner": "o", "repo": "r"}
+        repo = make_repo()
+        pathlib.Path(repo, "notes.md").write_text("notes")
+        for found in (github, None):
+            for command in ("tea issues create --title t", "curl -X POST https://git.example.org/x -d x"):
+                with self.subTest(found=found, command=command):
+                    self.assertEqual(self.decide(command, found, repo), [])
+            for command in ALLOWED:
+                with self.subTest(found=found, command=command):
+                    self.assertEqual(self.decide(command, found, repo), [])
+
+    def test_detection_only_for_forgejo_programs(self):
+        repo = make_repo()
+        with mock.patch.object(gate.forge, "detect", return_value=FORGEJO) as detect:
+            gate.decide("gh issue comment 5 --body x", repo, TERMS)
+            gate.decide("git commit -m x", repo, TERMS)
+        detect.assert_not_called()
+
+    def test_end_to_end(self):
+        brief = '---\nforge:\n  kind: "forgejo"\n  url: "https://git.example.org"\n---\n'
+        repo = make_repo(brief=brief)
+        subprocess.run(["git", "-C", repo, "remote", "add", "origin", "https://git.example.org/o/r.git"],
+                       check=True)
+        gate.forge._detected.clear()
+        with tempfile.TemporaryDirectory() as home, mock.patch.dict(os.environ, {"BATON_HOME": home}):
+            problems = gate.decide("tea pr create --title t --description d", repo, TERMS)
+        gate.forge._detected.clear()
+        self.assertIn(gate._FORGEJO_WRITE, problems)
