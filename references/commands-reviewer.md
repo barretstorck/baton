@@ -6,5 +6,6 @@ Read by the reviewer. Commands only the reviewer uses. The commands every role u
 
 | Step | Command |
 |---|---|
-| A pull request's checks | `gh pr checks <N>` |
+| A pull request's checks | `baton pr checks <N>` (JSON rows `name`, `state`, `url`; the run id is in the url) |
+| A failed run's log | `baton run log <id>`, with the run id from the check's url (exit 2 "not supported" on Forgejo and GitLab: open the check's url) |
 | A pull request's draft state and CI state (reviewer) | `baton pr-state <N>` (JSON: `draft`, `ci`: `green`, `red`, `cancelled` (only cancelled checks failed: CI did not finish), `pending` or `none`, `verify`: `none`, `missing`, `green`, `red` or `timeout`, `problems`) |

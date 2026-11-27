@@ -6,7 +6,7 @@ Read by the refiner. Commands only the refiner uses. The commands every role use
 
 | Step | Command |
 |---|---|
-| Find open issues naming a file | `gh issue list --state open --search "\"<path>\" in:body" --json number,title` |
+| Find open issues naming a file | `baton issue list --state open --search "\"<path>\" in:body" --json number,title` (on Forgejo the `in:body` qualifier is refused, so search the plain path) |
 | Check a sandbox is configured | `baton sandbox check`: prints `configured` or `none`; exit 0 for `configured`, 1 for `none` |
 
 ## Writing

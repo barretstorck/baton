@@ -6,7 +6,7 @@ Read by the scheduled-run session and maintainers. The `baton-triager` agent can
 
 | Step | Command |
 |---|---|
-| Search for duplicates | `gh search issues "<key words>" --repo <owner>/<repo>` and `gh issue list --state all --search "<key words>"`. `gh search issues` takes no `--state all`; without `--state` it searches open and closed issues. |
+| Search for duplicates | `baton issue list --state all --search "<key words>" --limit <n>` (one search of open and closed issues; needs no owner) |
 
 ## Writing
 
