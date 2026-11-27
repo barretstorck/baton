@@ -108,6 +108,14 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("gh pr edit <P> --body-file", text)
         self.assertIn("Port from, Result and Check", text)
 
+    def test_develop_skill_handles_hand_check_prompt(self):
+        text = " ".join(develop_text().split())
+        self.assertIn("Hand-check pull request <P> (issue <N>).", text)
+        self.assertIn("## A hand check", text)
+        self.assertIn("CHECKED <full head sha>", text)
+        agent = (ROOT / "agents" / "baton-developer.md").read_text()
+        self.assertIn("Hand-check pull request <P> (issue <N>).", agent)
+
     def test_develop_skill_reports_merge_first(self):
         text = " ".join(develop_text().split())
         self.assertIn(

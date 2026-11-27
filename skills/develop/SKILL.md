@@ -11,6 +11,7 @@ You were dispatched with one of:
 
 - `Do task <n> of issue <N>.`: one task of the issue's plan (the `## Developer Plan` section of the issue body);
 - `Do review task <r.n> of pull request <P> (issue <N>).`: one task of the latest code review;
+- `Hand-check pull request <P> (issue <N>).`: run the issue's hand checks on the pull request's head; see "A hand check".
 - `Update pull request <P> (issue <N>).`: see `${CLAUDE_PLUGIN_ROOT}/references/develop-cases.md`, Keeping a pull request mergeable.
 
 A spike (`Do spike issue <N>.`) goes to the `baton-researcher` agent, not here.
@@ -164,6 +165,18 @@ filters, send long output to a file, chain related commands, wait for a long run
 5. Do not post a reply: the orchestrator writes it from your result. Do not implement the
    review's follow-up issues.
 
+## A hand check
+
+1. Read the issue's `hand_checks` with `baton tasks issue <N>` and the pull request's head with
+   `gh pr view <P> --json headRefOid,headRefName`. Check that head out detached in your worktree.
+2. Run each hand check as the local brief's `## Hand checks` section says. Write each result
+   (`pass` or `fail`, the full head sha it ran on, and what was seen) where that task's `Result:`
+   line names.
+3. Restore everything the checks changed on that machine. Commit nothing and tick nothing.
+4. When you cannot run them (no machine, no access, no `## Hand checks` section, or an empty
+   `hand_checks`), return `BLOCKED: <what is missing>`.
+5. Return `CHECKED <full head sha>` in the form under "Return", whatever the results.
+
 ## Other cases
 
 For `Update pull request <P> (issue <N>).`, a REPLAN, a decision you need, posting a comment, or
@@ -182,7 +195,7 @@ cannot delete them.
 ## Return
 
 Your final message starts with exactly one result line: `DONE <full sha>`, `FIXED <full sha>`,
-`DECLINED <reason>`, `REPLAN`, `QUESTION:` or `BLOCKED:`. A one-word or placeholder report, or a
+`CHECKED <full sha>`, `DECLINED <reason>`, `REPLAN`, `QUESTION:` or `BLOCKED:`. A one-word or placeholder report, or a
 summary without a result line, is not a result. Your final message is exactly one of these.
 
 Before returning `REPLAN`, `QUESTION:` or `BLOCKED:` for a plan task you started (except the
@@ -224,6 +237,16 @@ DECLINED <one-line reason>
 Pull request: #<P>, review task <r.n>
 <the technical reasoning, in a few lines>
 ```
+
+A hand check:
+
+```
+CHECKED <full head sha>
+Pull request: #<P>, hand check
+Task <n>: pass | fail: <one line>
+```
+
+One `Task <n>:` line per hand check.
 
 For `REPLAN`, `QUESTION:` and `BLOCKED:`, read `${CLAUDE_PLUGIN_ROOT}/references/develop-cases.md` first.
 
