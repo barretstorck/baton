@@ -208,7 +208,7 @@ class TemplateTest(unittest.TestCase):
                       text)
         self.assertIn("`git fetch origin refs/spikes/<N>`", text)
         self.assertNotIn("no file is needed", text)
-        for path in ("references/github.md", "references/develop-cases.md"):
+        for path in ("references/commands.md", "references/develop-cases.md"):
             body = " ".join((ROOT / path).read_text().split())
             self.assertIn("names a `git` command", body, path)
 
@@ -634,7 +634,7 @@ class TemplateTest(unittest.TestCase):
         for path in ("skills/sprint/SKILL.md", "references/sprint-dispatch.md"):
             self.assertIn("in_flight", read(path))
             self.assertIn("stale", read(path))
-        for path in ("README.md", "references/github.md"):
+        for path in ("README.md", "references/commands.md"):
             self.assertIn("baton task start", read(path))
 
     def test_bumps_documented(self):

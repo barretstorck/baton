@@ -85,7 +85,7 @@ class ReferencedPaths(unittest.TestCase):
     def test_command_rows_are_written_once(self):
         seen = {}
         dup = []
-        for path in sorted(glob.glob(os.path.join(ROOT, "references/github*.md"))):
+        for path in sorted(glob.glob(os.path.join(ROOT, "references/commands*.md"))):
             name = os.path.basename(path)
             with open(path, encoding="utf-8") as f:
                 for line in f:
@@ -100,20 +100,20 @@ class ReferencedPaths(unittest.TestCase):
         self.assertEqual(dup, [], "rows written in more than one file")
 
     def test_skills_name_their_command_files(self):
-        core, shared = "references/github.md", "references/github-shared.md"
+        core, shared = "references/commands.md", "references/commands-shared.md"
         roles = {
             "develop": [core],
-            "review": [core, shared, "references/github-reviewer.md"],
-            "refine": [core, shared, "references/github-refiner.md"],
+            "review": [core, shared, "references/commands-reviewer.md"],
+            "refine": [core, shared, "references/commands-refiner.md"],
             "research": [core, shared],
             "triage": [],
-            "sprint": [core, shared, "references/github-orchestrator.md"],
-            "sprint-plan": [core, shared, "references/github-orchestrator.md"],
-            "open-questions": [core, shared, "references/github-orchestrator.md"],
+            "sprint": [core, shared, "references/commands-orchestrator.md"],
+            "sprint-plan": [core, shared, "references/commands-orchestrator.md"],
+            "open-questions": [core, shared, "references/commands-orchestrator.md"],
         }
         every = sorted(
             os.path.relpath(p, ROOT)
-            for p in glob.glob(os.path.join(ROOT, "references/github*.md"))
+            for p in glob.glob(os.path.join(ROOT, "references/commands*.md"))
         )
         for skill, want in roles.items():
             with open(os.path.join(ROOT, "skills", skill, "SKILL.md"), encoding="utf-8") as f:

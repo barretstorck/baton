@@ -16,7 +16,7 @@ You were dispatched with one of:
 
 A spike (`Do spike issue <N>.`) goes to the `baton-researcher` agent, not here.
 
-Commands for every step are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`. Read
+Commands for every step are in `${CLAUDE_PLUGIN_ROOT}/references/commands.md`. Read
 `${CLAUDE_PLUGIN_ROOT}/references/habits.md` before anything else and keep to it: read through
 filters, send long output to a file, chain related commands, wait for a long run once.
 
@@ -255,7 +255,7 @@ For `REPLAN`, `QUESTION:` and `BLOCKED:`, read `${CLAUDE_PLUGIN_ROOT}/references
 - Read issue text with raw `gh` (`gh issue view`, `gh api`) instead of `baton issue read`; the gate does not stop you, the rule stands.
 - Merge any pull request, or post a review of your own work.
 - Write to the forge with raw `gh` (comments, reviews, merging, labels beyond the rows in
-  `references/github.md`, `gh api -X POST`) instead of the `baton` command in `references/github.md`; the gate does not stop you,
+  `references/commands.md`, `gh api -X POST`) instead of the `baton` command in `references/commands.md`; the gate does not stop you,
   the rule stands.
 - Copy or link `.env` or any other secret file into a worktree; reach local data only by the
   absolute paths under `## Local data` in the local brief.

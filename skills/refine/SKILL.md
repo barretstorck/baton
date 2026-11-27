@@ -11,7 +11,7 @@ decides how well the sprint goes.
 
 Follows the refinement step of GitLab's
 [build track](https://handbook.gitlab.com/handbook/product-development/how-we-work/product-development-flow/#build-phase-1-plan).
-Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_ROOT}/references/github-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/github-refiner.md`. Read
+Commands are in `${CLAUDE_PLUGIN_ROOT}/references/commands.md`, `${CLAUDE_PLUGIN_ROOT}/references/commands-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/commands-refiner.md`. Read
 `${CLAUDE_PLUGIN_ROOT}/references/habits.md` first: read code through filters (`rg -n`,
 `sed -n`, line ranges), not whole files, so refining several issues stays cheap.
 
@@ -370,8 +370,8 @@ Work in your own worktree and do these in order:
 
 - Read issue text with raw `gh` (`gh issue view`, `gh api`) instead of `baton issue read`; the gate does not stop you, the rule stands.
 - Start implementing. Refinement ends at a ready description.
-- Merge anything except with `baton merge-pr`; close, reopen, label or edit only with the `gh` and `baton` commands in `references/github.md`, `references/github-shared.md` or `references/github-refiner.md`.
-- Write to the forge with raw `gh` for comments, reviews, labels beyond the rows in `references/github-shared.md`, merging or `gh api -X POST`, instead of the `baton` command in `references/github.md`, `references/github-shared.md` or `references/github-refiner.md`; the gate does not stop you,
+- Merge anything except with `baton merge-pr`; close, reopen, label or edit only with the `gh` and `baton` commands in `references/commands.md`, `references/commands-shared.md` or `references/commands-refiner.md`.
+- Write to the forge with raw `gh` for comments, reviews, labels beyond the rows in `references/commands-shared.md`, merging or `gh api -X POST`, instead of the `baton` command in `references/commands.md`, `references/commands-shared.md` or `references/commands-refiner.md`; the gate does not stop you,
   the rule stands.
 - Commit or push anything but the plan.
 - Leave scratch files outside your worktree.

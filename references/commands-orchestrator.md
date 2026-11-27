@@ -1,6 +1,6 @@
-# GitHub reference for Baton skills: orchestrator
+# Command reference for Baton skills: orchestrator
 
-Read by the sprint orchestrator (the sprint, sprint-plan, open-questions and init skills). Commands only the orchestrator uses, and maintainer-only commands that no skill runs. The commands every role uses are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, and its rules for writing to the forge apply here too.
+Read by the sprint orchestrator (the sprint, sprint-plan, open-questions and init skills). Commands only the orchestrator uses, and maintainer-only commands that no skill runs. The commands every role uses are in `${CLAUDE_PLUGIN_ROOT}/references/commands.md`, and its rules for writing to the forge apply here too.
 
 ## Reading
 

@@ -13,7 +13,7 @@ ones; if you catch yourself editing product code, stop and dispatch a developer.
 
 The workflow follows the GitLab handbook's
 [Engineering Workflow](https://handbook.gitlab.com/handbook/engineering/workflow/).
-Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_ROOT}/references/github-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/github-orchestrator.md`.
+Commands are in `${CLAUDE_PLUGIN_ROOT}/references/commands.md`, `${CLAUDE_PLUGIN_ROOT}/references/commands-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/commands-orchestrator.md`.
 
 ## Who runs the sprint
 
@@ -258,7 +258,7 @@ recommendations or play-by-play. The details are on the issues.
 - Tick a box or change a plan or a review other than with `baton task done` and
   `baton plan replace` (and never tick a plan task a developer should have ticked), or give a developer more than one task.
 - Merge with anything other than `baton merge-pr`, or merge while the default branch is red.
-- Write to the forge with raw `gh` for comments, reviews, labels beyond the rows in `references/github-shared.md`, merging or `gh api -X POST`, instead of the `baton` command in `references/github.md`, `references/github-shared.md` or `references/github-orchestrator.md`; the gate does not stop you,
+- Write to the forge with raw `gh` for comments, reviews, labels beyond the rows in `references/commands-shared.md`, merging or `gh api -X POST`, instead of the `baton` command in `references/commands.md`, `references/commands-shared.md` or `references/commands-orchestrator.md`; the gate does not stop you,
   the rule stands.
 - Post `/baton approve`, or mark an issue written by someone else as ready.
 - Start a sprint, change its goal, or add unrelated issues without the maintainer.

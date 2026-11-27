@@ -5,7 +5,7 @@ Read this before filing a follow-up issue (`skills/sprint/SKILL.md`, step 6): it
 ## Search for a duplicate
 
 Before filing a follow-up from a review, a developer report or a spike's findings, run both
-searches (see "Search for a duplicate follow-up" in `references/github-orchestrator.md`) with two
+searches (see "Search for a duplicate follow-up" in `references/commands-orchestrator.md`) with two
 or three key words from the follow-up, and read each likely match with `baton issue read <M>`.
 
 - An open issue that covers the same thing gets a status comment instead of a new issue

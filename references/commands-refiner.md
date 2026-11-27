@@ -1,6 +1,6 @@
-# GitHub reference for Baton skills: refiner
+# Command reference for Baton skills: refiner
 
-Read by the refiner. Commands only the refiner uses. The commands every role uses are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, and its rules for writing to the forge apply here too.
+Read by the refiner. Commands only the refiner uses. The commands every role uses are in `${CLAUDE_PLUGIN_ROOT}/references/commands.md`, and its rules for writing to the forge apply here too.
 
 ## Reading
 

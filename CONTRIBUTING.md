@@ -22,7 +22,7 @@ maintainer has refined them and marked them ready. That is a safety rule, not a 
 
 - New behaviour has tests in `tests/`, using `tests/fakes.py` `FakeRunner` instead of real `gh` or
   `git` calls.
-- Skills, agents, `references/github.md` and `README.md` describe any changed command or flow.
+- Skills, agents, `references/commands.md` and `README.md` describe any changed command or flow.
 - Nothing personal: no real names, hosts, IP addresses or paths in code, tests, fixtures or commit
   messages. Run `baton install-hooks` to have the git hooks check for you.
 
