@@ -627,9 +627,45 @@ def _api_is_write(args):
 _FORGEJO_WRITE_VERBS = frozenset(
     "create edit update delete rm close reopen comment merge approve lgtm reject review add reset "
     "fork migrate lock unlock pin unpin read unread transfer".split())
-_GITLAB_WRITE_VERBS = frozenset(
-    "create update edit delete close reopen note approve revoke merge rebase subscribe unsubscribe "
-    "todo run retry cancel trigger set fork archive transfer upload".split())
+_GITLAB_READ_VERBS = frozenset(
+    "list view status diff checkout browse issues version help check-update completion get show "
+    "search describe".split())
+_GLAB_VALUE_FLAGS = frozenset(
+    "-m --message -d --description --title -t -l --label -R --repo -g --group -a --assignee "
+    "-b --branch -s --source-branch --target-branch -F --field -f --raw-field -H --header "
+    "-X --method --milestone --description-file".split())
+
+
+def _glab_help(args):
+    """True when an argument is exactly --help or -h, not a flag's value, before any `--`."""
+    for i, a in enumerate(args):
+        if a == "--":
+            return False
+        if i and args[i - 1] in _GLAB_VALUE_FLAGS:
+            continue
+        if _HELP.fullmatch(a):
+            return True
+    return False
+
+
+def _glab_verb(args):
+    """The subcommand word of a glab command (the second word, or the only one), skipping flags."""
+    words = []
+    skip = False
+    for a in args:
+        if skip:
+            skip = False
+        elif a == "--":
+            break
+        elif a.startswith("-"):
+            skip = a in _GLAB_VALUE_FLAGS
+        else:
+            words.append(a)
+    if not words:
+        return None
+    return words[1] if len(words) > 1 else words[0]
+
+
 _FORGE_WRITE_PROGRAMS = {"forgejo": (("tea", "fj", "curl", "wget"), _FORGEJO_WRITE),
                          "gitlab": (("glab", "curl", "wget"), _GITLAB_WRITE)}
 _CURL_BODY_FLAGS = ("-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "--json",
@@ -685,11 +721,12 @@ def _cli_writes(name, args):
             return True
         return any(a in _FORGEJO_WRITE_VERBS for a in args)
     if name == "glab":
-        if any(_HELP.search(a) for a in args):
+        if _glab_help(args):
             return False
         if args and args[0] == "api":
             return _api_is_write(args[1:])
-        return any(a in _GITLAB_WRITE_VERBS for a in args)
+        verb = _glab_verb(args)
+        return verb is not None and verb not in _GITLAB_READ_VERBS
     if name == "curl":
         if any(a in ("-G", "--get") for a in args):
             return False

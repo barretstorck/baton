@@ -1095,7 +1095,8 @@ class GitLabGateTest(unittest.TestCase):
         pathlib.Path(repo, "c.json").write_text("{}")
         for command in ("glab issue note 3 -m hi", "glab issue create --title t --description d",
                         "glab issue close 3", "glab mr create --title t -d d", "glab mr approve 4",
-                        "glab mr merge 4", "cd sub && glab mr note 4 -m hi",
+                        "glab mr merge 4", 'glab mr note 5 -m "see --help"', "glab repo mirror x",
+                        "glab mr add x", "glab repo import x", "cd sub && glab mr note 4 -m hi",
                         "glab api -X POST projects/1/issues -f title=t",
                         "curl -X POST https://gitlab.example.org/api/v4/projects/1/issues -d @c.json",
                         "wget --post-data x https://gitlab.example.org/api/v4/x"):
@@ -1103,7 +1104,7 @@ class GitLabGateTest(unittest.TestCase):
                 self.assertIn(gate._GITLAB_WRITE, self.decide(command, GITLAB, repo))
 
     def test_reads_and_other_hosts_allowed(self):
-        for command in ("glab issue list", "glab mr view 3", "glab issue note --help",
+        for command in ("glab issue list", "glab mr view 3", "glab issue note --help", "glab mr note --help",
                         "glab api projects/1/issues",
                         "curl https://gitlab.example.org/api/v4/projects/1/issues",
                         "curl -X POST https://other.example.net/hook -d x"):
