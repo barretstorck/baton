@@ -16,6 +16,13 @@ For each entry in `answered`, the maintainer has replied to a blocked issue.
    line and does not read Decisions, so use it instead of prose alone; it releases when the blocker
    closes, which its merged pull request does.
 
+   When an answer is a bare label (`2`, `#2`, "option 2", "2 please"), or a label with a short
+   agreement, and the question comment has an option with that label, the decision is that
+   option: write the option's text out in full on the Decisions line (never "Option 2"), with
+   the link to the answering comment. A label with added conditions is recorded as the option's
+   text plus the conditions. An answer whose label the question does not have, or that names
+   several labels, does not settle the question: step 1 applies.
+
    Write the full new description to a file and update the issue. Keep all earlier decisions.
 3. `baton set-status <N> status:ready`. A developer will resume it from its branch.
 
