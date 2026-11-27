@@ -293,8 +293,27 @@ class IssueTest(unittest.TestCase):
     def test_list_search_unsupported(self):
         forge, t = make()
         with self.assertRaises(Unsupported):
-            forge.issue_list("number", "open", 5, search="x")
+            forge.issue_list("number", "open", 5, search="closed:>=2026-01-01")
         self.assertEqual(t.calls, [])
+
+    def test_search_one_query_per_word_and_ranks(self):
+        def issue(iid, title):
+            return {**self.ISSUE, "iid": iid, "title": title}
+        both = issue(3, "CSV export")
+        old = issue(5, "csv import")
+        new = issue(9, "Export log")
+        forge, t = make({
+            f"GET {PROJ}/issues?state=opened&search=csv": (200, [old, both]),
+            f"GET {PROJ}/issues?state=opened&search=export": (200, [new, both]),
+        })
+        out = forge.issue_list("number", "open", 10, search="CSV export")
+        self.assertEqual(out, [{"number": 3}, {"number": 9}, {"number": 5}])
+        lines = t.lines()
+        self.assertEqual(len(lines), 2)
+        self.assertIn("search=csv", lines[0])
+        self.assertIn("search=export", lines[1])
+        for line in lines:
+            self.assertIn("in=title", line)
 
     def test_edit_labels_one_put(self):
         forge, t = make({f"PUT {PROJ}/issues/7": (200, {})})

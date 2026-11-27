@@ -249,16 +249,38 @@ class GitLab:
 
     def issue_list(self, fields, state, limit, milestone=None, label=None, search=None,
                    empty=None):
+        words = []
         if search is not None:
-            raise Unsupported("issue search")
+            raw = search.split()
+            if any(re.match(r"^[A-Za-z][\w-]*:", word) for word in raw):
+                raise Unsupported("issue search qualifiers")
+            for word in raw:
+                if word.lower() not in words:
+                    words.append(word.lower())
         names = self._field_names(fields, self._ISSUE_FIELDS)
         params = {"state": {"open": "opened"}.get(state, state)}
         if label is not None:
             params["labels"] = label
         if milestone is not None:
             params["milestone"] = milestone
-        items = self._paged(f"{self._project()}/issues", params, limit)
+        if search is not None:
+            merged = {}
+            for word in words:
+                found = self._paged(f"{self._project()}/issues",
+                                    {**params, "search": word, "in": "title"}, 100)
+                for item in found:
+                    merged.setdefault(item["iid"], item)
+            items = self._search_rank(list(merged.values()), words)[:limit]
+        else:
+            items = self._paged(f"{self._project()}/issues", params, limit)
         return [self._issue_shape(item, names) for item in items]
+
+    @staticmethod
+    def _search_rank(items, words):
+        def hits(item):
+            title = (item.get("title") or "").lower()
+            return sum(1 for word in words if word in title)
+        return sorted(items, key=lambda item: (hits(item), item["iid"]), reverse=True)
 
     def issue_list_text(self, fields, state, limit, milestone=None, label=None, search=None):
         return json.dumps(self.issue_list(fields, state, limit, milestone, label, search))
