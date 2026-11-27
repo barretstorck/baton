@@ -59,6 +59,9 @@ class GitHub:
     def pr_view(self, number, fields, empty=None):
         return self._read(["gh", "pr", "view", str(number), "--json", fields], empty)
 
+    def closing_problems(self, pr):
+        return []
+
     def issue_exists(self, number):
         try:
             found = self.runner(["gh", "issue", "view", str(number), "--json", "number"])

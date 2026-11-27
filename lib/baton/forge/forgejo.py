@@ -9,6 +9,9 @@ from datetime import datetime, timezone
 from .. import identity, run
 
 CLOSING = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s+#(\d+)", re.I)
+_KEYWORD = r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s+"
+FOREIGN_CLOSING = re.compile(
+    _KEYWORD + r"(?:[\w.-]+/[\w.-]+[#!]\d+|!\d+|https?://\S+?/(?:issues|pulls)/\d+)", re.I)
 
 
 class ForgejoError(run.RunError):
@@ -464,6 +467,44 @@ class Forgejo:
         found = {int(n) for text in texts for n in CLOSING.findall(text)}
         found.discard(item["number"])
         return [{"number": n} for n in sorted(found) if self._is_plain_issue(n)]
+
+    def closing_problems(self, pr):
+        """Closing references Baton cannot count but Forgejo would act on at merge."""
+        body = pr.get("body") or ""
+        texts = [body]
+        for commit in pr.get("commits") or []:
+            texts += [commit.get("messageHeadline") or "", commit.get("messageBody") or ""]
+        problems, seen = [], set()
+        for text in texts:
+            for match in FOREIGN_CLOSING.finditer(text):
+                if match.group(0) not in seen:
+                    seen.add(match.group(0))
+                    problems.append(
+                        f"closing reference `{match.group(0)}` is a form Baton cannot count; "
+                        "Forgejo would act on it at merge. Close only this repository's "
+                        "issue, with `Closes #N`")
+        own = pr.get("number")
+        skip = {ref["number"] for ref in pr.get("closingIssuesReferences") or []} | {own}
+        base = re.escape(f"{self.url}/{self.owner}/{self.repo}")
+        plain = re.compile(r"(?<![\w/])[#!](\d+)|" + base + r"/(?:issues|pulls)/(\d+)", re.I)
+        reported = {int(n) for p in problems for n in re.findall(r"(\d+)`", p)}
+        numbers = []
+        for found in plain.finditer(body):
+            n = int(found.group(1) or found.group(2))
+            if n not in skip and n not in reported and n not in numbers:
+                numbers.append(n)
+        for n in numbers:
+            try:
+                items = self._paged(f"{self._repo_path()}/issues/{n}/timeline")
+            except ForgejoError:
+                continue
+            for item in items:
+                if (item.get("ref_action") == "closes"
+                        and (item.get("ref_issue") or {}).get("number") == own):
+                    problems.append(f"Forgejo records this pull request as closing #{n} "
+                                    "with a keyword Baton does not count")
+                    break
+        return problems
 
     def _is_plain_issue(self, number):
         """True when the number is an issue of this repository, not a pull request."""

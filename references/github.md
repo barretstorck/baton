@@ -86,3 +86,5 @@ It does not judge which command you use, labels, markers or directories. Other c
 GitHub closes an issue for `close`, `fix` or `resolve` (any form, with or without a colon) followed
 by `#N`, anywhere in a pull request body or commit message. Write `Closes #<N>` once, for the one
 issue the pull request resolves. Refer to any other issue as "see #N" or "related to #N".
+
+On Forgejo, write only `Closes #<N>` for this repository's issue, because other forms (`owner/repo#N`, `!N`, URLs) are refused by `merge-pr`.
