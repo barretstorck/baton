@@ -353,10 +353,21 @@ class PullRequestTest(unittest.TestCase):
         forge, _ = make()
         self.assertTrue(forge._pr_shape(no_draft, ["isDraft"])["isDraft"])
 
+    def test_closing_references_drop_pull_requests_and_missing(self):
+        forge, _ = make({"GET /api/v1/repos/o/r/pulls/3/commits": (200, []),
+                         "GET /api/v1/repos/o/r/issues/4": (200, {"number": 4}),
+                         "GET /api/v1/repos/o/r/issues/5": (200, {"number": 5, "pull_request": {}}),
+                         "GET /api/v1/repos/o/r/issues/6": (404, "")})
+        body = "Closes #3, closes #4, fixes #5, resolves #6"
+        got = forge._pr_shape({**self.PR, "body": body}, ["closingIssuesReferences"])
+        self.assertEqual(got["closingIssuesReferences"], [{"number": 4}])
+
     def test_closing_references_from_body_and_commits(self):
         forge, _ = make({"GET /api/v1/repos/o/r/pulls/3/commits": (200, [
             {"sha": "a", "commit": {"message": "Add x\n\nCloses: #7"}},
-            {"sha": "b", "commit": {"message": "see #9"}}])})
+            {"sha": "b", "commit": {"message": "see #9"}}]),
+            "GET /api/v1/repos/o/r/issues/4": (200, {"number": 4}),
+            "GET /api/v1/repos/o/r/issues/7": (200, {"number": 7})})
         got = forge._pr_shape({**self.PR, "body": "Fixes #4"}, ["closingIssuesReferences"])
         self.assertEqual(got["closingIssuesReferences"], [{"number": 4}, {"number": 7}])
         forge, _ = make({"GET /api/v1/repos/o/r/pulls/3/commits": (200, [

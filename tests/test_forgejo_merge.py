@@ -31,6 +31,7 @@ def served(body="Closes #4", approved=HEAD, required=("ci/*",)):
             {"context": "ci/test", "status": "success", "target_url": None}]}),
         f"GET {API}/branches/main": (200, {"enable_status_check": True,
                                            "status_check_contexts": list(required)}),
+        f"GET {API}/issues/4": (200, {"number": 4}),
         f"GET {API}/issues/9/comments": (200, comments),
         f"GET {API}/pulls/9": (200, pr)}))
 

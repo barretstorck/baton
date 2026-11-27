@@ -381,7 +381,16 @@ class Forgejo:
         for commit in self._pr_commits(item["number"]):
             texts += [commit["messageHeadline"], commit["messageBody"]]
         found = {int(n) for text in texts for n in CLOSING.findall(text)}
-        return [{"number": n} for n in sorted(found)]
+        found.discard(item["number"])
+        return [{"number": n} for n in sorted(found) if self._is_plain_issue(n)]
+
+    def _is_plain_issue(self, number):
+        """True when the number is an issue of this repository, not a pull request."""
+        try:
+            found = self._request("GET", f"{self._repo_path()}/issues/{number}")
+        except ForgejoError:
+            return False
+        return isinstance(found, dict) and "pull_request" not in found
 
     def _required_contexts(self, base):
         branch = urllib.parse.quote(base, safe="")
