@@ -420,10 +420,31 @@ class MergeRequestTest(unittest.TestCase):
         self.assertEqual(view["url"], self.MR["web_url"])
         self.assertEqual(view["reviewRequests"], [{"login": "bob"}])
         self.assertEqual([c["id"] for c in view["comments"]], ["3"])
-        self.assertEqual(view["files"], [{"path": "a", "additions": 2, "deletions": 1}])
+        self.assertEqual(view["files"], [{"path": "a", "additions": 2, "deletions": 1,
+                                          "previousPath": None}])
         self.assertEqual(view["commits"], [{"oid": "c1", "messageHeadline": "Head",
                                             "messageBody": "Body\nmore"}])
         self.assertEqual(view["closingIssuesReferences"], [{"number": 4}])
+
+    def test_files_carry_the_rename_source(self):
+        from tests import test_merge
+        from tests.fakes import FakeRunner
+        from baton import merge
+        forge, _ = make({f"GET {PROJ}/merge_requests/7/diffs": (200, [
+            {"old_path": ".github/workflows/ci.yml", "new_path": "src/ci.yml",
+             "renamed_file": True, "diff": ""},
+            {"new_path": "src/new.py", "diff": ""}]),
+            f"GET {PROJ}/merge_requests/7": (200, self.MR)})
+        files = forge.pr_view(7, "files")["files"]
+        self.assertEqual(files[0]["previousPath"], ".github/workflows/ci.yml")
+        self.assertEqual(files[0]["path"], "src/ci.yml")
+        self.assertNotIn("previousPath", files[1])
+        pr = test_merge.make_pr(files=files, changedFiles=2)
+        problems = merge.check(pr, test_merge.make_config(), test_merge.OWNER, "main",
+                               FakeRunner())
+        hits = [p for p in problems if ".github/workflows/ci.yml" in p
+                and "rename source unknown" in p]
+        self.assertEqual(len(hits), 1)
 
     def closes(self, replies):
         sleeps, queue = [], list(replies)
