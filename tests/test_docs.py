@@ -68,6 +68,26 @@ class DocsGhStateValues(unittest.TestCase):
         self.assertEqual(bad, [], "docs pass a --state value the gh command refuses")
 
 
+class DocsCallOnlyBaton(unittest.TestCase):
+    """A `gh` command appears in the docs only on a line of a rule that forbids it."""
+
+    FORBIDDING = ("never", "do not", "not allowed", "instead of", "refuse")
+
+    def test_gh_commands_appear_only_in_forbidding_rules(self):
+        bad = []
+        files = [p for p in doc_files() if os.path.basename(p) != "README.md"]
+        files += sorted(glob.glob(os.path.join(ROOT, "templates/*.md")))
+        self.assertTrue(files)
+        for path in files:
+            with open(path, encoding="utf-8") as f:
+                for number, line in enumerate(f, 1):
+                    spans = SPAN.findall(line)
+                    if spans and not any(w in line.lower() for w in self.FORBIDDING):
+                        for span in spans:
+                            bad.append(f"{os.path.relpath(path, ROOT)}:{number}: {span}")
+        self.assertEqual(bad, [], "docs name a gh command outside a rule that forbids it")
+
+
 class ReferencedPaths(unittest.TestCase):
     PATH = re.compile(
         r"(?:\$\{CLAUDE_PLUGIN_ROOT\}/)?((?:references|templates)/[A-Za-z0-9_.-]+\.md)")
