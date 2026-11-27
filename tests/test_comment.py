@@ -2,6 +2,7 @@ import copy
 import json
 import pathlib
 import unittest
+from unittest.mock import MagicMock, patch
 from baton import comment, config, gate
 from tests.fakes import FakeRunner
 
@@ -119,6 +120,14 @@ class PublishReviewTest(unittest.TestCase):
                 self.assertEqual(runner.calls[0][:5], ["gh", "pr", "review", "7", f"--{event}"])
                 self.assertEqual(runner.calls[0][5], "--body-file")
                 self.assertFalse(any(c[:3] == ["gh", "pr", "comment"] for c in runner.calls))
+
+    def test_commit_is_passed_to_the_backend(self):
+        backend = MagicMock()
+        backend.review_urls.return_value = [self.URL]
+        with patch("baton.forge.for_repo", return_value=backend):
+            comment.publish_review(cfg(), self.runner(), 7, "text", [], "approve",
+                                   "baton-reviewer[bot]", commit="abc")
+        self.assertEqual(backend.pr_review.call_args.kwargs["commit"], "abc")
 
     def test_private_text_is_refused_before_any_review(self):
         runner = self.runner()

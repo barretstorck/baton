@@ -651,7 +651,7 @@ class Forgejo:
     _REVIEW_EVENTS = {"approve": "APPROVED", "request-changes": "REQUEST_CHANGES",
                       "comment": "COMMENT"}
 
-    def pr_review(self, number, event, path, role=None):
+    def pr_review(self, number, event, path, role=None, commit=None):
         if event not in self._REVIEW_EVENTS:
             raise Unsupported(f"the review event {event}")
         self._request("POST", f"{self._repo_path()}/pulls/{number}/reviews",
