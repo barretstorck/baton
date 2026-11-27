@@ -655,8 +655,13 @@ class GitLab:
     def review_edit_body(self, number, review_id, path, role=None):
         raise Unsupported("editing a review body")
 
-    def comment_edit_body(self, comment_id, path, role=None):
-        raise Unsupported("editing a note")
+    def comment_edit_body(self, comment_id, path, role=None, number=None):
+        if number is None:
+            raise GitLabError(
+                "a note can only be edited with its merge request number")
+        self._request("PUT", f"{self._project()}/merge_requests/{number}/notes/{comment_id}",
+                      body={"body": self._read_file(path)}, role=role)
+        return ""
 
     def pr_ready(self, number, undo=False, role=None):
         path = f"{self._project()}/merge_requests/{number}"

@@ -84,7 +84,6 @@ class TransportTest(unittest.TestCase):
     def test_unsupported_methods(self):
         forge, t = make()
         for call in (lambda: forge.review_edit_body(1, 2, "p"),
-                     lambda: forge.comment_edit_body("3", "p"),
                      lambda: forge.workflow_entries_text("o", "r"),
                      lambda: forge.workflow_file_text("o", "r", "f"),
                      lambda: forge.actions_permissions_text("o", "r")):
@@ -730,6 +729,19 @@ class MergeRequestWriteTest(unittest.TestCase):
         forge, t = make({f"GET {PROJ}/merge_requests/3": (200, {"title": "T"})})
         forge.pr_ready(3)
         self.assertEqual(t.lines(), [f"GET {PROJ}/merge_requests/3"])
+
+    def test_comment_edit_body_puts_the_note(self):
+        forge, t = make({f"PUT {PROJ}/merge_requests/4/notes/7": (200, {})})
+        self.assertEqual(forge.comment_edit_body("7", self.body, role="reviewer", number=4), "")
+        self.assertEqual(t.lines(), [f"PUT {PROJ}/merge_requests/4/notes/7"])
+        self.assertEqual(self.sent(t, 0), {"body": "the body"})
+
+    def test_comment_edit_body_without_number_raises(self):
+        forge, t = make()
+        with self.assertRaises(GitLabError) as ctx:
+            forge.comment_edit_body("7", self.body)
+        self.assertIn("merge request number", str(ctx.exception))
+        self.assertEqual(t.calls, [])
 
     def test_pr_merge_sends_sha(self):
         forge, t = make({f"PUT {PROJ}/merge_requests/4/merge": (200, {})})
