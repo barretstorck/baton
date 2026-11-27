@@ -33,6 +33,10 @@ The gate also completes one command: a `gh pr create` from a detached HEAD gets
 `--head <branch>` added (the one pushed issue branch at HEAD) through the same
 rewrite; it never changes a command otherwise.
 
+On a Forgejo repository (forge detection) it also refuses raw `tea`/`fj` writes
+and `curl`/`wget` with a non-GET method to the forge host, pointing to the
+`baton` subcommands.
+
 This guards against mistakes and nudged agents. It is not a sandbox: a script
 that talks to the forge without one of these programs is outside its view.
 """
@@ -46,7 +50,7 @@ import signal
 import sys
 import tempfile
 
-from . import branches, config, githooks, identity, run, scan
+from . import branches, config, forge, githooks, identity, run, scan
 
 MARKER = "<!-- baton:"
 HOOK_TAG = githooks.HOOK_TAG
@@ -118,6 +122,8 @@ _QUOTED = re.compile(r"""'[^']*'|"[^"]*\"""")
 _DATA_FLAG = re.compile(r"""(?:--data(?:-raw|-binary|-urlencode)?|--json|--form|-[dF])(?:\s+|=)('[^']*'|"[^"]*"|\S+)""")
 
 _CLOSE_RE = re.compile(r"(?<![\w-])gh\s+(?:(?:-R|--repo)\s+\S+\s+|-\S+\s+)*(issue|pr)\s+(close|reopen)\b")
+_FORGEJO_WRITE = ("this repository is on Forgejo: write to it with a baton subcommand "
+                  "(for example baton comment or baton close), not raw tea, fj, curl or wget")
 _CLOSE_REASON = ("`gh issue|pr close|reopen` needs a reason in a Baton repository: add --comment \"<reason>\"; "
                  "Baton adds its marker to the comment")
 _HAS_REASON = re.compile(r"(?<![\w-])(?:-c|--comment)(?=[\s=]|$)|(?<![\w-])-c\S")
@@ -466,6 +472,10 @@ def decide(command, cwd, terms):
     if closing and not closing[2]:
         problems.append(_CLOSE_REASON)
 
+    forgejo = _forgejo_problem(stripped, clis, cwd)
+    if forgejo is not None:
+        problems.append(forgejo)
+
     http_only = bool(forge) and not git and all(name in _HTTP_CLIS for name in forge)
     stdin_pattern = _stdin_re(flags) if forge else _GIT_STDIN
     if stdin_pattern.search(stripped) and "<<" not in stripped and (forge or "|" not in stripped):
@@ -590,6 +600,97 @@ def _api_is_write(args):
     if method is not None:
         return method.upper() not in ("GET", "HEAD")
     return any(a in _API_FIELD_FLAGS or a.startswith(("--field=", "--raw-field=", "--input=")) for a in args)
+
+
+_FORGEJO_PROGRAMS = ("tea", "fj", "curl", "wget")
+_FORGEJO_WRITE_VERBS = frozenset(
+    "create edit update delete rm close reopen comment merge approve lgtm reject review add reset "
+    "fork migrate lock unlock pin unpin read unread transfer".split())
+_CURL_BODY_FLAGS = ("-d", "--data", "--data-raw", "--data-binary", "--data-urlencode", "--json",
+                    "-F", "--form", "--form-string", "-T", "--upload-file")
+_WGET_BODY_FLAGS = ("--post-data", "--post-file", "--body-data", "--body-file")
+_URL_HOST = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.-]*://)?(?:[^@/?#:]*@)?([A-Za-z0-9][A-Za-z0-9.-]*)(?::\d+)?(?:[/?#].*)?$")
+
+
+def _args(text):
+    tokens = _gh_tokens(text)
+    return tokens if tokens is not None else text.split()
+
+
+def _url_host(word):
+    m = _URL_HOST.match(word)
+    return m.group(1).lower() if m else None
+
+
+def _has_flag(args, flags):
+    """True when a word is one of `flags`, or starts with `<long flag>=`."""
+    for a in args:
+        for f in flags:
+            if a == f or (f.startswith("--") and a.startswith(f + "=")):
+                return True
+    return False
+
+
+def _request_method(args, short, longs):
+    method = None
+    for i, a in enumerate(args):
+        if short and a == short:
+            method = args[i + 1] if i + 1 < len(args) else ""
+        elif short and a.startswith(short) and not a.startswith("--") and len(a) > 2:
+            method = a[2:]
+        else:
+            for f in longs:
+                if a == f:
+                    method = args[i + 1] if i + 1 < len(args) else ""
+                elif a.startswith(f + "="):
+                    method = a[len(f) + 1:]
+    return method
+
+
+def _cli_writes(name, args):
+    """True when `args` (the words after the program `name`) is a write."""
+    if name in ("tea", "fj"):
+        if any(_HELP.search(a) for a in args):
+            return False
+        if args and args[0] == "api":
+            if _api_is_write(args[1:]) or any(a in ("-d", "--data") or a.startswith("--data=") for a in args):
+                return True
+        if args and args[0] == "c":
+            return True
+        return any(a in _FORGEJO_WRITE_VERBS for a in args)
+    if name == "curl":
+        if any(a in ("-G", "--get") for a in args):
+            return False
+        method = _request_method(args, "-X", ("--request",))
+        if method is not None and method.upper() not in ("GET", "HEAD"):
+            return True
+        return _has_flag(args, _CURL_BODY_FLAGS)
+    if name == "wget":
+        method = _request_method(args, None, ("--method",))
+        if method is not None and method.upper() not in ("GET", "HEAD"):
+            return True
+        return _has_flag(args, _WGET_BODY_FLAGS)
+    return False
+
+
+def _forgejo_problem(stripped, clis, cwd):
+    """The Forgejo write refusal when `stripped` runs a raw write to a Forgejo repository, else None."""
+    pattern = _forge_re(tuple(clis))
+    if not any(m.group(1) in _FORGEJO_PROGRAMS for m in pattern.finditer(stripped)):
+        return None
+    found = forge.detect(cwd)
+    if not isinstance(found, dict) or found.get("kind") != "forgejo":
+        return None
+    host = identity._host(found.get("url"))
+    for segment in _forge_segments(stripped, clis):
+        for m in pattern.finditer(segment):
+            name = m.group(1)
+            if name not in _FORGEJO_PROGRAMS:
+                continue
+            args = _args(segment[m.end():])
+            if _cli_writes(name, args) and (name in ("tea", "fj") or any(_url_host(a) == host for a in args)):
+                return _FORGEJO_WRITE
+    return None
 
 
 def _gh_write_offset(command):
