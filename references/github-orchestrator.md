@@ -12,6 +12,7 @@ Read by the sprint orchestrator (the sprint, sprint-plan, open-questions and ini
 | Reconnect to the orchestrator (parent session) | `baton orchestrator-agent [--dir <projects dir>]`: prints the agent ID of this session's `baton:baton-orchestrator` subagent, exit 1 for none |
 | Compaction reminder | `baton compact-reminder`: a SessionStart hook, not run by hand; after any compaction it reminds the sprint orchestrator to run `baton sprint-status` before acting (the hook cannot tell which agent compacted, so the text is conditional) |
 | Sprint metrics | `baton sprint-metrics <milestone> [--since <UTC ISO time>] [--dir <projects dir>]`: seven `key: value` lines for the retro's `## Metrics` section |
+| Search for a duplicate follow-up | `gh search issues "<key words>" --repo <owner>/<repo>` (owner and name from `gh repo view --json owner,name`; without `--state` it searches open and closed issues) and `gh issue list --state all --search "<key words>"` |
 | Sprint capacity | `baton sprint-capacity <days> [--retros <n>]`: reads the last retros' `## Metrics` and proposes somewhat less (a 0.8 buffer) than their average issues and plan tasks for `<days>`, as JSON |
 
 ## Writing
