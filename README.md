@@ -25,18 +25,43 @@ installed build by the commit SHA of `main`, shown as `version` in
 
 ## Install
 
-Requirements: [Claude Code](https://docs.claude.com/en/docs/claude-code), `git`, the
+Requirements: [Claude Code](https://docs.claude.com/en/docs/claude-code), `git`, on GitHub the
 [GitHub CLI](https://cli.github.com/) (`gh`) signed in to an account that can push to your
-repository, and Python 3.11 or newer (CI tests 3.12). `baton` runs the first Python that is new
+repository (Forgejo needs no forge CLI, see [Forgejo](#forgejo)), and Python 3.11 or newer (CI tests 3.12). `baton` runs the first Python that is new
 enough: `$BATON_PYTHON` when set, then each `python3` on `PATH` in order, then `python3.11` and
-later names, so an older system `python3` earlier on `PATH` is skipped. Only GitHub is supported
-as the forge for now.
+later names, so an older system `python3` earlier on `PATH` is skipped. [Forge](#forge) says which
+forges Baton knows and how it picks one.
 
     claude plugin marketplace add barretstorck/baton
     claude plugin install baton@baton
 
 Then, in Claude Code inside your repository, run `/baton:init` to write `.baton/brief.md`, create
 the labels and install the git hooks, and `/baton:sprint-plan` to plan a first sprint.
+
+### Forgejo
+
+For a repository on a Forgejo instance, set up in this order:
+
+1. Name the forge. In `.baton/brief.md` set the `forge:` key:
+
+       forge:
+         kind: forgejo
+         url: https://forgejo.example
+         draft_prefix: "WIP:"   # optional
+
+   For a private host, put a `forge: forgejo https://forgejo.example` line under `## Hosts` in
+   the local brief `~/.baton/<owner>-<repo>/brief.local.md` instead.
+2. Give Baton the maintainer's token, from an account with write access to `owner/repo`. Its
+   scopes are `write:issue`, `write:repository`, `read:user` and `read:organization`. Baton reads
+   it from `FORGEJO_TOKEN`, then `token_path` in the `[forgejo]` table of
+   `~/.baton/<owner>-<repo>/identity.toml`, then the file `~/.baton/<owner>-<repo>/forgejo-token`;
+   the first that is set wins. Prefer a file over an exported variable, which agent shells inherit.
+3. Run `baton doctor`. Its `forge:` line should pass.
+4. Run `/baton:init`. It creates the labels through `baton labels`, as on GitHub.
+5. Optionally, give the roles their own bot users (the baton and reviewer bots), set up as in
+   [docs/forgejo-identity.md](docs/forgejo-identity.md).
+
+GitHub App identities are not used on Forgejo. [Forge](#forge) lists the behaviours that differ.
 
 ## Safety
 
