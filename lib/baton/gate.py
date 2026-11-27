@@ -66,7 +66,7 @@ _POS = (r"""(?:^|[;&|(`'"\n{]|\bsudo\b|\benv\b|\bxargs\b|\bexec\b|\bcommand\b|\b
 @functools.lru_cache(maxsize=16)
 def _forge_re(clis):
     names = "|".join(re.escape(name) for name in sorted(clis, key=len, reverse=True)) or "(?!)"
-    return re.compile(_POS + r"(?:[\w.~+-]*/)*(" + names + r")(?![\w.-])")
+    return re.compile(_POS + r"(?:[\w.~+-]*/)*(" + names + r")(?=\s|$)")
 
 
 _GITPUB = re.compile(_POS + r"(?:[\w.~+-]*/)*git\b[^;&|\n]*?\b(?:commit|push|tag)\b")
