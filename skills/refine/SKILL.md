@@ -232,6 +232,10 @@ with a link to the answering comment, for example:
 
     - Imperceptible output differences are acceptable. ([answer](<comment URL>))
 
+If the answer is a bare option label (`2`, "option 2"), the Decisions line holds that option's
+text in full, not its label. A label the question does not have, or several labels, does not
+settle it: ask again.
+
 Then continue from step 4 (or step 5 if the plan is unchanged).
 
 ## Diagnosing a failing default branch
