@@ -154,8 +154,9 @@ def _declare_install_hooks(subs):
 
 
 def _declare_labels(subs):
-    p = _add(subs, "labels", "usage: baton labels [--create]", lenient=True)
+    p = _add(subs, "labels", "usage: baton labels [--create | --list]", lenient=True)
     p.add_argument("--create", action="store_true")
+    p.add_argument("--list", action="store_true")
 
 
 def _declare_set_status(subs):
@@ -480,6 +481,21 @@ def _declare_triage(subs):
     p.add_argument("--json", dest="fields", default="title,body,labels,author,comments")
 
 
+_REPO_VIEW = "usage: baton repo view [--json <fields>]"
+_RUN_LOG = "usage: baton run log <run-id>"
+
+
+def _declare_repo(subs):
+    actions = _actions(subs, "repo", _REPO_VIEW)
+    p = _action(actions, "repo view", _REPO_VIEW)
+    p.add_argument("--json", dest="fields", default="nameWithOwner,owner,name,defaultBranchRef")
+
+
+def _declare_run(subs):
+    actions = _actions(subs, "run", _RUN_LOG)
+    _action(actions, "run log", _RUN_LOG).add_argument("run_id", type=digits)
+
+
 def _declare_git_hook(subs):
     usage = ("usage: baton git-hook pre-commit | commit-msg <message-file> | "
              "pre-push [<remote> [<url>]]")
@@ -569,7 +585,7 @@ def build() -> BatonParser:
                     _declare_sprint_status, _declare_sprint_order,
                     _declare_pr_state, _declare_verify, _declare_clean,
                     _declare_identity, _declare_push, _declare_doctor,
-                    _declare_issue, _declare_pr, _declare_milestone,
+                    _declare_issue, _declare_pr, _declare_milestone, _declare_repo, _declare_run,
                     _declare_review, _declare_tasks, _declare_task,
                     _declare_plan, _declare_notify, _declare_triage,
                     _declare_git_hook, _declare_usage, _declare_sprint_capacity,

@@ -166,5 +166,50 @@ class PrReadCommandsTest(unittest.TestCase):
             self.assertEqual(fake.calls, [], args)
 
 
+class RepoViewCommandTest(unittest.TestCase):
+    def test_github_argv(self):
+        fake = FakeRunner({"gh repo view": '{"visibility": "PUBLIC"}'})
+        code, out, _, fake = run_cmd(
+            ["repo", "view", "--json", "nameWithOwner,visibility,defaultBranchRef"], fake)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), {"visibility": "PUBLIC"})
+        self.assertEqual(fake.lines(),
+                         ["gh repo view --json nameWithOwner,visibility,defaultBranchRef"])
+
+    def test_forgejo_visibility(self):
+        backend, _ = forgejo({"GET /api/v1/repos/o/r": (200, {
+            "full_name": "o/r", "name": "r", "private": True, "default_branch": "main",
+            "owner": {"login": "o"}})})
+        code, out, _, _ = run_cmd(["repo", "view", "--json", "visibility,defaultBranchRef"],
+                                  backend=backend)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out),
+                         {"visibility": "PRIVATE", "defaultBranchRef": {"name": "main"}})
+
+    def test_empty_fields_exit_64(self):
+        code, _, err, fake = run_cmd(["repo", "view", "--json", ""])
+        self.assertEqual((code, fake.calls), (64, []))
+        self.assertIn("usage: baton repo view", err)
+
+
+class RunLogCommandTest(unittest.TestCase):
+    def test_github_argv(self):
+        code, out, _, fake = run_cmd(["run", "log", "42"], FakeRunner({"gh run view": "boom\n"}))
+        self.assertEqual((code, out), (0, "boom\n"))
+        self.assertEqual(fake.lines(), ["gh run view 42 --log-failed"])
+
+    def test_forgejo_is_not_supported(self):
+        backend, _ = forgejo({})
+        code, out, err, _ = run_cmd(["run", "log", "42"], backend=backend)
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("baton: not supported on Forgejo: run logs", err)
+
+    def test_usage_errors_exit_64(self):
+        for args in (["log"], ["log", "x"]):
+            code, _, err, _ = run_cmd(["run"] + args)
+            self.assertEqual(code, 64, args)
+            self.assertIn("usage: baton run log", err)
+
+
 if __name__ == "__main__":
     unittest.main()

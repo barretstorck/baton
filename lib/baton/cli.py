@@ -83,6 +83,9 @@ def _require_config():
 
 @cliargs.command("labels")
 def cmd_labels(opts):
+    if opts.list:
+        print(json.dumps(forge.for_repo().label_list(), indent=2))
+        return 0
     cfg = _require_config()
     create = cfg.data["labels"]["auto_create"] or opts.create
     created, still = labels.ensure(cfg, run.run, create=create)
@@ -394,6 +397,21 @@ def cmd_pr(opts):
             return publish.ready_pr(run.run, o.number, o.undo)
         return _edit("pr", o, cfg, terms)
     return _publish_run(opts, act)
+
+
+@cliargs.command("repo")
+def cmd_repo(opts):
+    fields = ",".join(f for f in opts.fields.split(",") if f)
+    if not fields:
+        return cliargs.fail("repo view")
+    print(json.dumps(forge.for_repo().repo_view(fields), indent=2))
+    return 0
+
+
+@cliargs.command("run")
+def cmd_run(opts):
+    print(forge.for_repo().run_log_failed(opts.run_id), end="")
+    return 0
 
 
 @cliargs.command("milestone")
@@ -955,6 +973,8 @@ COMMANDS = {
     "pr": cmd_pr,
     "pr-state": cmd_pr_state,
     "reopen": cmd_reopen,
+    "repo": cmd_repo,
+    "run": cmd_run,
     "review": cmd_review,
     "sandbox": cmd_sandbox,
     "set-status": cmd_set_status,

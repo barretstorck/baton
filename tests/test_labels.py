@@ -1,9 +1,10 @@
 import copy
+import io
 import json
 import pathlib
 import unittest
 from unittest import mock
-from baton import config, labels
+from baton import cli, config, labels
 from baton.forge.forgejo import Forgejo
 from tests.fakes import FakeRunner, FakeTransport
 
@@ -169,6 +170,18 @@ class SetGroupCliTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("bugs only", err)
         self.assertFalse(any(c[:3] == ["gh", "issue", "edit"] for c in runner.calls))
+
+
+class LabelListCommandTest(unittest.TestCase):
+    def test_lists_without_a_brief(self):
+        fake = FakeRunner({"gh label list": '[{"name": "a", "description": "d"}]'})
+        out = io.StringIO()
+        with mock.patch.object(cli.run, "run", fake), mock.patch("sys.stdout", out), \
+                mock.patch.object(cli, "_require_config", side_effect=config.ConfigError("no")):
+            code = cli.main(["labels", "--list"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out.getvalue()), [{"name": "a", "description": "d"}])
+        self.assertEqual(fake.lines(), ["gh label list --limit 500 --json name,description"])
 
 
 class ForgejoLabelsTest(unittest.TestCase):
