@@ -1,9 +1,8 @@
 """Agent comments: stamped, scanned, and told apart from the maintainer's."""
-import json
 import os
 import tempfile
 
-from . import gate, identity, scan
+from . import forge, gate, identity, scan
 from .config import has_login
 
 ROLES = {"orchestrator", "developer", "refine", "reviewer", "researcher"}
@@ -57,8 +56,7 @@ def publish(cfg, runner, target, number, text, terms, role="orchestrator"):
     try:
         with os.fdopen(handle, "w") as out:
             out.write(text)
-        return identity.write(runner, ["gh", target, "comment", str(number), "--body-file", path],
-                              role).strip()
+        return forge.for_repo(runner=runner).comment(target, number, path, role).strip()
     finally:
         os.unlink(path)
 
@@ -74,14 +72,10 @@ def publish_review(cfg, runner, number, text, terms, event, login):
     try:
         with os.fdopen(handle, "w") as out:
             out.write(text)
-        identity.write(runner, ["gh", "pr", "review", str(number), f"--{event}",
-                                "--body-file", path], "reviewer")
+        forge.for_repo(runner=runner).pr_review(number, event, path, "reviewer")
     finally:
         os.unlink(path)
-    out = runner(["gh", "api", "--paginate",
-                  f"repos/{{owner}}/{{repo}}/pulls/{number}/reviews?per_page=100",
-                  "--jq", f'.[] | select(.user.login == "{login}") | .html_url'])
-    urls = [line.strip() for line in out.splitlines() if line.strip()]
+    urls = forge.for_repo(runner=runner).review_urls(number, login)
     if not urls:
         raise CommentError("the review was posted but its URL could not be read")
     return urls[-1]
@@ -123,8 +117,7 @@ def notify(cfg, runner, number, cause, text, maintainers, terms, bots=()):
         raise CommentError(f"unknown cause {cause!r}; use one of {list(NOTIFY_CAUSES)}")
     if not maintainers:
         raise CommentError("no maintainers to mention")
-    found = json.loads(runner(["gh", "issue", "view", str(number), "--json", "comments"])
-                       or "{}")
+    found = forge.for_repo(runner=runner).issue_view(number, "comments", empty={})
     comments = identity.mark_authors(runner, number, found.get("comments"))
     if notified(comments, cause, list(maintainers) + sorted(bots)):
         return None
@@ -135,8 +128,8 @@ def notify(cfg, runner, number, cause, text, maintainers, terms, bots=()):
     if findings:
         raise CommentError("comment not posted; privacy scan found: "
                            + "; ".join(scan.describe(findings)))
-    identity.write(runner, ["gh", "issue", "edit", str(number), "--add-label",
-                            cfg.label("needs-maintainer")], "orchestrator")
+    forge.for_repo(runner=runner).issue_edit_labels(
+        number, [cfg.label("needs-maintainer")], role="orchestrator")
     return publish(cfg, runner, "issue", number, text_out, terms)
 
 

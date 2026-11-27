@@ -11,7 +11,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
-from . import config
+from . import config, forge
 from . import run as _run
 from . import verify
 
@@ -266,9 +266,6 @@ def machine_login():
     return ids.machine if ids is not None else None
 
 
-AUTHOR_TYPES_JQ = '.[] | [.node_id, .user.type] | @tsv'
-
-
 def _is_candidate(comment, slugs):
     author = (comment or {}).get("author") or {}
     login = (author.get("login") or "").strip().lower()
@@ -309,10 +306,7 @@ def mark_authors(runner, number, comments):
     if not slugs or not needs_author_types(comments, slugs):
         return comments or []
     try:
-        text = runner(["gh", "api", "--paginate",
-                       f"repos/{{owner}}/{{repo}}/issues/{number}/comments?per_page=100",
-                       "--jq", AUTHOR_TYPES_JQ])
-        types = parse_author_types(text)
+        types = forge.for_repo(runner=runner).comment_author_types(number)
     except _run.RunError:
         types = {}
     return with_author_types(comments, types, slugs)
@@ -355,7 +349,7 @@ def configured_for(cwd, runner=_run.run, home=None):
 def bot_user_id(runner, login):
     """The numeric id of the App's bot user, which the noreply commit email needs (not the App id)."""
     try:
-        reply = json.loads(runner(["gh", "api", f"users/{login}"]))
+        reply = forge.for_repo(runner=runner).user(login)
         uid = reply["id"]
     except (_run.RunError, ValueError, KeyError, TypeError):
         raise IdentityError(f"could not read the user id of {login}")

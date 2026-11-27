@@ -3,13 +3,12 @@
 Design spec, sections 4 ("The plan"), 6 and 7a. Only Baton's commands tick a box
 or replace open tasks; agents never edit a checklist by hand.
 """
-import json
 import os
 import re
 import shutil
 import tempfile
 
-from . import gate, scan
+from . import forge, gate, scan
 from .config import has_login
 
 _HEADING = re.compile(r"(#{1,6})\s+(.+?)\s*$")
@@ -481,7 +480,7 @@ def replace_plan(body, from_id, new_text, drop=False, insert=False):
 
 
 def issue_body(runner, number):
-    return json.loads(runner(["gh", "issue", "view", str(number), "--json", "body"]))["body"] or ""
+    return forge.for_repo(runner=runner).issue_view(number, "body")["body"] or ""
 
 
 def refuse_ref_plan(number, link=None):
@@ -541,7 +540,7 @@ def _save_issue(runner, number, body):
     try:
         with os.fdopen(handle, "w", newline="") as out:
             out.write(body)
-        runner(["gh", "issue", "edit", str(number), "--body-file", path])
+        forge.for_repo(runner=runner).issue_edit_body(number, path)
     finally:
         os.unlink(path)
 
@@ -574,8 +573,7 @@ def tick_issue(runner, number, task_id, cwd=".", docs_dir=None, as_built=None,
                             + "; ".join(scan.describe(findings)))
     body, link = _linked(runner, number, docs_dir)
     if trusted is not None:
-        data = json.loads(runner(["gh", "issue", "view", str(number), "--json", "comments"])
-                          or "{}")
+        data = forge.for_repo(runner=runner).issue_view(number, "comments", empty={})
         pending = replan_pending(data.get("comments") or [], task_id, trusted)
         if pending:
             raise TaskError(
