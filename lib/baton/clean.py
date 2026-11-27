@@ -1,5 +1,4 @@
 """`baton clean`: remove leftover agent worktrees and stale verification logs."""
-import json
 import os
 import pwd
 import re

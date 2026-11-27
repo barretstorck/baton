@@ -3,7 +3,6 @@
 Design spec, sections 4 ("The plan"), 6 and 7a. Only Baton's commands tick a box
 or replace open tasks; agents never edit a checklist by hand.
 """
-import json
 import os
 import re
 import shutil

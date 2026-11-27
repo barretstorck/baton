@@ -1,4 +1,3 @@
-
 from . import config, forge
 
 _STYLE = {

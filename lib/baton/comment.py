@@ -1,5 +1,4 @@
 """Agent comments: stamped, scanned, and told apart from the maintainer's."""
-import json
 import os
 import tempfile
 

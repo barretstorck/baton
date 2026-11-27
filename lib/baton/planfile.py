@@ -3,7 +3,6 @@
 Design spec, "plans in the repo": the issue body starts with a `Plan:` link to the file on
 the issue branch, or at a commit once the branch is gone.
 """
-import json
 import os
 import re
 

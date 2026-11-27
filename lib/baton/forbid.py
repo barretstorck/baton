@@ -1,6 +1,5 @@
 """Forbidden diff patterns: the brief's `forbid_added` rules checked against added lines."""
 import fnmatch
-import json
 import re
 
 from . import checklist, forge, githooks

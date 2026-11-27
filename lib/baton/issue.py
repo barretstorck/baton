@@ -8,7 +8,6 @@ from datetime import datetime
 
 from . import checklist, forge, gate, planfile
 from .config import has_login, logins
-from .run import RunError
 
 _HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.M)
 _BLOCKED = re.compile(r"^\s*Blocked by:(.*)$", re.M | re.I)
