@@ -5,8 +5,51 @@ from pathlib import Path
 from unittest import mock
 
 from baton import cli, forge, identity, run
+from baton.forge.forgejo import Forgejo
 from baton.forge.github import GitHub
 from tests.fakes import FakeRunner
+
+
+class SelectTest(unittest.TestCase):
+    def setUp(self):
+        forge._detected.clear()
+        self.addCleanup(forge._detected.clear)
+
+    def test_forgejo_detection_gives_forgejo(self):
+        found = {"kind": "forgejo", "url": "https://git.example", "owner": "o", "repo": "r"}
+        runner = FakeRunner({})
+        with mock.patch.object(forge, "detect", lambda cwd=None: found):
+            backend = forge.for_repo(runner=runner)
+        self.assertIsInstance(backend, Forgejo)
+        self.assertEqual((backend.url, backend.owner, backend.repo),
+                         ("https://git.example", "o", "r"))
+        self.assertIs(backend.runner, runner)
+
+    def test_github_none_and_error_give_github(self):
+        gh = {"kind": "github", "url": "https://github.com", "owner": "o", "repo": "r"}
+        for found in (gh, None):
+            with mock.patch.object(forge, "detect", lambda cwd=None, f=found: f):
+                self.assertIsInstance(forge.for_repo(runner=FakeRunner({})), GitHub)
+
+        def boom(argv, **kw):
+            raise run.RunError("no git")
+        with mock.patch.object(forge, "_git", boom):
+            self.assertIsNone(forge.detect("/nonexistent-baton-test"))
+            self.assertIsInstance(forge.for_repo("/nonexistent-baton-test"), GitHub)
+
+    def test_detect_memoises(self):
+        calls = []
+
+        def fake(argv, **kw):
+            calls.append(argv)
+            if "get-url" in argv:
+                return "https://github.com/o/r.git\n"
+            return "/nonexistent-baton-root\n"
+        with mock.patch.object(forge, "_git", fake):
+            first = forge.detect("/nonexistent-baton-test")
+            second = forge.detect("/nonexistent-baton-test")
+        self.assertEqual(first, second)
+        self.assertEqual(sum("get-url" in c for c in calls), 1)
 
 
 class ForTest(unittest.TestCase):

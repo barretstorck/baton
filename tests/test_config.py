@@ -272,6 +272,10 @@ class ConfigTest(unittest.TestCase):
         ok = '---\ndocs:\n  dir: ".github-docs"\n---\n'
         self.assertEqual(config.load(str(make_repo(ok))).data["docs"]["dir"], ".github-docs")
 
+    def test_load_root_matches_load(self):
+        root = make_repo('---\ndocs:\n  dir: "d"\n---\n')
+        self.assertEqual(config.load_root(root).data, config.load(str(root)).data)
+
     def test_load_from_subdirectory(self):
         root = make_repo("x\n")
         (root / "src").mkdir()
