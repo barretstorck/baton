@@ -1,6 +1,6 @@
 ---
 name: baton-developer
-description: Use to do one task during a Baton sprint - one task of an issue's plan ("Do task <n> of issue <N>.") or one task of a code review ("Do review task <r.n> of pull request <P> (issue <N>)."). Give it the repository and that prompt. It works alone in its own git worktree, never merges, and returns DONE, FIXED, DECLINED, REPLAN, QUESTION or BLOCKED.
+description: Use to do one task during a Baton sprint - one task of an issue's plan ("Do task <n> of issue <N>.") or one task of a code review ("Do review task <r.n> of pull request <P> (issue <N>).") or run the issue's hand checks on a pull request's head ("Hand-check pull request <P> (issue <N>)."). Give it the repository and that prompt. It works alone in its own git worktree, never merges, and returns DONE, FIXED, CHECKED, DECLINED, REPLAN, QUESTION or BLOCKED.
 model: sonnet
 effort: medium
 tools: Read, Grep, Glob, Bash, Edit, Write

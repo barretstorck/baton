@@ -142,7 +142,7 @@ whole issue grows large and expensive: in the second sprint, single developers r
   checklist in its review, worked the same way, one developer per task.
 - A spike has a timebox: `spike.tokens` and `spike.minutes` in the brief give the allowed ranges, the refiner writes a `Timebox:` line in the spike, and the researcher stops at either limit. With no range for either part the refiner writes no `Timebox:` line and a spike has no limit; `baton doctor` warns about this.
 - `baton usage` measures the result per issue and role from the local transcripts, and the
-  retrospective includes its table. Transcripts record output tokens while streaming, so `baton usage` undercounts output: its `Output>=` column and the JSON `output_lower_bound` are lower bounds. Spike budgets (`baton budget`) therefore rest on input and cache tokens.
+  retrospective includes its table. Transcripts record output tokens while streaming, so `baton usage` undercounts output: its `Output>=` column and the JSON `output_lower_bound` are lower bounds. Spike budgets (`baton budget`) therefore rest on input and cache tokens. It counts hand-check subagents under the `hand-check` role.
 
 ### Hand checks
 
@@ -160,6 +160,10 @@ Baton enforces it:
 - The developer runs the hand check on the pushed head, returns `BLOCKED` when it cannot run it,
   and restores the machine before reporting.
 - The reviewer never sets aside a hand-check criterion and asks for a repeat on the reviewed head.
+- Neither the orchestrator nor the parent session runs a hand check. One outside a plan or review
+  task goes to a `baton-developer` subagent dispatched with `Hand-check pull request <P> (issue <N>).`;
+  it writes the results where the tasks' `Result:` lines name and returns a short `CHECKED` summary.
+  `baton usage` counts those subagents under the `hand-check` role.
 
 ## How a pull request gets merged
 

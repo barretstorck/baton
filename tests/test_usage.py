@@ -124,6 +124,13 @@ class ClassifyTest(unittest.TestCase):
                          ("developer", "unknown"))
         self.assertEqual(usage.classify("hello"), ("other", "other"))
 
+    def test_hand_check_role(self):
+        self.assertEqual(usage.classify("Hand-check pull request 40 (issue 12).\nRepository: o/r. Sprint goal: g."),
+                         ("hand-check", "issue 12"))
+        self.assertEqual(usage.classify("Hand-check pull request 40."), ("hand-check", "pr 40"))
+        self.assertEqual(usage.classify("Hand-check pull request #40 (issue #12).", "baton:baton-developer"),
+                         ("hand-check", "issue 12"))
+
     def test_earlier_prompts_and_agent_types(self):
         self.assertEqual(usage.classify("Implement issue #85 in o/r following the develop skill."),
                          ("developer", "issue 85"))
