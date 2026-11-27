@@ -347,8 +347,18 @@ class ForgeSettingTest(unittest.TestCase):
         return config.load(str(make_repo(f'---\nforge:\n  kind: "{kind}"\n  url: "{url}"\n---\n')))
 
     def test_default_loads(self):
-        self.assertEqual(config.DEFAULTS["forge"], {"kind": "", "url": ""})
-        self.assertEqual(config.load(str(make_repo("# none\n"))).data["forge"], {"kind": "", "url": ""})
+        default = {"kind": "", "url": "", "draft_prefix": ""}
+        self.assertEqual(config.DEFAULTS["forge"], default)
+        self.assertEqual(config.load(str(make_repo("# none\n"))).data["forge"], default)
+
+    def test_draft_prefix_loads(self):
+        repo = make_repo('---\nforge:\n  draft_prefix: "[draft]"\n---\n')
+        self.assertEqual(config.load(str(repo)).data["forge"]["draft_prefix"], "[draft]")
+
+    def test_draft_prefix_must_be_a_string(self):
+        repo = make_repo('---\nforge:\n  draft_prefix: 3\n---\n')
+        with self.assertRaises(config.ConfigError):
+            config.load(str(repo))
 
     def test_forgejo_with_url_loads(self):
         for url in ("https://git.example.org", "https://git.example.org:3000/"):
@@ -357,7 +367,7 @@ class ForgeSettingTest(unittest.TestCase):
 
     def test_gitlab_loads(self):
         self.assertEqual(self._load("gitlab", "https://gl.example").data["forge"],
-                         {"kind": "gitlab", "url": "https://gl.example"})
+                         {"kind": "gitlab", "url": "https://gl.example", "draft_prefix": ""})
 
     def test_gitlab_needs_url(self):
         with self.assertRaisesRegex(config.ConfigError,
