@@ -248,7 +248,7 @@ Where agents keep scratch files is described in [docs/scratch-files.md](docs/scr
 
 `baton <command> --help` prints a command's usage.
 
-Skills, agents and references call only `baton` subcommands to read from and write to the forge. The references are `references/commands.md` (core), `references/commands-shared.md` and one `references/commands-<role>.md` per role; `references/forge-forgejo.md` holds the Forgejo notes.
+Skills, agents and references call only `baton` subcommands to read from and write to the forge. The references are `references/commands.md` (core), `references/commands-shared.md` and one `references/commands-<role>.md` per role; `references/forge-forgejo.md` holds the Forgejo notes and `references/forge-gitlab.md` the GitLab notes.
 
 | Command | Purpose |
 |---|---|
