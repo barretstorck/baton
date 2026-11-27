@@ -636,20 +636,20 @@ _GLAB_VALUE_FLAGS = frozenset(
     "-X --method --milestone --description-file".split())
 
 
-def _glab_help(args):
+def _cli_help(args, value_flags):
     """True when an argument is exactly --help or -h, not a flag's value, before any `--`."""
     for i, a in enumerate(args):
         if a == "--":
             return False
-        if i and args[i - 1] in _GLAB_VALUE_FLAGS:
+        if i and args[i - 1] in value_flags:
             continue
         if _HELP.fullmatch(a):
             return True
     return False
 
 
-def _glab_verb(args):
-    """The subcommand word of a glab command (the second word, or the only one), skipping flags."""
+def _cli_words(args, value_flags):
+    """The non-flag words before `--`, skipping the value after any flag in value_flags."""
     words = []
     skip = False
     for a in args:
@@ -658,9 +658,15 @@ def _glab_verb(args):
         elif a == "--":
             break
         elif a.startswith("-"):
-            skip = a in _GLAB_VALUE_FLAGS
+            skip = a in value_flags
         else:
             words.append(a)
+    return words
+
+
+def _glab_verb(args):
+    """The subcommand word of a glab command (the second word, or the only one), skipping flags."""
+    words = _cli_words(args, _GLAB_VALUE_FLAGS)
     if not words:
         return None
     return words[1] if len(words) > 1 else words[0]
@@ -721,7 +727,7 @@ def _cli_writes(name, args):
             return True
         return any(a in _FORGEJO_WRITE_VERBS for a in args)
     if name == "glab":
-        if _glab_help(args):
+        if _cli_help(args, _GLAB_VALUE_FLAGS):
             return False
         if args and args[0] == "api":
             return _api_is_write(args[1:])
