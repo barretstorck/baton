@@ -76,5 +76,65 @@ class ReadTest(unittest.TestCase):
         self.assertFalse(GitHub(boom).issue_exists(6))
 
 
+class WriteTest(unittest.TestCase):
+    def _check(self, call, line, out=""):
+        """Run `call(backend, role)` plain and with a role; check argv and identity.write."""
+        runner = FakeRunner({"gh": out})
+        result = call(GitHub(runner), None)
+        self.assertEqual(runner.lines(), [line])
+        seen = []
+
+        def fake_write(r, argv, role):
+            seen.append((r, argv, role))
+            return "w"
+        backend = GitHub(runner)
+        with mock.patch.object(identity, "write", fake_write):
+            self.assertEqual(call(backend, "developer"), "w")
+        self.assertEqual(len(seen), 1)
+        self.assertIs(seen[0][0], runner)
+        self.assertEqual(" ".join(seen[0][1]), line)
+        self.assertEqual(seen[0][2], "developer")
+        self.assertEqual(runner.lines(), [line])
+        return result
+
+    def test_issue_edit_body(self):
+        self._check(lambda b, r: b.issue_edit_body(4, "/p.md", role=r),
+                    "gh issue edit 4 --body-file /p.md")
+
+    def test_issue_edit_labels(self):
+        self._check(lambda b, r: b.issue_edit_labels(4, ["a", "b"], ["c", "d"], role=r),
+                    "gh issue edit 4 --add-label a --add-label b --remove-label c --remove-label d")
+        self._check(lambda b, r: b.issue_edit_labels(4, ["a"], role=r),
+                    "gh issue edit 4 --add-label a")
+
+    def test_comment(self):
+        out = self._check(lambda b, r: b.comment("pr", 9, "/p.md", role=r),
+                          "gh pr comment 9 --body-file /p.md", out="url\n")
+        self.assertEqual(out, "url\n")
+
+    def test_change_state(self):
+        self._check(lambda b, r: b.change_state("pr", "reopen", 9, role=r), "gh pr reopen 9")
+
+    def test_issue_close(self):
+        self._check(lambda b, r: b.issue_close(4, "completed", role=r),
+                    "gh issue close 4 --reason completed")
+        self._check(lambda b, r: b.issue_close(4, "duplicate", 2, role=r),
+                    "gh issue close 4 --reason duplicate --duplicate-of 2")
+
+    def test_issue_lock(self):
+        self._check(lambda b, r: b.issue_lock(4, role=r), "gh issue lock 4")
+        self._check(lambda b, r: b.issue_lock(4, "spam", role=r), "gh issue lock 4 --reason spam")
+
+    def test_label_names(self):
+        runner = FakeRunner({"gh label list": '[{"name": "x"}, {"name": "y"}]'})
+        self.assertEqual(GitHub(runner).label_names(), {"x", "y"})
+        self.assertEqual(runner.lines(), ["gh label list --limit 500 --json name"])
+        self.assertEqual(GitHub(FakeRunner()).label_names(), set())
+
+    def test_label_create(self):
+        self._check(lambda b, r: b.label_create("n", "ffffff", "d e", role=r),
+                    "gh label create n --color ffffff --description d e")
+
+
 if __name__ == "__main__":
     unittest.main()

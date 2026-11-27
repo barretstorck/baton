@@ -541,7 +541,7 @@ def _save_issue(runner, number, body):
     try:
         with os.fdopen(handle, "w", newline="") as out:
             out.write(body)
-        runner(["gh", "issue", "edit", str(number), "--body-file", path])
+        forge.for_repo(runner=runner).issue_edit_body(number, path)
     finally:
         os.unlink(path)
 

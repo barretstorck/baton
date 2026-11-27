@@ -57,8 +57,7 @@ def publish(cfg, runner, target, number, text, terms, role="orchestrator"):
     try:
         with os.fdopen(handle, "w") as out:
             out.write(text)
-        return identity.write(runner, ["gh", target, "comment", str(number), "--body-file", path],
-                              role).strip()
+        return forge.for_repo(runner=runner).comment(target, number, path, role).strip()
     finally:
         os.unlink(path)
 
@@ -134,8 +133,8 @@ def notify(cfg, runner, number, cause, text, maintainers, terms, bots=()):
     if findings:
         raise CommentError("comment not posted; privacy scan found: "
                            + "; ".join(scan.describe(findings)))
-    identity.write(runner, ["gh", "issue", "edit", str(number), "--add-label",
-                            cfg.label("needs-maintainer")], "orchestrator")
+    forge.for_repo(runner=runner).issue_edit_labels(
+        number, [cfg.label("needs-maintainer")], role="orchestrator")
     return publish(cfg, runner, "issue", number, text_out, terms)
 
 

@@ -1,5 +1,5 @@
 """Closing and reopening issues and pull requests, always with a marker comment."""
-from . import comment, forge, identity, run
+from . import comment, forge, run
 
 ACTIONS = {"close": "closed", "reopen": "reopened"}
 REASONS = ("spam", "duplicate", "support", "wont-do", "completed")
@@ -23,21 +23,16 @@ def change(cfg, runner, action, target, number, role, reason, terms,
         raise comment.CommentError("a reason is required")
     _check_options(runner, action, target, number, close_reason, duplicate_of, lock)
     url = comment.post(cfg, runner, target, number, role, ACTIONS[action], reason, terms)
+    backend = forge.for_repo(runner=runner)
     if close_reason is None:
-        identity.write(runner, ["gh", target, action, str(number)], role)
+        backend.change_state(target, action, number, role)
     else:
         if close_reason != "completed":
-            identity.write(runner, ["gh", "issue", "edit", str(number), "--add-label",
-                                    cfg.label(f"closed:{close_reason}")], role)
-        argv = ["gh", "issue", "close", str(number), "--reason", _NATIVE[close_reason]]
-        if close_reason == "duplicate":
-            argv += ["--duplicate-of", str(duplicate_of)]
-        identity.write(runner, argv, role)
+            backend.issue_edit_labels(number, [cfg.label(f"closed:{close_reason}")], role=role)
+        backend.issue_close(number, _NATIVE[close_reason],
+                            duplicate_of if close_reason == "duplicate" else None, role)
     if lock:
-        argv = ["gh", "issue", "lock", str(number)]
-        if close_reason == "spam":
-            argv += ["--reason", "spam"]
-        identity.write(runner, argv, role)
+        backend.issue_lock(number, "spam" if close_reason == "spam" else None, role)
     if close_reason == "duplicate":
         comment.post(cfg, runner, "issue", duplicate_of, role, "status",
                      f"Closed #{number} as a duplicate of this issue.", terms)

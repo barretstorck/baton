@@ -1,6 +1,5 @@
-import json
 
-from . import config, forge, identity
+from . import config, forge
 
 _STYLE = {
     "status:refinement": ("d4c5f9", "Needs work before it is ready"),
@@ -36,8 +35,7 @@ _STYLE = {
 
 
 def _existing(runner):
-    out = runner(["gh", "label", "list", "--limit", "500", "--json", "name"])
-    return {item["name"] for item in json.loads(out or "[]")}
+    return forge.for_repo(runner=runner).label_names()
 
 
 def missing(cfg, runner):
@@ -53,8 +51,8 @@ def ensure(cfg, runner, create):
         if actual in existing:
             continue
         if create:
-            identity.write(runner, ["gh", "label", "create", actual, "--color", color,
-                                    "--description", description], "orchestrator")
+            forge.for_repo(runner=runner).label_create(actual, color, description,
+                                                       role="orchestrator")
             created.append(actual)
         else:
             still.append(actual)
@@ -67,11 +65,8 @@ def set_status(cfg, runner, number, status):
     present = {item["name"] for item in
                forge.for_repo(runner=runner).issue_view(number, "labels")["labels"]}
     target = cfg.label(status)
-    argv = ["gh", "issue", "edit", str(number), "--add-label", target]
-    for other in cfg.status_labels():
-        if other != target and other in present:
-            argv += ["--remove-label", other]
-    identity.write(runner, argv, "orchestrator")
+    remove = [other for other in cfg.status_labels() if other != target and other in present]
+    forge.for_repo(runner=runner).issue_edit_labels(number, [target], remove, role="orchestrator")
 
 
 def set_group(cfg, runner, number, group, value):
@@ -85,9 +80,6 @@ def set_group(cfg, runner, number, group, value):
     if group == "severity" and cfg.label("type:bug") not in present:
         raise ValueError("severity applies to bugs only")
     target = cfg.label(f"{group}:{value}")
-    argv = ["gh", "issue", "edit", str(number), "--add-label", target]
-    for name in groups[group]:
-        other = cfg.label(name)
-        if other != target and other in present:
-            argv += ["--remove-label", other]
-    identity.write(runner, argv, "orchestrator")
+    remove = [cfg.label(name) for name in groups[group]
+              if cfg.label(name) != target and cfg.label(name) in present]
+    forge.for_repo(runner=runner).issue_edit_labels(number, [target], remove, role="orchestrator")
