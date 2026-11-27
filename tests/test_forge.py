@@ -305,6 +305,30 @@ class SprintMethodsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             GitHub(FakeRunner({"gh api repos/o/r/commits/main": ""})).branch_head("o", "r", "main")
 
+    def test_last_push(self):
+        line = "gh api repos/o/r/activity?ref=refs/heads/issue-7-x&per_page=10"
+        reply = [{"activity_type": "branch_deletion", "timestamp": "2026-11-26T23:00:00Z"},
+                 {"activity_type": "push", "timestamp": "2026-11-26T22:00:00Z"},
+                 {"activity_type": "push", "timestamp": "2026-11-26T21:00:00Z"}]
+        runner = FakeRunner({line: json.dumps(reply)})
+        self.assertEqual(GitHub(runner).last_push("o", "r", "issue-7-x"), "2026-11-26T22:00:00Z")
+        self.assertEqual(runner.lines(), [line])
+
+    def test_last_push_force_push(self):
+        line = "gh api repos/o/r/activity?ref=refs/heads/b&per_page=10"
+        reply = [{"activity_type": "force_push", "timestamp": "T"}]
+        self.assertEqual(GitHub(FakeRunner({line: json.dumps(reply)})).last_push("o", "r", "b"), "T")
+
+    def test_last_push_none(self):
+        line = "gh api repos/o/r/activity?ref=refs/heads/b&per_page=10"
+        for reply in ([], [{"activity_type": "pr_merge", "timestamp": "T"}]):
+            self.assertIsNone(GitHub(FakeRunner({line: json.dumps(reply)})).last_push("o", "r", "b"))
+
+    def test_last_push_bad_reply(self):
+        line = "gh api repos/o/r/activity?ref=refs/heads/b&per_page=10"
+        with self.assertRaises(ValueError):
+            GitHub(FakeRunner({line: ""})).last_push("o", "r", "b")
+
     def test_run_list_text(self):
         self._text("run_list_text",
                    "gh run list --branch main --commit abc --event push --limit 20 --json status",
