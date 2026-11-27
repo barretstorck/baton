@@ -278,10 +278,72 @@ class MergeMethodsTest(unittest.TestCase):
         self.assertEqual(runner.lines(), ["gh pr merge 4 --merge --match-head-commit abc"])
 
 
+class SprintMethodsTest(unittest.TestCase):
+    def _text(self, method, argv_line, *args, **kwargs):
+        runner = FakeRunner({argv_line: "reply"})
+        self.assertEqual(getattr(GitHub(runner), method)(*args, **kwargs), "reply")
+        self.assertEqual(runner.lines(), [argv_line])
+
+    def test_workflow_entries_text(self):
+        self._text("workflow_entries_text", "gh api repos/o/r/contents/.github/workflows?ref=abc",
+                   "o", "r", "abc")
+
+    def test_workflow_file_text(self):
+        runner = FakeRunner({})
+        GitHub(runner).workflow_file_text("o", "r", "ci.yml", "abc")
+        self.assertEqual(runner.calls, [[
+            "gh", "api", "repos/o/r/contents/.github/workflows/ci.yml?ref=abc",
+            "-H", "Accept: application/vnd.github.raw"]])
+
+    def test_actions_permissions_text(self):
+        self._text("actions_permissions_text", "gh api repos/o/r/actions/permissions", "o", "r")
+
+    def test_branch_head(self):
+        runner = FakeRunner({"gh api repos/o/r/commits/main": json.dumps({"sha": "s"})})
+        self.assertEqual(GitHub(runner).branch_head("o", "r", "main"), {"sha": "s"})
+        self.assertEqual(runner.lines(), ["gh api repos/o/r/commits/main"])
+        with self.assertRaises(ValueError):
+            GitHub(FakeRunner({"gh api repos/o/r/commits/main": ""})).branch_head("o", "r", "main")
+
+    def test_run_list_text(self):
+        self._text("run_list_text",
+                   "gh run list --branch main --commit abc --event push --limit 20 --json status",
+                   "main", "abc", "push", 20, "status")
+
+    def test_milestones_text(self):
+        self._text("milestones_text", "gh api repos/o/r/milestones?state=open&per_page=100",
+                   "o", "r", "open")
+
+    def test_issue_list_text(self):
+        base = "gh issue list"
+        tail = "--state all --limit 300 --json number"
+        self._text("issue_list_text", f"{base} {tail}", "number", "all", 300)
+        self._text("issue_list_text", f"{base} --milestone M {tail}", "number", "all", 300,
+                   milestone="M")
+        self._text("issue_list_text", f"{base} --label L {tail}", "number", "all", 300, label="L")
+        self._text("issue_list_text", "gh issue list --state closed --search closed:>=1 "
+                   "--limit 300 --json number", "number", "closed", 300, search="closed:>=1")
+        self._text("issue_list_text", "gh issue list --milestone M --label L --state all "
+                   "--search q --limit 300 --json number", "number", "all", 300,
+                   milestone="M", label="L", search="q")
+
+    def test_issue_list(self):
+        runner = FakeRunner({"gh issue list --state open --limit 5 --json number": "[1]"})
+        self.assertEqual(GitHub(runner).issue_list("number", "open", 5), [1])
+        blank = FakeRunner({"gh issue list --state open --limit 5 --json number": "  "})
+        self.assertEqual(GitHub(blank).issue_list("number", "open", 5, empty=[]), [])
+        with self.assertRaises(ValueError):
+            GitHub(blank).issue_list("number", "open", 5)
+
+    def test_pr_list_text(self):
+        self._text("pr_list_text", "gh pr list --state open --limit 200 --json number",
+                   "number", "open", 200)
+
+
 GH_ARGV = re.compile(r'\[\s*"gh"\s*,')
 LIB = Path(__file__).resolve().parent.parent / "lib" / "baton"
 # #374 and #375 empty this set as they move the remaining call sites.
-NOT_YET_MIGRATED = {"cli.py", "sprint.py"}
+NOT_YET_MIGRATED = set()
 # The forge_clis default list is not a call.
 PERMANENT = {"config.py"}
 

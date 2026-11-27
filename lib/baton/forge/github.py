@@ -239,3 +239,45 @@ class GitHub:
     def pr_merge(self, number, head_oid, role=None):
         return self._write(["gh", "pr", "merge", str(number), "--merge",
                             "--match-head-commit", head_oid], role)
+
+    def workflow_entries_text(self, owner, repo, sha):
+        return self.runner(["gh", "api", f"repos/{owner}/{repo}/contents/.github/workflows?ref={sha}"])
+
+    def workflow_file_text(self, owner, repo, name, sha):
+        return self.runner(["gh", "api",
+                            f"repos/{owner}/{repo}/contents/.github/workflows/{name}?ref={sha}",
+                            "-H", "Accept: application/vnd.github.raw"])
+
+    def actions_permissions_text(self, owner, repo):
+        return self.runner(["gh", "api", f"repos/{owner}/{repo}/actions/permissions"])
+
+    def branch_head(self, owner, repo, branch):
+        return self._read(["gh", "api", f"repos/{owner}/{repo}/commits/{branch}"])
+
+    def run_list_text(self, branch, sha, event, limit, fields):
+        return self.runner(["gh", "run", "list", "--branch", branch, "--commit", sha,
+                            "--event", event, "--limit", str(limit), "--json", fields])
+
+    def milestones_text(self, owner, repo, state):
+        return self.runner(["gh", "api", f"repos/{owner}/{repo}/milestones?state={state}&per_page=100"])
+
+    def _issue_list_argv(self, fields, state, limit, milestone=None, label=None, search=None):
+        argv = ["gh", "issue", "list"]
+        if milestone is not None:
+            argv += ["--milestone", milestone]
+        if label is not None:
+            argv += ["--label", label]
+        argv += ["--state", state]
+        if search is not None:
+            argv += ["--search", search]
+        return argv + ["--limit", str(limit), "--json", fields]
+
+    def issue_list_text(self, fields, state, limit, milestone=None, label=None, search=None):
+        return self.runner(self._issue_list_argv(fields, state, limit, milestone, label, search))
+
+    def issue_list(self, fields, state, limit, milestone=None, label=None, search=None, empty=None):
+        return self._read(self._issue_list_argv(fields, state, limit, milestone, label, search), empty)
+
+    def pr_list_text(self, fields, state, limit):
+        return self.runner(["gh", "pr", "list", "--state", state, "--limit", str(limit),
+                            "--json", fields])

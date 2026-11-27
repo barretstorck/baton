@@ -13,7 +13,7 @@ import re
 import time
 from datetime import datetime, timezone
 
-from . import checklist, comment, config, identity, inflight, issue as issue_fields, merge, review
+from . import checklist, comment, config, forge, identity, inflight, issue as issue_fields, merge, review
 from .run import RunError
 
 _FAILED = {"failure", "timed_out", "startup_failure", "action_required"}
@@ -33,9 +33,8 @@ class SnapshotError(Exception):
     """Forge data could not be read; the snapshot must not look valid."""
 
 
-def _load(runner, argv, what):
-    """Run a forge read that must answer with a JSON list; never turn a bad reply into []."""
-    text = runner(argv)
+def _load(text, what):
+    """Check a forge read that must answer with a JSON list; never turn a bad reply into []."""
     if not (text or "").strip():
         raise SnapshotError(f"could not read {what}: empty reply")
     try:
@@ -92,9 +91,9 @@ def triggers_on_push(workflow_text):
 
 def push_workflow_exists(runner, owner, repo, sha):
     """True when a workflow file at this commit triggers on push; a missing directory means no."""
-    base = f"repos/{owner}/{repo}/contents/.github/workflows"
     try:
-        entries = _load(runner, ["gh", "api", f"{base}?ref={sha}"], "workflow files")
+        entries = _load(forge.for_repo(runner=runner).workflow_entries_text(owner, repo, sha),
+                        "workflow files")
     except RunError as error:
         if "404" in str(error) or "Not Found" in str(error):
             return False
@@ -103,8 +102,7 @@ def push_workflow_exists(runner, owner, repo, sha):
         name = entry.get("name", "") if isinstance(entry, dict) else ""
         if not name.endswith((".yml", ".yaml")):
             continue
-        text = runner(["gh", "api", f"{base}/{name}?ref={sha}",
-                       "-H", "Accept: application/vnd.github.raw"])
+        text = forge.for_repo(runner=runner).workflow_file_text(owner, repo, name, sha)
         if triggers_on_push(text):
             return True
     return False
@@ -120,7 +118,7 @@ def _commit_age(committed, now):
 def actions_enabled(runner, owner, repo):
     """False only when the forge says Actions is disabled; an unreadable reply counts as enabled."""
     try:
-        text = runner(["gh", "api", f"repos/{owner}/{repo}/actions/permissions"])
+        text = forge.for_repo(runner=runner).actions_permissions_text(owner, repo)
     except RunError as error:
         if "404" in str(error) or "Not Found" in str(error):
             return True
@@ -138,14 +136,13 @@ def default_branch_status(runner, owner, repo, branch, now=None):
     state is green, red, pending or none; grace_left is an integer only while pending means
     "no run yet, inside the grace period", otherwise None."""
     try:
-        head = json.loads(runner(["gh", "api", f"repos/{owner}/{repo}/commits/{branch}"]))
+        head = forge.for_repo(runner=runner).branch_head(owner, repo, branch)
         sha = head["sha"]
         committed = head["commit"]["committer"]["date"]
     except (ValueError, KeyError, TypeError) as error:
         raise SnapshotError(f"could not read the head commit of {branch}: {error}") from error
-    runs = _load(runner, ["gh", "run", "list", "--branch", branch, "--commit", sha,
-                          "--event", "push", "--limit", "20",
-                          "--json", "status,conclusion,headSha,workflowName"], "workflow runs")
+    runs = _load(forge.for_repo(runner=runner).run_list_text(
+        branch, sha, "push", 20, "status,conclusion,headSha,workflowName"), "workflow runs")
     if runs:
         return branch_state(runs), None
     try:
@@ -183,7 +180,7 @@ def _pr_verify(pr, cfg, runner, owner, reviewers=()):
     if not cfg.data["verify"]["command"] or not cfg.data["review"]["required"]:
         return "none"
     if owner is None:
-        owner = json.loads(runner(["gh", "repo", "view", "--json", "owner"]))["owner"]["login"]
+        owner = forge.for_repo(runner=runner).repo_view("owner")["owner"]["login"]
     return review.verify_state(cfg, pr.get("comments"), list(cfg.maintainers(owner)) + sorted(reviewers),
                               pr.get("headRefOid"))
 
@@ -208,7 +205,7 @@ def _blocker_open(number, by_number, runner):
     if number in by_number:
         return by_number[number]["state"] == "OPEN"
     try:
-        return json.loads(runner(["gh", "issue", "view", str(number), "--json", "state"]))["state"] == "OPEN"
+        return forge.for_repo(runner=runner).issue_view(number, "state")["state"] == "OPEN"
     except (ValueError, KeyError):
         return True
 
@@ -245,13 +242,12 @@ def _review_requested(pr, runner, machine, maintainers, bots, latest_at):
 
 def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None, now=None):
     now = now or datetime.now(timezone.utc)
-    repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name,defaultBranchRef"]))
+    backend = forge.for_repo(runner=runner)
+    repo = backend.repo_view("owner,name,defaultBranchRef")
     owner, branch = repo["owner"]["login"], repo["defaultBranchRef"]["name"]
     maintainers = cfg.maintainers(owner)
     trusted = list(maintainers) + sorted(reviewers)
-    milestones = _load(
-        runner, ["gh", "api", f"repos/{owner}/{repo['name']}/milestones?state=open&per_page=100"],
-        "milestones")
+    milestones = _load(backend.milestones_text(owner, repo["name"], "open"), "milestones")
     chosen, open_sprints = _pick_sprint(milestones, milestone)
     state, grace_left = default_branch_status(runner, owner, repo["name"], branch)
     result = {
@@ -267,10 +263,9 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None, n
     result["sprint"] = {"number": chosen["number"], "title": chosen["title"],
                         "description": chosen.get("description") or "", "due": chosen.get("due_on")}
 
-    issues = _load(runner, ["gh", "issue", "list", "--milestone", chosen["title"], "--state",
-                            "all", "--limit", "300", "--json", ISSUE_FIELDS], "issues")
-    prs = _load(runner, ["gh", "pr", "list", "--state", "open", "--limit", "200",
-                         "--json", PR_FIELDS], "pull requests")
+    issues = _load(backend.issue_list_text(ISSUE_FIELDS, "all", 300, milestone=chosen["title"]),
+                   "issues")
+    prs = _load(backend.pr_list_text(PR_FIELDS, "open", 200), "pull requests")
     for item in issues:
         item["comments"] = identity.mark_authors(runner, item["number"], item.get("comments"))
     for item in prs:
@@ -315,8 +310,7 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None, n
                 if blocker in by_number:
                     body = by_number[blocker].get("body")
                 else:
-                    body = json.loads(runner(["gh", "issue", "view", str(blocker),
-                                             "--json", "body"]))["body"]
+                    body = backend.issue_view(blocker, "body")["body"]
                 todo.extend(issue_fields.blocked_by(body))
                 text, _ = checklist.plan_source(runner, body or "", plan_cache,
                                                 cfg.data["docs"]["dir"])
@@ -371,8 +365,7 @@ def snapshot(cfg, runner, milestone=None, bots=(), reviewers=(), machine=None, n
             stale = inflight.is_stale(record, None, now, limit)
             if stale and pr and pr.get("headRefOid"):
                 try:
-                    head = json.loads(runner(["gh", "api", f"repos/{owner}/{repo['name']}"
-                                              f"/commits/{pr['headRefOid']}"]))
+                    head = backend.branch_head(owner, repo["name"], pr["headRefOid"])
                     pushed = head["commit"]["committer"]["date"]
                 except (RunError, ValueError, KeyError, TypeError):
                     pushed = None
@@ -623,24 +616,24 @@ def _parse_time(text):
 
 def sprint_metrics(cfg, runner, milestone, tokens):
     """The seven numbers a retro records for one sprint (see METRIC_KEYS)."""
-    repo = json.loads(runner(["gh", "repo", "view", "--json", "owner,name"]))
-    base = f"{repo['owner']['login']}/{repo['name']}"
-    found = [m for m in _load(runner, ["gh", "api", f"repos/{base}/milestones?state=all&per_page=100"],
+    backend = forge.for_repo(runner=runner)
+    repo = backend.repo_view("owner,name")
+    found = [m for m in _load(backend.milestones_text(repo["owner"]["login"], repo["name"], "all"),
                               "milestones") if m.get("title") == milestone]
     if not found:
         raise SnapshotError(f"milestone not found: {milestone}")
     start = _parse_time(found[0]["created_at"])
     end = _parse_time(found[0]["closed_at"]) if found[0].get("closed_at") else datetime.now(timezone.utc)
 
-    def listing(args, what):
-        return _load(runner, ["gh", "issue", "list", *args, "--state", "all", "--limit", "300",
-                              "--json", _ISSUE_JSON], what)
+    def listing(what, milestone=None, label=None):
+        return _load(backend.issue_list_text(_ISSUE_JSON, "all", 300, milestone=milestone,
+                                             label=label), what)
 
-    worked = {i["number"]: i for i in listing(["--milestone", milestone], "milestone issues")}
-    for i in listing(["--label", cfg.label("missed-sprint")], "missed-sprint issues"):
+    worked = {i["number"]: i for i in listing("milestone issues", milestone=milestone)}
+    for i in listing("missed-sprint issues", label=cfg.label("missed-sprint")):
         if _missed_line(i.get("body"), milestone):
             worked.setdefault(i["number"], i)
-    for i in listing(["--label", f"missed:{milestone}"], "legacy missed issues"):
+    for i in listing("legacy missed issues", label=f"missed:{milestone}"):
         worked.setdefault(i["number"], i)
     complete = cfg.label("status:complete")
     spike = cfg.label("type:spike")
