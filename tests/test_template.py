@@ -620,6 +620,11 @@ class TemplateTest(unittest.TestCase):
         self.assertIn("### Hand checks", text)
         self.assertIn("## Hand checks", text)
 
+    def test_readme_documents_hand_check_dispatch(self):
+        text = (ROOT / "README.md").read_text()
+        self.assertIn("Hand-check pull request <P> (issue <N>).", text)
+        self.assertIn("`hand-check`", text)
+
     def test_in_flight_documented(self):
         def read(p):
             return (ROOT / p).read_text()
