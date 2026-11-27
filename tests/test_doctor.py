@@ -177,6 +177,63 @@ class ForgejoProbeTest(unittest.TestCase):
         self.assertTrue(lines[0].startswith("forge: FAIL: "))
 
 
+class GitLabProbeTest(unittest.TestCase):
+    def fake(self, status=200, headers=None, body=b""):
+        self.seen = []
+
+        def get(url, h):
+            self.seen.append((url, dict(h)))
+            return status, {"x-gitlab-meta": "{}"} if headers is None else headers, body
+        return get
+
+    def test_no_header_fails(self):
+        lines, ok = doctor.gitlab_lines("https://g.example", "tok", self.fake(headers={}))
+        self.assertFalse(ok)
+        self.assertIn("X-Gitlab-Meta", lines[0])
+        self.assertNotIn("tok", lines[0])
+
+    def test_no_reply_fails(self):
+        lines, ok = doctor.gitlab_lines("https://g.example", None, lambda u, h: (None, {}, b""))
+        self.assertFalse(ok)
+
+    def test_no_token_warns(self):
+        lines, ok = doctor.gitlab_lines("https://g.example/", None, self.fake(status=401))
+        self.assertTrue(ok)
+        self.assertEqual(lines, ["forge: WARN: GitLab g.example; version not checked: no token configured"])
+        self.assertEqual(self.seen[0][0], "https://g.example/api/v4/version")
+        self.assertNotIn("PRIVATE-TOKEN", self.seen[0][1])
+
+    def test_ok_with_plan(self):
+        lines, ok = doctor.gitlab_lines("https://g.example", "sekret",
+                                        self.fake(body=b'{"version": "19.6.2", "plan": "free"}'))
+        self.assertTrue(ok)
+        self.assertEqual(lines, ["forge: ok (GitLab 19.6.2, plan free)"])
+        self.assertEqual(self.seen[0][1]["PRIVATE-TOKEN"], "sekret")
+        self.assertEqual(self.seen[0][1]["Accept"], "application/json")
+
+    def test_floor_is_ok(self):
+        lines, ok = doctor.gitlab_lines("https://g.example", "t", self.fake(body=b'{"version": "17.0.0"}'))
+        self.assertTrue(ok)
+        self.assertIn("plan unknown", lines[0])
+
+    def test_below_minimum(self):
+        lines, ok = doctor.gitlab_lines("https://g.example", "t", self.fake(body=b'{"version": "16.11.3"}'))
+        self.assertFalse(ok)
+        self.assertIn("below the minimum 17.0", lines[0])
+
+    def test_unparseable_version(self):
+        for body in (b"nope", b'{"x": 1}', b'{"version": "abc"}'):
+            lines, ok = doctor.gitlab_lines("https://g.example", "t", self.fake(body=body))
+            self.assertFalse(ok)
+            self.assertTrue(lines[0].startswith("forge: FAIL: "))
+
+    def test_401_with_token_fails_without_leaking(self):
+        lines, ok = doctor.gitlab_lines("https://g.example", "sekret", self.fake(status=401))
+        self.assertFalse(ok)
+        self.assertIn("HTTP 401", lines[0])
+        self.assertNotIn("sekret", "".join(lines))
+
+
 class CmdDoctorForgeTest(unittest.TestCase):
     def run_doctor(self, origin, local=None):
         from baton import cli
