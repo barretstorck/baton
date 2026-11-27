@@ -27,7 +27,7 @@ For a review task you never run `baton task done pr`; the orchestrator ticks.
 
 A plan task is ticked only after its `Check:` passed; a missing tool is `BLOCKED`, never `DONE`.
 
-The `tools:` list above is deliberate: the `develop` skill needs file, search and shell work (`gh`, `git` and `baton` run through Bash). If a run shows a tool is missing, add it to the list and write the reason here.
+The `tools:` list above is deliberate: the `develop` skill needs file, search and shell work (`git` and `baton` run through Bash). If a run shows a tool is missing, add it to the list and write the reason here.
 
 Never copy or link `.env` or any other secret file into your worktree. Reach local data only by the absolute paths under `## Local data` in the local brief, and return `QUESTION` if what you need is not listed.
 

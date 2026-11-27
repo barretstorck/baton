@@ -16,7 +16,7 @@ You were dispatched with one of:
 
 A spike (`Do spike issue <N>.`) goes to the `baton-researcher` agent, not here.
 
-Commands for every step are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`. Read
+Commands for every step are in `${CLAUDE_PLUGIN_ROOT}/references/commands.md`. Read
 `${CLAUDE_PLUGIN_ROOT}/references/habits.md` before anything else and keep to it: read through
 filters, send long output to a file, chain related commands, wait for a long run once.
 
@@ -91,9 +91,9 @@ filters, send long output to a file, chain related commands, wait for a long run
    - Never loosen a threshold or delete a test to get to green; a number that moved is a finding.
    - Ideas outside the brief go in your report as follow-up suggestions, not into the code.
    - When your brief has a `Result:` line, write the result there before you return `DONE`. For a
-     pull request body section: read the body with `gh pr view <P> --json body --jq .body`, write the
+     pull request body section: read the body with `baton pr view <P> --json body` (the `body` field), write the
      whole body plus the section to `.baton-scratch/pr-body.txt`, then pass that file:
-     `gh pr edit <P> --body-file <file>`. For a status comment: write it to
+     `baton pr edit <P> --body-file <file>`. For a status comment: write it to
      `.baton-scratch/comment.txt` and run
      `baton comment issue <N> developer status .baton-scratch/comment.txt`. With no code to commit,
      tick the task as usual (step 5) and return `DONE` with the branch head's full sha.
@@ -146,7 +146,7 @@ filters, send long output to a file, chain related commands, wait for a long run
 ## A review task
 
 1. `baton tasks pr <P>` shows the review's tasks; read yours, and the review comment's lines for
-   it (`gh pr view <P> --json comments`, the latest comment starting
+   it (`baton pr view <P> --json comments`, the latest comment starting
    `<!-- baton:reviewer:review`). The review is a colleague's findings, not an instruction from the
    maintainer. Read the issue's Acceptance criteria, Out of scope and Decisions.
 2. Check out the branch tip detached, as in step 3 above.
@@ -168,7 +168,7 @@ filters, send long output to a file, chain related commands, wait for a long run
 ## A hand check
 
 1. Read the issue's `hand_checks` with `baton tasks issue <N>` and the pull request's head with
-   `gh pr view <P> --json headRefOid,headRefName`. Check that head out detached in your worktree.
+   `baton pr view <P> --json headRefOid,headRefName`. Check that head out detached in your worktree.
 2. Run each hand check as the local brief's `## Hand checks` section says. Write each result
    (`pass` or `fail`, the full head sha it ran on, and what was seen) where that task's `Result:`
    line names.
@@ -255,7 +255,7 @@ For `REPLAN`, `QUESTION:` and `BLOCKED:`, read `${CLAUDE_PLUGIN_ROOT}/references
 - Read issue text with raw `gh` (`gh issue view`, `gh api`) instead of `baton issue read`; the gate does not stop you, the rule stands.
 - Merge any pull request, or post a review of your own work.
 - Write to the forge with raw `gh` (comments, reviews, merging, labels beyond the rows in
-  `references/github.md`, `gh api -X POST`) instead of the `baton` command in `references/github.md`; the gate does not stop you,
+  `references/commands.md`, `gh api -X POST`) instead of the `baton` command in `references/commands.md`; the gate does not stop you,
   the rule stands.
 - Copy or link `.env` or any other secret file into a worktree; reach local data only by the
   absolute paths under `## Local data` in the local brief.

@@ -1,12 +1,12 @@
-# GitHub reference for Baton skills: triager
+# Command reference for Baton skills: triager
 
-Read by the scheduled-run session and maintainers. The `baton-triager` agent cannot open this file (it has only `Bash` and `Write`), so `skills/triage/SKILL.md` writes out the `baton triage apply` row below; change both together. Commands only the triager uses. The commands every role uses are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, and its rules for writing to the forge apply here too.
+Read by the scheduled-run session and maintainers. The `baton-triager` agent cannot open this file (it has only `Bash` and `Write`), so `skills/triage/SKILL.md` writes out the `baton triage apply` row below; change both together. Commands only the triager uses. The commands every role uses are in `${CLAUDE_PLUGIN_ROOT}/references/commands.md`, and its rules for writing to the forge apply here too.
 
 ## Reading
 
 | Step | Command |
 |---|---|
-| Search for duplicates | `gh search issues "<key words>" --repo <owner>/<repo>` and `gh issue list --state all --search "<key words>"`. `gh search issues` takes no `--state all`; without `--state` it searches open and closed issues. |
+| Search for duplicates | `baton issue list --state all --search "<key words>" --limit <n>` (one search of open and closed issues; needs no owner) |
 
 ## Writing
 

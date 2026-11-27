@@ -67,7 +67,7 @@ plan until it merges.
 Look at `held` too: if an issue is held for a reason you can clear (a blocker you can dispatch
 first), order the work accordingly; otherwise leave it.
 
-For each `blockers_outside` entry, the maintainer's rule is that when a sprint takes in an issue that is `Blocked by:` another, the blocker joins the sprint too. A blocker in `status:ready` joins: `gh issue edit <M> --milestone "<sprint title>" --add-label <the dependent's deliverable or stretch label>`. A blocker still in `status:refinement` is refined first by a refiner dispatched with `Refine issues <M>.` (as the sprint skill dispatches refiners), and joins once it is ready. An outside issue awaiting the maintainer's `/baton ready` goes under `Needs you`.
+For each `blockers_outside` entry, the maintainer's rule is that when a sprint takes in an issue that is `Blocked by:` another, the blocker joins the sprint too. A blocker in `status:ready` joins: `baton issue edit <M> --milestone "<sprint title>" --add-label <the dependent's deliverable or stretch label>`. A blocker still in `status:refinement` is refined first by a refiner dispatched with `Refine issues <M>.` (as the sprint skill dispatches refiners), and joins once it is ready. An outside issue awaiting the maintainer's `/baton ready` goes under `Needs you`.
 
 A free slot is permission to start work, not to go against a recorded order. If the only issue
 that could fill it has Decisions or Pointers saying it comes after another issue, leave the slot

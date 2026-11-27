@@ -11,7 +11,7 @@ looks done. Workflow adapted from the
 
 ## Steps
 
-1. **Confirm the repository.** Run `gh repo view --json nameWithOwner,visibility,defaultBranchRef`.
+1. **Confirm the repository.** Run `baton repo view --json nameWithOwner,visibility,defaultBranchRef`.
    Tell the maintainer which repository will be set up and stop if it is not the one they meant.
 
 2. **Write the repo brief.** If `.baton/brief.md` does not exist, copy
@@ -20,7 +20,7 @@ looks done. Workflow adapted from the
    `scripts/`), and the conventions in `AGENTS.md`, `CLAUDE.md` or `CONTRIBUTING.md`. Ask the
    maintainer only for what the repository does not show.
 
-3. **Map existing labels.** Run `gh label list --limit 500 --json name,description`. If the
+3. **Map existing labels.** Run `baton labels --list`. If the
    repository already has labels that mean the same as a Baton label (for example `In Progress`
    for `status:in-dev`), propose the mapping to the maintainer and write the agreed names into
    `labels.map`. Never rename or delete an existing label.

@@ -5,7 +5,7 @@ Read this before filing a follow-up issue (`skills/sprint/SKILL.md`, step 6): it
 ## Search for a duplicate
 
 Before filing a follow-up from a review, a developer report or a spike's findings, run both
-searches (see "Search for a duplicate follow-up" in `references/github-orchestrator.md`) with two
+searches (see "Search for a duplicate follow-up" in `references/commands-orchestrator.md`) with two
 or three key words from the follow-up, and read each likely match with `baton issue read <M>`.
 
 - An open issue that covers the same thing gets a status comment instead of a new issue
@@ -34,7 +34,7 @@ Place each by its severity (`critical`, `important`, `minor`; the review's own w
 placement it names for the severity:
 
 - `deliverable` or `stretch`: joins the open sprint with that label
-  (`gh issue edit <N> --milestone "<title>"`), is refined with `baton:refine` as a subagent
+  (`baton issue edit <N> --milestone "<title>"`), is refined with `baton:refine` as a subagent
   at once, and is dispatched once ready.
 - `goal`: joins as `stretch` only when it serves the sprint goal; otherwise it is filed in the
   backlog.

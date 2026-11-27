@@ -19,18 +19,17 @@ When it runs inside the `baton-triager` agent, do the steps below.
 
 ## Working habits
 
-Fetch only the fields you need: `gh issue view <N> --json ...` with `--jq` to cut long output, and
-`--limit` on `gh issue list` and `gh search issues`. Chain related allowed commands in one shell
+Fetch only the fields you need: `baton triage read <N> --json ...` to narrow the output, and
+`--limit` on `baton issue list`. Chain related allowed commands in one shell
 call. For a duplicate candidate, read the title and body only.
 
 ## Steps
 
-1. Read the issue: `gh issue view <N> --json title,body,labels,author,comments`.
+1. Read the issue: `baton triage read <N>` (default fields `title,body,labels,author,comments`; `--json` narrows them).
 2. Apply the spam screen below.
-3. Search for duplicates: `gh search issues "<key words>" --repo <owner>/<repo>` (the owner from
-   `gh repo view --json owner`, with the repository name; `gh search issues` accepts only
-   `--state open` or `--state closed`, so leave `--state` out and it searches open and closed issues) and
-   `gh issue list --state all --search "<key words>"`. Read candidates with `gh issue view`.
+3. Search for duplicates with one `baton issue list --state all --search "<key words>" --limit <n>`
+   (it searches open and closed issues and needs no owner). Read candidates with
+   `baton triage read <M> --json title,body`.
 4. Pick the category: `spam`, `duplicate`, `support`, `unclear`, `feature`, `bug`, `maintenance`,
    `spike` or `unsure` (use `unsure` when you cannot tell; the maintainer is notified). Use `spike`
    only when the issue already has the `type:spike` label, and then always: never feature, bug or
@@ -79,7 +78,7 @@ could be a real report):
 ## Maintainer issues
 
 Compare `author.login` with the maintainers (`maintainers` from `baton config`; when that list is
-empty, the owner from `gh repo view --json owner`). An issue written by a maintainer only gets labels: use
+empty, the owner from `baton repo view --json owner`). An issue written by a maintainer only gets labels: use
 only feature, bug, maintenance or spike (a spike only for an issue labelled `type:spike`; with `priority` and `severity`), no `comment`, and never spam,
 duplicate, support or unclear.
 

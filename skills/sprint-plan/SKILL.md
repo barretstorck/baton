@@ -9,7 +9,7 @@ Turn a goal into a sprint: a milestone holding the issues to deliver. The mainta
 manager and decides what gets built; you prepare the proposal.
 
 Follows GitLab's [plan phase](https://handbook.gitlab.com/handbook/product-development/how-we-work/product-development-flow/#build-phase-1-plan).
-Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_ROOT}/references/github-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/github-orchestrator.md`.
+Commands are in `${CLAUDE_PLUGIN_ROOT}/references/commands.md`, `${CLAUDE_PLUGIN_ROOT}/references/commands-shared.md` and `${CLAUDE_PLUGIN_ROOT}/references/commands-orchestrator.md`.
 
 ## Steps
 
@@ -103,7 +103,7 @@ Commands are in `${CLAUDE_PLUGIN_ROOT}/references/github.md`, `${CLAUDE_PLUGIN_R
    - Create the milestone with its due date
      (`baton milestone create --title "<title>" --description "<text>" --due-on <ISO date>`).
    - Add each issue to it, the added blockers included, and set its `deliverable` or `stretch` label
-     (`gh issue edit <N> --milestone "<title>" --add-label deliverable`).
+     (`baton issue edit <N> --milestone "<title>" --add-label deliverable`).
    - Post one `plan` comment on the first issue listing the sprint, so there is a record:
      `baton comment issue <N> orchestrator plan <file>`.
 
