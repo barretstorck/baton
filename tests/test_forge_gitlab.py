@@ -431,6 +431,14 @@ class MergeRequestTest(unittest.TestCase):
         self.assertEqual(self.view("mergeable", has_conflicts=True)[0]["mergeable"], "CONFLICTING")
         self.assertEqual(self.view("mergeable", detailed_merge_status="checking")[0]["mergeable"],
                          "UNKNOWN")
+        self.assertEqual(self.view("mergeable", detailed_merge_status="conflict")[0]["mergeable"],
+                         "CONFLICTING")
+        self.assertEqual(
+            self.view("mergeable", detailed_merge_status="discussions_not_resolved")[0]["mergeable"],
+            "discussions_not_resolved")
+        self.assertEqual(self.view("mergeable", detailed_merge_status="mergeable")[0]["mergeable"],
+                         "MERGEABLE")
+        self.assertEqual(self.view("mergeable")[0]["mergeable"], "MERGEABLE")
 
     def test_missing_draft_reads_as_draft(self):
         mr = {k: v for k, v in self.MR.items() if k != "draft"}
@@ -631,6 +639,24 @@ class MergeRequestWriteTest(unittest.TestCase):
         forge.pr_merge(4, "abc")
         self.assertEqual(t.lines(), [f"PUT {PROJ}/merge_requests/4/merge"])
         self.assertEqual(self.sent(t, 0), {"sha": "abc"})
+
+    def test_pr_merge_refused_names_detailed_status(self):
+        forge, t = make({f"PUT {PROJ}/merge_requests/4/merge": (405, ""),
+                         f"GET {PROJ}/merge_requests/4": (
+                             200, {"detailed_merge_status": "ci_must_pass"})})
+        with self.assertRaises(GitLabError) as ctx:
+            forge.pr_merge(4, "abc")
+        self.assertIn("HTTP 405", str(ctx.exception))
+        self.assertIn("detailed_merge_status: ci_must_pass", str(ctx.exception))
+        self.assertNotIn(TOKEN, str(ctx.exception))
+
+    def test_pr_merge_refused_and_unreadable_keeps_error(self):
+        forge, t = make({f"PUT {PROJ}/merge_requests/4/merge": (405, ""),
+                         f"GET {PROJ}/merge_requests/4": (500, "")})
+        with self.assertRaises(GitLabError) as ctx:
+            forge.pr_merge(4, "abc")
+        self.assertIn("HTTP 405", str(ctx.exception))
+        self.assertNotIn("detailed_merge_status", str(ctx.exception))
 
     def test_approve_posts_note_then_approves_head_sha(self):
         forge, t = make({f"POST {PROJ}/merge_requests/4/notes": (201, {"id": 1}),
