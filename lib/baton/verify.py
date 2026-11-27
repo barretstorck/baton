@@ -9,6 +9,8 @@ import signal
 import subprocess
 import time
 
+from . import forge
+
 
 class VerifyError(Exception):
     pass
@@ -93,7 +95,7 @@ def verify(cfg, runner, number, worktree, owner, repo, execute=execute, now=None
     command = cfg["verify"]["command"]
     if not command:
         raise VerifyError("verify.command is empty in .baton/brief.md; nothing to run")
-    head = json.loads(runner(["gh", "pr", "view", str(number), "--json", "headRefOid"]))["headRefOid"]
+    head = forge.for_repo(runner=runner).pr_view(number, "headRefOid")["headRefOid"]
     local = runner(["git", "-C", worktree, "rev-parse", "HEAD"]).strip()
     if local != head:
         raise VerifyError(f"the worktree is at {local[:7]} but the pull request's head is "
