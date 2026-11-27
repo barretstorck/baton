@@ -108,7 +108,7 @@ def forge_token(kind, owner, repo, home=None, environ=None):
     value = (os.environ if environ is None else environ).get(env_name, "").strip()
     if value:
         return value
-    folder = verify._home(home) / f"{owner}-{repo}"
+    folder = verify.repo_dir(owner, repo, home)
     ident = folder / "identity.toml"
     try:
         text = ident.read_text()
@@ -138,7 +138,7 @@ def forge_token(kind, owner, repo, home=None, environ=None):
 
 
 def load(owner, repo, home=None):
-    path = verify._home(home) / f"{owner}-{repo}" / "identity.toml"
+    path = verify.repo_dir(owner, repo, home) / "identity.toml"
     try:
         text = path.read_text()
     except FileNotFoundError:

@@ -37,7 +37,7 @@ def render(template, checkout, command):
 
 
 def brief_path(owner, repo, home=None):
-    return pathlib.Path(verify._home(home)) / f"{owner}-{repo}" / "brief.local.md"
+    return verify.repo_dir(owner, repo, home) / "brief.local.md"
 
 
 def load_template(owner, repo, home=None):
@@ -48,7 +48,7 @@ def load_template(owner, repo, home=None):
 
 
 def _log_path(owner, repo, now, home):
-    folder = pathlib.Path(verify._home(home)) / f"{owner}-{repo}" / "logs" / "sandbox"
+    folder = verify.repo_dir(owner, repo, home) / "logs" / "sandbox"
     folder.mkdir(parents=True, exist_ok=True)
     moment = now or datetime.datetime.now(datetime.timezone.utc)
     return folder / f"sandbox-{moment.strftime('%Y%m%dT%H%M%SZ')}.log"
@@ -60,7 +60,7 @@ def _run(runner, owner, repo, default_branch, command, timeout_seconds, execute,
         raise SandboxError("no sandbox configured: add a `Command:` line under `## Sandbox` "
                            "in the local brief")
     url = runner(["git", "remote", "get-url", "origin"]).strip()
-    base = pathlib.Path(verify._home(home)) / f"{owner}-{repo}" / "sandbox"
+    base = verify.repo_dir(owner, repo, home) / "sandbox"
     base.mkdir(parents=True, exist_ok=True)
     checkout = tempfile.mkdtemp(dir=base)
     try:

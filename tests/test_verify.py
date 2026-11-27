@@ -245,3 +245,15 @@ class CmdVerifyTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(seen["timeout"], 180)
         self.assertTrue(out.getvalue().startswith("verify green commit=aaaaaaa exit=0 "))
+
+
+class RepoDirTest(unittest.TestCase):
+    def test_plain(self):
+        self.assertEqual(verify.repo_dir("o", "r", home="/h"), pathlib.Path("/h/o-r"))
+
+    def test_nested(self):
+        self.assertEqual(verify.repo_dir("a/b/c", "proj", home="/h"), pathlib.Path("/h/a-b-c-proj"))
+
+    def test_brief_path(self):
+        from baton import sandbox
+        self.assertEqual(sandbox.brief_path("a/b", "p", home="/h"), pathlib.Path("/h/a-b-p/brief.local.md"))

@@ -22,8 +22,13 @@ def _home(home=None):
     return pathlib.Path(os.environ.get("BATON_HOME") or os.path.expanduser("~/.baton"))
 
 
+def repo_dir(owner, repo, home=None):
+    """The per-repository folder; a nested GitLab owner has its slashes flattened."""
+    return _home(home) / f"{owner.replace('/', '-')}-{repo}"
+
+
 def logs_dir(owner, repo, number, home=None):
-    return _home(home) / f"{owner}-{repo}" / "logs" / f"pr-{number}"
+    return repo_dir(owner, repo, home) / "logs" / f"pr-{number}"
 
 
 def write_result(folder, commit, result, exit_status, seconds, stamp):
