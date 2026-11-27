@@ -867,7 +867,7 @@ def cmd_doctor(opts):
         return 1
     if found is not None and found["kind"] == "forgejo":
         lines, ok = doctor.forgejo_lines(found["url"])
-        print("\n".join(lines + doctor.spike_lines(spike)))
+        print("\n".join(lines + doctor.GITHUB_ONLY_SKIPS + doctor.spike_lines(spike)))
         return 0 if ok else 1
     return doctor.main(_repo_name(), spike=spike)
 

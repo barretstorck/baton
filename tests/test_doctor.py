@@ -207,6 +207,19 @@ class CmdDoctorForgeTest(unittest.TestCase):
         for call in run_.call_args_list:
             self.assertNotEqual(call.args[0][0], "gh")
 
+    def test_forgejo_prints_github_only_skips(self):
+        code, out, _, _, _ = self.run_doctor(
+            "https://f.example/o/r.git", "## Hosts\n\nforge: forgejo https://f.example\n")
+        self.assertEqual(code, 0)
+        for line in doctor.GITHUB_ONLY_SKIPS:
+            self.assertIn(line, out)
+
+    def test_github_prints_no_skip_lines(self):
+        code, out, _, _, _ = self.run_doctor("git@github.com:o/r.git")
+        self.assertEqual(code, 0)
+        for line in doctor.GITHUB_ONLY_SKIPS:
+            self.assertNotIn(line, out)
+
     def test_unknown_host(self):
         code, out, _, fl, main = self.run_doctor("https://other.example/o/r")
         self.assertEqual(code, 1)
