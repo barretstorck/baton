@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from baton.issue import approval_problem, body_hash
 from baton.forge.gitlab import GitLab, GitLabError, Unsupported, urllib_transport
 
 from tests.fakes import FakeTransport
@@ -94,7 +95,6 @@ class TransportTest(unittest.TestCase):
 
     def test_empty_reads(self):
         forge, t = make()
-        self.assertIsNone(forge.issue_body_edits(1))
         self.assertIsNone(forge.issue_timeline(1))
         self.assertEqual(forge.comment_author_types(1), {})
         self.assertEqual(forge._login({"username": "bob"}), {"login": "bob"})
@@ -230,6 +230,38 @@ class IssueTest(unittest.TestCase):
         self.assertEqual(view["comments"][0]["id"], "1")
         self.assertTrue(view["comments"][0]["url"].endswith("#note_1"))
         self.assertIn("sort=asc", t.lines()[-1])
+
+    def test_body_edits_from_system_notes(self):
+        notes = [{"id": 4, "author": {"username": "mallory"}, "system": True,
+                  "body": "changed the description", "created_at": "2026-01-03T00:00:00Z"},
+                 {"id": 3, "author": {"username": "octo"}, "system": True,
+                  "body": "changed the description", "created_at": "2026-01-02T00:00:00Z"},
+                 {"id": 2, "author": {"username": "ann"}, "system": True,
+                  "body": "added ~bug label", "created_at": "2026-01-02T00:00:00Z"},
+                 {"id": 1, "author": {"username": "ann"}, "body": "changed the description",
+                  "created_at": "2026-01-01T00:00:00Z"}]
+        forge, t = make({f"GET {PROJ}/issues/7/notes": (200, notes)})
+        self.assertEqual(forge.issue_body_edits(7), [
+            {"editedAt": "2026-01-03T00:00:00Z",
+             "editor": {"login": "mallory", "__typename": "User"}},
+            {"editedAt": "2026-01-02T00:00:00Z",
+             "editor": {"login": "octo", "__typename": "User"}}])
+        self.assertIn("sort=desc", t.lines()[-1])
+
+    def test_body_edits_later_updated_at(self):
+        notes = [{"id": 1, "author": {"username": "ann"}, "system": True,
+                  "body": "changed the description", "created_at": "2026-01-01T00:00:00Z",
+                  "updated_at": "2026-01-01T05:00:00Z"}]
+        forge, _ = make({f"GET {PROJ}/issues/7/notes": (200, notes)})
+        self.assertEqual(forge.issue_body_edits(7)[0]["editedAt"], "2026-01-01T05:00:00Z")
+
+    def test_body_edits_none_on_error(self):
+        forge, _ = make({f"GET {PROJ}/issues/7/notes": (500, {})})
+        self.assertIsNone(forge.issue_body_edits(7))
+
+    def test_body_edits_empty(self):
+        forge, _ = make({f"GET {PROJ}/issues/7/notes": (200, self.NOTES)})
+        self.assertEqual(forge.issue_body_edits(7), [])
 
     def test_closed_state(self):
         forge, _ = make({f"GET {PROJ}/issues/7": (200, {**self.ISSUE, "state": "closed"})})
@@ -702,6 +734,40 @@ class MergeRequestWriteTest(unittest.TestCase):
         forge.review_request_remove(4, "z")
         self.assertEqual(t.lines(), [f"GET {PROJ}/merge_requests/4"])
 
+
+class EditApprovalTest(unittest.TestCase):
+    BODY = "the description"
+    APPROVED = "2026-01-02T12:00:00Z"
+
+    def issue(self, notes_reply, comment="/baton ready"):
+        forge, _ = make({f"GET {PROJ}/issues/7/notes": notes_reply})
+        return {"author": {"login": "mallory"}, "body": self.BODY,
+                "comments": [{"author": {"login": "octo"}, "body": comment,
+                              "createdAt": self.APPROVED}],
+                "edits": forge.issue_body_edits(7)}
+
+    @staticmethod
+    def note(user, created):
+        return {"id": 1, "author": {"username": user}, "system": True,
+                "body": "changed the description", "created_at": created}
+
+    def test_unchanged_description_keeps_approval(self):
+        issue = self.issue((200, [self.note("mallory", "2026-01-02T11:00:00Z")]))
+        self.assertIsNone(approval_problem(issue, ["octo"]))
+
+    def test_edit_after_approval_drops_it(self):
+        issue = self.issue((200, [self.note("mallory", "2026-01-02T13:00:00Z")]))
+        self.assertIn("@mallory", approval_problem(issue, ["octo"]))
+
+    def test_maintainer_edit_keeps_approval(self):
+        issue = self.issue((200, [self.note("octo", "2026-01-02T13:00:00Z")]))
+        self.assertIsNone(approval_problem(issue, ["octo"]))
+
+    def test_unreadable_notes_fall_back_to_hash(self):
+        issue = self.issue((500, {}))
+        self.assertIn(body_hash(self.BODY), approval_problem(issue, ["octo"]))
+        issue = self.issue((500, {}), f"/baton ready {body_hash(self.BODY)}")
+        self.assertIsNone(approval_problem(issue, ["octo"]))
 
 if __name__ == "__main__":
     unittest.main()
