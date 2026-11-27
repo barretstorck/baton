@@ -1,5 +1,7 @@
 import json
+import re
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from baton import cli, forge, identity, run
@@ -184,6 +186,28 @@ class ReadTest(unittest.TestCase):
         self.assertTrue(runner.lines()[0].startswith(
             "gh api --paginate repos/{owner}/{repo}/issues/6/timeline?per_page=100 --jq "))
         self.assertIsNone(GitHub(_boom).issue_timeline(6))
+
+
+GH_ARGV = re.compile(r'\[\s*"gh"\s*,')
+LIB = Path(__file__).resolve().parent.parent / "lib" / "baton"
+# #374 and #375 empty this set as they move the remaining call sites.
+NOT_YET_MIGRATED = {"cli.py", "sprint.py", "publish.py", "review.py", "merge.py", "triage.py"}
+# The forge_clis default list is not a call.
+PERMANENT = {"config.py"}
+
+
+def _matching_files():
+    return {p.name for p in LIB.glob("*.py") if GH_ARGV.search(p.read_text())}
+
+
+class ForgeLayoutTest(unittest.TestCase):
+    def test_no_gh_argv_outside_forge(self):
+        bad = sorted(_matching_files() - NOT_YET_MIGRATED - PERMANENT)
+        self.assertEqual(bad, [], f"gh argv outside the forge package: {bad}")
+
+    def test_not_yet_migrated_is_current(self):
+        stale = sorted(NOT_YET_MIGRATED - _matching_files())
+        self.assertEqual(stale, [], f"no longer match, remove from NOT_YET_MIGRATED: {stale}")
 
 
 if __name__ == "__main__":
