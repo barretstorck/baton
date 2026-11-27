@@ -21,6 +21,7 @@ _ORIGIN_LINE = re.compile(r"^\s*Origin:.*$", re.M | re.I)
 APPROVAL = "/baton ready"
 _LIST_ITEM = re.compile(r"^\s*(?:[-*]|\d+\.)\s+\S", re.M)
 HASH_LENGTH = 16
+_APPROVAL_HASH = re.compile(r"/baton ready ([0-9a-f]{16})")
 _TICKED_TASK = re.compile(r"^(\s*- )\[[xX]\]( Task \d+:)")
 
 
@@ -168,7 +169,8 @@ def approval_problem(issue, maintainers, bots=(), assigned=None):
         body = comment.get("body") or ""
         author = comment.get("author")
         if (has_login(author, maintainers) and not has_login(author, list(bots))
-                and gate.MARKER not in body and body.strip() == APPROVAL):
+                and gate.MARKER not in body
+                and (body.strip() == APPROVAL or _APPROVAL_HASH.fullmatch(body.strip()))):
             latest = comment
     by_assignment = _assignment_counts(assigned, maintainers, bots)
     if by_assignment and latest is not None:
@@ -176,10 +178,20 @@ def approval_problem(issue, maintainers, bots=(), assigned=None):
         by_assignment = a_time is not None and (c_time is None or a_time > c_time)
     if latest is None and not by_assignment:
         return f"it needs a comment '{APPROVAL}' from a maintainer"
+    current = body_hash(issue.get("body"))
+    created = assigned.get("at") if by_assignment else latest.get("createdAt")
+    if not by_assignment:
+        hashed = _APPROVAL_HASH.fullmatch((latest.get("body") or "").strip())
+        if hashed:
+            if hashed.group(1) == current:
+                return None
+            return (f"the '{APPROVAL} {hashed.group(1)}' comment of {created or 'unknown'} approved "
+                    f"a different description (now {current}); a maintainer must post "
+                    f"'{APPROVAL} {current}' again")
     edits = issue.get("edits")
     if edits is None:
-        return "the body's edit history could not be read"
-    created = assigned.get("at") if by_assignment else latest.get("createdAt")
+        return (f"the body's edit history could not be read; a maintainer must post "
+                f"'{APPROVAL} {current}'")
     approved_at = _when(created)
     newest = None
     for edit in edits:

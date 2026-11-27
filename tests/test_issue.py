@@ -199,6 +199,44 @@ class OutsideTest(unittest.TestCase):
         self.assertFalse(issue.approved(data, OWNER))
         self.assertIn("@ghost edited", issue.approval_problem(data, OWNER))
 
+    def hashed(self, text=None, when="2026-11-01T10:00:00Z", body=BODY):
+        text = text if text is not None else "/baton ready " + issue.body_hash(body)
+        return dict(comment(OWNER, text), createdAt=when)
+
+    def test_hashed_approval_of_current_body_ignores_history(self):
+        data = self.with_edits([self.hashed()], None)
+        self.assertTrue(issue.approved(data, OWNER))
+
+    def test_hashed_approval_survives_outside_edit_when_hash_matches(self):
+        data = self.with_edits([self.hashed()], [self.edit("mallory", "2026-11-01T11:00:00Z")])
+        self.assertTrue(issue.approved(data, OWNER))
+
+    def test_hashed_approval_of_other_body_is_dropped(self):
+        old = issue.body_hash("something else")
+        data = self.with_edits([self.hashed("/baton ready " + old)], [])
+        text = issue.approval_problem(data, OWNER)
+        self.assertIn(old, text)
+        self.assertIn(issue.body_hash(BODY), text)
+
+    def test_plain_approval_without_history_names_the_hash(self):
+        data = self.with_edits([self.READY], None)
+        self.assertIn("/baton ready " + issue.body_hash(BODY), issue.approval_problem(data, OWNER))
+
+    def test_malformed_hash_does_not_count(self):
+        good = issue.body_hash(BODY)
+        for text in ("/baton ready 123", "/baton ready " + good + " please"):
+            data = self.with_edits([self.hashed(text)], [])
+            self.assertEqual(issue.approval_problem(data, OWNER),
+                             "it needs a comment '/baton ready' from a maintainer")
+
+    def test_assignment_newer_than_mismatched_hash_follows_edit_history(self):
+        stale = self.hashed("/baton ready " + issue.body_hash("other"), "2026-11-01T09:00:00Z")
+        assign = {"by": OWNER, "at": "2026-11-01T10:00:00Z"}
+        data = self.with_edits([stale], [])
+        self.assertTrue(issue.approved(data, OWNER, assigned=assign))
+        data = self.with_edits([stale], [self.edit("mallory", "2026-11-01T11:00:00Z")])
+        self.assertIn("@mallory edited", issue.approval_problem(data, OWNER, assigned=assign))
+
     ASSIGN = {"by": OWNER, "at": "2026-11-01T10:00:00Z"}
 
     def test_maintainer_assignment_approves(self):
@@ -233,7 +271,8 @@ class OutsideTest(unittest.TestCase):
         self.assertTrue(issue.approved(data, OWNER, assigned=self.ASSIGN))
 
     def test_missing_edit_history_fails_closed(self):
-        text = "the body's edit history could not be read"
+        text = ("the body's edit history could not be read; a maintainer must post "
+                f"'/baton ready {issue.body_hash(BODY)}'")
         data = self.with_edits([self.READY], None)
         self.assertEqual(issue.approval_problem(data, OWNER), text)
         del data["edits"]
