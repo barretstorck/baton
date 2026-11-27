@@ -254,6 +254,10 @@ _EDIT = ("usage: baton {t} edit <N> [--title <t>] [--body-file <file | ->] "
 _PR_CREATE = ("usage: baton pr create --title <t> [--draft] [--head <branch>] "
               "<body-file | ->")
 _PR_READY = "usage: baton pr ready <N> [--undo]"
+_PR_LIST = ("usage: baton pr list [--state open|closed|all] [--head <branch>] "
+            "[--limit <n>] [--json <fields>]")
+_PR_VIEW = "usage: baton pr view <N> [--json <fields>]"
+_PR_CHECKS = "usage: baton pr checks <N>"
 _MS_CREATE = ("usage: baton milestone create --title <t> [--description <d>] "
               "[--due-on <ISO date>]")
 _MS_EDIT = ("usage: baton milestone edit <number | title> [--title <t>] "
@@ -316,7 +320,7 @@ def _declare_issue(subs):
 
 def _declare_pr(subs):
     actions = _actions(subs, "pr", "\n".join(
-        [_PR_CREATE, _EDIT.format(t="pr"), _PR_READY]))
+        [_PR_CREATE, _EDIT.format(t="pr"), _PR_READY, _PR_LIST, _PR_VIEW, _PR_CHECKS]))
     p = _action(actions, "pr create", _PR_CREATE)
     p.add_argument("--title", type=nonempty, required=True)
     p.add_argument("--draft", action="store_true")
@@ -326,6 +330,16 @@ def _declare_pr(subs):
     p = _action(actions, "pr ready", _PR_READY)
     p.add_argument("number", type=digits)
     p.add_argument("--undo", action="store_true")
+    p = _action(actions, "pr list", _PR_LIST)
+    p.add_argument("--state", choices=["open", "closed", "all"], default="open")
+    p.add_argument("--head")
+    p.add_argument("--limit", type=at_least_one, default=30)
+    p.add_argument("--json", dest="fields", default="number,title,headRefName,isDraft")
+    p = _action(actions, "pr view", _PR_VIEW)
+    p.add_argument("number", type=digits)
+    p.add_argument("--json", dest="fields",
+                   default="number,title,state,isDraft,headRefName,headRefOid,url")
+    _action(actions, "pr checks", _PR_CHECKS).add_argument("number", type=digits)
 
 
 def _declare_milestone(subs):

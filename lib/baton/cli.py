@@ -364,8 +364,27 @@ def cmd_issue(opts):
     return _publish_run(opts, act)
 
 
+def _pr_read(opts):
+    backend = forge.for_repo()
+    if opts.action == "checks":
+        pr = backend.pr_view(opts.number, "statusCheckRollup", empty={})
+        print(json.dumps(merge.check_rows(pr.get("statusCheckRollup")), indent=2))
+        return 0
+    fields = ",".join(f for f in opts.fields.split(",") if f)
+    if not fields:
+        return cliargs.fail("pr " + opts.action)
+    if opts.action == "view":
+        print(json.dumps(backend.pr_view(opts.number, fields), indent=2))
+        return 0
+    text = backend.pr_list_text(fields, opts.state, opts.limit, head=opts.head)
+    print(json.dumps(json.loads(text or "[]"), indent=2))
+    return 0
+
+
 @cliargs.command("pr")
 def cmd_pr(opts):
+    if opts.action in ("list", "view", "checks"):
+        return _pr_read(opts)
     def act(o, cfg, terms):
         if o.action == "create":
             head = publish.resolve_head(run.run, os.getcwd(), o.head)

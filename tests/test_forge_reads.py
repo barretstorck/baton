@@ -93,5 +93,78 @@ class TriageReadCommandTest(unittest.TestCase):
             self.assertEqual(fake.calls, [])
 
 
+class PrReadCommandsTest(unittest.TestCase):
+    def test_list_github_argv(self):
+        fake = FakeRunner({"gh pr list": '[{"number": 7}]'})
+        code, out, _, fake = run_cmd(["pr", "list", "--head", "issue-7-x"], fake)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), [{"number": 7}])
+        self.assertEqual(fake.lines(), [
+            "gh pr list --state open --limit 30 --head issue-7-x "
+            "--json number,title,headRefName,isDraft"])
+
+    def test_list_options(self):
+        _, _, _, fake = run_cmd(["pr", "list", "--state", "all", "--limit", "5",
+                                 "--json", "number"], FakeRunner({"gh pr list": "[]"}))
+        self.assertEqual(fake.lines(), ["gh pr list --state all --limit 5 --json number"])
+
+    def test_view_github_argv(self):
+        fake = FakeRunner({"gh pr view 7": '{"body": "b"}'})
+        code, out, _, fake = run_cmd(["pr", "view", "7", "--json", "body"], fake)
+        self.assertEqual((code, json.loads(out)), (0, {"body": "b"}))
+        self.assertEqual(fake.lines(), ["gh pr view 7 --json body"])
+        _, _, _, fake = run_cmd(["pr", "view", "7"], FakeRunner({"gh pr view": "{}"}))
+        self.assertEqual(fake.lines(), [
+            "gh pr view 7 --json number,title,state,isDraft,headRefName,headRefOid,url"])
+
+    def test_checks_rows_from_rollup(self):
+        rollup = {"statusCheckRollup": [
+            {"__typename": "CheckRun", "name": "test", "workflowName": "CI",
+             "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": "http://x/1"},
+            {"__typename": "StatusContext", "context": "ext", "state": "PENDING",
+             "targetUrl": None}]}
+        fake = FakeRunner({"gh pr view 7": json.dumps(rollup)})
+        code, out, _, fake = run_cmd(["pr", "checks", "7"], fake)
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.lines(), ["gh pr view 7 --json statusCheckRollup"])
+        self.assertEqual(json.loads(out), [
+            {"name": "CI / test", "state": "SUCCESS", "url": "http://x/1"},
+            {"name": "ext", "state": "PENDING", "url": None}])
+
+    def test_checks_none(self):
+        code, out, _, _ = run_cmd(["pr", "checks", "7"],
+                                  FakeRunner({"gh pr view": '{"statusCheckRollup": []}'}))
+        self.assertEqual((code, json.loads(out)), (0, []))
+
+    def test_forgejo_list_filters_by_head(self):
+        def pr(n, ref):
+            return {"number": n, "title": "t", "state": "open", "draft": False,
+                    "head": {"ref": ref, "sha": "a"}, "base": {"ref": "main"}}
+        backend, _ = forgejo({"GET /api/v1/repos/o/r/pulls": (200, [pr(1, "a"), pr(2, "b")])})
+        code, out, _, _ = run_cmd(["pr", "list", "--head", "b"], backend=backend)
+        self.assertEqual(code, 0)
+        self.assertEqual([row["number"] for row in json.loads(out)], [2])
+
+    def test_forgejo_checks_reads_commit_status(self):
+        item = {"number": 3, "head": {"ref": "h", "sha": "abc"}, "base": {"ref": "main"}}
+        status = {"state": "success", "total_count": 1, "statuses": [
+            {"context": "ci", "status": "success", "target_url": "http://u"}]}
+        backend, transport = forgejo({
+            "GET /api/v1/repos/o/r/pulls/3": (200, item),
+            "GET /api/v1/repos/o/r/commits/abc/status": (200, status),
+            "GET /api/v1/repos/o/r/branches/main": (200, {"enable_status_check": False})})
+        code, out, _, _ = run_cmd(["pr", "checks", "3"], backend=backend)
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), [{"name": "ci", "state": "SUCCESS", "url": "http://u"}])
+
+    def test_usage_errors_exit_64(self):
+        for args in (["view"], ["view", "x"], ["checks"], ["list", "--state", "bad"],
+                     ["list", "--limit", "0"], ["list", "--json", ""], ["view", "7", "--json", ""]):
+            code, _, err, fake = run_cmd(["pr"] + args)
+            self.assertEqual(code, 64, args)
+            self.assertIn("usage: baton pr", err)
+            self.assertEqual(fake.calls, [], args)
+
+
 if __name__ == "__main__":
     unittest.main()
