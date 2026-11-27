@@ -145,6 +145,40 @@ class ReadTest(unittest.TestCase):
         self.assertEqual(GitHub(FakeRunner()).pr_view(3, "state", empty={}), {})
         self.assertEqual(runner.lines(), ["gh pr view 3 --json state"])
 
+    def test_pr_files_rename_source(self):
+        rows = [{"filename": "src/ci.yml", "status": "renamed",
+                 "previous_filename": ".github/workflows/ci.yml", "additions": 1, "deletions": 2},
+                {"filename": "a.py", "status": "modified", "previous_filename": None,
+                 "additions": 3, "deletions": 4},
+                {"filename": "b.py", "status": "renamed", "previous_filename": None,
+                 "additions": 0, "deletions": 0}]
+        runner = FakeRunner({"gh api --paginate repos/{owner}/{repo}/pulls/4/files":
+                             "\n".join(json.dumps(r) for r in rows) + "\n\n"})
+        got = GitHub(runner).pr_files(4)
+        self.assertEqual(got[0], {"path": "src/ci.yml", "additions": 1, "deletions": 2,
+                                  "previousPath": ".github/workflows/ci.yml"})
+        self.assertEqual(got[1], {"path": "a.py", "additions": 3, "deletions": 4,
+                                  "previousPath": None})
+        self.assertNotIn("previousPath", got[2])
+
+    def test_pr_view_files_come_from_rest(self):
+        from baton import merge
+        from tests.test_merge import OWNER, make_config, make_pr
+        row = {"filename": "src/ci.yml", "status": "renamed",
+               "previous_filename": ".github/workflows/ci.yml", "additions": 0, "deletions": 0}
+        runner = FakeRunner({"gh pr view 4": '{"state": "OPEN", "files": [{"path": "x"}]}',
+                             "gh api --paginate": json.dumps(row)})
+        got = GitHub(runner).pr_view(4, "state,files")
+        self.assertEqual(got["files"][0]["previousPath"], ".github/workflows/ci.yml")
+        self.assertEqual(len(runner.calls), 2)
+        runner = FakeRunner({"gh pr view 4": '{"state": "OPEN"}'})
+        GitHub(runner).pr_view(4, "state")
+        self.assertEqual(runner.lines(), ["gh pr view 4 --json state"])
+        found = merge.check(make_pr(files=got["files"]), make_config(), OWNER, "main",
+                            FakeRunner())
+        self.assertTrue(any("protected" in p and ".github/workflows/ci.yml" in p
+                            for p in found), found)
+
     def test_issue_view_text(self):
         runner = FakeRunner({"gh issue view 5": '{"number": 5}'})
         self.assertEqual(GitHub(runner).issue_view_text(5, "number,state"), '{"number": 5}')

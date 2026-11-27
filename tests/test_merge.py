@@ -355,6 +355,9 @@ class MergeTest(unittest.TestCase):
             "gh repo view": json.dumps({"owner": {"login": OWNER}, "name": "tool",
                                         "defaultBranchRef": {"name": "main"}}),
             "gh pr view 9": json.dumps(pr),
+            "gh api --paginate repos/{owner}/{repo}/pulls/9/files": "\n".join(
+                json.dumps({"filename": f["path"], "status": "modified",
+                            "additions": 0, "deletions": 0}) for f in pr.get("files", [])),
             "gh issue view 4 --json state": json.dumps({"state": issue_state}),
             "gh issue view 4 --json body": json.dumps({"body": "## Context\nx\n"}),
             "gh issue view 4 --json labels": json.dumps({"labels": [{"name": "status:in-review"}]}),
