@@ -149,9 +149,12 @@ def default_branch_status(runner, owner, repo, branch, now=None):
         age = _commit_age(committed, now)
     except ValueError as error:
         raise SnapshotError(f"could not read the head commit date: {error}") from error
-    if (age < PUSH_RUN_GRACE_SECONDS and actions_enabled(runner, owner, repo)
-            and push_workflow_exists(runner, owner, repo, sha)):
-        return "pending", max(1, int(PUSH_RUN_GRACE_SECONDS - age))
+    if age < PUSH_RUN_GRACE_SECONDS:
+        # GitLab has no Actions permission or workflow file to read: wait out the grace period
+        if (getattr(forge.for_repo(runner=runner), "kind", None) == "gitlab"
+                or (actions_enabled(runner, owner, repo)
+                    and push_workflow_exists(runner, owner, repo, sha))):
+            return "pending", max(1, int(PUSH_RUN_GRACE_SECONDS - age))
     return "none", None
 
 

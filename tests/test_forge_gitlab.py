@@ -85,7 +85,6 @@ class TransportTest(unittest.TestCase):
         forge, t = make()
         for call in (lambda: forge.review_edit_body(1, 2, "p"),
                      lambda: forge.comment_edit_body("3", "p"),
-                     lambda: forge.pr_ready(1),
                      lambda: forge.workflow_entries_text("o", "r"),
                      lambda: forge.workflow_file_text("o", "r", "f"),
                      lambda: forge.actions_permissions_text("o", "r")):
@@ -295,8 +294,27 @@ class IssueTest(unittest.TestCase):
     def test_list_search_unsupported(self):
         forge, t = make()
         with self.assertRaises(Unsupported):
-            forge.issue_list("number", "open", 5, search="x")
+            forge.issue_list("number", "open", 5, search="closed:>=2026-01-01")
         self.assertEqual(t.calls, [])
+
+    def test_search_one_query_per_word_and_ranks(self):
+        def issue(iid, title):
+            return {**self.ISSUE, "iid": iid, "title": title}
+        both = issue(3, "CSV export")
+        old = issue(5, "csv import")
+        new = issue(9, "Export log")
+        forge, t = make({
+            f"GET {PROJ}/issues?state=opened&search=csv": (200, [old, both]),
+            f"GET {PROJ}/issues?state=opened&search=export": (200, [new, both]),
+        })
+        out = forge.issue_list("number", "open", 10, search="CSV export")
+        self.assertEqual(out, [{"number": 3}, {"number": 9}, {"number": 5}])
+        lines = t.lines()
+        self.assertEqual(len(lines), 2)
+        self.assertIn("search=csv", lines[0])
+        self.assertIn("search=export", lines[1])
+        for line in lines:
+            self.assertIn("in=title", line)
 
     def test_edit_labels_one_put(self):
         forge, t = make({f"PUT {PROJ}/issues/7": (200, {})})
@@ -668,11 +686,29 @@ class MergeRequestWriteTest(unittest.TestCase):
         forge.pr_create("T", self.body)
         self.assertEqual(self.sent(t, 1)["source_branch"], "topic")
 
-    def test_draft_raises_without_request(self):
-        forge, t = make()
-        with self.assertRaises(Unsupported):
-            forge.pr_create("T", self.body, draft=True)
-        self.assertEqual(t.calls, [])
+    def test_draft_sends_prefixed_title(self):
+        forge, t = make({f"GET {PROJ}": (200, {"default_branch": "main"}),
+                         f"POST {PROJ}/merge_requests": (201, {"web_url": "u"})})
+        forge.pr_create("T", self.body, head="feat", draft=True)
+        self.assertEqual(self.sent(t, 1)["title"], "Draft: T")
+
+    def test_pr_ready_strips_each_prefix(self):
+        for title in ("Draft: T", "[draft] T", "(Draft) T"):
+            forge, t = make({f"GET {PROJ}/merge_requests/3": (200, {"title": title}),
+                             f"PUT {PROJ}/merge_requests/3": (200, {})})
+            self.assertEqual(forge.pr_ready(3), "")
+            self.assertEqual(self.sent(t, 1), {"title": "T"})
+
+    def test_pr_ready_undo_adds_prefix(self):
+        forge, t = make({f"GET {PROJ}/merge_requests/3": (200, {"title": "T"}),
+                         f"PUT {PROJ}/merge_requests/3": (200, {})})
+        forge.pr_ready(3, undo=True)
+        self.assertEqual(self.sent(t, 1), {"title": "Draft: T"})
+
+    def test_pr_ready_unchanged_sends_nothing(self):
+        forge, t = make({f"GET {PROJ}/merge_requests/3": (200, {"title": "T"})})
+        forge.pr_ready(3)
+        self.assertEqual(t.lines(), [f"GET {PROJ}/merge_requests/3"])
 
     def test_pr_merge_sends_sha(self):
         forge, t = make({f"PUT {PROJ}/merge_requests/4/merge": (200, {})})
